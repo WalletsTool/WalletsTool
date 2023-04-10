@@ -1,0 +1,29 @@
+{
+  "name": "web3_tools",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri build": "tauri build",
+    "tauri dev": "tauri dev"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^1.2.0",
+    "less": "^4.1.3",
+    "vue": "^3.2.45",
+    "vue-router": "^4.1.6",
+    "ethers": "^5.7.2"
+  },
+  "devDependencies": {
+    "@arco-design/web-vue": "^2.44.4",
+    "@tauri-apps/cli": "^1.2.2",
+    "@vitejs/plugin-vue": "^4.0.0",
+    "alchemy-sdk": "^2.6.1",
+    "chalk": "^5.2.0",
+    "vite": "^4.0.0",
+    "vite-plugin-vue-setup-extend": "^0.4.0"
+  }
+}

@@ -1,0 +1,95 @@
+import {BigNumber, ethers} from "ethers";
+import utils from "@/scripts/transfer/transfer_utils.js";
+
+// 转账配置说明
+const config = {
+    chain: '', // arb, op, eth, bsc 等
+    delay: [1, 3],
+    transfer_type: 0,  // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
+    transfer_amount: 5, // 转账固定金额
+    transfer_amount_list: [5, 10],  // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
+    left_amount_list: [4, 6],  // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
+    amount_precision: 6,  // 无需修改，转账个数的精确度 6 代表个数有6位小数
+    limit_type: '1', // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
+    limit_count_list: [21111, 30000],
+    gas_price_type: '2',
+    gas_price_rate: 0.05,  // gas price溢价率，0.05代表gas price是当前gas price的105%
+    max_gas_price: 1  // 设置最大的gas price，单位gwei
+}
+
+const token_transfer = {
+    single_transfer(index, item, config, contract) {
+        return new Promise((resolve, reject) => {
+            debugger
+            // 随机获取rpc服务
+            const provider = utils.get_provider(config.chain)
+            // 通过私钥创建钱包
+            let wallet = new ethers.Wallet(item.private_key, provider);
+            let balance_wei = contract.connect(wallet).balanceOf(wallet.address);
+            let decimals = contract.connect(wallet).decimals();
+            let gasPrice = utils.getGasPrice(config, provider);
+            Promise.all([balance_wei, decimals, gasPrice]).then(async (values) => {
+                debugger
+                const balance = ethers.utils.formatUnits(values[0], values[1])
+
+                console.log('序号：', index, '当前余额为:', balance)
+                console.log('序号：', index, '当前 gasPrice 为:', ethers.utils.formatUnits(values[2], 'gwei'))
+
+                if (Number(balance) > 0) {
+                    let transfer_amount = BigNumber.from(0)
+                    if (config.transfer_type === '1') {
+                        // 全部转账
+                        transfer_amount = values[0]
+                    } else if (config.transfer_type === '2') {
+                        if (parseFloat(config.transfer_amount) >= parseFloat(balance)) {
+                            reject('当前余额不足，不做转账操作！')
+                            return
+                        }
+                        // 转账固定数量
+                        transfer_amount = ethers.utils.parseEther(config.transfer_amount)
+                    } else if (config.transfer_type === '3') {
+                        const temp = (Math.random() * (config.transfer_amount_list[1] - config.transfer_amount_list[0]) + config.transfer_amount_list[0]).toFixed(config.amount_precision)
+                        if (parseFloat(temp) >= parseFloat(balance)) {
+                            reject('当前余额不足，不做转账操作！')
+                            return
+                        }
+                        // 转账固定数量
+                        transfer_amount = ethers.utils.parseUnits(temp, values[1])
+                    } else if (config.transfer_type === '4') {
+                        let left_amount = (Math.random() * (config.left_amount_list[1] - config.left_amount_list[0]) + config.left_amount_list[0]).toFixed(config.amount_precision);
+
+                        if (parseFloat(left_amount) >= parseFloat(balance)) {
+                            reject('当前余额不足，不做转账操作！')
+                            return
+                        }
+                        // 剩余固定数量
+                        transfer_amount = ethers.utils.parseUnits((parseFloat(balance) - parseFloat(left_amount)).toFixed(config.amount_precision), values[1])
+                    }
+
+                    console.log('序号：', index, '转账数量为:', ethers.utils.formatUnits(transfer_amount, values[1]))
+
+                    const gasLimit = await utils.getContractGasLimit(config, contract, wallet, item.to_addr, transfer_amount)
+                    console.log('序号：', index, 'gasLimit:', gasLimit)
+
+                    contract.connect(wallet).transfer(item.to_addr, transfer_amount, {
+                        gasPrice: values[2],
+                        gasLimit: gasLimit
+                    }).then(async res => {
+                        console.log('序号：', index, '交易 hash 为：', res.hash)
+                        await utils.sleep(config.delay)
+                        resolve()
+                    }).catch(err => {
+                        reject(err)
+                    })
+                } else {
+                    reject('当前余额不足，不做转账操作！')
+                }
+            }).catch(err => {
+                console.log(err)
+                reject('RPC节点故障导致账户基础信息获取失败！')
+            })
+        })
+    }
+}
+
+export default token_transfer

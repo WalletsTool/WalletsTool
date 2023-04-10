@@ -1,0 +1,34 @@
+{
+  "chain_list":[
+    {
+      "key": "eth",
+      "chain": "Ethereum",
+      "scan_url": "https://cn.etherscan.com/",
+      "pic_url": "chainIcons/eth.png"
+    },
+    {
+      "key": "op",
+      "chain": "Optimism",
+      "scan_url": "https://www.optimism.io/",
+      "pic_url": "chainIcons/optimism.png"
+    },
+    {
+      "key": "polygon",
+      "chain": "Polygon",
+      "scan_url": "https://polygonscan.com/",
+      "pic_url": "chainIcons/polygon.png"
+    },
+    {
+      "key": "arb",
+      "chain": "Arbitrum",
+      "scan_url": "https://arbiscan.io/",
+      "pic_url": "chainIcons/arb.png"
+    },
+    {
+      "key": "binance",
+      "chain": "Binance Smart Chain",
+      "scan_url": "https://bscscan.com/",
+      "pic_url": "chainIcons/bnb.png"
+    }
+  ]
+}

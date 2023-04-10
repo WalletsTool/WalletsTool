@@ -1,0 +1,146 @@
+import {BigNumber, ethers} from "ethers";
+
+const providers = {
+    eth_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://arb-mainnet.g.alchemy.com/v2/LEr77rzSUl_f-aQIceeXUlkwmB6Pg9rE', // alchemy_rpc
+            'https://rpc.ankr.com/arbitrum/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
+            'https://open-platform.nodereal.io/0f6a7df001924b749c9466dc0bdb99c5/arbitrum-nitro/', // nodereal_rpc
+            'https://arbitrum.blockpi.network/v1/rpc/e6d636b1830e242e23c62700ca034a9c1100a040' // blockpi_rpc
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 97)
+    },
+    binance_provider() {
+        // rpc 节点
+        // const rpc_list = [
+        //     'https://arb-mainnet.g.alchemy.com/v2/LEr77rzSUl_f-aQIceeXUlkwmB6Pg9rE', // alchemy_rpc
+        //     'https://rpc.ankr.com/arbitrum/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
+        //     'https://open-platform.nodereal.io/0f6a7df001924b749c9466dc0bdb99c5/arbitrum-nitro/', // nodereal_rpc
+        //     'https://arbitrum.blockpi.network/v1/rpc/e6d636b1830e242e23c62700ca034a9c1100a040' // blockpi_rpc
+        // ]
+        // const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+        //
+        // return new ethers.providers.JsonRpcProvider(rpc_url, 56)
+
+        const rpc_list = [
+            'https://rpc.ankr.com/bsc_testnet_chapel/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 97)
+    },
+    arb_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://arb-mainnet.g.alchemy.com/v2/LEr77rzSUl_f-aQIceeXUlkwmB6Pg9rE', // alchemy_rpc
+            'https://rpc.ankr.com/arbitrum/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
+            'https://open-platform.nodereal.io/0f6a7df001924b749c9466dc0bdb99c5/arbitrum-nitro/', // nodereal_rpc
+            'https://arbitrum.blockpi.network/v1/rpc/e6d636b1830e242e23c62700ca034a9c1100a040' // blockpi_rpc
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 42161)
+    },
+    op_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://opt-mainnet.g.alchemy.com/v2/vnCby8geAM4QtKzZo-r4-80pyZpfb9bU', // alchemy_rpc
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 10)
+    },
+}
+const transfer_utils = {
+    get_provider(key) {
+        if (key === 'eth') {
+            return providers.eth_provider()
+        } else if (key === 'arb') {
+            return providers.arb_provider()
+        } else if (key === 'op') {
+            return providers.op_provider()
+        } else if (key === 'binance') {
+            return providers.binance_provider()
+        }
+    },
+    sleep(delay) {
+        let number = (Math.random() * (Number(delay[1]) - Number(delay[0])) + Number(delay[0])).toFixed(3);
+        console.log('delay:', number, 's')
+        return new Promise((resolve) => setTimeout(resolve, number * 1000));
+    },
+    //判断字符串是否为数字
+    checkNum(num) {
+        if (!num) {
+            return false
+        }
+        const reg = /^[0-9]+.?[0-9]*$/;
+        return reg.test(num);
+    },
+    //判断字符串是否为正整数
+    checkPositiveInteger(num) {
+        if (!num) {
+            return false
+        }
+        const reg = /^[1-9]+[0-9]*]*$/;
+        return reg.test(num);
+    },
+    // 获取 GasPrice 设置
+    getGasPrice(config, provider) {
+        return new Promise(async (resolve, reject) => {
+            if (config.gas_price_type === '1') {
+                resolve(await provider.getGasPrice())
+            } else if (config.gas_price_type === '2') {
+                resolve(ethers.utils.parseUnits(config.max_gas_price, 'gwei'))
+            } else if (config.gas_price_type === '3') {
+                // 计算 gas_price 溢价
+                let gas_price_final = BigNumber.from('0')
+                const gas_price_by_rate = BigNumber.from(Math.ceil(Number(values[1].toString()) * (1 + Number(config.gas_price_rate))).toString())
+                if (config.max_gas_price && Number(ethers.utils.formatUnits(gas_price_by_rate, 'gwei')) >= Number(config.max_gas_price)) {
+                    gas_price_final = ethers.utils.parseUnits(config.max_gas_price, 'gwei')
+                } else {
+                    gas_price_final = gas_price_by_rate
+                }
+                resolve(gas_price_final)
+            } else {
+                reject('gas price type error')
+            }
+        })
+    },
+    // 获取 GasLimit 设置
+    getWalletGasLimit(config, wallet, to_address) {
+        return new Promise(async (resolve, reject) => {
+            // 计算 gas_limit
+            if (config.limit_type === '1') {
+                resolve(await wallet.estimateGas({from: wallet.address, to: to_address}))
+            } else if (config.limit_type === '2') {
+                resolve(BigNumber.from(config.limit_value))
+            } else if (config.limit_type === '3') {
+                let gas_limit_final = Math.floor(Math.random() * (Number(config.limit_count_list[1]) - Number(config.limit_count_list[0])) + Number(config.limit_count_list[0]));
+                resolve(BigNumber.from(gas_limit_final.toString()))
+            } else {
+                reject('gas limit type error')
+            }
+        })
+    },
+    // 获取 GasLimit 设置
+    getContractGasLimit(config, contract, wallet, to_address, transfer_amount) {
+        return new Promise(async (resolve, reject) => {
+            // 计算 gas_limit
+            if (config.limit_type === '1') {
+                resolve(await contract.connect(wallet).estimateGas.transfer(to_address, transfer_amount))
+            } else if (config.limit_type === '2') {
+                resolve(BigNumber.from(config.limit_value))
+            } else if (config.limit_type === '3') {
+                let gas_limit_final = Math.floor(Math.random() * (Number(config.limit_count_list[1]) - Number(config.limit_count_list[0])) + Number(config.limit_count_list[0]));
+                resolve(BigNumber.from(gas_limit_final.toString()))
+            } else {
+                reject('gas limit type error')
+            }
+        })
+    }
+}
+
+export default transfer_utils

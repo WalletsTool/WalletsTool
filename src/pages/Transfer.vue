@@ -8,6 +8,8 @@ import utils from "@/scripts/transfer/transfer_utils.js";
 import base_coin_transfer from "@/scripts/transfer/base_coin_transfer.js";
 import token_transfer from "@/scripts/transfer/token_transfer.js";
 import {ethers} from "ethers";
+import {debounce} from "throttle-debounce";
+import {readFile, utils as xlUtils} from 'xlsx';
 
 const router = useRouter()
 // table列名
@@ -115,12 +117,13 @@ const form = reactive({
     amount_precision: '6'
 })
 
-// 导入 私钥 / 接收地址 弹窗
+// 录入 私钥 / 接收地址 弹窗
 let visible = ref(false)
 let importModalTitle = ref('')
 let importModalType = ref('')
 let importText = ref('')
 // 文件地址
+let importVisible = ref(false)
 let filePath = ref('')
 let importLoading = ref(false)
 // 添加代币弹窗
@@ -175,8 +178,45 @@ onMounted(() => {
 
 // 导入文件
 async function importFile() {
-
+    importLoading.value = true
+    try {
+        const workbook = readFile(filePath.value)
+        console.log(xlUtils.sheet_to_json(workbook))
+    } catch (e) {
+        Notification.error('导入文件失败，请检查文件格式是否正确！')
+        console.log('导入文件失败')
+        importLoading.value = false
+        console.log(e)
+    }
 }
+
+// 导入弹窗关闭事件
+const handleImportCancel = () => {
+    if (importLoading.value) {
+        Notification.warning('正在导入文件，请稍后再试！');
+        return false
+    } else {
+        return true
+    }
+}
+
+// 提前结束导入
+function stopImport() {
+    importLoading.value = false
+}
+
+// 导入文件弹窗
+async function importFileModal() {
+    importVisible.value = true
+}
+
+// 下载模板文件
+const downloadFile = debounce(1000, () => {
+    let a = document.createElement('a');
+    a.href = `/template/import_model.xlsx`;
+    a.download = '导入模板.xlsx';
+    a.click();
+})
 
 // RPC变化事件
 async function rpcChange(value) {
@@ -671,8 +711,12 @@ function goHome() {
         <span class="pageTitle">钱包多对多转账</span>
         <!-- 工具栏 -->
         <div class="toolBar">
-            <a-button type="primary" @click="handleClick('send')">导入发送方</a-button>
-            <a-button type="primary" style="margin-left: 10px" @click="handleClick('receive')">导入接收地址</a-button>
+            <a-button type="primary" @click="handleClick('send')">录入发送方</a-button>
+            <a-button type="primary" style="margin-left: 10px" @click="handleClick('receive')">录入接收地址</a-button>
+            <a-divider direction="vertical"/>
+            <a-button type="outline" status="normal" @click="downloadFile">下载模板</a-button>
+            <a-button type="primary" status="success" style="margin-left: 10px" @click="importFileModal">导入文件
+            </a-button>
             <a-divider direction="vertical"/>
             <!-- 选择操作区按钮 -->
             <a-button type="outline" status="normal" @click="selectSucceeded">选中成功</a-button>
@@ -730,14 +774,11 @@ function goHome() {
                 选择代币：
             </div>
             <div style="display: flex;flex-direction: row;align-items: center;margin-top: 10px">
-                <a-tooltip content="敬请期待">
-                    <!-- @click="handleAddCoinClick" -->
-                    <a-button type="outline" status="normal"
-                              style="margin-left: 10px">
-                        <icon-plus/>
-                        <span style="margin-left: 5px">添加代币</span>
-                    </a-button>
-                </a-tooltip>
+                <a-button type="outline" status="normal" @click="handleAddCoinClick"
+                          style="margin-left: 10px">
+                    <icon-plus/>
+                    <span style="margin-left: 5px">添加代币</span>
+                </a-button>
                 <!-- 代币 选择器 -->
                 <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames"
                           :style="{'margin-left':'10px',flex:'1'}" @change="coinChange">
@@ -840,22 +881,30 @@ function goHome() {
             </div>
         </div>
     </div>
-  <!-- 导入弹窗 -->
+  <!-- 录入弹窗 -->
     <a-modal v-model:visible="visible" :width="700" :title="importModalTitle" @cancel="handleCancel"
              @before-ok="handleBeforeOk">
-        <div class="importBar">
-            <a-input v-model="filePath" style="flex: 1" placeholder="请输入文件地址（当前支持文件类型：txt、csv、xls、xlsx）"
-                     allow-clear/>
-            <a-tooltip content="敬请期待">
-                <a-button type="outline" status="normal" :loading="importLoading" @click="importFile"
-                          style="margin-left: 10px">导入文件
-                </a-button>
-            </a-tooltip>
-        </div>
         <a-textarea v-model="importText" style="margin-top: 10px" placeholder="格式：一行一个" allow-clear :auto-size="{
             minRows:15,
             maxRows:20
           }"/>
+    </a-modal>
+  <!-- 导入文件弹窗 -->
+    <a-modal v-model:visible="importVisible" :width="700" title="导入文件" :on-before-cancel="handleImportCancel"
+             :mask-closable="false" :footer="false">
+        <div class="importBar">
+            <a-input v-model="filePath" style="flex: 1" placeholder="请输入文件地址，文件应符合模板格式"
+                     allow-clear/>
+            <a-button type="outline" status="normal" v-if="!importLoading" @click="importFile"
+                      style="margin-left: 10px">导入文件
+            </a-button>
+            <a-tooltip v-else content="点击可以中止导入">
+                <div @click="stopImport">
+                    <a-button type="outline" status="normal" loading style="margin-left: 10px">导入中
+                    </a-button>
+                </div>
+            </a-tooltip>
+        </div>
     </a-modal>
   <!-- 添加代币弹窗 -->
     <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"
@@ -959,6 +1008,12 @@ function goHome() {
 .arco-btn-secondary.arco-btn-loading:hover {
     color: #ffffff;
     background-color: #fc0934;
+}
+
+.arco-btn-outline.arco-btn-loading:hover {
+    color: #ffffff;
+    background-color: #fc0934;
+    border: none;
 }
 
 .arco-radio-button.arco-radio-checked {

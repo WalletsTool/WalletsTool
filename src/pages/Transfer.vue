@@ -40,7 +40,7 @@ const columns = [
         title: '平台币余额',
         align: 'center',
         dataIndex: 'plat_balance',
-        width: '110',
+        width: '120',
         ellipsis: "true",
         tooltip: 'true'
     },
@@ -48,7 +48,7 @@ const columns = [
         title: '代币余额',
         align: 'center',
         dataIndex: 'coin_balance',
-        width: '90',
+        width: '120',
         ellipsis: "true",
         tooltip: 'true'
     },
@@ -71,7 +71,7 @@ const columns = [
         title: '操作',
         align: 'center',
         slotName: 'optional',
-        width: '90',
+        width: '60',
         ellipsis: "true",
         tooltip: 'true'
     }
@@ -113,6 +113,8 @@ let coinValue = ref('');
 const coinFieldNames = {value: 'key', label: 'coin'}
 // 币种选择器
 const coinOptions = ref([]);
+// 查询余额按钮loading
+let balanceLoading = ref(false)
 // 详细配置
 const form = reactive({
     send_type: '3',
@@ -410,7 +412,16 @@ function deleteTokenCancel() {
 // 查询余额
 async function queryBalance() {
     if (currentCoin.value.type === 'base' || currentCoin.value.type === 'token') {
-        balance_utils.exec_group_query(rpcValue.value, currentCoin.value, data.value)
+        balanceLoading.value = true
+        data.value.forEach(item => {
+            item.plat_balance = ''
+            item.coin_balance = ''
+            item.error_msg = ''
+        })
+        balance_utils.exec_group_query(rpcValue.value, currentCoin.value, data.value, () => {
+            Notification.success('查询成功！');
+            balanceLoading.value = false
+        })
     } else {
         Notification.warning('查询 coin 类型错误！');
     }
@@ -824,7 +835,7 @@ function goHome() {
                         <span style="margin-left: 10px">{{ data?.coin }}</span>
                     </template>
                 </a-select>
-                <a-button type="outline" status="normal" style="margin-left: 10px" @click="queryBalance">查询余额
+                <a-button type="outline" status="normal" style="margin-left: 10px" @click="queryBalance" :loading="balanceLoading">查询余额
                 </a-button>
                 <a-button type="primary" status="danger" @click="deleteToken" style="margin-left: 10px">删除Token
                 </a-button>

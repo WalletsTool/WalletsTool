@@ -9,12 +9,12 @@ let contract_abi = []
 let group = []
 
 // 迭代执行
-function recurrence(index) {
+function recurrence(callback, index) {
     iter_query(group[index ?? 0]).then(() => {
         if (index < group.length - 1) {
-            recurrence(index + 1)
+            recurrence(callback, index + 1)
         } else {
-            console.log('查询完成')
+            callback()
         }
     })
 }
@@ -28,7 +28,7 @@ function iter_query(items) {
                 list.push(base_coin_balance.query_balance(obj, chain))
             })
         } else if (type === 'token') {
-            const contract = new ethers.Contract(currentCoin.value.contract_address, currentCoin.value.abi);
+            const contract = new ethers.Contract(contract_address, contract_abi);
             items.forEach(async obj => {
                 list.push(base_coin_balance.query_balance(obj, chain))
                 list.push(token_balance.query_balance(obj, chain, contract))
@@ -54,7 +54,7 @@ function divide_into_groups(array, subGroupLength) {
 
 const balance_utils = {
     // 执行分组查询
-    exec_group_query(key, currentCoin, data) {
+    exec_group_query(key, currentCoin, data, callback) {
         chain = key
         type = currentCoin.type
         contract_address = currentCoin.contract_address
@@ -62,7 +62,7 @@ const balance_utils = {
         // 分组
         group = divide_into_groups(data, 3)
         // 迭代查询
-        recurrence()
+        recurrence(callback)
     }
 }
 

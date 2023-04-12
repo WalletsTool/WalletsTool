@@ -11,7 +11,7 @@ const base_coin_balance = {
             // 通过私钥创建钱包
             let wallet = new ethers.Wallet(item.private_key, provider);
             wallet.getBalance().then((balance) => {
-                item.plat_balance = parseFloat(ethers.utils.formatEther(balance)).toFixed(10).toString()
+                item.plat_balance = parseFloat(ethers.utils.formatEther(balance)).toFixed(6).toString()
                 resolve()
             }).catch((err) => {
                 item.plat_balance = ''

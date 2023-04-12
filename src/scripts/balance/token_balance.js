@@ -13,10 +13,10 @@ const token_balance = {
             let balance_wei = contract.connect(wallet).balanceOf(wallet.address);
             let decimals = contract.connect(wallet).decimals();
             Promise.all([balance_wei, decimals]).then(async (values) => {
-                item.plat_balance = parseFloat(ethers.utils.formatUnits(values[0], values[1])).toFixed(10).toString()
+                item.coin_balance = parseFloat(ethers.utils.formatUnits(values[0], values[1])).toFixed(4).toString()
                 resolve()
             }).catch((err) => {
-                item.plat_balance = ''
+                item.coin_balance = ''
                 item.error_msg = '查询代币余额失败！'
                 console.log('查询代币余额失败！', err)
                 resolve('')

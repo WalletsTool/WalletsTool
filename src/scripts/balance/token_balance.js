@@ -1,0 +1,28 @@
+import utils from "@/scripts/transfer/transfer_utils.js";
+import {ethers} from "ethers";
+
+const token_balance = {
+
+    // 转账方法
+    query_balance(item, chain, contract) {
+        return new Promise((resolve, reject) => {
+            // 随机获取rpc服务
+            const provider = utils.get_provider(chain)
+            // 通过私钥创建钱包
+            let wallet = new ethers.Wallet(item.private_key, provider);
+            let balance_wei = contract.connect(wallet).balanceOf(wallet.address);
+            let decimals = contract.connect(wallet).decimals();
+            Promise.all([balance_wei, decimals]).then(async (values) => {
+                item.plat_balance = parseFloat(ethers.utils.formatUnits(values[0], values[1])).toFixed(10).toString()
+                resolve()
+            }).catch((err) => {
+                item.plat_balance = ''
+                item.error_msg = '查询代币余额失败！'
+                console.log('查询代币余额失败！', err)
+                resolve('')
+            })
+        })
+    }
+}
+
+export default token_balance

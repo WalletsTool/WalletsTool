@@ -20,7 +20,6 @@ const config = {
 const token_transfer = {
     single_transfer(index, item, config, contract) {
         return new Promise((resolve, reject) => {
-            debugger
             // 随机获取rpc服务
             const provider = utils.get_provider(config.chain)
             // 通过私钥创建钱包
@@ -29,7 +28,6 @@ const token_transfer = {
             let decimals = contract.connect(wallet).decimals();
             let gasPrice = utils.getGasPrice(config, provider);
             Promise.all([balance_wei, decimals, gasPrice]).then(async (values) => {
-                debugger
                 const balance = ethers.utils.formatUnits(values[0], values[1])
 
                 console.log('序号：', index, '当前余额为:', balance)

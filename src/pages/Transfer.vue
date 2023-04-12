@@ -1,7 +1,7 @@
 <script setup name="transfer">
-import {IconDoubleLeft, IconPlus, IconDelete, IconFaceSmileFill} from '@arco-design/web-vue/es/icon';
+import {IconDelete, IconDoubleLeft, IconPlus} from '@arco-design/web-vue/es/icon';
 import {useRouter} from "vue-router";
-import {nextTick, onBeforeMount, onMounted, reactive, ref, toRefs} from "vue";
+import {nextTick, onBeforeMount, onMounted, reactive, ref} from "vue";
 import {invoke} from "@tauri-apps/api/tauri";
 import {Notification} from "@arco-design/web-vue";
 import utils from "@/scripts/transfer/transfer_utils.js";
@@ -9,11 +9,18 @@ import base_coin_transfer from "@/scripts/transfer/base_coin_transfer.js";
 import token_transfer from "@/scripts/transfer/token_transfer.js";
 import {ethers} from "ethers";
 import {debounce} from "throttle-debounce";
-import {readFile, utils as xlUtils} from 'xlsx';
+import {read, utils as xlUtils} from "xlsx";
+import balance_utils from "@/scripts/balance/balance_utils.js";
 
 const router = useRouter()
 // table列名
 const columns = [
+    {
+        title: '序号',
+        align: 'center',
+        width: '60',
+        slotName: 'index'
+    },
     {
         title: '发送秘钥',
         align: 'center',
@@ -69,6 +76,7 @@ const columns = [
         tooltip: 'true'
     }
 ]
+let tableLoading = ref(false)
 const data = ref([])
 // 选中的数据key
 const selectedKeys = ref([]);
@@ -78,6 +86,13 @@ const rowSelection = reactive({
     showCheckedAll: true,
     onlyCurrent: false,
 });
+
+// 点击行实现选中和取消
+function rowClick(record, event) {
+    const index = selectedKeys.value.indexOf(record.private_key)
+    index >= 0 ? selectedKeys.value.splice(index, 1) : selectedKeys.value.push(record.private_key)
+}
+
 // 分页
 const pagination = ref(false);
 const scrollbar = ref(true);
@@ -122,10 +137,6 @@ let visible = ref(false)
 let importModalTitle = ref('')
 let importModalType = ref('')
 let importText = ref('')
-// 文件地址
-let importVisible = ref(false)
-let filePath = ref('')
-let importLoading = ref(false)
 // 添加代币弹窗
 let addCoinVisible = ref(false)
 let coinAddress = ref('')
@@ -176,38 +187,54 @@ onMounted(() => {
     }
 })
 
-// 导入文件
-async function importFile() {
-    importLoading.value = true
-    try {
-        const workbook = readFile(filePath.value)
-        console.log(xlUtils.sheet_to_json(workbook))
-    } catch (e) {
-        Notification.error('导入文件失败，请检查文件格式是否正确！')
-        console.log('导入文件失败')
-        importLoading.value = false
-        console.log(e)
+// 读取上传的文件
+function UploadFile() {
+    visible.value = false
+    let file = uploadInputRef.value.files[0]
+    let reader = new FileReader()
+    //提取excel中文件内容
+    reader.readAsArrayBuffer(file);
+    let fileData = []
+    data.value = []
+    tableLoading.value = true
+    reader.onload = function () {
+        const buffer = reader.result;
+        const bytes = new Uint8Array(buffer);
+        const length = bytes.byteLength;
+        let binary = "";
+        for (let i = 0; i < length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        //转换二进制
+        const wb = read(binary, {
+            type: "binary",
+        });
+        const outdata = xlUtils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        //这里for循环将excel表格数据转化成json数据
+        outdata.forEach((i) => {
+            if (i.私钥 && i.地址) {
+                data.value.push({
+                    private_key: String(i.私钥),
+                    to_addr: String(i.地址),
+                    plat_balance: '',
+                    coin_balance: '',
+                    exec_status: '0',
+                    error_msg: ''
+                })
+            }
+        })
+    }
+    reader.onloadend = function () {
+        tableLoading.value = false
+        console.log('读取完成')
     }
 }
 
-// 导入弹窗关闭事件
-const handleImportCancel = () => {
-    if (importLoading.value) {
-        Notification.warning('正在导入文件，请稍后再试！');
-        return false
-    } else {
-        return true
-    }
-}
+const uploadInputRef = ref(null)
 
-// 提前结束导入
-function stopImport() {
-    importLoading.value = false
-}
-
-// 导入文件弹窗
-async function importFileModal() {
-    importVisible.value = true
+// 点击上传文件
+function upload() {
+    uploadInputRef.value.click()
 }
 
 // 下载模板文件
@@ -264,9 +291,9 @@ function clearAddress() {
 // 导入事件触发
 function handleClick(type) {
     if (type === 'send') {
-        importModalTitle.value = '导入私钥'
+        importModalTitle.value = '录入私钥'
     } else if (type === 'receive') {
-        importModalTitle.value = '导入接收地址'
+        importModalTitle.value = '录入接收地址'
     } else {
         Notification.warning('导入类型错误！');
         return
@@ -380,6 +407,15 @@ function deleteTokenCancel() {
     deleteTokenVisible.value = false
 }
 
+// 查询余额
+async function queryBalance() {
+    if (currentCoin.value.type === 'base' || currentCoin.value.type === 'token') {
+        balance_utils.exec_group_query(rpcValue.value, currentCoin.value, data.value)
+    } else {
+        Notification.warning('查询 coin 类型错误！');
+    }
+}
+
 // 删除token方法
 function deleteToken() {
     deleteTokenVisible.value = true
@@ -448,7 +484,6 @@ async function iter_transfer() {
                         data.value[i].error_msg = err
                     })
             } else if (currentCoin.value.type === 'token') {
-                debugger
                 // 设置状态 为执行中
                 data.value[i].exec_status = '1'
                 await token_transfer.single_transfer(i + 1, data.value[i], config, contract)
@@ -715,8 +750,8 @@ function goHome() {
             <a-button type="primary" style="margin-left: 10px" @click="handleClick('receive')">录入接收地址</a-button>
             <a-divider direction="vertical"/>
             <a-button type="outline" status="normal" @click="downloadFile">下载模板</a-button>
-            <a-button type="primary" status="success" style="margin-left: 10px" @click="importFileModal">导入文件
-            </a-button>
+            <a-button type="primary" status="success" style="margin-left: 10px" @click="upload">导入文件</a-button>
+            <input type="file" ref="uploadInputRef" @change="UploadFile" id="btn_file" style="display:none">
             <a-divider direction="vertical"/>
             <!-- 选择操作区按钮 -->
             <a-button type="outline" status="normal" @click="selectSucceeded">选中成功</a-button>
@@ -739,10 +774,13 @@ function goHome() {
         <!-- 操作账号表格 -->
         <div class="mainTable">
             <a-table v-if="tableBool" row-key="private_key" :columns="columns" :column-resizable="true" :data="data"
-                     :row-selection="rowSelection"
+                     :row-selection="rowSelection" :loading="tableLoading"
                      :scroll="scroll"
-                     :scrollbar="scrollbar"
+                     :scrollbar="scrollbar" @row-click="rowClick"
                      v-model:selectedKeys="selectedKeys" :pagination="pagination">
+                <template #index="{ rowIndex }">
+                    {{ rowIndex + 1 }}
+                </template>
                 <template #exec_status="{ rowIndex }">
                     <a-tag v-if="data[rowIndex].exec_status === '0'" color="#86909c">等待执行</a-tag>
                     <a-tag v-if="data[rowIndex].exec_status === '1'" color="#ff7d00">执行中</a-tag>
@@ -750,7 +788,7 @@ function goHome() {
                     <a-tag v-if="data[rowIndex].exec_status === '3'" color="#f53f3f">执行失败</a-tag>
                 </template>
                 <template #optional="{ record }">
-                    <icon-delete @click="deleteItem(record)"/>
+                    <icon-delete style="font-size: 16px" @click.prevent="deleteItem(record)"/>
                 </template>
             </a-table>
         </div>
@@ -786,7 +824,8 @@ function goHome() {
                         <span style="margin-left: 10px">{{ data?.coin }}</span>
                     </template>
                 </a-select>
-                <a-button type="outline" status="normal" style="margin-left: 10px">查询余额</a-button>
+                <a-button type="outline" status="normal" style="margin-left: 10px" @click="queryBalance">查询余额
+                </a-button>
                 <a-button type="primary" status="danger" @click="deleteToken" style="margin-left: 10px">删除Token
                 </a-button>
             </div>
@@ -888,23 +927,6 @@ function goHome() {
             minRows:15,
             maxRows:20
           }"/>
-    </a-modal>
-  <!-- 导入文件弹窗 -->
-    <a-modal v-model:visible="importVisible" :width="700" title="导入文件" :on-before-cancel="handleImportCancel"
-             :mask-closable="false" :footer="false">
-        <div class="importBar">
-            <a-input v-model="filePath" style="flex: 1" placeholder="请输入文件地址，文件应符合模板格式"
-                     allow-clear/>
-            <a-button type="outline" status="normal" v-if="!importLoading" @click="importFile"
-                      style="margin-left: 10px">导入文件
-            </a-button>
-            <a-tooltip v-else content="点击可以中止导入">
-                <div @click="stopImport">
-                    <a-button type="outline" status="normal" loading style="margin-left: 10px">导入中
-                    </a-button>
-                </div>
-            </a-tooltip>
-        </div>
     </a-modal>
   <!-- 添加代币弹窗 -->
     <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"

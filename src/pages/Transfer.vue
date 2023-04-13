@@ -913,7 +913,7 @@ function goHome() {
                         <a-input v-model="form.gas_price"/>
                     </a-form-item>
                     <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate"
-                                 style="width: 110px;padding: 10px" label="提高比例">
+                                 style="width: 100px;padding: 10px" label="提高比例">
                         <a-input v-model="form.gas_price_rate">
                             <template #append>
                                 %

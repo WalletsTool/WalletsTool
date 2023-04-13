@@ -17,9 +17,10 @@ const providers = {
     binance_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://rpc.ankr.com/bsc/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
-            'https://bsc-mainnet.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
-            'https://bsc.blockpi.network/v1/rpc/fc05a6d785ae099ec79e488f1a6168d192ac8db9' // blockpi_rpc
+            // 'https://rpc.ankr.com/bsc/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
+            // 'https://bsc-mainnet.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
+            // 'https://bsc.blockpi.network/v1/rpc/fc05a6d785ae099ec79e488f1a6168d192ac8db9', // blockpi_rpc
+            'https://blue-late-rain.bsc.quiknode.pro/cbe5c8e3b1198b2cfadfe1dc6f4107c4a3de6938/', // quiknode_rpc
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
@@ -50,7 +51,8 @@ const providers = {
             'https://arb-mainnet.g.alchemy.com/v2/LEr77rzSUl_f-aQIceeXUlkwmB6Pg9rE', // alchemy_rpc
             'https://rpc.ankr.com/arbitrum/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
             'https://open-platform.nodereal.io/0f6a7df001924b749c9466dc0bdb99c5/arbitrum-nitro/', // nodereal_rpc
-            'https://arbitrum.blockpi.network/v1/rpc/e6d636b1830e242e23c62700ca034a9c1100a040' // blockpi_rpc
+            'https://arbitrum.blockpi.network/v1/rpc/e6d636b1830e242e23c62700ca034a9c1100a040', // blockpi_rpc
+            'https://indulgent-holy-wave.arbitrum-mainnet.quiknode.pro/0f8965f469465c10e8efe4887e53bcf24f876a7e/', // quiknode_rpc
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

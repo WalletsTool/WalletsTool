@@ -46,7 +46,7 @@ const token_transfer = {
                         // 转账固定数量
                         transfer_amount = ethers.utils.parseEther(config.transfer_amount)
                     } else if (config.transfer_type === '3') {
-                        const temp = (Math.random() * (config.transfer_amount_list[1] - config.transfer_amount_list[0]) + config.transfer_amount_list[0]).toFixed(config.amount_precision)
+                        const temp = (Math.random() * (Number(config.transfer_amount_list[1]) - Number(config.transfer_amount_list[0])) + Number(config.transfer_amount_list[0])).toFixed(Number(config.amount_precision))
                         if (parseFloat(temp) >= parseFloat(balance)) {
                             reject('当前余额不足，不做转账操作！')
                             return
@@ -54,14 +54,14 @@ const token_transfer = {
                         // 转账固定数量
                         transfer_amount = ethers.utils.parseUnits(temp, values[1])
                     } else if (config.transfer_type === '4') {
-                        let left_amount = (Math.random() * (config.left_amount_list[1] - config.left_amount_list[0]) + config.left_amount_list[0]).toFixed(config.amount_precision);
+                        let left_amount = (Math.random() * (Number(config.left_amount_list[1]) - Number(config.left_amount_list[0])) + Number(config.left_amount_list[0])).toFixed(Number(config.amount_precision));
 
                         if (parseFloat(left_amount) >= parseFloat(balance)) {
                             reject('当前余额不足，不做转账操作！')
                             return
                         }
                         // 剩余固定数量
-                        transfer_amount = ethers.utils.parseUnits((parseFloat(balance) - parseFloat(left_amount)).toFixed(config.amount_precision), values[1])
+                        transfer_amount = ethers.utils.parseUnits((parseFloat(balance) - parseFloat(left_amount)).toFixed(Number(config.amount_precision)), values[1])
                     }
 
                     console.log('序号：', index, '转账数量为:', ethers.utils.formatUnits(transfer_amount, values[1]))

@@ -450,8 +450,15 @@ function startTransfer(event) {
     startLoading.value = true
     validateForm().then(async () => {
         console.log('验证通过')
-        // 执行转账
-        await iter_transfer()
+        data.value.forEach(item => {
+            item.exec_status = '0'
+            item.error_msg = ''
+        })
+        await nextTick(() => {
+            // 执行转账
+            iter_transfer()
+        })
+
     }).catch(() => {
         console.log('验证失败')
     }).finally(() => {

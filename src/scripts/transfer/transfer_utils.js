@@ -114,13 +114,18 @@ const transfer_utils = {
             } else if (config.gas_price_type === '3') {
                 // 计算 gas_price 溢价
                 let gas_price_final = BigNumber.from('0')
-                const gas_price_by_rate = BigNumber.from(Math.ceil(Number(values[1].toString()) * (1 + Number(config.gas_price_rate))).toString())
-                if (config.max_gas_price && Number(ethers.utils.formatUnits(gas_price_by_rate, 'gwei')) >= Number(config.max_gas_price)) {
-                    gas_price_final = ethers.utils.parseUnits(config.max_gas_price, 'gwei')
-                } else {
-                    gas_price_final = gas_price_by_rate
-                }
-                resolve(gas_price_final)
+                await provider.getGasPrice().then((gas_price) => {
+                    const gas_price_by_rate = BigNumber.from(Math.ceil(Number(gas_price.toString()) * (1 + Number(config.gas_price_rate))).toString())
+                    if (config.max_gas_price && Number(ethers.utils.formatUnits(gas_price_by_rate, 'gwei')) >= Number(config.max_gas_price)) {
+                        gas_price_final = ethers.utils.parseUnits(config.max_gas_price, 'gwei')
+                    } else {
+                        gas_price_final = gas_price_by_rate
+                    }
+                    resolve(gas_price_final)
+                }).catch((err) => {
+                    console.log('获取gas_price 失败', err)
+                    reject('获取gas_price 失败')
+                })
             } else {
                 reject('gas price type error')
             }

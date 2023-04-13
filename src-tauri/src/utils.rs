@@ -10,6 +10,7 @@ pub fn exists(path: &Path) -> bool {
 pub fn chain_config_path() -> PathBuf {
     Path::new(format!("{}/conf/chain_setting.json", env!("CARGO_MANIFEST_DIR")).as_str()).to_owned()
 }
+
 pub fn coin_config_path(chain:&str) -> PathBuf {
     Path::new(format!("{}/conf/coin_{}_setting.json", env!("CARGO_MANIFEST_DIR"),chain).as_str()).to_owned()
 }

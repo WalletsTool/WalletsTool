@@ -11,6 +11,7 @@ import {ethers} from "ethers";
 import {debounce} from "throttle-debounce";
 import {read, utils as xlUtils} from "xlsx";
 import balance_utils from "@/scripts/balance/balance_utils.js";
+import axios from "axios";
 
 const router = useRouter()
 // table列名
@@ -103,6 +104,8 @@ let scroll = {
 let tableBool = ref(true)
 // rpc默认值
 const rpcValue = ref('');
+// 当前rpc
+const currentRpc = ref({});
 // rpc自定义字段名
 const rpcFieldNames = {value: 'key', label: 'scan_url'}
 // 主网选择器
@@ -157,8 +160,9 @@ let startLoading = ref(false)
 onBeforeMount(async () => {
     rpcOptions.value = await invoke('get_chain_list')
     rpcValue.value = rpcOptions.value[0].key
+    currentRpc.value = rpcOptions.value[0]
     // 获取rpc对应的代币列表
-    await rpcChange(rpcValue.value)
+    await rpcChange()
 })
 
 onMounted(() => {
@@ -248,10 +252,11 @@ const downloadFile = debounce(1000, () => {
 })
 
 // RPC变化事件
-async function rpcChange(value) {
-    coinOptions.value = await invoke("get_coin_list", {chain: value})
+async function rpcChange() {
+    coinOptions.value = await invoke("get_coin_list", {chain: rpcValue.value})
     coinValue.value = coinOptions.value[0].key
     currentCoin.value = coinOptions.value[0]
+    currentRpc.value = rpcOptions.value.filter(item => item.key === rpcValue.value)[0]
 }
 
 // coin变化事件
@@ -272,6 +277,44 @@ function handleAddCoinCancel() {
 
 // 添加代币弹窗确认
 function handleAddCoinBeforeOk() {
+    coinAddress.value = coinAddress.value.trim()
+    if (!coinAddress.value) {
+        Notification.warning('请输入代币地址！');
+        return false
+    }
+    console.log(currentRpc.value)
+    const scan_api = currentRpc.value.scan_api
+    axios({
+        method: 'get',
+        url: scan_api + coinAddress.value
+    }).then(async res => {
+        let contractABI;
+        contractABI = JSON.parse(res.data.result);
+        if (!contractABI) {
+            Notification.warning('添加代币失败！');
+            return false
+        } else {
+            // let json = {
+            //     "key": "eth",
+            //     "coin": "ETH",
+            //     "type": "token",
+            //     "contract_type": "ERC20",
+            //     "contract_address": coinAddress.value,
+            //     "abi": contractABI
+            // }
+            // await invoke('add_coin', json.toString()).then(() => {
+            //     Notification.success('添加代币成功！');
+            //     return true
+            // }).catch(err => {
+            //     Notification.warning('添加代币失败！');
+            //     return false
+            // })
+        }
+    }).catch(err => {
+        console.log(2)
+        Notification.warning('添加代币失败！');
+        return false
+    })
 }
 
 // 清空列表
@@ -436,17 +479,15 @@ function deleteToken() {
 async function deleteTokenConfirm() {
     console.log('确认删除token')
     deleteTokenVisible.value = false
-    // await invoke('deleteCoin', coinValue.value).then(() => {
-    //     this.$message.success({
-    //         content: '删除成功！',
-    //         icon: () => h(IconFaceSmileFill)
-    //     });
-    // })
-    Notification.success('删除成功！');
+    await invoke("remove_coin", {chain: rpcValue.value, key: currentCoin.value.key}).then(() => {
+        Notification.success('删除成功！');
+    }).catch(() => {
+        Notification.error('删除失败！');
+    })
 }
 
 // 执行
-function startTransfer(event) {
+function startTransfer() {
     startLoading.value = true
     validateForm().then(async () => {
         console.log('验证通过')
@@ -842,7 +883,8 @@ function goHome() {
                         <span style="margin-left: 10px">{{ data?.coin }}</span>
                     </template>
                 </a-select>
-                <a-button type="outline" status="normal" style="margin-left: 10px" @click="queryBalance" :loading="balanceLoading">查询余额
+                <a-button type="outline" status="normal" style="margin-left: 10px" @click="queryBalance"
+                          :loading="balanceLoading">查询余额
                 </a-button>
                 <a-button type="primary" status="danger" @click="deleteToken" style="margin-left: 10px">删除Token
                 </a-button>

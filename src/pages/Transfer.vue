@@ -901,7 +901,7 @@ function goHome() {
                         <span style="padding: 0 5px">至</span>
                         <a-input v-model="form.limit_max_count"/>
                     </a-form-item>
-                    <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 210px;padding: 10px">
+                    <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 225px;padding: 10px">
                         <a-radio-group v-model="form.gas_price_type" type="button">
                             <a-radio value="1">自动</a-radio>
                             <a-radio value="2">固定值</a-radio>

@@ -275,54 +275,73 @@ function handleAddCoinCancel() {
     addCoinVisible.value = false
 }
 
+// 添加代币核心方法
+function addCoinFunc() {
+    return new Promise((resolve, reject) => {
+        const scan_api = currentRpc.value.scan_api
+        const verify_api = currentRpc.value.verify_api
+        const check_verify_api = currentRpc.value.check_verify_api
+
+        console.log('校验是否存在代理合约')
+        // 校验是否存在代理合约
+        token_utils.getProxyAddress(coinAddress.value, verify_api, check_verify_api).then(proxy_address => {
+            let address = coinAddress.value
+            if (proxy_address) {
+                address = proxy_address
+            }
+            console.log('获取合约ABI')
+            // 获取合约ABI
+            token_utils.getAbi(address, scan_api).then(abi => {
+                console.log('获取代币名称')
+                token_utils.getTokenSymbol(rpcValue.value, coinAddress.value, abi).then(symbol => {
+                    let json = {
+                        "key": symbol.toLowerCase(),
+                        "coin": symbol,
+                        "type": "token",
+                        "contract_type": "",
+                        "contract_address": coinAddress.value,
+                        "abi": abi
+                    }
+                    console.log('添加代币')
+                    // 添加代币
+                    invoke('add_coin', {chain: rpcValue.value, objJson: JSON.stringify(json)}).then(() => {
+                        addCoinVisible.value = false
+                        coinAddress.value = ''
+                        resolve()
+                    }).catch(err => {
+                        console.log(err)
+                        reject('添加代币失败！')
+                    })
+                }).catch(err => {
+                    console.log(err)
+                    reject('获取代币名称异常，添加代币失败！')
+                })
+            }).catch(err => {
+                reject(err)
+            })
+        }).catch(() => {
+            reject('校验合约地址异常，添加代币失败！')
+        })
+    })
+}
+
 // 添加代币弹窗确认
-function handleAddCoinBeforeOk() {
+const handleAddCoinBeforeOk = async () => {
     coinAddress.value = coinAddress.value.trim()
     if (!coinAddress.value) {
         Notification.warning('请输入代币地址！');
         return false
     }
-    const scan_api = currentRpc.value.scan_api
-    const verify_api = currentRpc.value.verify_api
-    const check_verify_api = currentRpc.value.check_verify_api
-    // 校验是否存在代理合约
-    token_utils.getProxyAddress(coinAddress.value, verify_api, check_verify_api).then(proxy_address => {
-        let address = coinAddress.value
-        if (proxy_address) {
-            address = proxy_address
-        }
-        // 获取合约ABI
-        token_utils.getAbi(address, scan_api).then(abi => {
-            token_utils.getTokenSymbol(rpcValue.value, coinAddress.value, abi).then(symbol => {
-                let json = {
-                    "key": symbol.toLowerCase(),
-                    "coin": symbol,
-                    "type": "token",
-                    "contract_type": "",
-                    "contract_address": coinAddress.value,
-                    "abi": abi
-                }
-                // 添加代币
-                invoke('add_coin', {chain: rpcValue.value, objJson: JSON.stringify(json)}).then(() => {
-                    Notification.success('添加代币成功！');
-                    addCoinVisible.value = false
-                    coinAddress.value = ''
-                    return true
-                }).catch(err => {
-                    Notification.error('添加代币失败！');
-                    console.log(err)
-                    return false
-                })
-            }).catch(err => {
-                console.log(err)
-                Notification.error('获取代币名称异常，添加代币失败！');
-            })
-        }).catch(err => {
-            Notification.error(err);
-        })
-    }).catch(() => {
-        Notification.error('校验合约地址异常，添加代币失败！');
+    let flag = false
+    await addCoinFunc().then(() => {
+        Notification.success('添加代币成功！');
+        flag = true
+    }).catch(err => {
+        Notification.error(err);
     })
+    // 删除成功后重新获取代币列表
+    rpcChange()
+    return flag
 }
 
 // 清空列表
@@ -365,7 +384,7 @@ function handleCancel() {
 }
 
 // 导入弹窗保存事件
-function handleBeforeOk(done, fail) {
+const handleBeforeOk = () => {
     // 导入私钥
     if (importModalType.value === 'send') {
         let importList = importText.value.split('\n').filter(item => item !== '')
@@ -395,20 +414,18 @@ function handleBeforeOk(done, fail) {
             })
         }
         importText.value = ''
-        done()
+        return true
     } else if (importModalType.value === 'receive') {
         // 导入接收地址
         const importList = importText.value.split('\n')
         if (data.value.length === 0) {
             Notification.warning('请先导入私钥！');
-            fail()
-            return
+            return false
         }
         // 如果私有都已经有接收地址了 则不导入
         if (!data.value.find(item => !item.to_addr)) {
             Notification.warning('所有私钥均已有接收地址，无法导入！');
-            fail()
-            return
+            return false
         }
         let index = 0
         data.value.forEach(item => {
@@ -418,10 +435,10 @@ function handleBeforeOk(done, fail) {
             }
         })
         importText.value = ''
-        done()
+        return true
     } else {
         Notification.warning('导入类型错误！');
-        fail()
+        return false
     }
 }
 
@@ -992,7 +1009,7 @@ function goHome() {
     </div>
   <!-- 录入弹窗 -->
     <a-modal v-model:visible="visible" :width="700" :title="importModalTitle" @cancel="handleCancel"
-             @before-ok="handleBeforeOk">
+             :on-before-ok="handleBeforeOk">
         <a-textarea v-model="importText" style="margin-top: 10px" placeholder="格式：一行一个" allow-clear :auto-size="{
             minRows:15,
             maxRows:20
@@ -1000,7 +1017,7 @@ function goHome() {
     </a-modal>
   <!-- 添加代币弹窗 -->
     <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"
-             @before-ok="handleAddCoinBeforeOk">
+             :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
         <a-input v-model="coinAddress" placeholder="请输入代币合约地址" allow-clear/>
     </a-modal>
   <!-- 删除代币确认框 -->

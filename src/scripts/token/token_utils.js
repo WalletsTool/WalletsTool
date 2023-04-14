@@ -45,11 +45,13 @@ const token_utils = {
                 let contractABI;
                 contractABI = JSON.parse(res.data.result);
                 if (!contractABI) {
+                    console.log(res.data)
                     reject('无法获取合约ABI，添加代币失败！')
                 } else {
                    resolve(contractABI)
                 }
             }).catch(err => {
+                console.log(err)
                 reject('无法获取合约ABI，添加代币失败！')
             })
         })

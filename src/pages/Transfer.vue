@@ -1,7 +1,7 @@
 <script setup name="transfer">
 import {IconDelete, IconDoubleLeft, IconPlus} from '@arco-design/web-vue/es/icon';
 import {useRouter} from "vue-router";
-import {nextTick, onBeforeMount, onMounted, reactive, ref} from "vue";
+import {nextTick, onBeforeMount, onMounted, reactive, ref, watch} from "vue";
 import {invoke} from "@tauri-apps/api/tauri";
 import {Notification} from "@arco-design/web-vue";
 import utils from "@/scripts/transfer/transfer_utils.js";
@@ -155,6 +155,14 @@ let currentCoin = ref({})
 let currentItemKey = ref('')
 // 开始执行按钮loading
 let startLoading = ref(false)
+// 转账中途停止
+let stopFlag = ref(false)
+// 转账是否已经停止
+let stopStatus = ref(true)
+
+watch(stopStatus, (newValue, oldValue) => {
+    console.log(`count的值已从${oldValue}更新为${newValue}`);
+})
 
 // 初始化RPC列表
 onBeforeMount(async () => {
@@ -389,7 +397,7 @@ const handleBeforeOk = () => {
     if (importModalType.value === 'send') {
         let importList = importText.value.split('\n').filter(item => item !== '')
         const total_count = importList.length
-        importList = importList.filter(item => data.value.length === 0 || data.value.find(obj => obj.private_key !== item))
+        importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.private_key === item))
         const success_count = importList.length
         const fail_count = total_count - success_count
         data.value.push(...importList.map(item => {
@@ -516,20 +524,31 @@ async function deleteTokenConfirm() {
 // 执行
 function startTransfer() {
     startLoading.value = true
+    stopFlag.value = false
+    stopStatus.value = false
     validateForm().then(async () => {
         console.log('验证通过')
         data.value.forEach(item => {
             item.exec_status = '0'
             item.error_msg = ''
         })
-        await nextTick(() => {
-            // 执行转账
-            iter_transfer()
+        // 执行转账
+        await iter_transfer().then(() => {
+            if (stopFlag.value) {
+                Notification.warning('已停止执行！')
+            } else {
+                Notification.success('执行完成！');
+                stopStatus.value = true
+            }
+            startLoading.value = false
+            stopFlag.value = false
+        }).catch(() => {
+            Notification.error('执行失败！');
+            startLoading.value = false
+            stopStatus.value = true
         })
-
     }).catch(() => {
         console.log('验证失败')
-    }).finally(() => {
         startLoading.value = false
     })
 }
@@ -560,6 +579,10 @@ async function iter_transfer() {
                 max_gas_price: form.max_gas_price  // 设置最大的gas price，单位gwei
             }
             if (currentCoin.value.type === 'base') {
+                if (stopFlag.value) {
+                    stopStatus.value = true
+                    return
+                }
                 // 设置状态 为执行中
                 data.value[i].exec_status = '1'
                 await base_coin_transfer.single_transfer(i + 1, data.value[i], config)
@@ -570,6 +593,10 @@ async function iter_transfer() {
                         data.value[i].error_msg = err
                     })
             } else if (currentCoin.value.type === 'token') {
+                if (stopFlag.value) {
+                    stopStatus.value = true
+                    return
+                }
                 // 设置状态 为执行中
                 data.value[i].exec_status = '1'
                 await token_transfer.single_transfer(i + 1, data.value[i], config, contract)
@@ -594,6 +621,7 @@ async function iter_transfer() {
 // 停止执行
 function stopTransfer() {
     startLoading.value = false
+    stopFlag.value = true
 }
 
 // 校验数据是否合规
@@ -998,10 +1026,12 @@ function goHome() {
             </a-form>
             <!-- 提交按钮 -->
             <div style="display: flex;flex: 1;align-items: center;justify-content: center;">
-                <a-button v-if="!startLoading" :class="['submitBtn']" @click="startTransfer">执行转账</a-button>
+                <a-button v-if="!startLoading &&  stopStatus" :class="['submitBtn']" @click="startTransfer">执行转账
+                </a-button>
                 <a-tooltip v-else content="点击可以提前停止执行">
                     <div @click="stopTransfer">
-                        <a-button class="submitBtn" loading>执行中...</a-button>
+                        <a-button v-if="!stopFlag" class="submitBtn" loading>执行中...</a-button>
+                        <a-button v-if="stopFlag && !stopStatus" class="submitBtn" loading>正在停止...</a-button>
                     </div>
                 </a-tooltip>
             </div>

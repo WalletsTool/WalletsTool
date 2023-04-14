@@ -10,7 +10,7 @@ let group = []
 
 // 迭代执行
 function recurrence(callback, index) {
-    iter_query(group[index ?? 0]).then(() => {
+    iter_query(group[index]).then(() => {
         if (index < group.length - 1) {
             recurrence(callback, index + 1)
         } else {
@@ -62,7 +62,7 @@ const balance_utils = {
         // 分组
         group = divide_into_groups(data, 3)
         // 迭代查询
-        recurrence(callback)
+        recurrence(callback,0)
     }
 }
 

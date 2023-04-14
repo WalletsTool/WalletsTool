@@ -11,7 +11,7 @@ import {ethers} from "ethers";
 import {debounce} from "throttle-debounce";
 import {read, utils as xlUtils} from "xlsx";
 import balance_utils from "@/scripts/balance/balance_utils.js";
-import axios from "axios";
+import token_utils from "@/scripts/token/token_utils.js";
 
 const router = useRouter()
 // table列名
@@ -282,38 +282,46 @@ function handleAddCoinBeforeOk() {
         Notification.warning('请输入代币地址！');
         return false
     }
-    console.log(currentRpc.value)
     const scan_api = currentRpc.value.scan_api
-    axios({
-        method: 'get',
-        url: scan_api + coinAddress.value
-    }).then(async res => {
-        let contractABI;
-        contractABI = JSON.parse(res.data.result);
-        if (!contractABI) {
-            Notification.warning('添加代币失败！');
-            return false
-        } else {
-            // let json = {
-            //     "key": "eth",
-            //     "coin": "ETH",
-            //     "type": "token",
-            //     "contract_type": "ERC20",
-            //     "contract_address": coinAddress.value,
-            //     "abi": contractABI
-            // }
-            // await invoke('add_coin', json.toString()).then(() => {
-            //     Notification.success('添加代币成功！');
-            //     return true
-            // }).catch(err => {
-            //     Notification.warning('添加代币失败！');
-            //     return false
-            // })
+    const verify_api = currentRpc.value.verify_api
+    const check_verify_api = currentRpc.value.check_verify_api
+    // 校验是否存在代理合约
+    token_utils.getProxyAddress(coinAddress.value, verify_api, check_verify_api).then(proxy_address => {
+        let address = coinAddress.value
+        if (proxy_address) {
+            address = proxy_address
         }
-    }).catch(err => {
-        console.log(2)
-        Notification.warning('添加代币失败！');
-        return false
+        // 获取合约ABI
+        token_utils.getAbi(address, scan_api).then(abi => {
+            token_utils.getTokenSymbol(rpcValue.value, coinAddress.value, abi).then(symbol => {
+                let json = {
+                    "key": symbol.toLowerCase(),
+                    "coin": symbol,
+                    "type": "token",
+                    "contract_type": "",
+                    "contract_address": coinAddress.value,
+                    "abi": abi
+                }
+                // 添加代币
+                invoke('add_coin', {chain: rpcValue.value, objJson: JSON.stringify(json)}).then(() => {
+                    Notification.success('添加代币成功！');
+                    addCoinVisible.value = false
+                    coinAddress.value = ''
+                    return true
+                }).catch(err => {
+                    Notification.error('添加代币失败！');
+                    console.log(err)
+                    return false
+                })
+            }).catch(err => {
+                console.log(err)
+                Notification.error('获取代币名称异常，添加代币失败！');
+            })
+        }).catch(err => {
+            Notification.error(err);
+        })
+    }).catch(() => {
+        Notification.error('校验合约地址异常，添加代币失败！');
     })
 }
 
@@ -447,7 +455,7 @@ async function deleteItemConfirm() {
     Notification.success('删除成功！');
 }
 
-// 删除token取消
+// 删除代币取消
 function deleteTokenCancel() {
     deleteTokenVisible.value = false
 }
@@ -470,17 +478,19 @@ async function queryBalance() {
     }
 }
 
-// 删除token方法
+// 删除代币方法
 function deleteToken() {
     deleteTokenVisible.value = true
 }
 
-// 删除token确认
+// 删除代币确认
 async function deleteTokenConfirm() {
-    console.log('确认删除token')
+    console.log('确认删除代币')
     deleteTokenVisible.value = false
     await invoke("remove_coin", {chain: rpcValue.value, key: currentCoin.value.key}).then(() => {
         Notification.success('删除成功！');
+        // 删除成功后重新获取代币列表
+        rpcChange()
     }).catch(() => {
         Notification.error('删除失败！');
     })
@@ -886,7 +896,7 @@ function goHome() {
                 <a-button type="outline" status="normal" style="margin-left: 10px" @click="queryBalance"
                           :loading="balanceLoading">查询余额
                 </a-button>
-                <a-button type="primary" status="danger" @click="deleteToken" style="margin-left: 10px">删除Token
+                <a-button type="primary" status="danger" @click="deleteToken" style="margin-left: 10px">删除代币
                 </a-button>
             </div>
         </div>

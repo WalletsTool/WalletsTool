@@ -5,35 +5,45 @@
       "chain": "Ethereum",
       "scan_url": "https://cn.etherscan.com/",
       "pic_url": "chainIcons/eth.png",
-      "scan_api": "https://api.etherscan.io/api?module=contract&action=getabi&apikey=5QKYWV24Q7E4NHXV928Q62BDIPHTJJSYH3&address="
+      "scan_api": "https://api.etherscan.io/api?module=contract&action=getabi&apikey=5QKYWV24Q7E4NHXV928Q62BDIPHTJJSYH3&address=",
+      "verify_api": "https://api.etherscan.io/api?module=contract&action=verifyproxycontract&apikey=5QKYWV24Q7E4NHXV928Q62BDIPHTJJSYH3",
+      "check_verify_api": "https://api.etherscan.io/api?module=contract&action=checkproxyverification&apikey=5QKYWV24Q7E4NHXV928Q62BDIPHTJJSYH3&guid="
     },
     {
       "key": "op",
       "chain": "Optimism",
       "scan_url": "https://www.optimism.io/",
       "pic_url": "chainIcons/optimism.png",
-      "scan_api": "https://api-optimistic.etherscan.io/api?module=contract&action=getabi&apikey=E3TST2HW8GNGBKDTTB6WXFWMIJGBTIZ2EM&address="
+      "scan_api": "https://api-optimistic.etherscan.io/api?module=contract&action=getabi&apikey=E3TST2HW8GNGBKDTTB6WXFWMIJGBTIZ2EM&address=",
+      "verify_api": "https://api-optimistic.etherscan.io/api?module=contract&action=verifyproxycontract&apikey=E3TST2HW8GNGBKDTTB6WXFWMIJGBTIZ2EM",
+      "check_verify_api": "https://api-optimistic.etherscan.io/api?module=contract&action=checkproxyverification&apikey=E3TST2HW8GNGBKDTTB6WXFWMIJGBTIZ2EM&guid="
     },
     {
       "key": "polygon",
       "chain": "Polygon",
       "scan_url": "https://polygonscan.com/",
       "pic_url": "chainIcons/polygon.png",
-      "scan_api": "https://api.polygonscan.com/api?module=contract&action=getabi&apikey=P5FRCI1WTR6ZZP4HTZQPPIUN8E9QY7BM99&address="
+      "scan_api": "https://api.polygonscan.com/api?module=contract&action=getabi&apikey=P5FRCI1WTR6ZZP4HTZQPPIUN8E9QY7BM99&address=",
+      "verify_api": "https://api.polygonscan.com/api?module=contract&action=verifyproxycontract&apikey=P5FRCI1WTR6ZZP4HTZQPPIUN8E9QY7BM99",
+      "check_verify_api": "https://api.polygonscan.com/api?module=contract&action=checkproxyverification&apikey=P5FRCI1WTR6ZZP4HTZQPPIUN8E9QY7BM99&guid="
     },
     {
       "key": "arb",
       "chain": "Arbitrum",
       "scan_url": "https://arbiscan.io/",
       "pic_url": "chainIcons/arb.png",
-      "scan_api": "https://api.arbiscan.io/api?module=contract&action=getabi&apikey=F8NKW7EDV4DBA1CP1YHT3G8UKKTNYTC3F8&address="
+      "scan_api": "https://api.arbiscan.io/api?module=contract&action=getabi&apikey=F8NKW7EDV4DBA1CP1YHT3G8UKKTNYTC3F8&address=",
+      "verify_api": "https://api.arbiscan.io/api?module=contract&action=verifyproxycontract&apikey=F8NKW7EDV4DBA1CP1YHT3G8UKKTNYTC3F8",
+      "check_verify_api": "https://api.arbiscan.io/api?module=contract&action=checkproxyverification&apikey=F8NKW7EDV4DBA1CP1YHT3G8UKKTNYTC3F8&guid="
     },
     {
       "key": "binance",
       "chain": "Binance Smart Chain",
       "scan_url": "https://bscscan.com/",
       "pic_url": "chainIcons/bnb.png",
-      "scan_api": "https://api.bscscan.com/api?module=contract&action=getabi&apikey=5BUY5BGWVP8MQJRQQXQW4VQXCS4KDEK7HC&address="
+      "scan_api": "https://api.bscscan.com/api?module=contract&action=getabi&apikey=5BUY5BGWVP8MQJRQQXQW4VQXCS4KDEK7HC&address=",
+      "verify_api": "https://api.bscscan.com/api?module=contract&action=verifyproxycontract&apikey=5BUY5BGWVP8MQJRQQXQW4VQXCS4KDEK7HC",
+      "check_verify_api": "https://api.bscscan.com/api?module=contract&action=checkproxyverification&apikey=5BUY5BGWVP8MQJRQQXQW4VQXCS4KDEK7HC&guid="
     }
   ]
 }

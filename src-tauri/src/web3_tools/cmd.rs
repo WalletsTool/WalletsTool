@@ -2,8 +2,9 @@ use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::ops::Index;
-use tauri::command;
+
 use serde_json::{json, Value};
+use tauri::command;
 
 use crate::utils::{chain_config_path, coin_config_path, read_json};
 

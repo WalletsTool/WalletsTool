@@ -8,8 +8,8 @@ const providers = {
             'https://rpc.ankr.com/eth/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
             'https://eth-mainnet.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
             // 'https://ethereum.blockpi.network/v1/rpc/23d1f2352ff1e80e0e5579a19b69529f01af8065', // blockpi_rpc
-            'https://mainnet.infura.io/v3/45bfe9cba3d74311bb798ad9e52224cc', // infura_rpc
-            'https://old-nameless-dew.quiknode.pro/8963d0cdc581f3ddf8d6a53a82b20fa308fc806d/', // quiknode_rpc
+            // 'https://mainnet.infura.io/v3/45bfe9cba3d74311bb798ad9e52224cc', // infura_rpc
+            // 'https://old-nameless-dew.quiknode.pro/8963d0cdc581f3ddf8d6a53a82b20fa308fc806d/', // quiknode_rpc
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

@@ -1059,7 +1059,7 @@ function goHome() {
             </a-button>
         </template>
     </a-modal>
-  <!-- 删除代币确认框 -->
+  <!-- 删除数据确认框 -->
     <a-modal v-model:visible="deleteItemVisible" title="删除确认">
         <div>确认删除私钥为【
             {{ currentItemKey.substring(0, 15) + '......' + currentItemKey.substring(currentItemKey.length - 15) }}

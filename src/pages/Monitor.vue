@@ -17,17 +17,9 @@ const columns = [
         slotName: 'index'
     },
     {
-        title: '发送秘钥',
+        title: '钱包地址',
         align: 'center',
-        width: '400',
-        dataIndex: 'private_key',
-        ellipsis: "true",
-        tooltip: 'true'
-    },
-    {
-        title: '接收地址',
-        align: 'center',
-        dataIndex: 'to_addr',
+        dataIndex: 'address',
         ellipsis: "true",
         tooltip: 'true'
     },
@@ -84,8 +76,8 @@ const rowSelection = reactive({
 
 // 点击行实现选中和取消
 function rowClick(record, event) {
-    const index = selectedKeys.value.indexOf(record.private_key)
-    index >= 0 ? selectedKeys.value.splice(index, 1) : selectedKeys.value.push(record.private_key)
+    const index = selectedKeys.value.indexOf(record.address)
+    index >= 0 ? selectedKeys.value.splice(index, 1) : selectedKeys.value.push(record.address)
 }
 
 // 分页
@@ -132,7 +124,7 @@ let monitorTimeStr = ref('00:30:15')
 // 报警次数
 let abnormalCount = ref(0)
 
-// 录入 私钥 / 接收地址 弹窗
+// 录入 钱包地址 弹窗
 let visible = ref(false)
 let importText = ref('')
 // 添加代币弹窗
@@ -210,6 +202,10 @@ async function coinChange(value) {
 
 // 删除代币方法
 function deleteToken() {
+    if (rpcValue.value === 'starknet') {
+        Notification.warning(' StarkNet 暂不支持删除代币！');
+        return
+    }
     deleteTokenVisible.value = true
 }
 
@@ -233,6 +229,10 @@ async function deleteTokenConfirm() {
 
 // 导入事件触发
 function handleAddCoinClick() {
+    if (rpcValue.value === 'starknet') {
+        Notification.warning(' StarkNet 暂不支持添加代币！');
+        return
+    }
     addCoinVisible.value = true
 }
 
@@ -332,13 +332,12 @@ function handleCancel() {
 const handleBeforeOk = () => {
     let importList = importText.value.split('\n').filter(item => item !== '')
     const total_count = importList.length
-    importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.private_key === item))
+    importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.address === item))
     const success_count = importList.length
     const fail_count = total_count - success_count
     data.value.push(...importList.map(item => {
         return {
-            private_key: item,
-            to_addr: '',
+            address: item,
             plat_balance: '',
             coin_balance: '',
             exec_status: '0',
@@ -367,13 +366,13 @@ function deleteItem(item) {
         return
     }
     // 删除确认
-    deleteItemModalShow(item.private_key)
+    deleteItemModalShow(item.address)
 }
 
 // 删除数据弹窗显示
-function deleteItemModalShow(private_key) {
+function deleteItemModalShow(address) {
     deleteItemVisible.value = true
-    currentItemKey.value = private_key
+    currentItemKey.value = address
 }
 
 // 删除item取消
@@ -384,14 +383,16 @@ function deleteItemCancel() {
 // 删除item确认
 async function deleteItemConfirm() {
     deleteItemVisible.value = false
-    console.log(data.value.length)
-    data.value = data.value.filter(obj => currentItemKey.value !== obj.private_key)
-    console.log(data.value.length)
+    data.value = data.value.filter(obj => currentItemKey.value !== obj.address)
     Notification.success('删除成功！');
 }
 
 // 查询余额
 async function queryBalance() {
+    if (data.value.length === 0) {
+        Notification.warning('请先导入地址！');
+        return
+    }
     if (currentCoin.value.type === 'base' || currentCoin.value.type === 'token') {
         balanceLoading.value = true
         data.value.forEach(item => {
@@ -402,7 +403,7 @@ async function queryBalance() {
         balance_utils.exec_group_query(rpcValue.value, currentCoin.value, data.value, () => {
             Notification.success('查询成功！');
             balanceLoading.value = false
-        })
+        }, form.thread_count)
     } else {
         Notification.warning('查询 coin 类型错误！');
     }
@@ -413,7 +414,7 @@ function deleteSelected() {
         Notification.warning('请停止或等待执行完成后再删除数据！');
         return
     }
-    data.value = data.value.filter(item => !selectedKeys.value.includes(item.private_key))
+    data.value = data.value.filter(item => !selectedKeys.value.includes(item.address))
     Notification.success('删除成功')
 }
 
@@ -460,7 +461,7 @@ function goHome() {
         </div>
         <!-- 操作账号表格 -->
         <div class="mainTable">
-            <a-table v-if="tableBool" row-key="private_key" :columns="columns" :column-resizable="true" :data="data"
+            <a-table v-if="tableBool" row-key="address" :columns="columns" :column-resizable="true" :data="data"
                      :row-selection="rowSelection" :loading="tableLoading"
                      :scroll="scroll"
                      :scrollbar="scrollbar" @row-click="rowClick"
@@ -516,11 +517,11 @@ function goHome() {
             </div>
         </div>
         <!-- 相关设置 -->
-        <div style="display: flex;padding-top: 10px">
-            <div style="flex: 1">
+        <div style="display: flex;padding-top: 10px;flex-direction: column;">
+            <div style="display: flex">
                 <!-- 细节配置 -->
                 <a-form ref="formRef" :model="form" layout="vertical">
-                    <a-row style="height: 80px">
+                    <a-row style="height: 100px">
                         <a-form-item field="thread_count"
                                      label="线程数" style="width: 240px;padding: 10px"
                                      tooltip="同时执行查询的钱包数量（1-10）之间">
@@ -532,34 +533,34 @@ function goHome() {
                         </a-form-item>
                     </a-row>
                 </a-form>
-                <!-- 结果汇总 -->
-                <div class="summaryInfo">
+                <div style="width: 300px;display: flex;align-items: center;justify-content: center;">
+                    <a-button type="outline" status="normal" style="margin-left: 10px;height: 50px;width: 200px;"
+                              @click="queryBalance"
+                              :loading="balanceLoading">查询余额
+                    </a-button>
+                </div>
+            </div>
+            <!-- 结果汇总 -->
+            <div class="summaryInfo">
                     <span>查询次数：<span class="yellowStyle">{{
                         iterCount
                         }} </span>  次</span>
-                    <span style="margin-left: 30px">已查询：
+                <span style="margin-left: 30px">已查询：
                         <span class="greenStyle">{{ finishCount }}</span>
-                        <span class="commonStyle"> / </span>
-                        <span class="redStyle">  {{ errorCount }}</span>
+                    <!--                        <span class="commonStyle"> / </span>-->
+                    <!--                        <span class="redStyle">  {{ errorCount }}</span>-->
                         <span class="commonStyle"> / {{ totalCount }}</span></span>
-                    <span style="margin-left: 30px">共：<span style="font-size: 2em;font-weight: bold">{{ totalBalance }}  {{
-                        currentCoin.coin
-                        }}</span></span>
-                    <span style="margin-left: 30px">监控时长：<span class="blueStyle">
+                <span style="margin-left: 30px">共：<span style="font-size: 2em;font-weight: bold">{{ totalBalance }}  {{
+                    currentCoin.coin
+                    }}</span></span>
+                <span style="margin-left: 30px">监控时长：<span class="blueStyle">
                         {{ monitorTimeStr }}
                     </span></span>
-                    <span style="margin-left: 30px">钱包报警次数：<span
-                            :class="[abnormalCount>0? 'redStyle' : 'greenStyle']">
+                <span style="margin-left: 30px">钱包报警次数：<span
+                        :class="[abnormalCount>0? 'redStyle' : 'greenStyle']">
                         {{ abnormalCount }}
                     </span>  次</span>
-                    <a @click="()=>alert(1)" v-if="abnormalCount>0" class="detailBtn">详情</a>
-                </div>
-            </div>
-            <!-- 操作区 -->
-            <div style="width: 300px;display: flex;align-items: center;justify-content: center;">
-                <a-button type="outline" status="normal" style="margin-left: 10px;" @click="queryBalance"
-                          :loading="balanceLoading">查询余额
-                </a-button>
+                <a @click="()=>alert(1)" v-if="abnormalCount>0" class="detailBtn">详情</a>
             </div>
         </div>
     </div>
@@ -587,7 +588,7 @@ function goHome() {
     </a-modal>
   <!-- 删除数据确认框 -->
     <a-modal v-model:visible="deleteItemVisible" title="删除确认">
-        <div>确认删除私钥为【
+        <div>确认删除地址为【
             {{ currentItemKey.substring(0, 15) + '......' + currentItemKey.substring(currentItemKey.length - 15) }}
             】的数据？
         </div>
@@ -674,7 +675,7 @@ function goHome() {
 }
 
 .summaryInfo {
-  padding: 20px 0 0 10px;
+  padding: 0 0 0 10px;
   line-height: 60px;
 }
 

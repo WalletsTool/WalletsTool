@@ -166,7 +166,9 @@ watch(stopStatus, (newValue, oldValue) => {
 
 // 初始化RPC列表
 onBeforeMount(async () => {
-    rpcOptions.value = await invoke('get_chain_list')
+    const rpcList = await invoke('get_chain_list')
+    // 过滤掉starknet
+    rpcOptions.value = rpcList.filter(item => item.key !== 'starknet')
     rpcValue.value = rpcOptions.value[0].key
     currentRpc.value = rpcOptions.value[0]
     // 获取rpc对应的代币列表
@@ -523,6 +525,10 @@ async function deleteTokenConfirm() {
 
 // 执行
 function startTransfer() {
+    if (data.value.length === 0) {
+        Notification.warning('请先导入私钥！');
+        return
+    }
     startLoading.value = true
     stopFlag.value = false
     stopStatus.value = false

@@ -44,6 +44,15 @@
       "scan_api": "https://api.bscscan.com/api?module=contract&action=getabi&apikey=5BUY5BGWVP8MQJRQQXQW4VQXCS4KDEK7HC&address=",
       "verify_api": "https://api.bscscan.com/api?module=contract&action=verifyproxycontract&apikey=5BUY5BGWVP8MQJRQQXQW4VQXCS4KDEK7HC",
       "check_verify_api": "https://api.bscscan.com/api?module=contract&action=checkproxyverification&apikey=5BUY5BGWVP8MQJRQQXQW4VQXCS4KDEK7HC&guid="
+    },
+    {
+      "key": "starknet",
+      "chain": "StarkNet",
+      "scan_url": "https://starkscan.co/",
+      "pic_url": "chainIcons/starknet.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

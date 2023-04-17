@@ -3,7 +3,7 @@ import {ethers} from "ethers";
 
 const token_balance = {
 
-    // 转账方法
+    // 通过private_key查询余额方法
     query_balance(item, chain, contract) {
         return new Promise((resolve, reject) => {
             // 随机获取rpc服务
@@ -12,6 +12,24 @@ const token_balance = {
             let wallet = new ethers.Wallet(item.private_key, provider);
             let balance_wei = contract.connect(wallet).balanceOf(wallet.address);
             let decimals = contract.connect(wallet).decimals();
+            Promise.all([balance_wei, decimals]).then(async (values) => {
+                item.coin_balance = parseFloat(ethers.utils.formatUnits(values[0], values[1])).toFixed(4).toString()
+                resolve()
+            }).catch((err) => {
+                item.coin_balance = ''
+                item.error_msg = '查询代币余额失败！'
+                console.log('查询代币余额失败！', err)
+                resolve('')
+            })
+        })
+    },
+    // 通过address查询余额方法
+    query_balance_by_address(item, chain, contract) {
+        return new Promise((resolve, reject) => {
+            // 随机获取rpc服务
+            const provider = utils.get_provider(chain)
+            let balance_wei = contract.connect(provider).balanceOf(item.address)
+            let decimals = contract.connect(provider).decimals();
             Promise.all([balance_wei, decimals]).then(async (values) => {
                 item.coin_balance = parseFloat(ethers.utils.formatUnits(values[0], values[1])).toFixed(4).toString()
                 resolve()

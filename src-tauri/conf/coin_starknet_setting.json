@@ -1,0 +1,12 @@
+{
+  "coin_list": [
+    {
+      "key": "eth",
+      "coin": "ETH",
+      "type": "token",
+      "contract_type": "",
+      "contract_address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+      "proxy_contract_address": "0x048624e084dc68d82076582219c7ed8cb0910c01746cca3cd72a28ecfe07e42d"
+    }
+  ]
+}

@@ -1,10 +1,12 @@
 import base_coin_balance from "@/scripts/balance/base_coin_balance.js";
 import token_balance from "@/scripts/balance/token_balance.js";
+import starknet_balance from "@/scripts/balance/starknet_balance.js";
 import {ethers} from "ethers";
 
 let chain = ''
 let type = ''
 let contract_address = ''
+let proxy_contract_address = ''
 let contract_abi = []
 let group = []
 
@@ -25,16 +27,41 @@ function iter_query(items) {
         let list = []
         if (type === 'base') {
             items.forEach(async obj => {
-                list.push(base_coin_balance.query_balance(obj, chain))
+                obj.exec_status = '1'
+                obj.error_msg = ''
+                if (obj.private_key) {
+                    list.push(base_coin_balance.query_balance(obj, chain))
+                } else {
+                    list.push(base_coin_balance.query_balance_by_address(obj, chain))
+                }
+
             })
         } else if (type === 'token') {
-            const contract = new ethers.Contract(contract_address, contract_abi);
-            items.forEach(async obj => {
-                list.push(base_coin_balance.query_balance(obj, chain))
-                list.push(token_balance.query_balance(obj, chain, contract))
-            })
+            if (chain === 'starknet') {
+                items.forEach(async obj => {
+                    obj.exec_status = '1'
+                    obj.error_msg = ''
+                    list.push(starknet_balance.query_balance_by_address(obj, contract_address, proxy_contract_address))
+                })
+            } else {
+                const contract = new ethers.Contract(contract_address, contract_abi);
+                items.forEach(async obj => {
+                    obj.exec_status = '1'
+                    obj.error_msg = ''
+                    if (obj.private_key) {
+                        list.push(base_coin_balance.query_balance(obj, chain))
+                        list.push(token_balance.query_balance(obj, chain, contract))
+                    } else {
+                        list.push(base_coin_balance.query_balance_by_address(obj, chain))
+                        list.push(token_balance.query_balance_by_address(obj, chain, contract))
+                    }
+                })
+            }
         }
         Promise.all(list).then(() => {
+            items.forEach(obj => {
+                obj.exec_status = obj.error_msg ? '3' : '2'
+            })
             resolve()
         })
     })
@@ -54,15 +81,16 @@ function divide_into_groups(array, subGroupLength) {
 
 const balance_utils = {
     // 执行分组查询
-    exec_group_query(key, currentCoin, data, callback) {
+    exec_group_query(key, currentCoin, data, callback, subGroupLength = 3) {
         chain = key
         type = currentCoin.type
         contract_address = currentCoin.contract_address
+        proxy_contract_address = currentCoin.proxy_contract_address
         contract_abi = currentCoin.abi
         // 分组
-        group = divide_into_groups(data, 3)
+        group = divide_into_groups(data, subGroupLength)
         // 迭代查询
-        recurrence(callback,0)
+        recurrence(callback, 0)
     }
 }
 

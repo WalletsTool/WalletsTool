@@ -12,7 +12,13 @@ const funcList = [
         pageName: "transfer"
     },
     {
-        title: "链上余额监控",
+        title: "链上余额查询",
+        desc: "目前支持链：ETH、OP、ARB、BSC、Polygon、StarkNet（持续更新中）",
+        picture: "pic/balance.png",
+        pageName: "balance"
+    },
+    {
+        title: "链上地址监控",
         desc: "目前支持链：ETH、OP、ARB、BSC、Polygon（持续更新中）",
         picture: "pic/monitor.png",
         pageName: "monitor"

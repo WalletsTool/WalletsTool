@@ -858,6 +858,11 @@ function selectFailed() {
     selectedKeys.value = data.value.filter(item => item.exec_status === '3').map(item => item.private_key)
 }
 
+// 反选
+function InvertSelection() {
+    selectedKeys.value = data.value.filter(item => selectedKeys.value.indexOf(item.private_key) < 0).map(item => item.private_key)
+}
+
 function deleteSelected() {
     if (startLoading.value) {
         Notification.warning('请停止或等待执行完成后再删除数据！');
@@ -888,8 +893,9 @@ function goHome() {
             <input type="file" ref="uploadInputRef" @change="UploadFile" id="btn_file" style="display:none">
             <a-divider direction="vertical"/>
             <!-- 选择操作区按钮 -->
-            <a-button type="outline" status="normal" @click="selectSucceeded">选中成功</a-button>
+            <a-button type="outline" status="success" @click="selectSucceeded">选中成功</a-button>
             <a-button type="outline" status="danger" style="margin-left: 10px" @click="selectFailed">选中失败</a-button>
+            <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">反选</a-button>
             <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">删除选中
             </a-button>
             <a-button class="goHome" type="outline" status="success" @click="goHome">

@@ -1,4 +1,4 @@
-<script setup name="monitor">
+<script setup name="balance">
 import {IconDelete, IconDoubleLeft, IconDownload, IconPlus} from '@arco-design/web-vue/es/icon';
 import {useRouter} from "vue-router";
 import {nextTick, onBeforeMount, onMounted, reactive, ref, watch} from "vue";
@@ -460,8 +460,8 @@ function goHome() {
 </script>
 
 <template>
-    <div class="container monitor">
-        <span class="pageTitle">链上地址监控</span>
+    <div class="container balance">
+        <span class="pageTitle">链上余额查询</span>
         <!-- 工具栏 -->
         <div class="toolBar">
             <a-button type="primary" @click="handleClick()">录入钱包地址</a-button>
@@ -679,7 +679,7 @@ function goHome() {
 }
 </style>
 <style lang="less">
-.monitor {
+.balance {
   .arco-table-body {
     min-height: 355px;
 

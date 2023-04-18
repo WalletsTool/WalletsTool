@@ -69,6 +69,10 @@ const base_coin_transfer = {
                         // 转账范围随机
                         transfer_amount = ethers.utils.parseEther(temp)
                     } else if (config.transfer_type === '4') {
+                        if (parseFloat(balance) >= Number(config.left_amount_list[0]) && parseFloat(balance) <= Number(config.left_amount_list[1])) {
+                            reject('当前余额为：' + balance + ' 在设置的剩余范围内，不做转账操作！')
+                            return
+                        }
                         let left_amount = (Math.random() * (Number(config.left_amount_list[1]) - Number(config.left_amount_list[0])) + Number(config.left_amount_list[0])).toFixed(Number(config.amount_precision));
                         if ((parseFloat(left_amount) + parseFloat(gas_fee)) >= parseFloat(balance)) {
                             reject('当前余额不足，不做转账操作！')

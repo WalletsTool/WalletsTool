@@ -594,6 +594,7 @@ async function iter_transfer() {
                 await base_coin_transfer.single_transfer(i + 1, data.value[i], config)
                     .then(res => {
                         data.value[i].exec_status = '2'
+                        data.value[i].error_msg = res
                     }).catch(err => {
                         data.value[i].exec_status = '3'
                         data.value[i].error_msg = err
@@ -608,6 +609,7 @@ async function iter_transfer() {
                 await token_transfer.single_transfer(i + 1, data.value[i], config, contract)
                     .then(res => {
                         data.value[i].exec_status = '2'
+                        data.value[i].error_msg = res
                     }).catch(err => {
                         data.value[i].exec_status = '3'
                         data.value[i].error_msg = err

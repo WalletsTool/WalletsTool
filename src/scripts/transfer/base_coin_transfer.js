@@ -92,7 +92,7 @@ const base_coin_transfer = {
                     wallet.sendTransaction(tx).then(async res => {
                         console.log('序号：', index, '交易 hash 为：', res.hash)
                         await utils.sleep(config.delay)
-                        resolve()
+                        resolve(res.hash)
                     }).catch(err => {
                         reject(err)
                     })

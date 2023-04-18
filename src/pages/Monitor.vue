@@ -124,16 +124,6 @@ let deleteItemVisible = ref(false)
 let currentCoin = ref({})
 // 当前数据的key
 let currentItemKey = ref('')
-// 开始执行按钮loading
-let startLoading = ref(false)
-// 转账中途停止
-let stopFlag = ref(false)
-// 转账是否已经停止
-let stopStatus = ref(true)
-
-watch(stopStatus, (newValue, oldValue) => {
-    console.log(`count的值已从${oldValue}更新为${newValue}`);
-})
 
 // 初始化RPC列表
 onBeforeMount(async () => {
@@ -347,7 +337,7 @@ const handleBeforeOk = () => {
 
 // 删除数据
 function deleteItem(item) {
-    if (startLoading.value) {
+    if (balanceLoading.value) {
         Notification.warning('请停止或等待执行完成后再删除数据！');
         return
     }
@@ -411,7 +401,7 @@ function InvertSelection() {
 }
 
 function deleteSelected() {
-    if (startLoading.value) {
+    if (balanceLoading.value) {
         Notification.warning('请停止或等待执行完成后再删除数据！');
         return
     }
@@ -436,17 +426,6 @@ function exportExcel() {
     xlUtils.book_append_sheet(workbook, worksheet, 'Sheet1');
     // 导出文件
     writeFile(workbook, 'balance_data.xlsx');
-}
-
-// 校验数据是否合规
-function validateForm() {
-    return new Promise((resolve, reject) => {
-        if (checkSendType() && checkPrecision() && checkDelay() && checkGasLimit() && checkGasPrice()) {
-            resolve()
-        } else {
-            reject()
-        }
-    })
 }
 
 const formRef = ref(null)

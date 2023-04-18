@@ -18,10 +18,16 @@ const funcList = [
         pageName: "balance"
     },
     {
-        title: "链上地址监控",
+        title: "链上地址监控（未完成）",
         desc: "目前支持链：ETH、OP、ARB、BSC、Polygon（持续更新中）",
         picture: "pic/monitor.png",
         pageName: "monitor"
+    },
+    {
+        title: "UniSwap批量交易（未完成）",
+        desc: "支持 Uniswap  V3 交易（持续更新中）",
+        picture: "pic/uniswap.png",
+        pageName: "uniswap"
     }
 ]
 

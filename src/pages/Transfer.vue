@@ -489,8 +489,12 @@ function deleteTokenCancel() {
 
 // 查询余额
 async function queryBalance() {
-    if(!stopStatus.value){
+    if (!stopStatus.value) {
         Notification.warning('请停止或等待执行完成后再查询余额！');
+        return
+    }
+    if (data.value.length === 0) {
+        Notification.warning('请先导入私钥！');
         return
     }
     if (currentCoin.value.type === 'base' || currentCoin.value.type === 'token') {
@@ -529,7 +533,7 @@ async function deleteTokenConfirm() {
 
 // 执行
 function startTransfer() {
-    if(balanceLoading.value){
+    if (balanceLoading.value) {
         Notification.warning('请等待余额查询完成后再执行！');
         return
     }

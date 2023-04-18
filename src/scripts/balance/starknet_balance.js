@@ -4,23 +4,9 @@ import {BigNumber, ethers} from "ethers";
 const starknet_balance = {
 
     // 转账方法
-    async query_balance_by_address(item, contractAddress, proxyAddress) {
+    async query_balance_by_address(item, contractAddress, contractABI) {
         return new Promise(async (resolve, reject) => {
             const provider = new Provider({sequencer: {network: 'mainnet-alpha'}})
-            let contractABI
-            if (proxyAddress) {
-                const {abi} = await provider.getClassAt(proxyAddress);
-                contractABI = abi
-            } else {
-                const {abi} = await provider.getClassAt(contractAddress);
-                contractABI = abi
-            }
-            if (contractABI === undefined) {
-                item.coin_balance = ''
-                item.error_msg = '查询合约ABI失败！'
-                console.log("查询合约ABI失败！")
-                resolve()
-            }
             const ethContract = new Contract(contractABI, contractAddress, provider);
             const balance_result = ethContract.balanceOf(item.address);
             const decimals_result = ethContract.decimals();

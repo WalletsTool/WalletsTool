@@ -6,7 +6,6 @@ import {ethers} from "ethers";
 let chain = ''
 let type = ''
 let contract_address = ''
-let proxy_contract_address = ''
 let contract_abi = []
 let group = []
 
@@ -41,7 +40,7 @@ function iter_query(items) {
                 items.forEach(async obj => {
                     obj.exec_status = '1'
                     obj.error_msg = ''
-                    list.push(starknet_balance.query_balance_by_address(obj, contract_address, proxy_contract_address))
+                    list.push(starknet_balance.query_balance_by_address(obj, contract_address, contract_abi))
                 })
             } else {
                 const contract = new ethers.Contract(contract_address, contract_abi);
@@ -85,7 +84,6 @@ const balance_utils = {
         chain = key
         type = currentCoin.type
         contract_address = currentCoin.contract_address
-        proxy_contract_address = currentCoin.proxy_contract_address
         contract_abi = currentCoin.abi
         // 分组
         group = divide_into_groups(data, subGroupLength)

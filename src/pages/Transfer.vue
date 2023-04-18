@@ -62,7 +62,7 @@ const columns = [
         tooltip: 'true'
     },
     {
-        title: '错误信息',
+        title: '返回信息',
         align: 'center',
         dataIndex: 'error_msg',
         ellipsis: "true",

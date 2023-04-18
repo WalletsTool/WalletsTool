@@ -1,11 +1,12 @@
 <script setup name="monitor">
-import {IconDelete, IconDoubleLeft, IconPlus} from '@arco-design/web-vue/es/icon';
+import {IconDelete, IconDoubleLeft, IconDownload, IconPlus} from '@arco-design/web-vue/es/icon';
 import {useRouter} from "vue-router";
 import {nextTick, onBeforeMount, onMounted, reactive, ref, watch} from "vue";
 import {invoke} from "@tauri-apps/api/tauri";
 import {Notification} from "@arco-design/web-vue";
 import balance_utils from "@/scripts/balance/balance_utils.js";
 import token_utils from "@/scripts/token/token_utils.js";
+import {utils as xlUtils, writeFile} from "xlsx";
 
 const router = useRouter()
 // table列名
@@ -418,6 +419,25 @@ function deleteSelected() {
     Notification.success('删除成功')
 }
 
+function exportExcel() {
+    if (data.value.length === 0) {
+        Notification.warning('无法导出空列表！');
+        return
+    }
+    let export_data = [['地址', '平台余额', '代币余额', '执行状态', '错误信息']]
+    data.value.forEach(item => {
+        export_data.push([item.address, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg])
+    })
+    // 创建工作簿
+    const workbook = xlUtils.book_new();
+    // 创建工作表
+    const worksheet = xlUtils.aoa_to_sheet(export_data);
+    // 将工作表添加到工作簿
+    xlUtils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    // 导出文件
+    writeFile(workbook, 'balance_data.xlsx');
+}
+
 // 校验数据是否合规
 function validateForm() {
     return new Promise((resolve, reject) => {
@@ -448,6 +468,13 @@ function goHome() {
             <a-divider direction="vertical"/>
             <!-- 选择操作区按钮 -->
             <a-button type="primary" status="danger" @click="deleteSelected">删除选中
+            </a-button>
+            <a-divider direction="vertical"/>
+            <a-button type="primary" status="success" @click="exportExcel">
+                <template #icon>
+                    <icon-download/>
+                </template>
+                导出表格
             </a-button>
             <a-button class="goHome" type="outline" status="success" @click="goHome">
                 <template #icon>

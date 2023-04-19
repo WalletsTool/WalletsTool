@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "icon": "tauri icon",
     "tauri build": "tauri build",
     "tauri dev": "tauri dev"
   },

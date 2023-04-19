@@ -50,7 +50,10 @@
       "windows": {
         "certificateThumbprint": null,
         "digestAlgorithm": "sha256",
-        "timestampUrl": ""
+        "timestampUrl": "",
+        "wix": {
+          "language": "zh-CN"
+        }
       }
     },
     "security": {
@@ -67,6 +70,9 @@
         "resizable": true,
         "fullscreen": false
       }
-    ]
+    ],
+    "systemTray": {
+      "iconPath": "icons/32x32.png"
+    }
   }
 }

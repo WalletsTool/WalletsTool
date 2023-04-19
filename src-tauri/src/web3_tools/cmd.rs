@@ -25,8 +25,8 @@ pub fn get_chain_list() -> Vec<Value> {
 }
 
 #[command]
-pub fn get_coin_list(chain: &str) -> Vec<Value> {
-    let path = coin_config_path(chain);
+pub fn get_coin_list(chain: &str, page: &str) -> Vec<Value> {
+    let path = coin_config_path(chain, page);
     let content = fs::read_to_string(path).unwrap();
     let setting_json = read_json(&content).unwrap_or_else(|_| json!({}));
     let binding = Vec::new();
@@ -35,8 +35,8 @@ pub fn get_coin_list(chain: &str) -> Vec<Value> {
 }
 
 #[command]
-pub fn add_coin(chain: &str, obj_json: &str) -> () {
-    let path = coin_config_path(chain);
+pub fn add_coin(chain: &str, page: &str, obj_json: &str) -> () {
+    let path = coin_config_path(chain, page);
     let content = fs::read_to_string(path.clone()).unwrap();
     let mut setting_json = read_json(&content).unwrap_or_else(|_| json!({}));
     let binding = Vec::new();
@@ -49,8 +49,8 @@ pub fn add_coin(chain: &str, obj_json: &str) -> () {
 }
 
 #[command]
-pub fn remove_coin(chain: &str, key: &str) -> () {
-    let path = coin_config_path(chain);
+pub fn remove_coin(chain: &str, page: &str, key: &str) -> () {
+    let path = coin_config_path(chain, page);
     let content = fs::read_to_string(path.clone()).unwrap();
     let mut setting_json = read_json(&content).unwrap_or_else(|_| json!({}));
     let binding = Vec::new();

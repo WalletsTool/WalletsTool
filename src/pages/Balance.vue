@@ -1,7 +1,7 @@
 <script setup name="balance">
 import {IconDelete, IconDoubleLeft, IconDownload, IconPlus} from '@arco-design/web-vue/es/icon';
 import {useRouter} from "vue-router";
-import {nextTick, onBeforeMount, onMounted, reactive, ref, watch} from "vue";
+import {nextTick, onBeforeMount, onMounted, reactive, ref} from "vue";
 import {invoke} from "@tauri-apps/api/tauri";
 import {Notification} from "@arco-design/web-vue";
 import balance_utils from "@/scripts/balance/balance_utils.js";
@@ -164,7 +164,7 @@ onMounted(() => {
 
 // RPC变化事件
 async function rpcChange() {
-    coinOptions.value = await invoke("get_coin_list", {chain: rpcValue.value})
+    coinOptions.value = await invoke("get_coin_list", {chain: rpcValue.value, page: 'balance'})
     coinValue.value = coinOptions.value[0].key
     currentCoin.value = coinOptions.value[0]
     currentRpc.value = rpcOptions.value.filter(item => item.key === rpcValue.value)[0]
@@ -194,7 +194,7 @@ function deleteTokenCancel() {
 async function deleteTokenConfirm() {
     console.log('确认删除代币')
     deleteTokenVisible.value = false
-    await invoke("remove_coin", {chain: rpcValue.value, key: currentCoin.value.key}).then(() => {
+    await invoke("remove_coin", {chain: rpcValue.value, page: 'balance', key: currentCoin.value.key}).then(() => {
         Notification.success('删除成功！');
         // 删除成功后重新获取代币列表
         rpcChange()
@@ -246,7 +246,11 @@ function addCoinFunc() {
                     }
                     console.log('添加代币')
                     // 添加代币
-                    invoke('add_coin', {chain: rpcValue.value, objJson: JSON.stringify(json)}).then(() => {
+                    invoke('add_coin', {
+                        chain: rpcValue.value,
+                        page: 'balance',
+                        objJson: JSON.stringify(json)
+                    }).then(() => {
                         addCoinVisible.value = false
                         coinAddress.value = ''
                         resolve()

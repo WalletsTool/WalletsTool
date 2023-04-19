@@ -243,7 +243,7 @@ function goHome() {
 
 <template>
     <div class="container uniswap">
-        <span class="pageTitle">UniSwap批量交易</span>
+        <span class="pageTitle">Uniswap批量交易</span>
         <!-- 工具栏 -->
         <div class="toolBar">
             <a-button type="primary" @click="handleClick()">录入钱包地址</a-button>

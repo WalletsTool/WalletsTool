@@ -263,7 +263,7 @@ const downloadFile = debounce(1000, () => {
 
 // RPC变化事件
 async function rpcChange() {
-    coinOptions.value = await invoke("get_coin_list", {chain: rpcValue.value})
+    coinOptions.value = await invoke("get_coin_list", {chain: rpcValue.value, page: 'transfer'})
     coinValue.value = coinOptions.value[0].key
     currentCoin.value = coinOptions.value[0]
     currentRpc.value = rpcOptions.value.filter(item => item.key === rpcValue.value)[0]
@@ -314,7 +314,11 @@ function addCoinFunc() {
                     }
                     console.log('添加代币')
                     // 添加代币
-                    invoke('add_coin', {chain: rpcValue.value, objJson: JSON.stringify(json)}).then(() => {
+                    invoke('add_coin', {
+                        chain: rpcValue.value,
+                        page: 'transfer',
+                        objJson: JSON.stringify(json)
+                    }).then(() => {
                         addCoinVisible.value = false
                         coinAddress.value = ''
                         resolve()
@@ -522,7 +526,7 @@ function deleteToken() {
 async function deleteTokenConfirm() {
     console.log('确认删除代币')
     deleteTokenVisible.value = false
-    await invoke("remove_coin", {chain: rpcValue.value, key: currentCoin.value.key}).then(() => {
+    await invoke("remove_coin", {chain: rpcValue.value, page: 'transfer',key: currentCoin.value.key}).then(() => {
         Notification.success('删除成功！');
         // 删除成功后重新获取代币列表
         rpcChange()

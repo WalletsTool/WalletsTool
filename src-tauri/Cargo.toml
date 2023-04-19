@@ -1,8 +1,8 @@
 [package]
 name = "web3_tools"
-version = "0.0.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "0.2.0"
+description = "web3 链上交易工具集，基于 Node.js Vue3 Tauri 等技术"
+authors = ["renmengkai"]
 license = ""
 repository = ""
 edition = "2021"

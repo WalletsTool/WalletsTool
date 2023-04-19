@@ -11,8 +11,8 @@ pub fn chain_config_path() -> PathBuf {
     Path::new(format!("conf/chain_setting.json").as_str()).to_owned()
 }
 
-pub fn coin_config_path(chain: &str) -> PathBuf {
-    Path::new(format!("conf/coin_{}_setting.json", chain).as_str()).to_owned()
+pub fn coin_config_path(chain: &str,page:&str) -> PathBuf {
+    Path::new(format!("conf/{}/coin_{}_setting.json", page, chain).as_str()).to_owned()
 }
 
 pub fn read_json(content: &str) -> serde_json::Result<serde_json::Value> {

@@ -37,7 +37,6 @@ const funcList = [
     },
     {
         title: "链上余额查询",
-        isNew: true,
         desc: "目前支持链：ETH、OP、ARB、BSC、Polygon、StarkNet（持续更新中）",
         picture: "pic/balance.png",
         pageName: "balance"

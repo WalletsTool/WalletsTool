@@ -1,4 +1,4 @@
-import utils from "@/scripts/transfer/transfer_utils.js";
+import {utils} from "@/scripts/common/provider.js";
 import {ethers} from "ethers";
 
 const token_balance = {

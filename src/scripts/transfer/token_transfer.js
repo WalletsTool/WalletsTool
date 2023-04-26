@@ -1,5 +1,8 @@
 import {BigNumber, ethers} from "ethers";
 import utils from "@/scripts/transfer/transfer_utils.js";
+import {utils as provider_utils} from "@/scripts/common/provider.js";
+import {utils as common_utils} from "@/scripts/common/utils.js";
+
 
 // 转账配置说明
 const config = {
@@ -21,7 +24,7 @@ const token_transfer = {
     single_transfer(index, item, config, contract) {
         return new Promise((resolve, reject) => {
             // 随机获取rpc服务
-            const provider = utils.get_provider(config.chain)
+            const provider = provider_utils.get_provider(config.chain)
             // 通过私钥创建钱包
             let wallet = new ethers.Wallet(item.private_key, provider);
             let balance_wei = contract.connect(wallet).balanceOf(wallet.address);
@@ -78,7 +81,7 @@ const token_transfer = {
                         gasLimit: gasLimit
                     }).then(async res => {
                         console.log('序号：', index, '交易 hash 为：', res.hash)
-                        await utils.sleep(config.delay)
+                        await common_utils.sleep(config.delay)
                         resolve(res.hash)
                     }).catch(err => {
                         reject(err)

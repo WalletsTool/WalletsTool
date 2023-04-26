@@ -1,6 +1,8 @@
 import axios from "axios";
 import {ethers} from "ethers";
-import utils from "@/scripts/transfer/transfer_utils.js";
+import {utils as provider_utils} from "@/scripts/common/provider.js";
+import {utils as common_utils} from "@/scripts/common/utils.js";
+
 
 // 等待结果
 let pending = true
@@ -48,7 +50,7 @@ const token_utils = {
                     console.log(res.data)
                     reject('无法获取合约ABI，添加代币失败！')
                 } else {
-                   resolve(contractABI)
+                    resolve(contractABI)
                 }
             }).catch(err => {
                 console.log(err)
@@ -68,7 +70,7 @@ const token_utils = {
                 proxy_address = ''
                 while (pending) {
                     if (pending) {
-                        await utils.sleep([0.5, 1.5])
+                        await common_utils.sleep([0.5, 1.5])
                     }
                     await checkProxyVerification(guid, check_verify_api)
                 }
@@ -80,7 +82,7 @@ const token_utils = {
         })
     },
     async getTokenSymbol(chain, contract_address, abi) {
-        const provider = await utils.get_provider(chain)
+        const provider = await provider_utils.get_provider(chain)
         const contract = new ethers.Contract(contract_address, abi, provider);
         return contract.symbol()
     }

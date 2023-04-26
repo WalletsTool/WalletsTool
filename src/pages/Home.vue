@@ -51,7 +51,7 @@ const funcList = [
     {
         title: "Uniswap批量交易",
         isBuilding: true,
-        desc: "支持 Uniswap  V3 交易（建设中）",
+        desc: "支持 Uniswap  V3 交易（即将上线，敬请期待）",
         picture: "pic/uniswap.png",
         pageName: "uniswap"
     }

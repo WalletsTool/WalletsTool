@@ -10,11 +10,6 @@ use crate::utils::{chain_config_path, coin_config_path, read_json};
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[command]
-pub fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[command]
 pub fn get_chain_list() -> Vec<Value> {
     let path = chain_config_path();
     let content = fs::read_to_string(path).unwrap();

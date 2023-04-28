@@ -423,13 +423,22 @@ function deleteSelected() {
     Notification.success('删除成功')
 }
 
-function exportExcel() {
-    if (data.value.length === 0) {
+function exportAllToExcel() {
+    exportExcel(data.value)
+}
+
+function exportSelectToExcel() {
+    const select_data = data.value.filter(item => selectedKeys.value.includes(item.address))
+    exportExcel(select_data)
+}
+
+function exportExcel(target_data) {
+    if (target_data.length === 0) {
         Notification.warning('无法导出空列表！');
         return
     }
     let export_data = [['地址', 'Nonce', '平台余额', '代币余额', '执行状态', '错误信息']]
-    data.value.forEach(item => {
+    target_data.forEach(item => {
         export_data.push([item.address, item.nonce, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg])
     })
     // 创建工作簿
@@ -477,11 +486,17 @@ function goHome() {
             <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">删除选中
             </a-button>
             <a-divider direction="vertical"/>
-            <a-button type="primary" status="success" @click="exportExcel">
+            <a-button type="primary" status="success" @click="exportAllToExcel">
                 <template #icon>
                     <icon-download/>
                 </template>
-                导出表格
+                导出全表
+            </a-button>
+            <a-button type="outline" status="normal" style="margin-left: 10px" @click="exportSelectToExcel">
+                <template #icon>
+                    <icon-download/>
+                </template>
+                导出选中
             </a-button>
             <a-button class="goHome" type="outline" status="success" @click="goHome">
                 <template #icon>

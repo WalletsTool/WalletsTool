@@ -1,12 +1,15 @@
 import {Contract, number, Provider, uint256} from "starknet";
 import {BigNumber, ethers} from "ethers";
+import {utils} from "@/scripts/common/provider.js";
 
 const starknet_balance = {
 
     // 转账方法
     async query_balance_by_address(item, contractAddress, contractABI) {
         return new Promise(async (resolve, reject) => {
-            const provider = new Provider({sequencer: {network: 'mainnet-alpha'}})
+            // 屏蔽主网api使用第三方rpc服务商的api
+            // const provider = new Provider({sequencer: {network: 'mainnet-alpha'}})
+            const provider = utils.get_provider('starknet')
             const ethContract = new Contract(contractABI, contractAddress, provider);
             const balance_result = ethContract.balanceOf(item.address);
             const decimals_result = ethContract.decimals();

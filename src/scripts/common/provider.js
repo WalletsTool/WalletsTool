@@ -1,5 +1,5 @@
 import {ethers} from "ethers";
-import {Provider} from "starknet";
+import {RpcProvider} from "starknet";
 
 const providers = {
 
@@ -77,14 +77,15 @@ const providers = {
     starknet_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://starknet.w3node.com/041c6b76eaeee394d8222542a4a1ec9fe655c9072386be63161ccf5de3e4d5d6/api', // rockx
+            // 'https://starknet.w3node.com/041c6b76eaeee394d8222542a4a1ec9fe655c9072386be63161ccf5de3e4d5d6/api', // rockx
             'https://starknet-mainnet.blastapi.io/c4e6e6fb-9364-44f2-a814-d6d6dafd36ae', // blastapi
             'https://starknet-mainnet.gateway.pokt.network/v1/lb/0d6939d2cea79d6f19b49e8f', // protal
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
-        return new Provider({
+        return new RpcProvider({
             nodeUrl: rpc_url
         })
+    //     return rpc_list[Math.floor(Math.random() * rpc_list.length)]
     },
 }
 

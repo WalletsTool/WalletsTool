@@ -25,6 +25,14 @@ const columns = [
         tooltip: 'true'
     },
     {
+        title: 'Nonce',
+        align: 'center',
+        width: '80',
+        dataIndex: 'nonce',
+        ellipsis: "true",
+        tooltip: 'true'
+    },
+    {
         title: '平台币余额',
         align: 'center',
         dataIndex: 'plat_balance',
@@ -318,6 +326,7 @@ const handleBeforeOk = () => {
     data.value.push(...importList.map(item => {
         return {
             address: item,
+            nonce: '',
             plat_balance: '',
             coin_balance: '',
             exec_status: '0',
@@ -376,6 +385,7 @@ async function queryBalance() {
     if (currentCoin.value.type === 'base' || currentCoin.value.type === 'token') {
         balanceLoading.value = true
         data.value.forEach(item => {
+            item.nonce = ''
             item.plat_balance = ''
             item.coin_balance = ''
             item.error_msg = ''
@@ -418,9 +428,9 @@ function exportExcel() {
         Notification.warning('无法导出空列表！');
         return
     }
-    let export_data = [['地址', '平台余额', '代币余额', '执行状态', '错误信息']]
+    let export_data = [['地址', 'Nonce', '平台余额', '代币余额', '执行状态', '错误信息']]
     data.value.forEach(item => {
-        export_data.push([item.address, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg])
+        export_data.push([item.address, item.nonce, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg])
     })
     // 创建工作簿
     const workbook = xlUtils.book_new();

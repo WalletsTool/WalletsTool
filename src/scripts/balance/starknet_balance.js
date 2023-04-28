@@ -1,4 +1,4 @@
-import {Contract, Account, Provider, uint256} from "starknet";
+import {Contract, number, Provider, uint256} from "starknet";
 import {BigNumber, ethers} from "ethers";
 
 const starknet_balance = {
@@ -10,10 +10,13 @@ const starknet_balance = {
             const ethContract = new Contract(contractABI, contractAddress, provider);
             const balance_result = ethContract.balanceOf(item.address);
             const decimals_result = ethContract.decimals();
-            Promise.all([balance_result, decimals_result]).then(async ([balance_result, decimals_result]) => {
+            const nonce_result = provider.getNonceForAddress(item.address);
+            Promise.all([balance_result, decimals_result, nonce_result]).then(async ([balance_result, decimals_result, nonce_result]) => {
                 const balance_str = uint256.uint256ToBN(balance_result.balance).toString()
                 const decimals_str = decimals_result.decimals.toString()
+                const nonce_str = number.toBN(nonce_result).toString()
                 item.coin_balance = parseFloat(ethers.utils.formatUnits(BigNumber.from(balance_str), decimals_str)).toFixed(6).toString()
+                item.nonce = nonce_str
                 resolve()
             }).catch((err) => {
                 item.coin_balance = ''

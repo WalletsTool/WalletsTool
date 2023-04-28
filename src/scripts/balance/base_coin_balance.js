@@ -26,10 +26,14 @@ const base_coin_balance = {
         return new Promise(async (resolve, reject) => {
             // 随机获取rpc服务
             const provider = utils.get_provider(chain)
-            provider.getBalance(item.address).then((balance) => {
-                item.plat_balance = parseFloat(ethers.utils.formatEther(balance)).toFixed(6).toString()
+            const nonce = provider.getTransactionCount(item.address)
+            const balance_wei = provider.getBalance(item.address)
+            Promise.all([balance_wei, nonce]).then(([balance_wei, nonce]) => {
+                item.plat_balance = parseFloat(ethers.utils.formatEther(balance_wei)).toFixed(6).toString()
+                item.nonce = nonce
                 resolve()
             }).catch((err) => {
+                item.nonce = ''
                 item.plat_balance = ''
                 item.error_msg = '查询平台余额失败！'
                 console.log('查询平台余额失败！', err)

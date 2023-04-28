@@ -30,10 +30,13 @@ const token_balance = {
             const provider = utils.get_provider(chain)
             let balance_wei = contract.connect(provider).balanceOf(item.address)
             let decimals = contract.connect(provider).decimals();
-            Promise.all([balance_wei, decimals]).then(async (values) => {
+            let nonce = provider.getTransactionCount(item.address)
+            Promise.all([balance_wei, decimals, nonce]).then(async (values) => {
                 item.coin_balance = parseFloat(ethers.utils.formatUnits(values[0], values[1])).toFixed(4).toString()
+                item.nonce = values[2]
                 resolve()
             }).catch((err) => {
+                item.nonce = ''
                 item.coin_balance = ''
                 item.error_msg = '查询代币余额失败！'
                 console.log('查询代币余额失败！', err)

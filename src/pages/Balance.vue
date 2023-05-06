@@ -190,6 +190,10 @@ function deleteToken() {
         Notification.warning(' StarkNet 暂不支持删除代币！');
         return
     }
+    if (rpcValue.value === 'okt') {
+        Notification.warning(' OKT Chain 暂不支持删除代币！');
+        return
+    }
     deleteTokenVisible.value = true
 }
 
@@ -215,6 +219,10 @@ async function deleteTokenConfirm() {
 function handleAddCoinClick() {
     if (rpcValue.value === 'starknet') {
         Notification.warning(' StarkNet 暂不支持添加代币！');
+        return
+    }
+    if (rpcValue.value === 'okt') {
+        Notification.warning(' OKT Chain 暂不支持添加代币！');
         return
     }
     addCoinVisible.value = true
@@ -533,14 +541,18 @@ function goHome() {
         <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
                   :style="{'margin-top':'10px'}">
             <template #label="{ data }">
-                <img alt="" :src="data?.pic_url" style="width: 18px;height: 18px">
-                <span style="margin-left: 10px">{{ data?.chain }}</span>
-                <span style="margin-left: 50px">{{ data?.scan_url }}</span>
+                <div style="display: flex;flex-direction: row;align-items: center;">
+                    <img alt="" :src="data?.pic_url" style="width: 18px;height: 18px">
+                    <span style="margin-left: 10px">{{ data?.chain }}</span>
+                    <span style="margin-left: 50px">{{ data?.scan_url }}</span>
+                </div>
             </template>
             <template #option="{ data }">
-                <img alt="" :src="data?.pic_url" style="width: 16px;height: 16px">
-                <span style="margin-left: 10px">{{ data?.chain }}</span>
-                <span style="position: absolute;right: 10px;">{{ data?.scan_url }}</span>
+                <div style="display: flex;flex-direction: row;align-items: center;">
+                    <img alt="" :src="data?.pic_url" style="width: 16px;height: 16px">
+                    <span style="margin-left: 10px">{{ data?.chain }}</span>
+                    <span style="position: absolute;right: 10px;">{{ data?.scan_url }}</span>
+                </div>
             </template>
         </a-select>
         <!-- 管理代币 -->

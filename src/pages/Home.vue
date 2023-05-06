@@ -31,13 +31,13 @@ onMounted(() => {
 const funcList = [
     {
         title: "钱包多对多转账",
-        desc: "目前支持链：ETH、OP、ARB、BSC、Polygon（持续更新中）",
+        desc: "目前支持链：ETH、OP、ARB、BSC、Polygon、OKT_Chain（持续更新中）",
         picture: "pic/transfer.png",
         pageName: "transfer"
     },
     {
         title: "链上余额查询",
-        desc: "目前支持链：ETH、OP、ARB、BSC、Polygon、StarkNet（持续更新中）",
+        desc: "目前支持链：ETH、OP、ARB、BSC、Polygon、StarkNet、OKT_Chain（持续更新中）",
         picture: "pic/balance.png",
         pageName: "balance"
     },

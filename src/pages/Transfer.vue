@@ -277,6 +277,10 @@ async function coinChange(value) {
 
 // 导入事件触发
 function handleAddCoinClick() {
+    if (rpcValue.value === 'okt') {
+        Notification.warning(' OKT Chain 暂不支持添加代币！');
+        return
+    }
     addCoinVisible.value = true
 }
 
@@ -519,6 +523,10 @@ async function queryBalance() {
 
 // 删除代币方法
 function deleteToken() {
+    if (rpcValue.value === 'okt') {
+        Notification.warning(' OKT Chain 暂不支持删除代币！');
+        return
+    }
     deleteTokenVisible.value = true
 }
 
@@ -526,7 +534,7 @@ function deleteToken() {
 async function deleteTokenConfirm() {
     console.log('确认删除代币')
     deleteTokenVisible.value = false
-    await invoke("remove_coin", {chain: rpcValue.value, page: 'transfer',key: currentCoin.value.key}).then(() => {
+    await invoke("remove_coin", {chain: rpcValue.value, page: 'transfer', key: currentCoin.value.key}).then(() => {
         Notification.success('删除成功！');
         // 删除成功后重新获取代币列表
         rpcChange()
@@ -940,14 +948,18 @@ function goHome() {
         <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
                   :style="{'margin-top':'10px'}">
             <template #label="{ data }">
-                <img alt="" :src="data?.pic_url" style="width: 18px;height: 18px">
-                <span style="margin-left: 10px">{{ data?.chain }}</span>
-                <span style="margin-left: 50px">{{ data?.scan_url }}</span>
+                <div style="display: flex;flex-direction: row;align-items: center;">
+                    <img alt="" :src="data?.pic_url" style="width: 18px;height: 18px">
+                    <span style="margin-left: 10px">{{ data?.chain }}</span>
+                    <span style="margin-left: 50px">{{ data?.scan_url }}</span>
+                </div>
             </template>
             <template #option="{ data }">
-                <img alt="" :src="data?.pic_url" style="width: 16px;height: 16px">
-                <span style="margin-left: 10px">{{ data?.chain }}</span>
-                <span style="position: absolute;right: 10px;">{{ data?.scan_url }}</span>
+                <div style="display: flex;flex-direction: row;align-items: center;">
+                    <img alt="" :src="data?.pic_url" style="width: 16px;height: 16px">
+                    <span style="margin-left: 10px">{{ data?.chain }}</span>
+                    <span style="position: absolute;right: 10px;">{{ data?.scan_url }}</span>
+                </div>
             </template>
         </a-select>
         <!-- 管理代币 -->

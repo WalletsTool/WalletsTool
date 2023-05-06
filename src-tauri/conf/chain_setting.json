@@ -53,6 +53,15 @@
       "scan_api": "",
       "verify_api": "",
       "check_verify_api": ""
+    },
+    {
+      "key": "okt",
+      "chain": "OKT Chain",
+      "scan_url": "https://www.oklink.com/cn/oktc",
+      "pic_url": "chainIcons/okt.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

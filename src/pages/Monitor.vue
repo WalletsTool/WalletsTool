@@ -182,6 +182,10 @@ function deleteToken() {
         Notification.warning(' StarkNet 暂不支持删除代币！');
         return
     }
+    if (rpcValue.value === 'okt') {
+        Notification.warning(' OKT Chain 暂不支持删除代币！');
+        return
+    }
     deleteTokenVisible.value = true
 }
 
@@ -207,6 +211,10 @@ async function deleteTokenConfirm() {
 function handleAddCoinClick() {
     if (rpcValue.value === 'starknet') {
         Notification.warning(' StarkNet 暂不支持添加代币！');
+        return
+    }
+    if (rpcValue.value === 'okt') {
+        Notification.warning(' OKT Chain 暂不支持添加代币！');
         return
     }
     addCoinVisible.value = true

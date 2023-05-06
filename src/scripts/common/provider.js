@@ -79,6 +79,7 @@ const providers = {
         const rpc_list = [
             // 'https://starknet.w3node.com/041c6b76eaeee394d8222542a4a1ec9fe655c9072386be63161ccf5de3e4d5d6/api', // rockx
             'https://starknet-mainnet.blastapi.io/c4e6e6fb-9364-44f2-a814-d6d6dafd36ae', // blastapi
+            'https://starknet-mainnet.blastapi.io/461b72a6-8955-4f1d-a558-f3ec9043b2c1', // blastapi
             'https://starknet-mainnet.gateway.pokt.network/v1/lb/0d6939d2cea79d6f19b49e8f', // protal
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
@@ -86,6 +87,17 @@ const providers = {
             nodeUrl: rpc_url
         })
     //     return rpc_list[Math.floor(Math.random() * rpc_list.length)]
+    },
+    okt_provider() {
+        // rpc 节点
+        const rpc_list = [
+            // 'https://exchainrpc.okex.org'
+            'https://oKc-mainnet.gateway.pokt.network/v1/lb/0d6939d2cea79d6f19b49e8f' // pokt
+            // 'https://exchaintestrpc.okex.org'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+        return new ethers.providers.JsonRpcProvider(rpc_url, 66)
+        // return new ethers.providers.JsonRpcProvider(rpc_url, 65)
     },
 }
 
@@ -103,6 +115,8 @@ export const utils = {
             return providers.polygon_provider()
         } else if (key === 'starknet') {
             return providers.starknet_provider()
+        } else if (key === 'okt') {
+            return providers.okt_provider()
         }
     },
 }

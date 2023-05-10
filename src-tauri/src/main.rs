@@ -14,7 +14,7 @@ fn main() {
             web3_tools::chain_config::get_coin_list,
             web3_tools::chain_config::add_coin,
             web3_tools::chain_config::remove_coin,
-            web3_tools::utils::download_file,])
+            web3_tools::utils::download_file])
         .plugin(plugins::ToolsExtra::default())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

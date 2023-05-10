@@ -1,0 +1,12 @@
+{
+  "coin_list": [
+    {
+      "key": "geth",
+      "coin": "GETH",
+      "type": "base",
+      "contract_type": "ERC20",
+      "contract_address": "",
+      "abi": ""
+    }
+  ]
+}

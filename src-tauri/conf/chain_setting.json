@@ -62,6 +62,15 @@
       "scan_api": "",
       "verify_api": "",
       "check_verify_api": ""
+    },
+    {
+      "key": "geth",
+      "chain": "Goerli Ethereum TestNet",
+      "scan_url": "https://cn.etherscan.com/",
+      "pic_url": "chainIcons/eth.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

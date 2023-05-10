@@ -17,6 +17,16 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 1)
     },
+    geth_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://eth-goerli.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
+            'https://eth-goerli.nodereal.io/v1/ea08c11bd0874ce19cee7fc6f63b6cf8', // nodereal_rpc
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 5)
+    },
     binance_provider() {
         // rpc 节点
         const rpc_list = [
@@ -105,6 +115,8 @@ export const utils = {
     get_provider(key) {
         if (key === 'eth') {
             return providers.eth_provider()
+        } else if (key === 'geth') {
+            return providers.geth_provider()
         } else if (key === 'arb') {
             return providers.arb_provider()
         } else if (key === 'op') {

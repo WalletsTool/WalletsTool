@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use std::{path::PathBuf, process::Command, time::{SystemTime, UNIX_EPOCH}};
+use std::{path::PathBuf, process::Command};
 
 use serde::{ser::Serializer, Serialize};
 use tauri::command;

@@ -32,27 +32,27 @@ const funcList = [
     {
         title: "钱包多对多转账",
         desc: "目前支持链：ETH（主网、Goerli）、OP、ARB、BSC、Polygon、OKT_Chain（持续更新中）",
-        picture: "pic/transfer.png",
+        picture: "avatar/transfer.png",
         pageName: "transfer"
     },
     {
         title: "链上余额查询",
         desc: "目前支持链：ETH（主网、Goerli）、OP、ARB、BSC、Polygon、StarkNet、OKT_Chain（持续更新中）",
-        picture: "pic/balance.png",
+        picture: "avatar/balance.png",
         pageName: "balance"
     },
     {
         title: "链上地址监控",
         isBuilding: true,
         desc: "目前支持链：ETH、OP、ARB、BSC、Polygon（建设中）",
-        picture: "pic/monitor.png",
+        picture: "avatar/monitor.png",
         pageName: "monitor"
     },
     {
         title: "Uniswap批量交易",
         isBuilding: true,
         desc: "支持 Uniswap  V3 交易（即将上线，敬请期待）",
-        picture: "pic/uniswap.png",
+        picture: "avatar/uniswap.png",
         pageName: "uniswap"
     }
 ]

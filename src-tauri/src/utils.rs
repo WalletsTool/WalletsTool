@@ -1,11 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
 use serde_json::{self};
 
-pub fn exists(path: &Path) -> bool {
-    Path::new(path).exists()
-}
+// pub fn exists(path: &Path) -> bool {
+//     Path::new(path).exists()
+// }
 
 pub fn chain_config_path() -> PathBuf {
     Path::new(format!("conf/chain_setting.json").as_str()).to_owned()

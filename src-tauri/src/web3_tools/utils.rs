@@ -1,14 +1,11 @@
-use std::fs::File;
-use std::io::copy;
 use std::path::Path;
 
-use tauri::api::http::{ClientBuilder, HttpRequestBuilder, ResponseType};
 use tauri::command;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 // 下载文件到指定路径
 #[command]
-pub fn download_file(url: &str, file_path: &Path) -> () {
+pub fn download_file(_url: &str, _file_path: &Path) -> () {
     // let client = ClientBuilder::new().build().unwrap();
     // // 请求文件
     // let response = client.send(

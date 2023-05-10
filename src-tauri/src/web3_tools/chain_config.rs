@@ -1,7 +1,6 @@
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use std::ops::Index;
 
 use serde_json::{json, Value};
 use tauri::command;
@@ -49,7 +48,7 @@ pub fn remove_coin(chain: &str, page: &str, key: &str) -> () {
     let content = fs::read_to_string(path.clone()).unwrap();
     let mut setting_json = read_json(&content).unwrap_or_else(|_| json!({}));
     let binding = Vec::new();
-    let mut coin_list = setting_json["coin_list"].as_array().unwrap_or(&binding).to_owned();
+    let coin_list = setting_json["coin_list"].as_array().unwrap_or(&binding).to_owned();
     let coin_list_new = coin_list.iter().filter(|x| x["key"] != key).collect::<Vec<&Value>>();
     setting_json["coin_list"] = json!(coin_list_new);
     // 写入文件

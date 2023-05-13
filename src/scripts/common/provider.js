@@ -27,6 +27,16 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 5)
     },
+    scroll_eth_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://scroll-alphanet.blastapi.io/d6df6b9f-6b9a-470e-b529-708c36a65c32', // blastapi_rpc
+            // 'https://scroll-alpha.unifra.io/v1/5c1ce5f1ab9b4fc6b063b8e9afc58f5c', // unifra_rpc
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 534353)
+    },
     binance_provider() {
         // rpc 节点
         const rpc_list = [
@@ -117,6 +127,8 @@ export const utils = {
             return providers.eth_provider()
         } else if (key === 'geth') {
             return providers.geth_provider()
+        } else if (key === 'scroll') {
+            return providers.scroll_eth_provider()
         } else if (key === 'arb') {
             return providers.arb_provider()
         } else if (key === 'op') {

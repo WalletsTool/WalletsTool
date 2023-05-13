@@ -194,6 +194,14 @@ function deleteToken() {
         Notification.warning(' OKT Chain 暂不支持删除代币！');
         return
     }
+    if (rpcValue.value === 'geth') {
+        Notification.warning(' Goerli Ethereum 暂不支持删除代币！');
+        return
+    }
+    if (rpcValue.value === 'scroll') {
+        Notification.warning(' Scroll Alpha TestNet 暂不支持删除代币！');
+        return
+    }
     deleteTokenVisible.value = true
 }
 
@@ -223,6 +231,14 @@ function handleAddCoinClick() {
     }
     if (rpcValue.value === 'okt') {
         Notification.warning(' OKT Chain 暂不支持添加代币！');
+        return
+    }
+    if (rpcValue.value === 'geth') {
+        Notification.warning(' Goerli Ethereum 暂不支持添加代币！');
+        return
+    }
+    if (rpcValue.value === 'scroll') {
+        Notification.warning(' Scroll Alpha TestNet 暂不支持添加代币！');
         return
     }
     addCoinVisible.value = true

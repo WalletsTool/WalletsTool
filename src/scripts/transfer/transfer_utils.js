@@ -51,7 +51,7 @@ const transfer_utils = {
             if (config.limit_type === '1') {
                 resolve(await wallet.estimateGas({from: wallet.address, to: to_address}))
             } else if (config.limit_type === '2') {
-                resolve(BigNumber.from(config.limit_value))
+                resolve(BigNumber.from(config.limit_count))
             } else if (config.limit_type === '3') {
                 let gas_limit_final = Math.floor(Math.random() * (Number(config.limit_count_list[1]) - Number(config.limit_count_list[0])) + Number(config.limit_count_list[0]));
                 resolve(BigNumber.from(gas_limit_final.toString()))
@@ -67,7 +67,7 @@ const transfer_utils = {
             if (config.limit_type === '1') {
                 resolve(await contract.connect(wallet).estimateGas.transfer(to_address, transfer_amount))
             } else if (config.limit_type === '2') {
-                resolve(BigNumber.from(config.limit_value))
+                resolve(BigNumber.from(config.limit_count))
             } else if (config.limit_type === '3') {
                 let gas_limit_final = Math.floor(Math.random() * (Number(config.limit_count_list[1]) - Number(config.limit_count_list[0])) + Number(config.limit_count_list[0]));
                 resolve(BigNumber.from(gas_limit_final.toString()))

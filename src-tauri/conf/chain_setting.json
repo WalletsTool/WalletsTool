@@ -71,6 +71,15 @@
       "scan_api": "",
       "verify_api": "",
       "check_verify_api": ""
+    },
+    {
+      "key": "scroll",
+      "chain": "Scroll Alpha Testnet",
+      "scan_url": "https://blockscout.scroll.io/",
+      "pic_url": "chainIcons/scroll.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

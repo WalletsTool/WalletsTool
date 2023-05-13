@@ -281,6 +281,14 @@ function handleAddCoinClick() {
         Notification.warning(' OKT Chain 暂不支持添加代币！');
         return
     }
+    if (rpcValue.value === 'geth') {
+        Notification.warning(' Goerli Ethereum 暂不支持添加代币！');
+        return
+    }
+    if (rpcValue.value === 'scroll') {
+        Notification.warning(' Scroll Alpha TestNet 暂不支持添加代币！');
+        return
+    }
     addCoinVisible.value = true
 }
 
@@ -527,6 +535,14 @@ function deleteToken() {
         Notification.warning(' OKT Chain 暂不支持删除代币！');
         return
     }
+    if (rpcValue.value === 'geth') {
+        Notification.warning(' Goerli Ethereum 暂不支持删除代币！');
+        return
+    }
+    if (rpcValue.value === 'scroll') {
+        Notification.warning(' Scroll Alpha TestNet 暂不支持删除代币！');
+        return
+    }
     deleteTokenVisible.value = true
 }
 
@@ -603,6 +619,7 @@ async function iter_transfer() {
                 left_amount_list: [form.send_min_count, form.send_max_count],  // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
                 amount_precision: Number(form.amount_precision),  // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
                 limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
+                limit_count: form.limit_count, // limit_count 指定数量 (limit_type 为 2 时生效)
                 limit_count_list: [form.limit_min_count, form.limit_max_count],
                 gas_price_type: form.gas_price_type, // gas price类型 1: 自动 2：固定gas price 3：gas price溢价率
                 gas_price_rate: Number(form.gas_price_rate) / 100,  // gas price溢价率，0.05代表gas price是当前gas price的105%

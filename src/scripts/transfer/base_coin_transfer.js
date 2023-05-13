@@ -43,6 +43,7 @@ const base_coin_transfer = {
                 const gas_fee = ethers.utils.formatEther(values[1].mul(values[3]))
 
                 console.log('序号：', index, '当前余额为:', balance)
+                console.log('序号：', index, '当前 gas_limit 为:', values[3].toNumber())
                 console.log('序号：', index, '当前设置 gas_price 为:', ethers.utils.formatUnits(values[1], 'gwei'), ' Gwei')
                 console.log('序号：', index, '当前预估 gas_fee 为:', gas_fee)
 
@@ -55,6 +56,8 @@ const base_coin_transfer = {
                         }
                         // 全部转账
                         transfer_amount = values[0].sub(values[1].mul(values[3]))
+                        // 处理scroll无法转账为0的问题
+                        if (config.chain === 'scroll') transfer_amount = transfer_amount.sub(ethers.utils.parseEther('0.0000000001'))
                     } else if (config.transfer_type === '2') {
                         if ((parseFloat(config.transfer_amount) + parseFloat(gas_fee)) >= parseFloat(balance)) {
                             reject('当前余额不足，不做转账操作！')

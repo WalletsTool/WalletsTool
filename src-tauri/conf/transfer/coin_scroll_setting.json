@@ -1,0 +1,12 @@
+{
+  "coin_list": [
+    {
+      "key": "eth",
+      "coin": "ETH",
+      "type": "base",
+      "contract_type": "ERC20",
+      "contract_address": "",
+      "abi": ""
+    }
+  ]
+}

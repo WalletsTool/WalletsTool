@@ -975,7 +975,7 @@ function goHome() {
                 <div style="display: flex;flex-direction: row;align-items: center;">
                     <img alt="" :src="data?.pic_url" style="width: 16px;height: 16px">
                     <span style="margin-left: 10px">{{ data?.chain }}</span>
-                    <span style="position: absolute;right: 10px;">{{ data?.scan_url }}</span>
+                    <span style="position: absolute;right: 20px;">{{ data?.scan_url }}</span>
                 </div>
             </template>
         </a-select>

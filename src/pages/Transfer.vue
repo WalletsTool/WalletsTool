@@ -289,6 +289,10 @@ function handleAddCoinClick() {
         Notification.warning(' Scroll Alpha TestNet 暂不支持添加代币！');
         return
     }
+    if (rpcValue.value === 'linea') {
+        Notification.warning(' Linea MainNet 暂不支持添加代币！');
+        return
+    }
     addCoinVisible.value = true
 }
 
@@ -541,6 +545,10 @@ function deleteToken() {
     }
     if (rpcValue.value === 'scroll') {
         Notification.warning(' Scroll Alpha TestNet 暂不支持删除代币！');
+        return
+    }
+    if (rpcValue.value === 'linea') {
+        Notification.warning(' Linea MainNet 暂不支持删除代币！');
         return
     }
     deleteTokenVisible.value = true

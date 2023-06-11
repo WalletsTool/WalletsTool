@@ -10,6 +10,15 @@
       "check_verify_api": "https://api.etherscan.io/api?module=contract&action=checkproxyverification&apikey=5QKYWV24Q7E4NHXV928Q62BDIPHTJJSYH3&guid="
     },
     {
+      "key": "linea",
+      "chain": "Linea",
+      "scan_url": "https://lineascan.build/",
+      "pic_url": "chainIcons/linea.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
+    },
+    {
       "key": "op",
       "chain": "Optimism",
       "scan_url": "https://www.optimism.io/",

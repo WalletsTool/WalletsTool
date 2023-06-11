@@ -17,6 +17,18 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 1)
     },
+    linea_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://linea.blockpi.network/v1/rpc/public',
+            'https://1rpc.io/linea',
+            'https://rpc.linea.build',
+            'https://linea.drpc.org'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 59144)
+    },
     geth_provider() {
         // rpc 节点
         const rpc_list = [
@@ -129,6 +141,8 @@ export const utils = {
     get_provider(key) {
         if (key === 'eth') {
             return providers.eth_provider()
+        } else if (key === 'linea') {
+            return providers.linea_provider()
         } else if (key === 'geth') {
             return providers.geth_provider()
         } else if (key === 'scroll') {

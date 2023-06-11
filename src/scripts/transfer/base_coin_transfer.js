@@ -110,7 +110,7 @@ const base_coin_transfer = {
                 }
             }).catch(err => {
                 console.log(err)
-                reject('RPC节点故障导致账户基础信息获取失败！')
+                reject('获取基础信息失败：' + err)
             })
         })
     }

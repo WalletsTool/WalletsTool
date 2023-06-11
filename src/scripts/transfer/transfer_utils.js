@@ -24,8 +24,8 @@ const transfer_utils = {
                 provider.getGasPrice().then((gas_price) => {
                     resolve(gas_price)
                 }).catch((err) => {
-                    console.log('获取gas_price 失败', err)
-                    reject('获取gas_price 失败')
+                    console.log('获取gas_price 失败，', err)
+                    reject('获取gas_price 失败，' + err)
                 })
             } else if (config.gas_price_type === '2') {
                 resolve(ethers.utils.parseUnits(config.max_gas_price, 'gwei'))
@@ -57,8 +57,8 @@ const transfer_utils = {
                 wallet.estimateGas({from: wallet.address, to: to_address}).then((gas_limit) => {
                     resolve(gas_limit)
                 }).catch((err) => {
-                    console.log('获取gas_limit 失败', err)
-                    reject('获取gas_limit 失败')
+                    console.log('获取gas_limit 失败，', err)
+                    reject('获取gas_limit 失败，' + err)
                 })
             } else if (config.limit_type === '2') {
                 resolve(BigNumber.from(config.limit_count))
@@ -75,7 +75,12 @@ const transfer_utils = {
         return new Promise(async (resolve, reject) => {
             // 计算 gas_limit
             if (config.limit_type === '1') {
-                resolve(await contract.connect(wallet).estimateGas.transfer(to_address, transfer_amount))
+                contract.connect(wallet).estimateGas.transfer(to_address, transfer_amount).then((gas_limit) => {
+                    resolve(gas_limit)
+                }).catch((err) => {
+                    console.log('获取gas_limit 失败，', err)
+                    reject('获取gas_limit 失败，' + err)
+                })
             } else if (config.limit_type === '2') {
                 resolve(BigNumber.from(config.limit_count))
             } else if (config.limit_type === '3') {

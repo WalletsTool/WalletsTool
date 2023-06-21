@@ -97,11 +97,20 @@ const base_coin_transfer = {
                         gasPrice: values[1],
                         gasLimit: values[3]
                     }
-
+                    item.error_msg = '发送交易...'
                     wallet.sendTransaction(tx).then(async res => {
                         console.log('序号：', index, '交易 hash 为：', res.hash)
-                        await common_utils.sleep(config.delay)
-                        resolve(res.hash)
+                        item.error_msg = '等待交易结果...'
+                        provider.waitForTransaction(res.hash).then(async receipt => {
+                            if(receipt.status === 1) {
+                                await common_utils.sleep(config.delay)
+                                resolve(res.hash)
+                            }else {
+                                reject('交易失败：' + JSON.stringify(receipt))
+                            }
+                        }).catch(err => {
+                            reject(err)
+                        })
                     }).catch(err => {
                         reject(err)
                     })

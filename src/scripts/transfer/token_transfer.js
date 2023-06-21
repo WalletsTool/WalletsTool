@@ -76,13 +76,23 @@ const token_transfer = {
                     const gasLimit = await utils.getContractGasLimit(config, contract, wallet, item.to_addr, transfer_amount)
                     console.log('序号：', index, 'gasLimit:', gasLimit)
 
+                    item.error_msg = '发送交易...'
                     contract.connect(wallet).transfer(item.to_addr, transfer_amount, {
                         gasPrice: values[2],
                         gasLimit: gasLimit
                     }).then(async res => {
                         console.log('序号：', index, '交易 hash 为：', res.hash)
-                        await common_utils.sleep(config.delay)
-                        resolve(res.hash)
+                        item.error_msg = '等待交易结果...'
+                        provider.waitForTransaction(res.hash).then(async receipt => {
+                            if(receipt.status === 1) {
+                                await common_utils.sleep(config.delay)
+                                resolve(res.hash)
+                            }else {
+                                reject('交易失败：' + JSON.stringify(receipt))
+                            }
+                        }).catch(err => {
+                            reject(err)
+                        })
                     }).catch(err => {
                         reject(err)
                     })

@@ -83,7 +83,7 @@ const token_transfer = {
                     }).then(async res => {
                         console.log('序号：', index, '交易 hash 为：', res.hash)
                         item.error_msg = '等待交易结果...'
-                        provider.waitForTransaction(res.hash).then(async receipt => {
+                        provider.waitForTransaction(res.hash,null,30000).then(async receipt => {
                             if(receipt.status === 1) {
                                 await common_utils.sleep(config.delay)
                                 resolve(res.hash)

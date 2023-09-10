@@ -446,7 +446,7 @@ const handleBeforeOk = () => {
   if (importModalType.value === 'send') {
     let importList = importText.value.split('\n').filter(item => item !== '')
     const total_count = importList.length
-    importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.key === item))
+    // importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.key === item))
     const success_count = importList.length
     const fail_count = total_count - success_count
     data.value.push(...importList.map(item => {
@@ -475,7 +475,7 @@ const handleBeforeOk = () => {
     return true
   } else if (importModalType.value === 'receive') {
     // 导入接收地址
-    const importList = importText.value.split('\n')
+    const importList = importText.value.split('\n').filter(item => item !== '')
     if (data.value.length === 0) {
       Notification.warning('请先导入私钥！');
       return false
@@ -603,6 +603,7 @@ async function transferFnc(inputData) {
     if (stopFlag.value) {
       Notification.warning('已停止执行！')
     } else {
+      debugger
       const retryData = inputData.filter(item => item.retry_flag === true)
       if (form.error_retry === '1' && retryData.length > 0) {
         //  存在重试数据
@@ -631,14 +632,20 @@ function startTransfer() {
     Notification.warning('请先导入私钥！');
     return
   }
-  startLoading.value = true
-  stopFlag.value = false
-  stopStatus.value = false
+  if(data.value.find(item => !item.private_key || !item.to_addr)){
+    Notification.warning('请检查是否所有私钥都有对应的转账地址！');
+    return
+  }
   validateForm().then(async () => {
     console.log('验证通过')
+    startLoading.value = true
+    stopFlag.value = false
+    stopStatus.value = false
     data.value.forEach(item => {
       item.exec_status = '0'
       item.error_msg = ''
+      item.retry_flag = false
+      item.error_count = 0
     })
     await transferFnc(data.value);
   }).catch(() => {

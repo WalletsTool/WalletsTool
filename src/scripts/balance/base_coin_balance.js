@@ -8,17 +8,24 @@ const base_coin_balance = {
         return new Promise(async (resolve, reject) => {
             // 随机获取rpc服务
             const provider = utils.get_provider(chain)
-            // 通过私钥创建钱包
-            let wallet = new ethers.Wallet(item.private_key, provider);
-            wallet.getBalance().then((balance) => {
-                item.plat_balance = parseFloat(ethers.utils.formatEther(balance)).toFixed(6).toString()
-                resolve()
-            }).catch((err) => {
+            try {
+                // 通过私钥创建钱包
+                let wallet = new ethers.Wallet(item.private_key, provider);
+                wallet.getBalance().then((balance) => {
+                    item.plat_balance = parseFloat(ethers.utils.formatEther(balance)).toFixed(6).toString()
+                    resolve()
+                }).catch((err) => {
+                    item.plat_balance = ''
+                    item.error_msg = '查询平台余额失败！'
+                    console.log('查询平台余额失败！', err)
+                    resolve()
+                })
+            }catch (err){
                 item.plat_balance = ''
-                item.error_msg = '查询平台余额失败！'
-                console.log('查询平台余额失败！', err)
+                item.error_msg = '创建钱包失败，请检查私钥是否正确！'
+                console.log('创建钱包失败！', err)
                 resolve()
-            })
+            }
         })
     },
     // 通过address查询余额方法

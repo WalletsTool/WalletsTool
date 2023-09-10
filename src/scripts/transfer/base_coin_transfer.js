@@ -24,7 +24,7 @@ const base_coin_transfer = {
     // 转账方法
     single_transfer(index, item, config) {
         return new Promise((resolve, reject) => {
-            item.retry_flag = undefined
+            item.retry_flag = false
             // 随机获取rpc服务
             const provider = provider_utils.get_provider(config.chain)
             // 通过私钥创建钱包

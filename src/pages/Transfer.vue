@@ -1,10 +1,11 @@
 <script setup name="transfer">
 import {IconDelete, IconDoubleLeft, IconPlus} from '@arco-design/web-vue/es/icon';
 import {useRouter} from "vue-router";
-import {nextTick, onBeforeMount, onMounted, reactive, ref, watch} from "vue";
+import {nextTick, onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch} from "vue";
 import {invoke} from "@tauri-apps/api/tauri";
 import {Notification} from "@arco-design/web-vue";
 import utils from "@/scripts/transfer/transfer_utils.js";
+import {utils as rpcUtils}  from "@/scripts/common/provider.js";
 import base_coin_transfer from "@/scripts/transfer/base_coin_transfer.js";
 import token_transfer from "@/scripts/transfer/token_transfer.js";
 import {ethers} from "ethers";
@@ -160,6 +161,8 @@ let startLoading = ref(false)
 let stopFlag = ref(false)
 // 转账是否已经停止
 let stopStatus = ref(true)
+// 获取gas
+const timer = setInterval(fetchGas, 5000)
 
 watch(stopStatus, (newValue, oldValue) => {
   console.log(`count的值已从${oldValue}更新为${newValue}`);
@@ -201,6 +204,12 @@ onMounted(() => {
         }
       }, 200)
     })()
+  }
+})
+
+onBeforeUnmount(() => {
+  if(timer){
+    clearInterval(timer)
   }
 })
 
@@ -269,6 +278,18 @@ async function rpcChange() {
   coinValue.value = coinOptions.value[0].key
   currentCoin.value = coinOptions.value[0]
   currentRpc.value = rpcOptions.value.filter(item => item.key === rpcValue.value)[0]
+  currentRpc.value.gas_price = '查询中...'
+}
+
+function fetchGas(){
+  console.log('fetchGas')
+  // 获取gas价格
+  rpcUtils.get_base_gas_price(rpcValue.value).then((res) => {
+    currentRpc.value.gas_price = res.toFixed(2)
+  }).catch((err) => {
+    console.log(err)
+    currentRpc.value.gas_price = '查询错误'
+  })
 }
 
 // coin变化事件
@@ -1005,10 +1026,11 @@ function goHome() {
     <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
               :style="{'margin-top':'10px'}">
       <template #label="{ data }">
-        <div style="display: flex;flex-direction: row;align-items: center;">
+        <div style="display: flex;flex-direction: row;align-items: center;width: 100%">
           <img alt="" :src="data?.pic_url" style="width: 18px;height: 18px">
           <span style="margin-left: 10px">{{ data?.chain }}</span>
           <span style="margin-left: 50px">{{ data?.scan_url }}</span>
+          <span style="flex:1;text-align: end;color: #00b42a">Gas Price: {{ data?.gas_price ?? '未知' }}</span>
         </div>
       </template>
       <template #option="{ data }">

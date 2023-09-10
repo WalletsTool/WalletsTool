@@ -79,7 +79,7 @@ const providers = {
             'https://rpc.ankr.com/polygon/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
             'https://polygon-mainnet.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
             // 'https://polygon.blockpi.network/v1/rpc/b81b8e70c73f7ed6794ce2091ee9b340b4c1ebb5', // blockpi_rpc
-            'https://skilled-black-gas.matic.quiknode.pro/79466695ef6e44dd393e18b5e69b27a30523db3b/', // quiknode_rpc
+            // 'https://skilled-black-gas.matic.quiknode.pro/79466695ef6e44dd393e18b5e69b27a30523db3b/', // quiknode_rpc
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
@@ -161,4 +161,15 @@ export const utils = {
             return providers.okt_provider()
         }
     },
+    get_base_gas_price(key) {
+        return new Promise((resolve, reject) => {
+            this.get_provider(key)
+                .getGasPrice()
+                .then((gas_price) => {
+                    resolve(Number(ethers.utils.formatUnits(gas_price, 'gwei')))
+                }).catch((err) => {
+                reject(err)
+            })
+        })
+    }
 }

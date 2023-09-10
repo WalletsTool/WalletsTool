@@ -22,7 +22,17 @@ const transfer_utils = {
         return new Promise(async (resolve, reject) => {
             if (config.gas_price_type === '1') {
                 provider.getGasPrice().then((gas_price) => {
-                    resolve(gas_price)
+                    let gas_price_final = gas_price
+                    // 如果存在最大值 gas price 限制
+                    if(config.max_gas_price){
+                        if (Number(ethers.utils.formatUnits(gas_price, 'gwei')) > Number(config.max_gas_price)) {
+                            resolve('base gas price 超出最大值限制')
+                        }  else{
+                            resolve(gas_price_final)
+                        }
+                    }else{
+                        resolve(gas_price_final)
+                    }
                 }).catch((err) => {
                     console.log('获取gas_price 失败，', err)
                     reject('获取gas_price 失败，' + err)
@@ -34,12 +44,22 @@ const transfer_utils = {
                 let gas_price_final = BigNumber.from('0')
                 provider.getGasPrice().then((gas_price) => {
                     const gas_price_by_rate = BigNumber.from(Math.ceil(Number(gas_price.toString()) * (1 + Number(config.gas_price_rate))).toString())
-                    if (config.max_gas_price && Number(ethers.utils.formatUnits(gas_price_by_rate, 'gwei')) >= Number(config.max_gas_price)) {
-                        gas_price_final = ethers.utils.parseUnits(config.max_gas_price, 'gwei')
-                    } else {
-                        gas_price_final = gas_price_by_rate
+                    gas_price_final = gas_price_by_rate
+                    let flag = false
+                    if (config.max_gas_price) {
+                        if (Number(ethers.utils.formatUnits(gas_price, 'gwei')) > Number(config.max_gas_price)) {
+                            flag = true
+                        } else {
+                            if (Number(ethers.utils.formatUnits(gas_price_by_rate, 'gwei')) >= Number(config.max_gas_price)) {
+                                gas_price_final = ethers.utils.parseUnits(config.max_gas_price, 'gwei')
+                            }
+                        }
                     }
-                    resolve(gas_price_final)
+                    if (flag) {
+                        resolve('base gas price 超出最大值限制')
+                    } else {
+                        resolve(gas_price_final)
+                    }
                 }).catch((err) => {
                     console.log('获取gas_price 失败', err)
                     reject('获取gas_price 失败')

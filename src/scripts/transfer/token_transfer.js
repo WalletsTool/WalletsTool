@@ -32,6 +32,11 @@ const token_transfer = {
             let decimals = contract.connect(wallet).decimals();
             let gasPrice = utils.getGasPrice(config, provider);
             Promise.all([balance_wei, decimals, gasPrice]).then(async (values) => {
+                // 如果当前gas fee太高
+                if (values[2] === 'base gas price 超出最大值限制') {
+                    reject('base gas price 超出最大值限制')
+                    return
+                }
                 const balance = ethers.utils.formatUnits(values[0], values[1])
 
                 console.log('序号：', index, '当前余额为:', balance)
@@ -84,26 +89,26 @@ const token_transfer = {
                     }).then(async res => {
                         console.log('序号：', index, '交易 hash 为：', res.hash)
                         item.error_msg = '等待交易结果...'
-                        provider.waitForTransaction(res.hash,null,30000).then(async receipt => {
-                            if(receipt.status === 1) {
+                        provider.waitForTransaction(res.hash, null, 30000).then(async receipt => {
+                            if (receipt.status === 1) {
                                 await common_utils.sleep(config.delay)
                                 resolve(res.hash)
-                            }else {
-                                if (item.error_count < config.error_count_limit) {
+                            } else {
+                                if (config.error_retry === '1' && item.error_count < config.error_count_limit) {
                                     item.error_count = item.error_count + 1
                                     item.retry_flag = true
                                 }
                                 reject('交易失败：' + JSON.stringify(receipt))
                             }
                         }).catch(err => {
-                            if (item.error_count < config.error_count_limit) {
+                            if (config.error_retry === '1' && item.error_count < config.error_count_limit) {
                                 item.error_count = item.error_count + 1
                                 item.retry_flag = true
                             }
                             reject(err)
                         })
                     }).catch(err => {
-                        if (item.error_count < config.error_count_limit) {
+                        if (config.error_retry === '1' && item.error_count < config.error_count_limit) {
                             item.error_count = item.error_count + 1
                             item.retry_flag = true
                         }
@@ -113,7 +118,7 @@ const token_transfer = {
                     reject('当前余额不足，不做转账操作！')
                 }
             }).catch(err => {
-                if (item.error_count < config.error_count_limit) {
+                if (config.error_retry === '1' && item.error_count < config.error_count_limit) {
                     item.error_count = item.error_count + 1
                     item.retry_flag = true
                 }

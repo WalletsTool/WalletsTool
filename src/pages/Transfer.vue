@@ -579,7 +579,7 @@ async function transferFnc(inputData) {
       Notification.warning('已停止执行！')
     } else {
       const retryData = inputData.filter(item => item.retry_flag === true)
-      if (retryData.length > 0) {
+      if (form.error_retry === '1' && retryData.length > 0) {
         //  存在重试数据
         transferFnc(retryData)
       } else {
@@ -624,7 +624,6 @@ function startTransfer() {
 
 // 执行转账
 async function iterTransfer(accountData) {
-  // TODO 中途停止功能
   // 判断是主币转账还是代币转账
   let contract
   if (currentCoin.value.type === 'token') {
@@ -634,7 +633,8 @@ async function iterTransfer(accountData) {
   for (let i = 0; i < accountData.length; i++) {
     try {
       const config = {
-        error_count_limit: 3,
+        error_count_limit: 3, //  错误次数限制
+        error_retry: form.error_retry, // 是否自动失败重试
         chain: rpcValue.value,
         delay: [form.min_interval, form.max_interval],    // 延迟时间
         transfer_type: form.send_type,  // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
@@ -661,10 +661,18 @@ async function iterTransfer(accountData) {
               accountData[i].exec_status = '2'
               accountData[i].error_msg = res
             }).catch(err => {
-              accountData[i].exec_status = '3'
-              accountData[i].error_msg = err
+              if (err === 'base gas price 超出最大值限制') {
+                Notification.error('base gas price 超出最大值限制')
+                // 停止
+                stopTransfer()
+                accountData[i].exec_status = '0'
+                accountData[i].error_msg = ''
+              } else {
+                accountData[i].exec_status = '3'
+                accountData[i].error_msg = err
+              }
             })
-      } else if (currentCoin.value.type === 'token') {
+      } else if (currentCoin.value.type === 'token1') {
         if (stopFlag.value) {
           stopStatus.value = true
           return
@@ -676,8 +684,16 @@ async function iterTransfer(accountData) {
               accountData[i].exec_status = '2'
               accountData[i].error_msg = res
             }).catch(err => {
-              accountData[i].exec_status = '3'
-              accountData[i].error_msg = err
+              if (err === 'base gas price 超出最大值限制') {
+                Notification.error('base gas price 超出最大值限制')
+                // 停止
+                stopTransfer()
+                accountData[i].exec_status = '0'
+                accountData[i].error_msg = ''
+              } else {
+                accountData[i].exec_status = '3'
+                accountData[i].error_msg = err
+              }
             })
       } else {
         Notification.error('未知币种类型')

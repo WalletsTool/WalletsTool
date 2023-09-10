@@ -34,9 +34,9 @@ const base_coin_transfer = {
             let nonce = wallet.getTransactionCount();
             let gas_price = utils.getGasPrice(config, provider);
             Promise.all([balance_wei, gas_price, nonce, gas_limit]).then(async (values) => {
-                // 当设置的上限小于当前的base gas price时，不做转账操作
-                if (config.max_gas_price && ethers.utils.parseUnits(config.max_gas_price, 'gwei').lt(values[1])) {
-                    reject('当前设置的gas price上限小于当前的base gas price，不做转账操作！')
+                // 如果当前gas fee太高
+                if (values[1] === 'base gas price 超出最大值限制') {
+                    reject('base gas price 超出最大值限制')
                     return
                 }
 
@@ -107,21 +107,21 @@ const base_coin_transfer = {
                                 await common_utils.sleep(config.delay)
                                 resolve(res.hash)
                             } else {
-                                if (item.error_count < config.error_count_limit) {
+                                if (config.error_retry === '1' && item.error_count < config.error_count_limit) {
                                     item.error_count = item.error_count + 1
                                     item.retry_flag = true
                                 }
                                 reject('交易失败：' + JSON.stringify(receipt))
                             }
                         }).catch(err => {
-                            if (item.error_count < config.error_count_limit) {
+                            if (config.error_retry === '1' && item.error_count < config.error_count_limit) {
                                 item.error_count = item.error_count + 1
                                 item.retry_flag = true
                             }
                             reject(err)
                         })
                     }).catch(err => {
-                        if (item.error_count < config.error_count_limit) {
+                        if (config.error_retry === '1' && item.error_count < config.error_count_limit) {
                             item.error_count = item.error_count + 1
                             item.retry_flag = true
                         }
@@ -131,7 +131,7 @@ const base_coin_transfer = {
                     reject('当前余额不足，不做转账操作！')
                 }
             }).catch(err => {
-                if (item.error_count < config.error_count_limit) {
+                if (config.error_retry === '1' && item.error_count < config.error_count_limit) {
                     item.error_count = item.error_count + 1
                     item.retry_flag = true
                 }

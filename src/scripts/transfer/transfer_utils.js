@@ -38,7 +38,7 @@ const transfer_utils = {
                     reject('获取gas_price 失败，' + err)
                 })
             } else if (config.gas_price_type === '2') {
-                resolve(ethers.utils.parseUnits(config.max_gas_price, 'gwei'))
+                resolve(ethers.utils.parseUnits(config.gas_price, 'gwei'))
             } else if (config.gas_price_type === '3') {
                 // 计算 gas_price 溢价
                 let gas_price_final = BigNumber.from('0')

@@ -668,6 +668,7 @@ async function iterTransfer(accountData) {
         limit_count_list: [form.limit_min_count, form.limit_max_count],
         gas_price_type: form.gas_price_type, // gas price类型 1: 自动 2：固定gas price 3：gas price溢价率
         gas_price_rate: Number(form.gas_price_rate) / 100,  // gas price溢价率，0.05代表gas price是当前gas price的105%
+        gas_price: form.gas_price,  // 设置最大的gas price，单位gwei
         max_gas_price: form.max_gas_price  // 设置最大的gas price，单位gwei
       }
       if (currentCoin.value.type === 'base') {

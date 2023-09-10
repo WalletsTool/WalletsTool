@@ -5,7 +5,7 @@ import {nextTick, onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watc
 import {invoke} from "@tauri-apps/api/tauri";
 import {Notification} from "@arco-design/web-vue";
 import utils from "@/scripts/transfer/transfer_utils.js";
-import {utils as rpcUtils}  from "@/scripts/common/provider.js";
+import {utils as rpcUtils} from "@/scripts/common/provider.js";
 import base_coin_transfer from "@/scripts/transfer/base_coin_transfer.js";
 import token_transfer from "@/scripts/transfer/token_transfer.js";
 import {ethers} from "ethers";
@@ -208,7 +208,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if(timer){
+  if (timer) {
     clearInterval(timer)
   }
 })
@@ -281,11 +281,15 @@ async function rpcChange() {
   currentRpc.value.gas_price = '查询中...'
 }
 
-function fetchGas(){
-  console.log('fetchGas')
+function fetchGas() {
+  const temp = rpcValue.value
   // 获取gas价格
   rpcUtils.get_base_gas_price(rpcValue.value).then((res) => {
-    currentRpc.value.gas_price = res.toFixed(2)
+    if (temp === rpcValue.value) {
+      currentRpc.value.gas_price = res.toFixed(2)
+    } else {
+      console.log('gas price 已失效')
+    }
   }).catch((err) => {
     console.log(err)
     currentRpc.value.gas_price = '查询错误'

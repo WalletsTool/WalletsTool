@@ -603,7 +603,6 @@ async function transferFnc(inputData) {
     if (stopFlag.value) {
       Notification.warning('已停止执行！')
     } else {
-      debugger
       const retryData = inputData.filter(item => item.retry_flag === true)
       if (form.error_retry === '1' && retryData.length > 0) {
         //  存在重试数据

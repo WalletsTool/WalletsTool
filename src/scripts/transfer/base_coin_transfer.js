@@ -24,6 +24,7 @@ const base_coin_transfer = {
     // 转账方法
     single_transfer(index, item, config) {
         return new Promise((resolve, reject) => {
+            item.retry_flag = undefined
             // 随机获取rpc服务
             const provider = provider_utils.get_provider(config.chain)
             // 通过私钥创建钱包
@@ -101,23 +102,39 @@ const base_coin_transfer = {
                     wallet.sendTransaction(tx).then(async res => {
                         console.log('序号：', index, '交易 hash 为：', res.hash)
                         item.error_msg = '等待交易结果...'
-                        provider.waitForTransaction(res.hash,null,30000).then(async receipt => {
-                            if(receipt.status === 1) {
+                        provider.waitForTransaction(res.hash, null, 30000).then(async receipt => {
+                            if (receipt.status === 1) {
                                 await common_utils.sleep(config.delay)
                                 resolve(res.hash)
-                            }else {
+                            } else {
+                                if (item.error_count < config.error_count_limit) {
+                                    item.error_count = item.error_count + 1
+                                    item.retry_flag = true
+                                }
                                 reject('交易失败：' + JSON.stringify(receipt))
                             }
                         }).catch(err => {
+                            if (item.error_count < config.error_count_limit) {
+                                item.error_count = item.error_count + 1
+                                item.retry_flag = true
+                            }
                             reject(err)
                         })
                     }).catch(err => {
+                        if (item.error_count < config.error_count_limit) {
+                            item.error_count = item.error_count + 1
+                            item.retry_flag = true
+                        }
                         reject(err)
                     })
                 } else {
                     reject('当前余额不足，不做转账操作！')
                 }
             }).catch(err => {
+                if (item.error_count < config.error_count_limit) {
+                    item.error_count = item.error_count + 1
+                    item.retry_flag = true
+                }
                 console.log(err)
                 reject('获取基础信息失败：' + err)
             })

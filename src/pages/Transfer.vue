@@ -134,7 +134,8 @@ const form = reactive({
   limit_max_count: '30000',
   min_interval: '1',
   max_interval: '3',
-  amount_precision: '6'
+  amount_precision: '6',
+  error_retry: '1'
 })
 
 // 录入 私钥 / 接收地址 弹窗
@@ -570,6 +571,31 @@ async function deleteTokenConfirm() {
   })
 }
 
+//  转账方法
+async function transferFnc(inputData) {
+  // 执行转账
+  await iterTransfer(inputData).then(() => {
+    if (stopFlag.value) {
+      Notification.warning('已停止执行！')
+    } else {
+      const retryData = inputData.filter(item => item.retry_flag === true)
+      if (retryData.length > 0) {
+        //  存在重试数据
+        transferFnc(retryData)
+      } else {
+        Notification.success('执行完成！');
+        stopStatus.value = true
+      }
+    }
+    startLoading.value = false
+    stopFlag.value = false
+  }).catch(() => {
+    Notification.error('执行失败！');
+    startLoading.value = false
+    stopStatus.value = true
+  })
+}
+
 // 执行
 function startTransfer() {
   if (balanceLoading.value) {
@@ -589,21 +615,7 @@ function startTransfer() {
       item.exec_status = '0'
       item.error_msg = ''
     })
-    // 执行转账
-    await iter_transfer().then(() => {
-      if (stopFlag.value) {
-        Notification.warning('已停止执行！')
-      } else {
-        Notification.success('执行完成！');
-        stopStatus.value = true
-      }
-      startLoading.value = false
-      stopFlag.value = false
-    }).catch(() => {
-      Notification.error('执行失败！');
-      startLoading.value = false
-      stopStatus.value = true
-    })
+    await transferFnc(data.value);
   }).catch(() => {
     console.log('验证失败')
     startLoading.value = false
@@ -611,7 +623,7 @@ function startTransfer() {
 }
 
 // 执行转账
-async function iter_transfer() {
+async function iterTransfer(accountData) {
   // TODO 中途停止功能
   // 判断是主币转账还是代币转账
   let contract
@@ -619,9 +631,10 @@ async function iter_transfer() {
     contract = new ethers.Contract(currentCoin.value.contract_address, currentCoin.value.abi);
   }
   // 遍历所有账户转账
-  for (let i = 0; i < data.value.length; i++) {
+  for (let i = 0; i < accountData.length; i++) {
     try {
       const config = {
+        error_count_limit: 3,
         chain: rpcValue.value,
         delay: [form.min_interval, form.max_interval],    // 延迟时间
         transfer_type: form.send_type,  // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
@@ -642,14 +655,14 @@ async function iter_transfer() {
           return
         }
         // 设置状态 为执行中
-        data.value[i].exec_status = '1'
-        await base_coin_transfer.single_transfer(i + 1, data.value[i], config)
+        accountData[i].exec_status = '1'
+        await base_coin_transfer.single_transfer(i + 1, accountData[i], config)
             .then(res => {
-              data.value[i].exec_status = '2'
-              data.value[i].error_msg = res
+              accountData[i].exec_status = '2'
+              accountData[i].error_msg = res
             }).catch(err => {
-              data.value[i].exec_status = '3'
-              data.value[i].error_msg = err
+              accountData[i].exec_status = '3'
+              accountData[i].error_msg = err
             })
       } else if (currentCoin.value.type === 'token') {
         if (stopFlag.value) {
@@ -657,14 +670,14 @@ async function iter_transfer() {
           return
         }
         // 设置状态 为执行中
-        data.value[i].exec_status = '1'
-        await token_transfer.single_transfer(i + 1, data.value[i], config, contract)
+        accountData[i].exec_status = '1'
+        await token_transfer.single_transfer(i + 1, accountData[i], config, contract)
             .then(res => {
-              data.value[i].exec_status = '2'
-              data.value[i].error_msg = res
+              accountData[i].exec_status = '2'
+              accountData[i].error_msg = res
             }).catch(err => {
-              data.value[i].exec_status = '3'
-              data.value[i].error_msg = err
+              accountData[i].exec_status = '3'
+              accountData[i].error_msg = err
             })
       } else {
         Notification.error('未知币种类型')
@@ -1087,7 +1100,7 @@ function goHome() {
               </template>
             </a-input>
           </a-form-item>
-          <a-form-item v-if="form.gas_price_type === '3'" field="max_gas_price"
+          <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price"
                        style="width: 130px;padding: 10px" label="最大 Gas Price"
                        tooltip="为空时则不设置上限（单位：Gwei）">
             <a-input v-model="form.max_gas_price"/>
@@ -1095,8 +1108,9 @@ function goHome() {
         </a-row>
       </a-form>
       <!-- 提交按钮 -->
-      <div style="display: flex;flex: 1;align-items: center;justify-content: center;">
-        <a-button v-if="!startLoading &&  stopStatus" :class="['submitBtn']" @click="startTransfer">执行转账
+      <div style="display: flex;flex-direction: column;flex: 1;align-items: center;justify-content: center;">
+        <a-checkbox value="1" style="user-select: none;" v-model="form.error_retry">失败自动重试</a-checkbox>
+        <a-button v-if="!startLoading &&  stopStatus" :class="['submitBtn']" @click="startTransfer(data.value)">执行转账
         </a-button>
         <a-tooltip v-else content="点击可以提前停止执行">
           <div @click="stopTransfer">
@@ -1132,7 +1146,7 @@ function goHome() {
   <!-- 删除数据确认框 -->
   <a-modal v-model:visible="deleteItemVisible" title="删除确认">
     <div>确认删除私钥为【
-      {{ currentItemKey.substring(0, 15) + '......'}}
+      {{ currentItemKey.substring(0, 15) + '......' }}
       】的数据？
     </div>
     <template #footer>
@@ -1202,6 +1216,7 @@ function goHome() {
   font-size: 22px;
   color: #ffffff;
   background-color: #0fa962;
+  margin-top: 10px;
 }
 
 .arco-btn-secondary.arco-btn-loading {

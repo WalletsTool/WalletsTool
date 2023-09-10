@@ -23,6 +23,7 @@ const config = {
 const token_transfer = {
     single_transfer(index, item, config, contract) {
         return new Promise((resolve, reject) => {
+            item.retry_flag = undefined
             // 随机获取rpc服务
             const provider = provider_utils.get_provider(config.chain)
             // 通过私钥创建钱包
@@ -88,18 +89,34 @@ const token_transfer = {
                                 await common_utils.sleep(config.delay)
                                 resolve(res.hash)
                             }else {
+                                if (item.error_count < config.error_count_limit) {
+                                    item.error_count = item.error_count + 1
+                                    item.retry_flag = true
+                                }
                                 reject('交易失败：' + JSON.stringify(receipt))
                             }
                         }).catch(err => {
+                            if (item.error_count < config.error_count_limit) {
+                                item.error_count = item.error_count + 1
+                                item.retry_flag = true
+                            }
                             reject(err)
                         })
                     }).catch(err => {
+                        if (item.error_count < config.error_count_limit) {
+                            item.error_count = item.error_count + 1
+                            item.retry_flag = true
+                        }
                         reject(err)
                     })
                 } else {
                     reject('当前余额不足，不做转账操作！')
                 }
             }).catch(err => {
+                if (item.error_count < config.error_count_limit) {
+                    item.error_count = item.error_count + 1
+                    item.retry_flag = true
+                }
                 console.log(err)
                 reject('获取基础信息失败：' + err)
             })

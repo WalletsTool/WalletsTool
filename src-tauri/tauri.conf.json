@@ -68,7 +68,7 @@
     "windows": [
       {
         "title": "链上工具箱",
-        "width": 1275,
+        "width": 400,
         "height": 800,
         "resizable": true,
         "fullscreen": false

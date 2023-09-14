@@ -530,7 +530,7 @@ function goHome() {
         </template>
         导出选中
       </a-button>
-      <a-button class="goHome" type="outline" status="success" @click="goHome">
+      <a-button v-show="false" class="goHome" type="outline" status="success" @click="goHome">
         <template #icon>
           <icon-double-left/>
         </template>

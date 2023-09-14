@@ -999,7 +999,7 @@ function goHome() {
       <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">反选</a-button>
       <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">删除选中
       </a-button>
-      <a-button class="goHome" type="outline" status="success" @click="goHome">
+      <a-button v-show="false" class="goHome" type="outline" status="success" @click="goHome">
         <template #icon>
           <icon-double-left/>
         </template>

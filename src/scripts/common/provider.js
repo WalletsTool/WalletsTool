@@ -29,6 +29,17 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 59144)
     },
+    opbnb_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://opbnb-mainnet-rpc.bnbchain.org',
+            'https://opbnb-mainnet.nodereal.io/v1/64a9df0874fb4a93b9d0a3849de012d3',
+            'https://opbnb-mainnet.nodereal.io/v1/e9a36765eb8a40b9bd12e680a1fd2bc5'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 204)
+    },
     geth_provider() {
         // rpc 节点
         const rpc_list = [
@@ -143,6 +154,8 @@ export const utils = {
             return providers.eth_provider()
         } else if (key === 'linea') {
             return providers.linea_provider()
+        } else if (key === 'opbnb') {
+            return providers.opbnb_provider()
         } else if (key === 'geth') {
             return providers.geth_provider()
         } else if (key === 'scroll') {

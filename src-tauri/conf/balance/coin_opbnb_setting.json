@@ -1,0 +1,12 @@
+{
+  "coin_list": [
+    {
+      "key": "bnb",
+      "coin": "BNB",
+      "type": "base",
+      "contract_type": "ERC20",
+      "contract_address": "",
+      "abi": ""
+    }
+  ]
+}

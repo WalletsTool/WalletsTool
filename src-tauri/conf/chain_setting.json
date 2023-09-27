@@ -19,6 +19,15 @@
       "check_verify_api": ""
     },
     {
+      "key": "opbnb",
+      "chain": "opBNB",
+      "scan_url": "https://opbnbscan.com",
+      "pic_url": "chainIcons/opbnb.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
+    },
+    {
       "key": "op",
       "chain": "Optimism",
       "scan_url": "https://www.optimism.io/",

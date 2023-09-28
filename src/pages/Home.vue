@@ -70,7 +70,7 @@ function goPage(pageName) {
 
   const title = funcList.filter(item => item.pageName === pageName)[0].title
   const webview = new WebviewWindow(pageName + windowCount.value[pageName], {
-    url: window.location.origin + '/#/' + pageName,
+    url: '/#/' + pageName,
     width: 1275,
     height: 800,
     title: title + ' 窗口 ' + windowCount.value[pageName]

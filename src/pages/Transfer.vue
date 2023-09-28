@@ -286,7 +286,11 @@ function fetchGas() {
   // 获取gas价格
   rpcUtils.get_base_gas_price(rpcValue.value).then((res) => {
     if (temp === rpcValue.value) {
-      currentRpc.value.gas_price = res.toFixed(2)
+      if (rpcValue.value === 'opbnb') {
+        currentRpc.value.gas_price = res.toFixed(7)
+      } else {
+        currentRpc.value.gas_price = res.toFixed(2)
+      }
     } else {
       console.log('gas price 已失效')
     }
@@ -631,7 +635,7 @@ function startTransfer() {
     Notification.warning('请先导入私钥！');
     return
   }
-  if(data.value.find(item => !item.private_key || !item.to_addr)){
+  if (data.value.find(item => !item.private_key || !item.to_addr)) {
     Notification.warning('请检查是否所有私钥都有对应的转账地址！');
     return
   }

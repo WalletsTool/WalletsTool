@@ -279,6 +279,8 @@ async function rpcChange() {
   currentCoin.value = coinOptions.value[0]
   currentRpc.value = rpcOptions.value.filter(item => item.key === rpcValue.value)[0]
   currentRpc.value.gas_price = '查询中...'
+  // 查询gas
+  fetchGas()
 }
 
 function fetchGas() {

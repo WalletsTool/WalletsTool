@@ -33,8 +33,11 @@ const providers = {
         // rpc 节点
         const rpc_list = [
             'https://opbnb-mainnet-rpc.bnbchain.org',
-            'https://opbnb-mainnet.nodereal.io/v1/64a9df0874fb4a93b9d0a3849de012d3',
-            'https://opbnb-mainnet.nodereal.io/v1/e9a36765eb8a40b9bd12e680a1fd2bc5'
+            // 'https://opbnb-mainnet.nodereal.io/v1/64a9df0874fb4a93b9d0a3849de012d3',
+            // 'https://opbnb-mainnet.nodereal.io/v1/e9a36765eb8a40b9bd12e680a1fd2bc5',
+            'https://opbnb-mainnet.nodereal.io/v1/ea08c11bd0874ce19cee7fc6f63b6cf8', // yeah.net
+            'https://opbnb-mainnet.nodereal.io/v1/8a1c5fbe106c422ea9c9093570ce0af2', // yahoo.com
+            'https://opbnb-mainnet.nodereal.io/v1/205f773b951e46468f684b460e971093' // gmail.com
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

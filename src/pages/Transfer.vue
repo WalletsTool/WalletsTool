@@ -710,7 +710,7 @@ async function iterTransfer(accountData) {
                 accountData[i].error_msg = err
               }
             })
-      } else if (currentCoin.value.type === 'token1') {
+      } else if (currentCoin.value.type === 'token') {
         if (stopFlag.value) {
           stopStatus.value = true
           return

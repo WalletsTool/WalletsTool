@@ -206,6 +206,10 @@ function deleteToken() {
     Notification.warning(' Linea MainNet 暂不支持删除代币！');
     return
   }
+  if (rpcValue.value === 'base') {
+    Notification.warning(' Base MainNet 暂不支持删除代币！');
+    return
+  }
   deleteTokenVisible.value = true
 }
 
@@ -247,6 +251,10 @@ function handleAddCoinClick() {
   }
   if (rpcValue.value === 'linea') {
     Notification.warning(' Linea MainNet 暂不支持添加代币！');
+    return
+  }
+  if (rpcValue.value === 'base') {
+    Notification.warning(' Base MainNet 暂不支持添加代币！');
     return
   }
   addCoinVisible.value = true

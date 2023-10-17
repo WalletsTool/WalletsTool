@@ -29,6 +29,22 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 59144)
     },
+    base_provider() {
+        // rpc 节点
+        const rpc_list = [
+            // 'https://base.blockpi.network/v1/rpc/public',
+            'https://base.publicnode.com',
+            'https://base.meowrpc.com',
+            // 'https://1rpc.io/base',
+            'https://1rpc.io/3MianwKGB8TzTeNwU/base',
+            'https://1rpc.io/aVxuCztV8m2Wnc38/base',
+            'https://1rpc.io/3RrFQ54LaLkSH5EFU/base',
+            'https://base.blockpi.network/v1/rpc/0ae3552e01375f193365606394b71d5426c8bba5',
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 8453)
+    },
     opbnb_provider() {
         // rpc 节点
         const rpc_list = [
@@ -70,10 +86,10 @@ const providers = {
     binance_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://rpc.ankr.com/bsc/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
-            'https://bsc-mainnet.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
-            // 'https://bsc.blockpi.network/v1/rpc/fc05a6d785ae099ec79e488f1a6168d192ac8db9', // blockpi_rpc
-            'https://blue-late-rain.bsc.quiknode.pro/cbe5c8e3b1198b2cfadfe1dc6f4107c4a3de6938/', // quiknode_rpc
+            'https://bsc-dataseed3.bnbchain.org',
+            'https://bsc.publicnode.com',
+            'https://bsc-rpc.gateway.pokt.network',
+            'https://binance.llamarpc.com'
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
@@ -175,6 +191,8 @@ export const utils = {
             return providers.starknet_provider()
         } else if (key === 'okt') {
             return providers.okt_provider()
+        } else if (key === 'base') {
+            return providers.base_provider()
         }
     },
     get_base_gas_price(key) {

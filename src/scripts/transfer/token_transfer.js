@@ -60,7 +60,7 @@ const token_transfer = {
                             reject('当前余额不足，不做转账操作！')
                             return
                         }
-                        // 转账固定数量
+                        // 转账随机数量
                         transfer_amount = ethers.utils.parseUnits(temp, values[1])
                     } else if (config.transfer_type === '4') {
                         if (parseFloat(balance) >= Number(config.left_amount_list[0]) && parseFloat(balance) <= Number(config.left_amount_list[1])) {

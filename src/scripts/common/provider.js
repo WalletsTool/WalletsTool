@@ -118,10 +118,23 @@ const providers = {
     arb_provider() {
         // rpc 节点
         const rpc_list = [
+            'https://arbitrum.llamarpc.com',
+            'https://api.zan.top/node/v1/arb/one/public',
+            'https://arbitrum-one.public.blastapi.io',
+            'https://arbitrum.blockpi.network/v1/rpc/public',
+            'https://endpoints.omniatech.io/v1/arbitrum/one/public',
+            'https://arbitrum.meowrpc.com',
+            'https://rpc.arb1.arbitrum.gateway.fm',
+            'https://1rpc.io/arb',
+            'https://arb1.arbitrum.io/rpc',
+            'https://arb-mainnet-public.unifra.io',
+            'https://arbitrum.drpc.org',
+            'https://arbitrum-one.publicnode.com',
+
             'https://arb-mainnet.g.alchemy.com/v2/LEr77rzSUl_f-aQIceeXUlkwmB6Pg9rE', // alchemy_rpc
             'https://rpc.ankr.com/arbitrum/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
             'https://open-platform.nodereal.io/0f6a7df001924b749c9466dc0bdb99c5/arbitrum-nitro/', // nodereal_rpc
-            // 'https://arbitrum.blockpi.network/v1/rpc/e6d636b1830e242e23c62700ca034a9c1100a040', // blockpi_rpc
+            'https://arbitrum.blockpi.network/v1/rpc/e6d636b1830e242e23c62700ca034a9c1100a040', // blockpi_rpc
             'https://indulgent-holy-wave.arbitrum-mainnet.quiknode.pro/0f8965f469465c10e8efe4887e53bcf24f876a7e/', // quiknode_rpc
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]

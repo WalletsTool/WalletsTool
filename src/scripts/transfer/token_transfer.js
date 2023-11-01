@@ -22,10 +22,10 @@ const config = {
 
 const token_transfer = {
     single_transfer(index, item, config, contract) {
+        // 随机获取rpc服务
+        const provider = provider_utils.get_provider(config.chain)
         return new Promise((resolve, reject) => {
             item.retry_flag = false
-            // 随机获取rpc服务
-            const provider = provider_utils.get_provider(config.chain)
             // 通过私钥创建钱包
             let wallet = new ethers.Wallet(item.private_key, provider);
             let balance_wei = contract.connect(wallet).balanceOf(wallet.address);

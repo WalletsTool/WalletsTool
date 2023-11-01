@@ -8,6 +8,7 @@ const base_coin_balance = {
         return new Promise(async (resolve, reject) => {
             // 随机获取rpc服务
             const provider = utils.get_provider(chain)
+            console.log('当前RPC地址：',provider.connection.url)
             try {
                 // 通过私钥创建钱包
                 let wallet = new ethers.Wallet(item.private_key, provider);
@@ -33,6 +34,7 @@ const base_coin_balance = {
         return new Promise(async (resolve, reject) => {
             // 随机获取rpc服务
             const provider = utils.get_provider(chain)
+            console.log('当前RPC地址：',provider.connection.url)
             const nonce = provider.getTransactionCount(item.address)
             const balance_wei = provider.getBalance(item.address)
             Promise.all([balance_wei, nonce]).then(([balance_wei, nonce]) => {

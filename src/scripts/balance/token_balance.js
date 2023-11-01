@@ -8,6 +8,7 @@ const token_balance = {
         return new Promise((resolve, reject) => {
             // 随机获取rpc服务
             const provider = utils.get_provider(chain)
+            console.log('当前RPC地址：',provider.connection.url)
             // 通过私钥创建钱包
             let wallet = new ethers.Wallet(item.private_key, provider);
             let balance_wei = contract.connect(wallet).balanceOf(wallet.address);
@@ -28,6 +29,7 @@ const token_balance = {
         return new Promise((resolve, reject) => {
             // 随机获取rpc服务
             const provider = utils.get_provider(chain)
+            console.log('当前RPC地址：',provider.connection.url)
             let balance_wei = contract.connect(provider).balanceOf(item.address)
             let decimals = contract.connect(provider).decimals();
             let nonce = provider.getTransactionCount(item.address)

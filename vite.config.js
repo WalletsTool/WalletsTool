@@ -2,6 +2,9 @@ import {defineConfig} from "vite";
 import vue from "@vitejs/plugin-vue";
 import * as path from "path";
 import VueSetupExtend from 'vite-plugin-vue-setup-extend'
+import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill'
+import { NodeModulesPolyfillPlugin } from '@esbuild-plugins/node-modules-polyfill'
+import rollupNodePolyFill from 'rollup-plugin-polyfill-node'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -15,6 +18,22 @@ export default defineConfig({
             }
         ]
     },
+    optimizeDeps: {
+        esbuildOptions: {
+            // Node.js global to browser globalThis
+            define: {
+                global: 'globalThis'
+            },
+            // Enable esbuild polyfill plugins
+            plugins: [
+                NodeGlobalsPolyfillPlugin({
+                    buffer: true,
+                    process: true,
+                }),
+                NodeModulesPolyfillPlugin()
+            ]
+        }
+    },
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
     // prevent vite from obscuring rust errors
     clearScreen: false,
@@ -27,6 +46,11 @@ export default defineConfig({
     // https://tauri.studio/v1/api/config#buildconfig.beforedevcommand
     envPrefix: ["VITE_", "TAURI_"],
     build: {
+        rollupOptions: {
+            plugins: [
+                rollupNodePolyFill()
+            ]
+        },
         // Tauri supports es2021
         target: process.env.TAURI_PLATFORM == "windows" ? "chrome105" : "safari13",
         // don't minify for debug builds

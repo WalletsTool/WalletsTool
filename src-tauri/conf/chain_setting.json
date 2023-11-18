@@ -116,6 +116,15 @@
       "scan_api": "",
       "verify_api": "",
       "check_verify_api": ""
+    },
+    {
+      "key": "sol",
+      "chain": "Solana",
+      "scan_url": "https://explorer.solana.com/",
+      "pic_url": "chainIcons/solana.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

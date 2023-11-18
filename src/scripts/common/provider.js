@@ -1,5 +1,6 @@
 import {ethers} from "ethers";
 import {RpcProvider} from "starknet";
+import * as web3 from "@solana/web3.js";
 
 const providers = {
 
@@ -21,6 +22,7 @@ const providers = {
         // rpc 节点
         const rpc_list = [
             'https://linea.blockpi.network/v1/rpc/public',
+
             'https://1rpc.io/linea',
             'https://rpc.linea.build',
             'https://linea.drpc.org'
@@ -44,6 +46,21 @@ const providers = {
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 8453)
+    },
+    sol_provider() {
+        // rpc 节点
+        const rpc_list = [
+            "https://practical-cosmological-water.solana-mainnet.quiknode.pro/125c32dc05fba63cfded06a571800d7dbda19ea9/",
+            "https://go.getblock.io/419b279a3b614544b0d4801841fce66e",
+            "https://mainnet.helius-rpc.com/?api-key=0b1e751c-26d1-457c-beeb-063b580d4484",
+            "https://mainnet.helius-rpc.com/?api-key=9f11729e-2325-41f2-8d00-11a729b71dd2",
+            "https://mainnet.helius-rpc.com/?api-key=fc75f223-8e95-4f79-8d5e-045766e19b92",
+            "https://mainnet.helius-rpc.com/?api-key=fc75f223-8e95-4f79-8d5e-045766e19b92",
+            "https://mainnet.helius-rpc.com/?api-key=86893688-2016-4d8f-949f-1cbdd5b7d077",
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+        return new web3.Connection(rpc_url);
+        // return new web3.Connection(web3.clusterApiUrl("testnet"));
     },
     opbnb_provider() {
         // rpc 节点
@@ -212,6 +229,8 @@ export const utils = {
             return providers.okt_provider()
         } else if (key === 'base') {
             return providers.base_provider()
+        } else if (key === 'sol') {
+            return providers.sol_provider()
         }
     },
     get_base_gas_price(key) {

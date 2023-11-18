@@ -295,6 +295,10 @@ async function rpcChange() {
 
 function fetchGas() {
   const temp = rpcValue.value;
+  if (temp === "sol") {
+    currentRpc.value.gas_price = "";
+    return
+  }
   // 获取gas价格
   rpcUtils
       .get_base_gas_price(rpcValue.value)
@@ -1240,7 +1244,7 @@ function goHome() {
           <img alt="" :src="data?.pic_url" style="width: 18px; height: 18px"/>
           <span style="margin-left: 10px">{{ data?.chain }}</span>
           <span style="margin-left: 50px">{{ data?.scan_url }}</span>
-          <span style="flex: 1; text-align: end; color: #00b42a"
+          <span v-show="rpcValue !== 'sol'" style="flex: 1; text-align: end; color: #00b42a"
           >Gas Price: {{ data?.gas_price ?? "未知" }}</span
           >
         </div>
@@ -1362,7 +1366,7 @@ function goHome() {
             <a-input v-model="form.max_interval"/>
           </a-form-item>
         </a-row>
-        <a-row style="height: 80px">
+        <a-row v-show="rpcValue !== 'sol'" style="height: 80px">
           <a-form-item
               field="limit_type"
               label="Gas Limit"

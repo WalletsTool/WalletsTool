@@ -39,6 +39,14 @@ const columns = [
     tooltip: "true",
   },
   {
+    title: "转账数量",
+    align: "center",
+    dataIndex: "amount",
+    width: "120",
+    ellipsis: "true",
+    tooltip: "true",
+  },
+  {
     title: "平台币余额",
     align: "center",
     dataIndex: "plat_balance",
@@ -127,6 +135,7 @@ let balanceLoading = ref(false);
 // 详细配置
 const form = reactive({
   send_type: "3",
+  amount_from: "1",
   send_count: "0",
   send_min_count: "1",
   send_max_count: "100",
@@ -695,6 +704,12 @@ function startTransfer() {
     Notification.warning("请检查是否所有私钥都有对应的转账地址！");
     return;
   }
+  // 如果转账类型为指定数量并且且为表格指定数量则进行数据校验
+  if (form.send_type === '2' && form.amount_from === '1' &&
+      data.value.find((item) => !item.amount)) {
+    Notification.warning("包含转账金额为空的错误数据请核实！");
+    return;
+  }
   validateForm()
       .then(async () => {
         console.log("验证通过");
@@ -737,7 +752,7 @@ async function iterTransfer(accountData) {
         scalar: currentRpc.value.scalar,
         delay: [form.min_interval, form.max_interval], // 延迟时间
         transfer_type: form.send_type, // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
-        transfer_amount: form.send_count, // 转账固定金额
+        transfer_amount: form.amount_from === '1' ? accountData[i].amount : form.send_count, // 转账当前指定的固定金额
         transfer_amount_list: [form.send_min_count, form.send_max_count], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
         left_amount_list: [form.send_min_count, form.send_max_count], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
         amount_precision: Number(form.amount_precision), // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
@@ -842,7 +857,7 @@ function checkSendType() {
     return true;
   } else if (form.send_type === "2") {
     const bool = utils.checkNum(form.send_count) && Number(form.send_count) > 0;
-    if (!bool) {
+    if (form.amount_from === "2" && !bool) {
       Notification.error("发送数量必须为数字且大于0");
       formRef.value.setFields({
         send_count: {
@@ -1332,6 +1347,18 @@ function goHome() {
           </a-form-item>
           <a-form-item
               v-if="form.send_type === '2'"
+              field="amount_from"
+              label="数量来源"
+              tooltip="如果选择表格数据则应导入带有转账数量的表格数据"
+              style="width: 180px; padding: 10px"
+          >
+            <a-radio-group v-model="form.amount_from" type="button">
+              <a-radio value="1">表格数据</a-radio>
+              <a-radio value="2">当前指定</a-radio>
+            </a-radio-group>
+          </a-form-item>
+          <a-form-item
+              v-if="form.send_type === '2' && form.amount_from === '2'"
               field="send_count"
               label="发送数量"
               style="width: 150px; padding: 10px"

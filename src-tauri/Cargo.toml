@@ -1,6 +1,6 @@
 [package]
 name = "web3_tools"
-version = "0.2.0"
+version = "1.0.0"
 description = "web3 链上交易工具集，基于 Node.js Vue3 Tauri 等技术"
 authors = ["renmengkai"]
 license = ""
@@ -10,12 +10,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "1.2", features = [] }
+tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-tauri = { version = "1.2", features = ["http-api", "shell-open", "system-tray", "window-create"] }
+tauri = { version = "1.5", features = ["http-api", "shell-open", "system-tray", "window-create"] }
 anyhow = "1.0.65"
 thiserror = "1.0.37"
 tokio = { version = "1.22.0", features = ["macros", "rt-multi-thread", "time"] }

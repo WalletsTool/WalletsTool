@@ -248,6 +248,7 @@ function UploadFile() {
           key: String(i.私钥) + String(i.地址),
           private_key: String(i.私钥),
           to_addr: String(i.地址),
+          amount: String(i.转账数量),
           plat_balance: "",
           coin_balance: "",
           exec_status: "0",

@@ -10,9 +10,25 @@ const providers = {
             'https://eth-mainnet.g.alchemy.com/v2/vdFJRkQyX2rcaEB2ChCDxLYOuWGB35iN', // alchemy_rpc
             'https://rpc.ankr.com/eth/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
             'https://eth-mainnet.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
-            // 'https://ethereum.blockpi.network/v1/rpc/23d1f2352ff1e80e0e5579a19b69529f01af8065', // blockpi_rpc
-            // 'https://mainnet.infura.io/v3/45bfe9cba3d74311bb798ad9e52224cc', // infura_rpc
-            // 'https://old-nameless-dew.quiknode.pro/8963d0cdc581f3ddf8d6a53a82b20fa308fc806d/', // quiknode_rpc
+            'https://lb.drpc.org/ogrpc?network=ethereum&dkey=Aj6S6lY4rEHYqHuH8SYuK888OpJEh1oR7qTOrkUU-y5L',
+            'https://lb.drpc.org/ogrpc?network=ethereum&dkey=AkWhWFymO0apghWs6SF5_xkf0KP5iboR7qyeYkscDoZX',
+            'https://lb.drpc.org/ogrpc?network=ethereum&dkey=AultnUOb_UljhLAc-67X1B0z3XyyiboR7qyfYkscDoZX',
+            'https://lb.drpc.org/ogrpc?network=ethereum&dkey=AhUpGP3UjEWFi43jVViykOJE8l5ViboR7qygYkscDoZX',
+            'https://lb.drpc.org/ogrpc?network=ethereum&dkey=AiFEuYjURUQhjCYFVsM-p21raG5CiboR7qyhYkscDoZX',
+            'https://lb.drpc.org/ogrpc?network=ethereum&dkey=Aul6PCsUdU3qkN-S8I1_jc192qL7iboR7qyiYkscDoZX',
+            'https://lb.drpc.org/ogrpc?network=ethereum&dkey=Ag9jpsjOeE93obtrzA2QU-dqVmXLibsR7qyjYkscDoZX',
+            'https://lb.drpc.org/ogrpc?network=ethereum&dkey=Ai5Kc-Ex00urk5TinvqOthx7m4cBibsR7qykYkscDoZX',
+            'https://lb.drpc.org/ogrpc?network=ethereum&dkey=ApdGLgvPqETzn8lU2dyrXfOM3dC0ibsR7qylYkscDoZX',
+            'https://1rpc.io/3M4d7MevhTuT5ZLnv/eth',
+            'https://1rpc.io/5XAZMkdvbiqyYBme/eth',
+            'https://1rpc.io/45XiMaBJtP59Scipz/eth',
+            'https://1rpc.io/48NBoEKWaum3t5c5T/eth',
+            'https://1rpc.io/iN6L3qTAAwqFhB6r/eth',
+            'https://1rpc.io/4JQrfLN2popHUByWB/eth',
+            'https://1rpc.io/2n2mJNa2RUTGbRRDm/eth',
+            'https://1rpc.io/cPRpCZQyf88TzQ4o/eth',
+            'https://1rpc.io/2TapqZzuoodPZ86aH/eth',
+            'https://1rpc.io/4qbGLbkHk2LbDP3pG/eth',
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

@@ -345,6 +345,10 @@ function handleAddCoinClick() {
     Notification.warning(" Goerli Ethereum 暂不支持添加代币！");
     return;
   }
+  if (rpcValue.value === "sepolia") {
+    Notification.warning(" Sepolia Ethereum 暂不支持添加代币！");
+    return;
+  }
   if (rpcValue.value === "scroll") {
     Notification.warning(" Scroll Alpha TestNet 暂不支持添加代币！");
     return;
@@ -627,6 +631,10 @@ function deleteToken() {
   }
   if (rpcValue.value === "geth") {
     Notification.warning(" Goerli Ethereum 暂不支持删除代币！");
+    return;
+  }
+  if (rpcValue.value === "sepolia") {
+    Notification.warning(" Sepolia Ethereum 暂不支持删除代币！");
     return;
   }
   if (rpcValue.value === "scroll") {

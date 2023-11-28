@@ -7,7 +7,7 @@ const providers = {
     eth_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://eth-mainnet.g.alchemy.com/v2/vdFJRkQyX2rcaEB2ChCDxLYOuWGB35iN', // alchemy_rpc
+            // 'https://eth-mainnet.g.alchemy.com/v2/vdFJRkQyX2rcaEB2ChCDxLYOuWGB35iN', // alchemy_rpc
             'https://rpc.ankr.com/eth/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
             'https://eth-mainnet.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
             'https://lb.drpc.org/ogrpc?network=ethereum&dkey=Aj6S6lY4rEHYqHuH8SYuK888OpJEh1oR7qTOrkUU-y5L',
@@ -101,6 +101,30 @@ const providers = {
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 5)
+    },
+    sepolia_provider() {
+        // rpc 节点
+        const rpc_list = [
+            "https://lb.drpc.org/ogrpc?network=sepolia&dkey=As1VeG7g_U0olSnGHJaMTiWBnGj0jZYR7qzsYkscDoZX",
+            "https://lb.drpc.org/ogrpc?network=sepolia&dkey=AhUpGP3UjEWFi43jVViykOJE8l5ViboR7qygYkscDoZX",
+            "https://1rpc.io/45XiMaBJtP59Scipz/sepolia",
+            "https://1rpc.io/48NBoEKWaum3t5c5T/sepolia",
+            "https://sepolia.gateway.tenderly.co/2kEvvcRXQhP5UfscwWHs9h",
+            "https://sepolia.infura.io/v3/45bfe9cba3d74311bb798ad9e52224cc"
+            // 'https://api.zan.top/node/v1/eth/sepolia/public',
+            // 'https://ethereum-sepolia.blockpi.network/v1/rpc/public',
+            // 'https://rpc2.sepolia.org',
+            // 'https://ethereum-sepolia.publicnode.com',
+            // 'https://eth-sepolia.public.blastapi.io',
+            // 'https://rpc.notadegen.com/eth/sepolia',
+            // 'https://sepolia.gateway.tenderly.co',
+            // 'https://gateway.tenderly.co/public/sepolia',
+            // 'https://1rpc.io/sepolia',
+            // 'https://rpc.sepolia.org'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 11155111)
     },
     scroll_eth_provider() {
         // rpc 节点
@@ -229,6 +253,8 @@ export const utils = {
             return providers.opbnb_provider()
         } else if (key === 'geth') {
             return providers.geth_provider()
+        } else if (key === 'sepolia') {
+            return providers.sepolia_provider()
         } else if (key === 'scroll') {
             return providers.scroll_eth_provider()
         } else if (key === 'arb') {

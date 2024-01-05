@@ -7,13 +7,11 @@ const starknet_balance = {
 
     // 转账方法
     async query_balance_by_address(item, contractAddress, contractABI) {
-        const provider = utils.get_provider('starknet')
-        console.log('当前RPC地址：',provider.nodeUrl)
         return new Promise(async (resolve) => {
             // 屏蔽主网api使用第三方rpc服务商的api
             // const provider = new Provider({sequencer: {network: 'mainnet-alpha'}})
-            // const provider = utils.get_provider('starknet')
-            // console.log('当前RPC地址：',provider.nodeUrl)
+            const provider = utils.get_provider('starknet')
+            console.log('当前RPC地址：',provider.nodeUrl)
             const ethContract = new Contract(contractABI, contractAddress, provider);
             const balance_result = ethContract.balanceOf(item.address);
             const decimals_result = ethContract.decimals();

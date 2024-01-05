@@ -222,7 +222,21 @@ const providers = {
             // 'https://starknet.w3node.com/041c6b76eaeee394d8222542a4a1ec9fe655c9072386be63161ccf5de3e4d5d6/api', // rockx
             'https://starknet-mainnet.blastapi.io/c4e6e6fb-9364-44f2-a814-d6d6dafd36ae', // blastapi
             'https://starknet-mainnet.blastapi.io/461b72a6-8955-4f1d-a558-f3ec9043b2c1', // blastapi
-            'https://starknet-mainnet.gateway.pokt.network/v1/lb/0d6939d2cea79d6f19b49e8f', // protal
+            'https://starknet-mainnet.public.blastapi.io',
+            'https://starknet-mainnet.blastapi.io/f2ea9ebb-284e-420a-99a5-19b7e704fb7c',
+            'https://rpc.starknet.lava.build',
+            'https://g.w.lavanet.xyz:443/gateway/strk/rpc-http/61866b5d1622bcc43c94ce212c6e4670',
+            'https://starknet-mainnet.g.alchemy.com/v2/VWNr68s6Mtu-64sFd9QCizSh_ouHhubR',
+            'https://starknet-mainnet.infura.io/v3/45bfe9cba3d74311bb798ad9e52224cc',
+            'https://starknet-mainnet.infura.io/v3/4d0122b8d16f414285430b8d4f1804c6',
+            'https://starknet-mainnet.infura.io/v3/8f5e3edada1648059f5ef3267a329e44',
+            'https://starknet-mainnet.core.chainstack.com/1e9ecb7dab8203e0bbc903bd2df07a39',
+            'https://1rpc.io/starknet',
+            'https://1rpc.io/45XiMaBJtP59Scipz/starknet',
+            'https://1rpc.io/3xrU2Z2aXfPGWgQLJ/starknet',
+            'https://1rpc.io/3JZuWQxZKuLd4cuLq/starknet',
+            'https://1rpc.io/3T6KHnt8263GyK7wx/starknet',
+            'https://starknet.blockpi.network/v1/rpc/e351fcf1891754a0daa12f7913f4f925908976aa'
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
         return new RpcProvider({

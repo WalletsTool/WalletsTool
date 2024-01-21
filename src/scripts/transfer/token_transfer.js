@@ -53,7 +53,7 @@ const token_transfer = {
                             return
                         }
                         // 转账固定数量
-                        transfer_amount = ethers.utils.parseEther(config.transfer_amount)
+                        transfer_amount = ethers.utils.parseUnits(config.transfer_amount, values[1])
                     } else if (config.transfer_type === '3') {
                         const temp = (Math.random() * (Number(config.transfer_amount_list[1]) - Number(config.transfer_amount_list[0])) + Number(config.transfer_amount_list[0])).toFixed(Number(config.amount_precision))
                         if (parseFloat(temp) >= parseFloat(balance)) {

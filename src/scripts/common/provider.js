@@ -145,11 +145,16 @@ const providers = {
         const rpc_list = [
             'https://bsc-dataseed3.bnbchain.org',
             'https://bsc.publicnode.com',
-            'https://bsc-rpc.gateway.pokt.network',
-            'https://binance.llamarpc.com'
+            'https://bsc.drpc.org',
+            'https://endpoints.omniatech.io/v1/bsc/mainnet/public',
+            'https://bsc-pokt.nodies.app',
+            'https://1rpc.io/bnb',
+            'https://rpc.ankr.com/bsc/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f',
+            'https://binance.llamarpc.com',
+            'https://1rpc.io/23AFBMJh4ZBfrMnw1/bnb'
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
-
+        console.log(rpc_url)
         return new ethers.providers.JsonRpcProvider(rpc_url, 56)
 
         // const rpc_list = [

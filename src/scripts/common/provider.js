@@ -146,8 +146,27 @@ const providers = {
             'https://bsc-dataseed3.bnbchain.org',
             'https://bsc.publicnode.com',
             'https://bsc.drpc.org',
-            'https://endpoints.omniatech.io/v1/bsc/mainnet/public',
             'https://bsc-pokt.nodies.app',
+            'https://bsc.rpc.blxrbdn.com',
+            'https://bsc-dataseed1.ninicoin.io',
+            'https://bsc-dataseed2.ninicoin.io',
+            'https://bsc-dataseed3.ninicoin.io',
+            'https://bsc-dataseed4.ninicoin.io',
+            'https://bsc-dataseed1.bnbchain.org',
+            'https://bsc-dataseed2.bnbchain.org',
+            'https://bsc-dataseed3.bnbchain.org',
+            'https://bsc-dataseed4.bnbchain.org',
+            'https://bsc-dataseed1.defibit.io',
+            'https://bsc-dataseed2.defibit.io',
+            'https://bsc-dataseed3.defibit.io',
+            'https://bsc-dataseed4.defibit.io',
+            'https://bsc.blockpi.network/v1/rpc/public',
+            'https://api.zan.top/node/v1/bsc/mainnet/public',
+            'https://rpc.ankr.com/bsc',
+            'https://bsc.rpc.blxrbdn.com',
+            'https://binance.nodereal.io',
+            'https://rpc-bsc.48.club',
+            'https://koge-rpc-bsc.48.club',
             'https://1rpc.io/bnb',
             'https://rpc.ankr.com/bsc/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f',
             'https://binance.llamarpc.com',
@@ -156,13 +175,6 @@ const providers = {
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
         console.log(rpc_url)
         return new ethers.providers.JsonRpcProvider(rpc_url, 56)
-
-        // const rpc_list = [
-        //     'https://rpc.ankr.com/bsc_testnet_chapel/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f'
-        // ]
-        // const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
-        //
-        // return new ethers.providers.JsonRpcProvider(rpc_url, 97)
     },
     polygon_provider() {
         // rpc 节点

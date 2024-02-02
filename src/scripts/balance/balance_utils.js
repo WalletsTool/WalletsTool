@@ -4,6 +4,7 @@ import starknet_balance from "@/scripts/balance/starknet_balance.js";
 import {ethers} from "ethers";
 
 let chain = ''
+let onlyCoin = true
 let type = ''
 let contract_address = ''
 let contract_abi = []
@@ -48,10 +49,14 @@ function iter_query(items) {
                     obj.exec_status = '1'
                     obj.error_msg = ''
                     if (obj.private_key) {
-                        list.push(base_coin_balance.query_balance(obj, chain))
+                        if (!onlyCoin) {
+                            list.push(base_coin_balance.query_balance(obj, chain))
+                        }
                         list.push(token_balance.query_balance(obj, chain, contract))
                     } else {
-                        list.push(base_coin_balance.query_balance_by_address(obj, chain))
+                        if (!onlyCoin) {
+                            list.push(base_coin_balance.query_balance_by_address(obj, chain))
+                        }
                         list.push(token_balance.query_balance_by_address(obj, chain, contract))
                     }
                 })
@@ -80,8 +85,10 @@ function divide_into_groups(array, subGroupLength) {
 
 const balance_utils = {
     // 执行分组查询
-    exec_group_query(key, currentCoin, data, callback, subGroupLength = 3) {
+    exec_group_query(key, currentCoin, data, onlyCoinConfig, callback, subGroupLength = 3) {
         chain = key
+        onlyCoin = onlyCoinConfig
+        console.log('onlyCoinConfig: ',onlyCoinConfig)
         type = currentCoin.type
         contract_address = currentCoin.contract_address
         contract_abi = currentCoin.abi

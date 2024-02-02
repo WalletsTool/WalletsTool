@@ -613,6 +613,7 @@ async function queryBalance() {
         rpcValue.value,
         currentCoin.value,
         data.value,
+        false,
         () => {
           Notification.success("查询成功！");
           balanceLoading.value = false;

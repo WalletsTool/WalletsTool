@@ -89,6 +89,8 @@ function rowClick(record, event) {
   index >= 0 ? selectedKeys.value.splice(index, 1) : selectedKeys.value.push(record.address)
 }
 
+// 仅查询目标代币
+const onlyCoin = ref(true);
 // 分页
 const pagination = ref(false);
 const scrollbar = ref(true);
@@ -437,8 +439,9 @@ async function queryBalance() {
       item.plat_balance = ''
       item.coin_balance = ''
       item.error_msg = ''
+      item.exec_status = '0'
     })
-    balance_utils.exec_group_query(rpcValue.value, currentCoin.value, data.value, () => {
+    balance_utils.exec_group_query(rpcValue.value, currentCoin.value, data.value, onlyCoin.value, () => {
       Notification.success('查询成功！');
       balanceLoading.value = false
     }, form.thread_count)
@@ -606,6 +609,8 @@ function goHome() {
           <icon-plus/>
           <span style="margin-left: 5px">添加代币</span>
         </a-button>
+        <a-button type="primary" status="danger" @click="deleteToken" style="margin-left: 10px">删除代币
+        </a-button>
         <!-- 代币 选择器 -->
         <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames"
                   :style="{'margin-left':'10px',flex:'1'}" @change="coinChange">
@@ -613,8 +618,7 @@ function goHome() {
             <span style="margin-left: 10px">{{ data?.coin }}</span>
           </template>
         </a-select>
-        <a-button type="primary" status="danger" @click="deleteToken" style="margin-left: 10px">删除代币
-        </a-button>
+        <a-checkbox v-model="onlyCoin" style="padding: 0 20px">仅查询目标代币</a-checkbox>
       </div>
     </div>
     <!-- 相关设置 -->

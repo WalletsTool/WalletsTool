@@ -626,7 +626,7 @@ function goHome() {
             <a-form-item field="thread_count"
                          label="线程数" style="width: 240px;padding: 10px"
                          tooltip="同时执行查询的钱包数量（1-10）之间">
-              <a-input-number :max="10" :min="1" mode="button" v-model="form.thread_count"/>
+              <a-input-number :max="50" :min="1" mode="button" v-model="form.thread_count"/>
             </a-form-item>
           </a-row>
         </a-form>

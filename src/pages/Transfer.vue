@@ -1304,6 +1304,13 @@ function goHome() {
           <icon-plus/>
           <span style="margin-left: 5px">添加代币</span>
         </a-button>
+        <a-button
+            type="primary"
+            status="danger"
+            @click="deleteToken"
+            style="margin-left: 10px"
+        >删除代币
+        </a-button>
         <!-- 代币 选择器 -->
         <a-select
             v-model="coinValue"
@@ -1316,21 +1323,13 @@ function goHome() {
             <span style="margin-left: 10px">{{ data?.coin }}</span>
           </template>
         </a-select>
-        <a-button
-            type="outline"
-            status="normal"
-            style="margin-left: 10px"
-            @click="queryBalance"
-            :loading="balanceLoading"
-        >查询余额
-        </a-button>
-        <a-button
-            type="primary"
-            status="danger"
-            @click="deleteToken"
-            style="margin-left: 10px"
-        >删除代币
-        </a-button>
+        <a-dropdown :disabled="balanceLoading" trigger="hover">
+          <a-button style="margin-left: 10px" type="outline" status="normal" :loading="balanceLoading">查询余额</a-button>
+          <template #content>
+            <a-doption @click="queryBalance">⤴️ 查出账地址</a-doption>
+            <a-doption disabled>⤵️ 查到账地址</a-doption>
+          </template>
+        </a-dropdown>
       </div>
     </div>
     <div style="display: flex; padding-top: 10px">

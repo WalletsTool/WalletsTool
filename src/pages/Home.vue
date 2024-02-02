@@ -9,6 +9,7 @@ import {WebviewWindow} from '@tauri-apps/api/window'
 const router = useRouter()
 const store = confettiStore()
 let windowCount = ref({})
+let windowListObj = ref({})
 
 onMounted(() => {
   const newFlag = funcList.filter(item => item.isNew).length > 0
@@ -67,16 +68,27 @@ function goPage(pageName) {
   }
   const count = windowCount.value[pageName] ?? 0
   windowCount.value[pageName] = count + 1
-
+  if (!windowListObj.value[pageName]) {
+    windowListObj.value[pageName] = new Map()
+  }
   const title = funcList.filter(item => item.pageName === pageName)[0].title
   const webview = new WebviewWindow(pageName + windowCount.value[pageName], {
     url: '/#/' + pageName,
     width: 1275,
     height: 800,
-    title: title + ' 窗口 ' + windowCount.value[pageName]
+    title: '▶ 窗口 ' + windowCount.value[pageName] + ' 🧡 ' + title
   })
+  windowListObj.value[pageName].set(pageName + windowCount.value[pageName], webview)
+
   webview.once('tauri://created', function () {
     console.log('success')
+  })
+  webview.once('tauri://close-requested', function (event) {
+    windowListObj.value[pageName].delete(event.windowLabel)
+    if(windowListObj.value[pageName].size === 0){
+      windowCount.value[pageName] = 0
+    }
+    console.log('close-requested')
   })
   webview.once('tauri://error', function (e) {
     console.log(e)

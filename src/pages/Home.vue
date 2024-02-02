@@ -33,13 +33,13 @@ onMounted(() => {
 // 功能菜单列表
 const funcList = [
   {
-    title: "钱包多对多转账",
-    desc: "支持多条链上的钱包转账（持续更新中）",
+    title: "批量转账",
+    desc: "支持多条链上的钱包转账，支持多对多转账（持续更新中）",
     picture: "avatar/transfer.png",
     pageName: "transfer"
   },
   {
-    title: "链上余额查询",
+    title: "余额查询",
     desc: "支持多条链上的余额查询（持续更新中）",
     picture: "avatar/balance.png",
     pageName: "balance"
@@ -60,7 +60,7 @@ const funcList = [
   }
 ]
 
-// 跳转到钱包多对多转账
+// 跳转到批量转账
 function goPage(pageName) {
   if (pageName === 'monitor' || pageName === 'uniswap') {
     Notification.success('功能建设中，敬请期待')

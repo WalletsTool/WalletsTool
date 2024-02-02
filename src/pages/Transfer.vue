@@ -1113,7 +1113,7 @@ function goHome() {
 
 <template>
   <div class="container transfer">
-    <span class="pageTitle">钱包多对多转账</span>
+    <span class="pageTitle">批量转账</span>
     <!-- 工具栏 -->
     <div class="toolBar">
       <a-button type="primary" @click="handleClick('send')"

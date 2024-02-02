@@ -525,7 +525,7 @@ function goHome() {
 
 <template>
   <div class="container balance">
-    <span class="pageTitle">链上余额查询</span>
+    <span class="pageTitle">余额查询</span>
     <!-- 工具栏 -->
     <div class="toolBar">
       <a-button type="primary" @click="handleClick()">录入钱包地址</a-button>

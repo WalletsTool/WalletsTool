@@ -12,6 +12,7 @@ let group = []
 
 // 迭代执行
 function recurrence(callback, index) {
+    balance_utils.progress = (index/group.length).toFixed(4)
     iter_query(group[index]).then(() => {
         if (index < group.length - 1) {
             recurrence(callback, index + 1)
@@ -88,7 +89,6 @@ const balance_utils = {
     exec_group_query(key, currentCoin, data, onlyCoinConfig, callback, subGroupLength = 3) {
         chain = key
         onlyCoin = onlyCoinConfig
-        console.log('onlyCoinConfig: ',onlyCoinConfig)
         type = currentCoin.type
         contract_address = currentCoin.contract_address
         contract_abi = currentCoin.abi
@@ -96,7 +96,8 @@ const balance_utils = {
         group = divide_into_groups(data, subGroupLength)
         // 迭代查询
         recurrence(callback, 0)
-    }
+    },
+    progress: 0
 }
 
 export default balance_utils

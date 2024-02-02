@@ -91,6 +91,8 @@ function rowClick(record, event) {
 
 // 仅查询目标代币
 const onlyCoin = ref(true);
+// 进度
+const progress = ref(0);
 // 分页
 const pagination = ref(false);
 const scrollbar = ref(true);
@@ -441,10 +443,19 @@ async function queryBalance() {
       item.error_msg = ''
       item.exec_status = '0'
     })
+    balance_utils.progress = 0
+    const timer = setInterval(()=>{
+      progress.value = balance_utils.progress
+    },1000)
     balance_utils.exec_group_query(rpcValue.value, currentCoin.value, data.value, onlyCoin.value, () => {
       Notification.success('查询成功！');
       balanceLoading.value = false
+      if(timer){
+        clearInterval(timer)
+      }
     }, form.thread_count)
+
+
   } else {
     Notification.warning('查询 coin 类型错误！');
   }
@@ -580,6 +591,18 @@ function goHome() {
         </template>
       </a-table>
     </div>
+    <a-progress
+        v-if="balanceLoading"
+        style="margin-top: 15px"
+        :percent="progress"
+        :style="{ width: '100%' }"
+        stroke-width="5"
+        :animation="true"
+        :color="{
+        '0%': '#37ecba',
+        '100%': '#009efd',
+      }"
+    />
     <!-- RPC 选择器 -->
     <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
               :style="{'margin-top':'10px'}">

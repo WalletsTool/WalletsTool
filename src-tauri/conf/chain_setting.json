@@ -134,6 +134,15 @@
       "scan_api": "",
       "verify_api": "",
       "check_verify_api": ""
+    },
+    {
+      "key": "dym",
+      "chain": "Dymension",
+      "scan_url": "https://portal.dymension.xyz/dymension/metrics",
+      "pic_url": "chainIcons/dym.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

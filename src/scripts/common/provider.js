@@ -272,6 +272,15 @@ const providers = {
         return new ethers.providers.JsonRpcProvider(rpc_url, 66)
         // return new ethers.providers.JsonRpcProvider(rpc_url, 65)
     },
+    dym_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://dymension-evm.blockpi.network/v1/rpc/public'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 1100)
+    },
 }
 
 export const utils = {
@@ -304,6 +313,8 @@ export const utils = {
             return providers.base_provider()
         } else if (key === 'sol') {
             return providers.sol_provider()
+        } else if (key === 'dym') {
+            return providers.dym_provider()
         }
     },
     get_base_gas_price(key) {

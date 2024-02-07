@@ -275,7 +275,13 @@ const providers = {
     dym_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://dymension-evm.blockpi.network/v1/rpc/public'
+            'https://dymension.rpc.thirdweb.com',
+            'https://dymension.rpc.thirdweb.com/4a85f2ac23cbbd2e6a5769192e22b003',
+            'https://dymension.rpc.thirdweb.com/8c03e317e55e7c1096d139af8a828b57',
+            'https://dymension.rpc.thirdweb.com/1d746d0ca54d6206f9abb519b0c8b83f',
+            'https://dymension-evm.blockpi.network/v1/rpc/public',
+            'https://dymension.blockpi.network/rpc/v1/public',
+            'https://dymension.blockpi.network/rpc/v1/2fcd3420fc2747ccd2ca767a237320ea9f76c04a',
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

@@ -287,6 +287,15 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 1100)
     },
+    evmos_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://evmos.lava.build/lava-referer-f0790e27-cdd3-43ae-b782-899ee1e4e85a/',
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 9001)
+    },
 }
 
 export const utils = {
@@ -321,6 +330,8 @@ export const utils = {
             return providers.sol_provider()
         } else if (key === 'dym') {
             return providers.dym_provider()
+        } else if (key === 'evmos') {
+            return providers.evmos_provider()
         }
     },
     get_base_gas_price(key) {

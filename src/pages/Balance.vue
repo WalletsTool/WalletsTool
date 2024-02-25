@@ -198,6 +198,10 @@ function deleteToken() {
     Notification.warning(' OKT Chain 暂不支持删除代币！');
     return
   }
+  if (rpcValue.value === "evmos") {
+    Notification.warning(" EVMOS Chain 暂不支持删除代币！");
+    return;
+  }
   if (rpcValue.value === 'geth') {
     Notification.warning(' Goerli Ethereum 暂不支持删除代币！');
     return
@@ -248,6 +252,10 @@ function handleAddCoinClick() {
   if (rpcValue.value === 'okt') {
     Notification.warning(' OKT Chain 暂不支持添加代币！');
     return
+  }
+  if (rpcValue.value === "evmos") {
+    Notification.warning(" EVMOS Chain 暂不支持添加代币！");
+    return;
   }
   if (rpcValue.value === 'geth') {
     Notification.warning(' Goerli Ethereum 暂不支持添加代币！');

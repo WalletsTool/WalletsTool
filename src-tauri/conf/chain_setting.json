@@ -143,6 +143,15 @@
       "scan_api": "",
       "verify_api": "",
       "check_verify_api": ""
+    },
+    {
+      "key": "evmos",
+      "chain": "EVMOS",
+      "scan_url": "https://escan.live/",
+      "pic_url": "chainIcons/evmos.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

@@ -31,7 +31,8 @@
     "throttle-debounce": "^5.0.0",
     "vue": "^3.2.45",
     "vue-router": "^4.1.6",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zksync-ethers": "^5.7.0"
   },
   "devDependencies": {
     "@arco-design/web-vue": "^2.44.4",

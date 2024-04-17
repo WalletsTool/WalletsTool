@@ -2,6 +2,7 @@ import {utils} from "@/scripts/common/provider.js";
 import {ethers} from "ethers";
 import * as web3 from "@solana/web3.js";
 import bs58 from "bs58";
+import {Wallet} from "zksync-ethers";
 
 const base_coin_balance = {
 
@@ -16,6 +17,18 @@ const base_coin_balance = {
                     const keypair = web3.Keypair.fromSecretKey(bs58.decode(item.private_key))
                     provider.getBalance(keypair.publicKey).then((balance_lam) => {
                         item.plat_balance = balance_lam / web3.LAMPORTS_PER_SOL;
+                        resolve()
+                    }).catch((err) => {
+                        item.plat_balance = ''
+                        item.error_msg = '查询平台余额失败！'
+                        console.log('查询平台余额失败！', err)
+                        resolve()
+                    })
+                } else if (chain === 'zksync') {
+                    // 通过私钥创建钱包
+                    let wallet = new Wallet(item.private_key, provider);
+                    wallet.getBalance().then((balance) => {
+                        item.plat_balance = parseFloat(ethers.utils.formatEther(balance)).toFixed(6).toString()
                         resolve()
                     }).catch((err) => {
                         item.plat_balance = ''
@@ -55,6 +68,18 @@ const base_coin_balance = {
                 provider.getBalance(new web3.PublicKey(item.address)).then((balance_lam) => {
                     item.nonce = ''
                     item.plat_balance = balance_lam / web3.LAMPORTS_PER_SOL;
+                    resolve()
+                }).catch((err) => {
+                    item.plat_balance = ''
+                    item.nonce = ''
+                    item.error_msg = '查询平台余额失败！'
+                    console.log('查询平台余额失败！', err)
+                    resolve()
+                })
+            } else if (chain === 'zksync') {
+                provider.getBalance(item.address).then((balance_wei) => {
+                    item.plat_balance = parseFloat(ethers.utils.formatEther(balance_wei)).toFixed(6).toString()
+                    item.nonce = ''
                     resolve()
                 }).catch((err) => {
                     item.plat_balance = ''

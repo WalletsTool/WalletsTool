@@ -1,6 +1,7 @@
 import {ethers} from "ethers";
 import {RpcProvider} from "starknet";
 import * as web3 from "@solana/web3.js";
+import {Provider} from "zksync-ethers";
 
 const providers = {
 
@@ -287,6 +288,15 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 1100)
     },
+    zksync_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://mainnet.era.zksync.io',
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new Provider(rpc_url)
+    },
     evmos_provider() {
         // rpc 节点
         const rpc_list = [
@@ -478,6 +488,8 @@ export const utils = {
             return providers.dym_provider()
         } else if (key === 'evmos') {
             return providers.evmos_provider()
+        } else if (key === 'zksync') {
+            return providers.zksync_provider()
         }
     },
     get_base_gas_price(key) {

@@ -4,6 +4,8 @@ import {utils as provider_utils} from "@/scripts/common/provider.js";
 import {utils as common_utils} from "@/scripts/common/utils.js";
 import * as web3 from "@solana/web3.js";
 import bs58 from "bs58";
+import {Wallet} from "zksync-ethers";
+
 
 // 转账配置说明
 const config = {
@@ -170,6 +172,190 @@ const base_coin_transfer = {
                     console.log(err);
                     reject("获取基础信息失败：" + err);
                 }
+            } else if (config.chain === "zksync") {
+                // 随机获取rpc服务
+                const provider = provider_utils.get_provider(config.chain);
+                // 通过私钥创建钱包
+                let wallet = new Wallet(item.private_key, provider);
+                let balance_wei = wallet.getBalance();
+                let gas_fee = utils.getWalletFeeZks(config, provider, wallet, item.to_addr);
+                Promise.all([balance_wei, gas_fee])
+                    .then(async (values) => {
+                        const balance = ethers.utils.formatEther(values[0]);
+                        const gas_fee = ethers.utils.formatEther(values[1]);
+
+                        console.log("序号：", index, "当前余额为:", balance);
+                        console.log("序号：", index, "当前预估 gas_fee 为:", gas_fee);
+
+                        if (Number(balance) > 0) {
+                            let transfer_amount = BigNumber.from(0);
+                            if (config.transfer_type === "1") {
+                                if (parseFloat(gas_fee) >= parseFloat(balance)) {
+                                    reject("当前余额不足，不做转账操作！");
+                                    return;
+                                }
+                                if (config.chainLayer === "L2") {
+                                    const l1Provider = provider_utils.get_provider(config.l1);
+                                    let l1_gas_limit = await utils.getWalletGasLimit(
+                                        config,
+                                        new ethers.Wallet(item.private_key, l1Provider),
+                                        item.to_addr
+                                    );
+                                    let l1_gas_price = await utils.getGasPrice(
+                                        config,
+                                        l1Provider
+                                    );
+                                    // 如果当前gas fee太高
+                                    if (l1_gas_price === "base gas price 超出最大值限制") {
+                                        reject("l1 base gas price 超出最大值限制");
+                                        return;
+                                    }
+                                    if (
+                                        parseFloat(gas_fee) +
+                                        parseFloat(
+                                            ethers.utils.formatEther(l1_gas_price.mul(l1_gas_limit))
+                                        ) >=
+                                        parseFloat(balance)
+                                    ) {
+                                        reject("当前余额不足，不做转账操作！");
+                                        return;
+                                    }
+                                    // 计算l1的gas消耗
+                                    const rate = Math.round((config.scalar ?? 1) * 1000);
+                                    const l1_gas_fee_wei = l1_gas_price
+                                        .mul(l1_gas_limit)
+                                        .mul(rate)
+                                        .div(1000);
+                                    // 全部转账
+                                    transfer_amount = values[0]
+                                        .sub(values[1].mul(values[3])) // l2 的gas费
+                                        .sub(l1_gas_fee_wei); // l1 的gas费
+                                    // 处理scroll无法转账为0的问题
+                                    if (config.chain === "scroll") {
+                                        transfer_amount = transfer_amount.sub(
+                                            ethers.utils.parseEther("0.0000000001")
+                                        );
+                                    }
+                                } else {
+                                    // 全部转账
+                                    transfer_amount = values[0].sub(values[1]);
+                                }
+                            } else if (config.transfer_type === "2") {
+                                if (
+                                    parseFloat(config.transfer_amount) + parseFloat(gas_fee) >=
+                                    parseFloat(balance)
+                                ) {
+                                    reject("当前余额不足，不做转账操作！");
+                                    return;
+                                }
+                                // 转账固定数量
+                                transfer_amount = ethers.utils.parseEther(
+                                    config.transfer_amount
+                                );
+                            } else if (config.transfer_type === "3") {
+                                const temp = (
+                                    Math.random() *
+                                    (Number(config.transfer_amount_list[1]) -
+                                        Number(config.transfer_amount_list[0])) +
+                                    Number(config.transfer_amount_list[0])
+                                ).toFixed(Number(config.amount_precision));
+                                if (
+                                    parseFloat(temp) + parseFloat(gas_fee) >=
+                                    parseFloat(balance)
+                                ) {
+                                    reject("当前余额不足，不做转账操作！");
+                                    return;
+                                }
+                                // 转账范围随机
+                                transfer_amount = ethers.utils.parseEther(temp);
+                            } else if (config.transfer_type === "4") {
+                                if (
+                                    parseFloat(balance) >= Number(config.left_amount_list[0]) &&
+                                    parseFloat(balance) <= Number(config.left_amount_list[1])
+                                ) {
+                                    reject(
+                                        "当前余额为：" +
+                                        balance +
+                                        " 在设置的剩余范围内，不做转账操作！"
+                                    );
+                                    return;
+                                }
+                                let left_amount = (
+                                    Math.random() *
+                                    (Number(config.left_amount_list[1]) -
+                                        Number(config.left_amount_list[0])) +
+                                    Number(config.left_amount_list[0])
+                                ).toFixed(Number(config.amount_precision));
+                                if (
+                                    parseFloat(left_amount) + parseFloat(gas_fee) >=
+                                    parseFloat(balance)
+                                ) {
+                                    reject("当前余额不足，不做转账操作！");
+                                    return;
+                                }
+                                // 剩余随机数量
+                                transfer_amount = ethers.utils.parseEther(
+                                    (
+                                        parseFloat(balance) -
+                                        parseFloat(gas_fee) -
+                                        parseFloat(left_amount)
+                                    ).toFixed(Number(config.amount_precision))
+                                );
+                            }
+
+                            console.log(
+                                "序号：",
+                                index,
+                                "转账数量为:",
+                                ethers.utils.formatEther(transfer_amount)
+                            );
+
+                            item.error_msg = "发送交易...";
+                            wallet.transfer({
+                                to: item.to_addr,
+                                amount: transfer_amount,
+                            }).then(async (res) => {
+                                console.log("序号：", index, "交易 hash 为：", res.hash);
+                                item.error_msg = "等待交易结果...";
+                                const txHandle = await provider.getTransaction(res.hash)
+                                txHandle.wait().then(async () => {
+                                    resolve(res.hash);
+                                }).catch((err) => {
+                                        if (
+                                            config.error_retry === "1" &&
+                                            item.error_count < config.error_count_limit
+                                        ) {
+                                            item.error_count = item.error_count + 1;
+                                            item.retry_flag = true;
+                                        }
+                                        reject(err);
+                                    });
+                            })
+                                .catch((err) => {
+                                    if (
+                                        config.error_retry === "1" &&
+                                        item.error_count < config.error_count_limit
+                                    ) {
+                                        item.error_count = item.error_count + 1;
+                                        item.retry_flag = true;
+                                    }
+                                    reject(err);
+                                });
+                        } else {
+                            reject("当前余额不足，不做转账操作！");
+                        }
+                    })
+                    .catch((err) => {
+                        if (
+                            config.error_retry === "1" &&
+                            item.error_count < config.error_count_limit
+                        ) {
+                            item.error_count = item.error_count + 1;
+                            item.retry_flag = true;
+                        }
+                        console.log(err);
+                        reject("获取基础信息失败：" + err);
+                    });
             } else {
                 // 随机获取rpc服务
                 const provider = provider_utils.get_provider(config.chain);

@@ -152,6 +152,15 @@
       "scan_api": "",
       "verify_api": "",
       "check_verify_api": ""
+    },
+    {
+      "key": "zksync",
+      "chain": "zkSync",
+      "scan_url": "https://explorer.zksync.io/",
+      "pic_url": "chainIcons/zksync.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

@@ -1,8 +1,8 @@
 {
   "coin_list": [
     {
-      "key": "evm",
-      "coin": "EVM",
+      "key": "evmos",
+      "coin": "EVMOS",
       "type": "base",
       "contract_type": "ERC20",
       "contract_address": ""

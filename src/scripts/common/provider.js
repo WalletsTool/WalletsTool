@@ -292,6 +292,11 @@ const providers = {
         // rpc 节点
         const rpc_list = [
             'https://mainnet.era.zksync.io',
+            'https://zksync.drpc.org',
+            'https://mainnet.era.zksync.io',
+            'https://1rpc.io/zksync2-era',
+            'https://zksync.meowrpc.com',
+            'https://zksync-era.blockpi.network/v1/rpc/public'
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

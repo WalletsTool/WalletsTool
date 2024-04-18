@@ -94,24 +94,22 @@ const transfer_utils = {
     getWalletFeeZks(config, provider, wallet, to_address) {
         return new Promise(async (resolve, reject) => {
             // 获取费用信息
-            provider.estimateGas({from: await wallet.getAddress(), to: to_address}).then((fee) => {
+            provider.estimateFee({from: await wallet.getAddress(), to: to_address}).then((fee) => {
                 // 计算 gas_limit
                 if (config.limit_type === '1') {
-                    resolve(ethers.utils.formatEther(fee.max_fee_per_gas.mul(fee.gas_limit)))
+                    resolve(ethers.utils.formatEther(BigNumber.from(fee.max_fee_per_gas).mul(BigNumber.from(fee.gas_limit))))
                 } else if (config.limit_type === '2') {
-                    resolve(ethers.utils.formatEther(fee.max_fee_per_gas.mul(BigNumber.from(config.limit_count))))
+                    resolve(ethers.utils.formatEther(BigNumber.from(fee.max_fee_per_gas).mul(BigNumber.from(config.limit_count))))
                 } else if (config.limit_type === '3') {
                     let gas_limit_final = Math.floor(Math.random() * (Number(config.limit_count_list[1]) - Number(config.limit_count_list[0])) + Number(config.limit_count_list[0]));
-                    resolve(ethers.utils.formatEther(fee.max_fee_per_gas.mul(BigNumber.from(gas_limit_final.toString()))))
+                    resolve(ethers.utils.formatEther(BigNumber.from(fee.max_fee_per_gas).mul(BigNumber.from(gas_limit_final.toString()))))
                 } else {
                     reject('gas limit type error')
                 }
-
             }).catch((err) => {
                 console.log('获取gas_fee 失败，', err)
                 reject('获取gas_fee 失败，' + err)
             })
-
         })
     },
     // 获取 GasLimit 设置

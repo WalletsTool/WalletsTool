@@ -182,7 +182,7 @@ const base_coin_transfer = {
                 Promise.all([balance_wei, gas_fee])
                     .then(async (values) => {
                         const balance = ethers.utils.formatEther(values[0]);
-                        const gas_fee = ethers.utils.formatEther(values[1]);
+                        const gas_fee = values[1];
 
                         console.log("序号：", index, "当前余额为:", balance);
                         console.log("序号：", index, "当前预估 gas_fee 为:", gas_fee);

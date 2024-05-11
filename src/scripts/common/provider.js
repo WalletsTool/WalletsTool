@@ -128,6 +128,21 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 11155111)
     },
+    holesky_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://ethereum-holesky.blockpi.network/v1/rpc/public',
+            'https://rpc.holesky.ethpandaops.io',
+            'https://holesky.drpc.org',
+            'https://rpc-holesky.rockx.com',
+            'https://endpoints.omniatech.io/v1/eth/holesky/public',
+            'https://ethereum-holesky-rpc.publicnode.com',
+            'https://1rpc.io/holesky'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 17000)
+    },
     scroll_eth_provider() {
         // rpc 节点
         const rpc_list = [
@@ -472,6 +487,8 @@ export const utils = {
             return providers.geth_provider()
         } else if (key === 'sepolia') {
             return providers.sepolia_provider()
+        } else if (key === 'holesky') {
+            return providers.holesky_provider()
         } else if (key === 'scroll') {
             return providers.scroll_eth_provider()
         } else if (key === 'arb') {

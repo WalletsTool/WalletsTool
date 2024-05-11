@@ -115,6 +115,15 @@
       "check_verify_api": ""
     },
     {
+      "key": "holesky",
+      "chain": "Holesky Ethereum TestNet",
+      "scan_url": "https://cn.etherscan.com/",
+      "pic_url": "chainIcons/eth.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
+    },
+    {
       "key": "scroll",
       "chain": "Scroll Alpha Testnet",
       "scan_url": "https://blockscout.scroll.io/",

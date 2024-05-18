@@ -67,7 +67,10 @@ const providers = {
     sol_provider() {
         // rpc 节点
         const rpc_list = [
-            "https://practical-cosmological-water.solana-mainnet.quiknode.pro/125c32dc05fba63cfded06a571800d7dbda19ea9/",
+            "https://api.mainnet-beta.solana.com",
+            "https://rpc.ankr.com/solana",
+            "https://rpc.ankr.com/solana/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f"
+            // "https://practical-cosmological-water.solana-mainnet.quiknode.pro/125c32dc05fba63cfded06a571800d7dbda19ea9/",
             // "https://practical-cosmological-water.solana-mainnet.quiknode.pro/125c32dc05fba63cfded06a571800d7dbda19ea9/",
             // "https://go.getblock.io/419b279a3b614544b0d4801841fce66e",
             // "https://mainnet.helius-rpc.com/?api-key=0b1e751c-26d1-457c-beeb-063b580d4484",
@@ -137,7 +140,7 @@ const providers = {
             'https://rpc-holesky.rockx.com',
             'https://endpoints.omniatech.io/v1/eth/holesky/public',
             'https://ethereum-holesky-rpc.publicnode.com',
-            'https://1rpc.io/holesky'
+            // 'https://1rpc.io/holesky'
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

@@ -67,8 +67,9 @@ const providers = {
     sol_provider() {
         // rpc 节点
         const rpc_list = [
-            "https://api.mainnet-beta.solana.com",
-            "https://rpc.ankr.com/solana",
+            // "https://api.mainnet-beta.solana.com",
+            // "https://rpc.ankr.com/solana",
+            // "https://api.tatum.io/v3/blockchain/node/solana-mainnet",
             "https://rpc.ankr.com/solana/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f"
             // "https://practical-cosmological-water.solana-mainnet.quiknode.pro/125c32dc05fba63cfded06a571800d7dbda19ea9/",
             // "https://practical-cosmological-water.solana-mainnet.quiknode.pro/125c32dc05fba63cfded06a571800d7dbda19ea9/",

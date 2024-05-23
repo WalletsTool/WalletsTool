@@ -125,7 +125,7 @@
     },
     {
       "key": "scroll",
-      "chain": "Scroll Alpha Testnet",
+      "chain": "Scroll",
       "scan_url": "https://blockscout.scroll.io/",
       "pic_url": "chainIcons/scroll.png",
       "layer": "L2",

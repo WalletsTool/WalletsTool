@@ -335,7 +335,7 @@ const providers = {
         const rpc_list = [
             'https://evmos-jsonrpc.alkadeta.com',
             'https://alphab.ai/rpc/eth/evmos',
-            'https://evmosevm.rpc.stakin-nodes.com',
+            // 'https://evmosevm.rpc.stakin-nodes.com',
             'https://evm-rpc.evmos.silentvalidator.com',
             'https://jsonrpc-evmos.mzonder.com',
             'https://evmos-jsonrpc.theamsolutions.info',

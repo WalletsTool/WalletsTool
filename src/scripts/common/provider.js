@@ -319,12 +319,13 @@ const providers = {
     zksync_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://mainnet.era.zksync.io',
-            'https://zksync.drpc.org',
-            'https://mainnet.era.zksync.io',
-            'https://1rpc.io/zksync2-era',
-            'https://zksync.meowrpc.com',
-            'https://zksync-era.blockpi.network/v1/rpc/public'
+            'https://rpc.ankr.com/zksync_era/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f'
+            // 'https://mainnet.era.zksync.io',
+            // 'https://zksync.drpc.org',
+            // 'https://mainnet.era.zksync.io',
+            // 'https://1rpc.io/zksync2-era',
+            // 'https://zksync.meowrpc.com',
+            // 'https://zksync-era.blockpi.network/v1/rpc/public'
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

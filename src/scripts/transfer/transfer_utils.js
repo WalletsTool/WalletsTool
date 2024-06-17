@@ -91,10 +91,14 @@ const transfer_utils = {
         })
     },
     // 获取 GasLimit 设置
-    getWalletFeeZks(config, provider, wallet, to_address) {
+    getWalletFeeZks(config, provider, wallet, to_address, amount) {
         return new Promise(async (resolve, reject) => {
             // 获取费用信息
-            provider.estimateFee({from: await wallet.getAddress(), to: to_address}).then(async (fee) => {
+            provider.estimateFee({
+                from: await wallet.getAddress(),
+                to: to_address,
+                value: amount.toHexString()
+            }).then(async (fee) => {
                 // 计算gas_price的设置
                 const gas_price = await this.getGasPrice(config, provider)
                 // 计算 gas_limit
@@ -131,14 +135,14 @@ const transfer_utils = {
         return new Promise(async (resolve, reject) => {
             // 计算 gas_limit
             if (config.limit_type === '1') {
-                debugger
                 if (config.chain === 'zksync') {
-                    provider.estimateFee({
+                    provider.estimateGasTransfer({
                         from: await wallet.getAddress(),
-                        to: to_address
-                    }).then((fee) => {
-                        debugger
-                        resolve(fee.gas_limit)
+                        to: to_address,
+                        token: contract.address,
+                        amount: transfer_amount
+                    }).then((gas_limit) => {
+                        resolve(gas_limit)
                     }).catch((err) => {
                         console.log('获取gas_limit 失败，', err)
                         reject('获取gas_limit 失败，' + err)

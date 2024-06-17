@@ -127,16 +127,30 @@ const transfer_utils = {
         })
     },
     // 获取 GasLimit 设置
-    getContractGasLimit(config, contract, wallet, to_address, transfer_amount) {
+    getContractGasLimit(config, provider, contract, wallet, to_address, transfer_amount) {
         return new Promise(async (resolve, reject) => {
             // 计算 gas_limit
             if (config.limit_type === '1') {
-                contract.connect(wallet).estimateGas.transfer(to_address, transfer_amount).then((gas_limit) => {
-                    resolve(gas_limit)
-                }).catch((err) => {
-                    console.log('获取gas_limit 失败，', err)
-                    reject('获取gas_limit 失败，' + err)
-                })
+                debugger
+                if (config.chain === 'zksync') {
+                    provider.estimateFee({
+                        from: await wallet.getAddress(),
+                        to: to_address
+                    }).then((fee) => {
+                        debugger
+                        resolve(fee.gas_limit)
+                    }).catch((err) => {
+                        console.log('获取gas_limit 失败，', err)
+                        reject('获取gas_limit 失败，' + err)
+                    })
+                } else {
+                    contract.connect(wallet).estimateGas.transfer(to_address, transfer_amount).then((gas_limit) => {
+                        resolve(gas_limit)
+                    }).catch((err) => {
+                        console.log('获取gas_limit 失败，', err)
+                        reject('获取gas_limit 失败，' + err)
+                    })
+                }
             } else if (config.limit_type === '2') {
                 resolve(BigNumber.from(config.limit_count))
             } else if (config.limit_type === '3') {

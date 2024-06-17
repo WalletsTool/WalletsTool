@@ -79,7 +79,7 @@ const token_transfer = {
 
                     console.log('序号：', index, '转账数量为:', ethers.utils.formatUnits(transfer_amount, values[1]))
 
-                    const gasLimit = await utils.getContractGasLimit(config, contract, wallet, item.to_addr, transfer_amount)
+                    const gasLimit = await utils.getContractGasLimit(config, provider, contract, wallet, item.to_addr, transfer_amount)
                     console.log('序号：', index, 'gasLimit:', gasLimit)
 
                     item.error_msg = '发送交易...'

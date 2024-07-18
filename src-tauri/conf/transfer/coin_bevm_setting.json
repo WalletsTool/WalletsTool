@@ -1,0 +1,12 @@
+{
+  "coin_list": [
+    {
+      "key": "btc",
+      "coin": "BTC",
+      "type": "base",
+      "contract_type": "",
+      "contract_address": "",
+      "abi": ""
+    }
+  ]
+}

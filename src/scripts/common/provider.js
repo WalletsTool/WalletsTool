@@ -4,7 +4,16 @@ import * as web3 from "@solana/web3.js";
 import {Provider} from "zksync-ethers";
 
 const providers = {
+    bevm_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://rpc-mainnet-2.bevm.io',
+            'https://rpc-mainnet-1.bevm.io',
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
+        return new ethers.providers.JsonRpcProvider(rpc_url, 11501)
+    },
     eth_provider() {
         // rpc 节点
         const rpc_list = [
@@ -391,6 +400,8 @@ export const utils = {
             return providers.evmos_provider()
         } else if (key === 'zksync') {
             return providers.zksync_provider()
+        } else if (key === 'bevm') {
+            return providers.bevm_provider()
         }
     },
     get_base_gas_price(key) {

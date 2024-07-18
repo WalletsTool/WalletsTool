@@ -145,6 +145,15 @@
       "check_verify_api": ""
     },
     {
+      "key": "bevm",
+      "chain": "Bevm",
+      "scan_url": "https://scan-mainnet.bevm.io/",
+      "pic_url": "chainIcons/bevm.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
+    },
+    {
       "key": "dym",
       "chain": "Dymension",
       "scan_url": "https://portal.dymension.xyz/dymension/metrics",

@@ -4,6 +4,17 @@ import * as web3 from "@solana/web3.js";
 import {Provider} from "zksync-ethers";
 
 const providers = {
+    zgs_provider() {
+        // rpc 节点
+        const rpc_list = [
+            // 'https://jsonrpc.0g-test.paknodesarmy.xyz/',
+            'https://0g-evm-rpc.tws.im/',
+            'https://rpc-testnet.0g.ai'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 16600)
+    },
     bevm_provider() {
         // rpc 节点
         const rpc_list = [
@@ -354,7 +365,28 @@ const providers = {
             'https://evmos-evm-rpc.publicnode.com',
             'https://evmos-evm.publicnode.com',
             'https://evmos-json-rpc.stakely.io',
-            'https://jsonrpc-evmos-ia.cosmosia.notional.ventures'
+            // 'https://jsonrpc-evmos-ia.cosmosia.notional.ventures',
+            // 'https://eth.bd.evmos.org:8545',
+            // 'https://evmos.api.onfinality.io/public',
+            // 'https://evmos-api.theamsolutions.info',
+            // 'https://evmos-json.antrixy.org',
+            'https://evmos-json.qubelabs.io',
+            'https://evmos-json-rpc.0base.dev',
+            // 'https://evmos-json-rpc.agoranodes.com',
+            // 'https://evmos-jsonrpc.cyphercore.io',
+            // 'https://evmos-jsonrpc.kalia.network',
+            'https://evmos-jsonrpc.stake-town.com',
+            'https://evmos-mainnet.public.blastapi.io',
+            // 'https://evmos-rpc.theamsolutions.info',
+            // 'https://evm-rpc-evmos.hoodrun.io',
+            // 'https://json-rpc.evmos.blockhunters.org',
+            // 'https://jsonrpc.evmos.nodestake.top',
+            // 'https://json-rpc.evmos.tcnetwork.io',
+            // 'https://jsonrpc-evmos.goldenratiostaking.net',
+            'https://json-rpc-evmos.mainnet.validatrium.club',
+            'https://rpc-evm.evmos.dragonstake.io',
+            // 'https://rpc-evmos.imperator.co',
+
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
@@ -402,6 +434,8 @@ export const utils = {
             return providers.zksync_provider()
         } else if (key === 'bevm') {
             return providers.bevm_provider()
+        } else if (key === '0g') {
+            return providers.zgs_provider()
         }
     },
     get_base_gas_price(key) {

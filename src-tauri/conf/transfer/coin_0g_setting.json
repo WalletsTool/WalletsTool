@@ -1,0 +1,12 @@
+{
+  "coin_list": [
+    {
+      "key": "a0gi",
+      "coin": "A0GI",
+      "type": "base",
+      "contract_type": "",
+      "contract_address": "",
+      "abi": ""
+    }
+  ]
+}

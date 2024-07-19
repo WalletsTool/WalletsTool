@@ -172,6 +172,15 @@
       "check_verify_api": ""
     },
     {
+      "key": "0g",
+      "chain": "0G-TEST",
+      "scan_url": "https://storagescan-newton.0g.ai/",
+      "pic_url": "chainIcons/0g.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
+    },
+    {
       "key": "zksync",
       "chain": "zkSync",
       "scan_url": "https://explorer.zksync.io/",

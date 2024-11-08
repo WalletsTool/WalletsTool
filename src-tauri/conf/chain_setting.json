@@ -188,6 +188,15 @@
       "scan_api": "",
       "verify_api": "",
       "check_verify_api": ""
+    },
+    {
+      "key": "manta",
+      "chain": "Manta",
+      "scan_url": "https://manta.socialscan.io/",
+      "pic_url": "chainIcons/manta.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

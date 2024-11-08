@@ -25,6 +25,21 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 11501)
     },
+    manta_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://1rpc.io/manta',
+            'https://manta.nirvanalabs.xyz/mantapublic',
+            'https://manta-pacific-gascap.calderachain.xyz/http',
+            'https://pacific-rpc.manta.network/http',
+            'https://manta-pacific.drpc.org',
+            'https://endpoints.omniatech.io/v1/manta-pacific/mainnet/public',
+            'https://r1.pacific.manta.systems/http'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 169)
+    },
     eth_provider() {
         // rpc 节点
         const rpc_list = [
@@ -436,6 +451,8 @@ export const utils = {
             return providers.bevm_provider()
         } else if (key === '0g') {
             return providers.zgs_provider()
+        } else if (key === 'manta') {
+            return providers.manta_provider()
         }
     },
     get_base_gas_price(key) {

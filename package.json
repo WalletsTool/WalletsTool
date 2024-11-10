@@ -12,6 +12,7 @@
     "tauri dev": "tauri dev"
   },
   "dependencies": {
+    "@constellation-labs/bedrock-sdk": "^1.3.9",
     "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
     "@esbuild-plugins/node-modules-polyfill": "^0.2.2",
     "@solana/web3.js": "^1.87.6",

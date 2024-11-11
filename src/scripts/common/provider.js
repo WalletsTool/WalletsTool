@@ -33,8 +33,8 @@ const providers = {
             'https://manta-pacific-gascap.calderachain.xyz/http',
             'https://pacific-rpc.manta.network/http',
             'https://manta-pacific.drpc.org',
-            'https://endpoints.omniatech.io/v1/manta-pacific/mainnet/public',
-            'https://r1.pacific.manta.systems/http'
+            // 'https://endpoints.omniatech.io/v1/manta-pacific/mainnet/public',
+            // 'https://r1.pacific.manta.systems/http'
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

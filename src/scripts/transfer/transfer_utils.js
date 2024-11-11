@@ -131,33 +131,25 @@ const transfer_utils = {
         })
     },
     // 获取 gas_fee Manta
-    getWalletFeeManta(config, provider, wallet, to_address, amount) {
+    getWalletFeeManta(config, provider, wallet, to_address) {
         return new Promise(async (resolve, reject) => {
-            const l2RpcProvider = asL2Provider(provider);
-            // 计算gas_price的设置
-            const gas_price = await this.getGasPrice(config, provider)
-            const gas_limit = await this.getWalletGasLimit(config, wallet, to_address)
-            debugger
-            // 获取费用信息
-            l2RpcProvider.estimateTotalGasCost({
-                from: await wallet.getAddress(),
-                to: to_address,
-                value: amount.toHexString(),
-                type: 2,
-                maxFeePerGas: gas_price,
-                gasLimit: gas_limit
-            }).then(async (fee) => {
-                debugger
-                resolve({
-                    gas_fee: ethers.utils.formatEther(fee).toString(),
-                    gas_price: gas_price,
-                    gas_limit: gas_limit
+            try {
+                const l2RpcProvider = asL2Provider(provider);
+                // 获取费用信息
+                l2RpcProvider.estimateTotalGasCost({
+                    from: await wallet.getAddress(),
+                    to: to_address,
+                    type: 2,
+                }).then(async (fee) => {
+                    resolve(ethers.utils.formatEther(fee).toString())
+                }).catch((err) => {
+                    console.log('获取gas_fee 失败，', err)
+                    reject('获取gas_fee 失败，' + err)
                 })
-            }).catch((err) => {
-                debugger
-                console.log('获取gas_fee 失败，', err)
-                reject('获取gas_fee 失败，' + err)
-            })
+            } catch (e){
+                console.log('获取gas_fee 失败，', e)
+                reject('获取gas_fee 失败，' + e)
+            }
         })
     },
     // 获取 GasLimit 设置

@@ -314,10 +314,10 @@ function fetchGas() {
       .get_base_gas_price(rpcValue.value)
       .then((res) => {
         if (temp === rpcValue.value) {
-          if (rpcValue.value === "opbnb") {
-            currentRpc.value.gas_price = res.toFixed(7);
+          if (rpcValue.value === "eth") {
+            currentRpc.value.gas_price = res.toFixed(3);
           } else {
-            currentRpc.value.gas_price = res.toFixed(2);
+            currentRpc.value.gas_price = res.toFixed(7);
           }
         } else {
           console.log("gas price 已失效");

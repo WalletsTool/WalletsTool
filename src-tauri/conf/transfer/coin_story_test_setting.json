@@ -1,0 +1,12 @@
+{
+  "coin_list": [
+    {
+      "key": "ip",
+      "coin": "IP",
+      "type": "base",
+      "contract_type": "",
+      "contract_address": "",
+      "abi": ""
+    }
+  ]
+}

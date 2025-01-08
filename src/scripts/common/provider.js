@@ -25,6 +25,18 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 11501)
     },
+    story_test_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://story-testnet-jsonrpc.blockhub.id',
+            'https://evm-rpc-story.josephtran.xyz',
+            'https://lightnode-json-rpc-story.grandvalleys.com',
+            'https://story-rpc-evm.mandragora.io',
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url)
+    },
     manta_provider() {
         // rpc 节点
         const rpc_list = [
@@ -453,6 +465,8 @@ export const utils = {
             return providers.zgs_provider()
         } else if (key === 'manta') {
             return providers.manta_provider()
+        } else if (key === 'story_test') {
+            return providers.story_test_provider()
         }
     },
     get_base_gas_price(key) {

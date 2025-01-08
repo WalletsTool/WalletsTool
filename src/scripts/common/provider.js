@@ -28,10 +28,11 @@ const providers = {
     story_test_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://story-testnet-jsonrpc.blockhub.id',
-            'https://evm-rpc-story.josephtran.xyz',
-            'https://lightnode-json-rpc-story.grandvalleys.com',
-            'https://story-rpc-evm.mandragora.io',
+            // 'https://story-testnet-jsonrpc.blockhub.id',
+            // 'https://evm-rpc-story.josephtran.xyz',
+            // 'https://lightnode-json-rpc-story.grandvalleys.com',
+            // 'https://story-rpc-evm.mandragora.io',
+            'https://rpc.ankr.com/story_odyssey/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f'
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 

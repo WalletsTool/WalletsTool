@@ -25,6 +25,15 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 11501)
     },
+    sahara_test_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://testnet.saharalabs.ai'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url)
+    },
     story_test_provider() {
         // rpc 节点
         const rpc_list = [
@@ -468,6 +477,8 @@ export const utils = {
             return providers.manta_provider()
         } else if (key === 'story_test') {
             return providers.story_test_provider()
+        } else if (key === 'sahara_test') {
+            return providers.sahara_test_provider()
         }
     },
     get_base_gas_price(key) {

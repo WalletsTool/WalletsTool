@@ -1,0 +1,12 @@
+{
+  "coin_list": [
+    {
+      "key": "avax",
+      "coin": "AVAX",
+      "type": "base",
+      "contract_type": "ERC20",
+      "contract_address": "",
+      "abi": ""
+    }
+  ]
+}

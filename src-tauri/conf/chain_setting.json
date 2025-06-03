@@ -10,6 +10,15 @@
       "check_verify_api": "https://api.etherscan.io/api?module=contract&action=checkproxyverification&apikey=5QKYWV24Q7E4NHXV928Q62BDIPHTJJSYH3&guid="
     },
     {
+      "key": "avax",
+      "chain": "Avalanche C-Chain",
+      "scan_url": "https://odyssey.storyscan.xyz/",
+      "pic_url": "chainIcons/avax.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
+    },
+    {
       "key": "sahara_test",
       "chain": "SAHARA_TEST",
       "scan_url": "https://testnet-explorer.saharalabs.ai/",

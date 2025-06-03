@@ -265,12 +265,53 @@ const providers = {
         console.log(rpc_url)
         return new ethers.providers.JsonRpcProvider(rpc_url, 56)
     },
+    avax_provider() {
+        // rpc 节点
+        const rpc_list = [
+            // 'https://api.zan.top/avax-mainnet/ext/bc/C/rpc',
+            'https://ava-mainnet.public.blastapi.io/ext/bc/C/rpc',
+            'https://api.avax.network/ext/bc/C/rpc',
+            'https://avalanche.drpc.org',
+            'https://avalanche-c-chain-rpc.publicnode.com',
+            'https://avax-pokt.nodies.app/ext/bc/C/rpc',
+            'https://avalanche-mainnet.gateway.tenderly.co',
+            // 'https://rpc.owlracle.info/avax/70d38ce1826c4a60bb2a8e05a6c8b20f',
+            'https://endpoints.omniatech.io/v1/avax/mainnet/public',
+            'https://avax.meowrpc.com',
+            'https://ava-mainnet.public.blastapi.io/ext/bc/C/rpc',
+            'https://api.avax.network/ext/bc/C/rpc',
+            'https://avalanche-c-chain.publicnode.com',
+            'https://avalanche-evm.publicnode.com',
+            'https://1rpc.io/avax/c',
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url, 43114)
+    },
     polygon_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://polygon-mainnet.g.alchemy.com/v2/3I459iRjefnHAY8H6zQ-3mQWycNEJh25', // alchemy_rpc
-            'https://rpc.ankr.com/polygon/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
-            'https://polygon-mainnet.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
+            'https://polygon-bor.publicnode.com',
+            'https://polygon-mainnet.public.blastapi.io',
+            'https://1rpc.io/matic',
+            'https://polygon-rpc.com',
+            'https://rpc-mainnet.matic.quiknode.pro',
+            'https://api.zan.top/polygon-mainnet',
+            'https://polygon-mainnet.public.blastapi.io',
+            'https://polygon.drpc.org',
+            'https://polygon.lava.build',
+            'https://polygon-bor-rpc.publicnode.com',
+            'https://rpc-mainnet.matic.quiknode.pro',
+            'https://go.getblock.io/02667b699f05444ab2c64f9bff28f027',
+            'https://endpoints.omniatech.io/v1/matic/mainnet/public',
+
+            // 'https://rpc.therpc.io/polygon',
+            // 'https://rpc.owlracle.info/poly/70d38ce1826c4a60bb2a8e05a6c8b20f',
+            // 'https://polygon.meowrpc.com',
+
+            // 'https://polygon-mainnet.g.alchemy.com/v2/3I459iRjefnHAY8H6zQ-3mQWycNEJh25', // alchemy_rpc
+            // 'https://rpc.ankr.com/polygon/7b0305a9ff9721e1f27753ef99e285fdecf8b8b90c11cda831e7d54718c70a9f', // ankr_rpc
+            // 'https://polygon-mainnet.nodereal.io/v1/0f6a7df001924b749c9466dc0bdb99c5', // nodereal_rpc
             // 'https://polygon.blockpi.network/v1/rpc/b81b8e70c73f7ed6794ce2091ee9b340b4c1ebb5', // blockpi_rpc
             // 'https://skilled-black-gas.matic.quiknode.pro/79466695ef6e44dd393e18b5e69b27a30523db3b/', // quiknode_rpc
         ]
@@ -467,6 +508,8 @@ export const utils = {
             return providers.binance_provider()
         } else if (key === 'polygon') {
             return providers.polygon_provider()
+        } else if (key === 'avax') {
+            return providers.avax_provider()
         } else if (key === 'starknet') {
             return providers.starknet_provider()
         } else if (key === 'okt') {

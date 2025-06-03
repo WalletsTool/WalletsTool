@@ -207,14 +207,17 @@ const providers = {
     scroll_eth_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://scroll-mainnet-public.unifra.io',
-            'https://scroll.blockpi.network/v1/rpc/public',
             'https://scroll.drpc.org',
             'https://scroll-mainnet.public.blastapi.io',
-            'https://scroll-mainnet.rpc.grove.city/v1/a7a7c8e2',
             'https://1rpc.io/scroll',
             'https://rpc.ankr.com/scroll',
             'https://scroll-mainnet.chainstacklabs.com',
+            'https://rpc.scroll.io',
+            'https://scroll-rpc.publicnode.com',
+            // 'https://endpoints.omniatech.io/v1/scroll/mainnet/public'
+            // 'https://scroll-mainnet-public.unifra.io',
+            // 'https://scroll.blockpi.network/v1/rpc/public',
+            // 'https://scroll-mainnet.rpc.grove.city/v1/a7a7c8e2',
             // 'https://scroll-alphanet.blastapi.io/d6df6b9f-6b9a-470e-b529-708c36a65c32', // blastapi_rpc
             // 'https://scroll-alphanet.public.blastapi.io',
             // 'https://alpha-rpc.scroll.io/l2',
@@ -429,6 +432,15 @@ const providers = {
 
         return new ethers.providers.JsonRpcProvider(rpc_url, 9001)
     },
+    nexus_dev_provider() {
+        // rpc 节点
+        const rpc_list = [
+            'https://rpc.nexus.xyz/http'
+        ]
+        const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
+
+        return new ethers.providers.JsonRpcProvider(rpc_url)
+    },
 }
 
 export const utils = {
@@ -479,6 +491,8 @@ export const utils = {
             return providers.story_test_provider()
         } else if (key === 'sahara_test') {
             return providers.sahara_test_provider()
+        } else if (key === 'nexus_dev') {
+            return providers.nexus_dev_provider()
         }
     },
     get_base_gas_price(key) {

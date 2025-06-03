@@ -1,0 +1,12 @@
+{
+  "coin_list": [
+    {
+      "key": "nex",
+      "coin": "NEX",
+      "type": "base",
+      "contract_type": "",
+      "contract_address": "",
+      "abi": ""
+    }
+  ]
+}

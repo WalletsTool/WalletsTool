@@ -215,6 +215,15 @@
       "scan_api": "",
       "verify_api": "",
       "check_verify_api": ""
+    },
+    {
+      "key": "nexus_dev",
+      "chain": "NEXUS_DEV",
+      "scan_url": "https://explorer.nexus.xyz/",
+      "pic_url": "chainIcons/nexus.png",
+      "scan_api": "",
+      "verify_api": "",
+      "check_verify_api": ""
     }
   ]
 }

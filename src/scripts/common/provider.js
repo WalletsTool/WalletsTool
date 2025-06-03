@@ -278,7 +278,6 @@ const providers = {
             // 'https://rpc.owlracle.info/avax/70d38ce1826c4a60bb2a8e05a6c8b20f',
             'https://endpoints.omniatech.io/v1/avax/mainnet/public',
             'https://avax.meowrpc.com',
-            'https://ava-mainnet.public.blastapi.io/ext/bc/C/rpc',
             'https://api.avax.network/ext/bc/C/rpc',
             'https://avalanche-c-chain.publicnode.com',
             'https://avalanche-evm.publicnode.com',

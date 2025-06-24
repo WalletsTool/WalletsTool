@@ -108,8 +108,6 @@ const providers = {
     base_provider() {
         // rpc 节点
         const rpc_list = [
-            'https://developer-access-mainnet.base.org',
-            'https://base.blockpi.network/v1/rpc/public',
             'https://base.publicnode.com',
             'https://base.meowrpc.com',
             'https://1rpc.io/base',
@@ -118,7 +116,6 @@ const providers = {
             'https://1rpc.io/3RrFQ54LaLkSH5EFU/base',
             'https://base.blockpi.network/v1/rpc/0ae3552e01375f193365606394b71d5426c8bba5',
             'https://base.llamarpc.com',
-            'https://rpc.therpc.io/base',
             'https://base.rpc.subquery.network/public',
             'https://base.api.onfinality.io/public',
             'https://base-mainnet.public.blastapi.io',
@@ -126,8 +123,11 @@ const providers = {
             'https://base.drpc.org',
             'https://base.lava.build',
             'https://base-rpc.publicnode.com',
-            'https://mainnet.base.org',
-            'https://base-pokt.nodies.app',
+            'https://base.blockpi.network/v1/rpc/public',
+            'https://rpc.therpc.io/base',
+            // 'https://developer-access-mainnet.base.org',
+            // 'https://mainnet.base.org',
+            // 'https://base-pokt.nodies.app',
             // 'https://rpc.owlracle.info/base/70d38ce1826c4a60bb2a8e05a6c8b20f',
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]

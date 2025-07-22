@@ -10,15 +10,27 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-tauri = { version = "1.5", features = ["http-api", "shell-open", "system-tray", "window-create"] }
+tauri = { version = "2.0.0", features = ["tray-icon"] }
 anyhow = "1.0.65"
 thiserror = "1.0.37"
 tokio = { version = "1.22.0", features = ["macros", "rt-multi-thread", "time"] }
+# HTTP 客户端
+reqwest = { version = "0.11", features = ["json"] }
+# 异步流处理
+futures = "0.3"
+# 随机数
+rand = "0.8"
+# 序列化
+hex = "0.4"
+# 数据库
+sqlx = { version = "0.6", features = ["runtime-tokio-rustls", "sqlite", "chrono", "uuid"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
 
 [features]
 # by default Tauri runs in production mode

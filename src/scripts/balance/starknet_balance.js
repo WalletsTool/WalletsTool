@@ -1,5 +1,6 @@
-import {Contract, number, uint256} from "starknet";
-import {BigNumber, ethers} from "ethers";
+import {Contract, num, uint256} from "starknet";
+import {ethers} from "ethers";
+const {formatUnits} = ethers.utils;
 import {utils} from "@/scripts/common/provider.js";
 import axios from "axios";
 
@@ -28,11 +29,11 @@ const starknet_balance = {
                     balance_str = uint256.uint256ToBN(balance_result.balance).toString()
                 }
                 const decimals_str = decimals_result.decimals.toString()
-                const nonce_str = number.toBN(nonce_result).toString()
+                const nonce_str = num.toBN(nonce_result).toString()
                 // const balance_str = number.toBN(balance_result.data.result[0]).toString()
                 // const decimals_str = number.toBN(decimals_result.data.result).toString()
                 // const nonce_str = number.toBN(nonce_result.data.result).toString()
-                item.coin_balance = parseFloat(ethers.utils.formatUnits(BigNumber.from(balance_str), decimals_str)).toFixed(6).toString()
+                item.coin_balance = parseFloat(formatUnits(BigInt(balance_str), decimals_str)).toFixed(6).toString()
                 item.nonce = nonce_str
                 resolve()
             }).catch((err) => {

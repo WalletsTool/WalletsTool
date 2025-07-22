@@ -2,7 +2,7 @@
 import {IconDelete, IconDoubleLeft, IconDownload, IconPlus} from '@arco-design/web-vue/es/icon';
 import {useRouter} from "vue-router";
 import {nextTick, onBeforeMount, onMounted, reactive, ref} from "vue";
-import {invoke} from "@tauri-apps/api/tauri";
+import {invoke} from "@tauri-apps/api/core";
 import {Notification} from "@arco-design/web-vue";
 import balance_utils from "@/scripts/balance/balance_utils.js";
 import token_utils from "@/scripts/token/token_utils.js";
@@ -100,7 +100,7 @@ let rpcOptions = ref([])
 // coin默认值
 let coinValue = ref('');
 // coin自定义字段名
-const coinFieldNames = {value: 'key', label: 'coin'}
+const coinFieldNames = {value: 'key', label: 'label'}
 // 币种选择器
 const coinOptions = ref([]);
 // 查询余额按钮loading
@@ -164,7 +164,7 @@ onMounted(() => {
 
 // RPC变化事件
 async function rpcChange() {
-  coinOptions.value = await invoke("get_coin_list", {chain: rpcValue.value, page: 'balance'})
+  coinOptions.value = await invoke("get_coin_list", {chain: rpcValue.value})
   coinValue.value = coinOptions.value[0].key
   currentCoin.value = coinOptions.value[0]
   currentRpc.value = rpcOptions.value.filter(item => item.key === rpcValue.value)[0]
@@ -206,7 +206,7 @@ function deleteTokenCancel() {
 async function deleteTokenConfirm() {
   console.log('确认删除代币')
   deleteTokenVisible.value = false
-  await invoke("remove_coin", {chain: rpcValue.value, page: 'balance', key: currentCoin.value.key}).then(() => {
+  await invoke("remove_coin", {chain: rpcValue.value, key: currentCoin.value.key}).then(() => {
     Notification.success('删除成功！');
     // 删除成功后重新获取代币列表
     rpcChange()
@@ -262,17 +262,17 @@ function addCoinFunc() {
         token_utils.getTokenSymbol(rpcValue.value, coinAddress.value, abi).then(symbol => {
           let json = {
             "key": symbol.toLowerCase(),
-            "coin": symbol,
-            "type": "token",
-            "contract_type": "",
+            "name": symbol,
+            "symbol": symbol,
+            "coin_type": "token",
             "contract_address": coinAddress.value,
+            "decimals": 18,
             "abi": abi
           }
           console.log('添加代币')
           // 添加代币
           invoke('add_coin', {
             chain: rpcValue.value,
-            page: 'balance',
             objJson: JSON.stringify(json)
           }).then(() => {
             addCoinVisible.value = false
@@ -397,7 +397,7 @@ async function queryBalance() {
     Notification.warning('请先导入地址！');
     return
   }
-  if (currentCoin.value.type === 'base' || currentCoin.value.type === 'token') {
+  if (currentCoin.value.coin_type === 'base' || currentCoin.value.coin_type === 'token') {
     balanceLoading.value = true
     data.value.forEach(item => {
       item.plat_balance = ''
@@ -517,41 +517,37 @@ function goHome() {
         </template>
       </a-table>
     </div>
-    <!-- RPC 选择器 -->
-    <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
-              :style="{'margin-top':'10px'}">
+    <!-- RPC选择器和代币选择器的容器 -->
+    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+      <!-- RPC 选择器 -->
+      <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
+                :style="{ width: '70%' }">
       <template #label="{ data }">
-        <img alt="" :src="data?.pic_url" style="width: 18px;height: 18px">
+          <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 18px;height: 18px">
         <span style="margin-left: 10px">{{ data?.chain }}</span>
         <span style="margin-left: 50px">{{ data?.scan_url }}</span>
       </template>
       <template #option="{ data }">
-        <img alt="" :src="data?.pic_url" style="width: 16px;height: 16px">
+          <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 16px;height: 16px">
         <span style="margin-left: 10px">{{ data?.chain }}</span>
         <span style="position: absolute;right: 20px;">{{ data?.scan_url }}</span>
       </template>
     </a-select>
-    <!-- 管理代币 -->
-    <div>
-      <div class="subTitle">
-        选择代币：
-      </div>
-      <div style="display: flex;flex-direction: row;align-items: center;margin-top: 10px">
-        <a-button type="outline" status="normal" @click="handleAddCoinClick"
-                  style="margin-left: 10px">
-          <icon-plus/>
-          <span style="margin-left: 5px">添加代币</span>
-        </a-button>
-        <!-- 代币 选择器 -->
-        <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames"
-                  :style="{'margin-left':'10px',flex:'1'}" @change="coinChange">
+    <!-- 代币 选择器 -->
+    <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames"
+              :style="{ width: '30%' }" @change="coinChange">
           <template #label="{ data }">
-            <span style="margin-left: 10px">{{ data?.coin }}</span>
+            <span style="margin-left: 10px">{{ data?.label }}</span>
           </template>
         </a-select>
-        <a-button type="primary" status="danger" @click="deleteToken" style="margin-left: 10px">删除代币
-        </a-button>
-      </div>
+    </div>
+    <!-- 管理代币按钮区域 -->
+    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+      <a-button type="outline" status="normal" @click="handleAddCoinClick">
+        <icon-plus/>
+        <span style="margin-left: 5px">添加代币</span>
+      </a-button>
+      <a-button type="primary" status="danger" @click="deleteToken">删除代币</a-button>
     </div>
     <!-- 相关设置 -->
     <div style="display: flex;padding-top: 10px;flex-direction: column;">
@@ -590,7 +586,7 @@ function goHome() {
   </a-modal>
   <!-- 删除代币确认框 -->
   <a-modal v-model:visible="deleteTokenVisible" title="删除确认">
-    <div>确认删除【 {{ currentCoin.coin }} 】代币？</div>
+    <div>确认删除【 {{ currentCoin.label }} 】代币？</div>
     <template #footer>
       <a-button @click="deleteTokenCancel">取消</a-button>
       <a-button type="primary" status="danger" @click="deleteTokenConfirm" style="margin-left: 10px">确定

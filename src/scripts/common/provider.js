@@ -1,9 +1,11 @@
-import {ethers} from "ethers";
+import {ethers, providers} from "ethers";
+const {JsonRpcProvider} = providers;
+const {formatUnits} = ethers.utils;
 import {RpcProvider} from "starknet";
 import * as web3 from "@solana/web3.js";
 import {Provider} from "zksync-ethers";
 
-const providers = {
+const providerMethods = {
     zgs_provider() {
         // rpc 节点
         const rpc_list = [
@@ -13,7 +15,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 16600)
+        return new JsonRpcProvider(rpc_url, 16600)
     },
     bevm_provider() {
         // rpc 节点
@@ -23,7 +25,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 11501)
+        return new JsonRpcProvider(rpc_url, 11501)
     },
     sahara_test_provider() {
         // rpc 节点
@@ -32,7 +34,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url)
+        return new JsonRpcProvider(rpc_url)
     },
     story_test_provider() {
         // rpc 节点
@@ -45,7 +47,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url)
+        return new JsonRpcProvider(rpc_url)
     },
     manta_provider() {
         // rpc 节点
@@ -60,7 +62,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 169)
+        return new JsonRpcProvider(rpc_url, 169)
     },
     eth_provider() {
         // rpc 节点
@@ -90,7 +92,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 1)
+        return new JsonRpcProvider(rpc_url, 1)
     },
     linea_provider() {
         // rpc 节点
@@ -103,7 +105,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 59144)
+        return new JsonRpcProvider(rpc_url, 59144)
     },
     base_provider() {
         // rpc 节点
@@ -132,7 +134,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 8453)
+        return new JsonRpcProvider(rpc_url, 8453)
     },
     sol_provider() {
         // rpc 节点
@@ -166,7 +168,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 204)
+        return new JsonRpcProvider(rpc_url, 204)
     },
     geth_provider() {
         // rpc 节点
@@ -176,7 +178,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 5)
+        return new JsonRpcProvider(rpc_url, 5)
     },
     sepolia_provider() {
         // rpc 节点
@@ -200,7 +202,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 11155111)
+        return new JsonRpcProvider(rpc_url, 11155111)
     },
     holesky_provider() {
         // rpc 节点
@@ -215,7 +217,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 17000)
+        return new JsonRpcProvider(rpc_url, 17000)
     },
     scroll_eth_provider() {
         // rpc 节点
@@ -240,7 +242,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 534352)
+        return new JsonRpcProvider(rpc_url, 534352)
     },
     binance_provider() {
         // rpc 节点
@@ -276,7 +278,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
         console.log(rpc_url)
-        return new ethers.providers.JsonRpcProvider(rpc_url, 56)
+        return new JsonRpcProvider(rpc_url, 56)
     },
     avax_provider() {
         // rpc 节点
@@ -298,7 +300,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 43114)
+        return new JsonRpcProvider(rpc_url, 43114)
     },
     polygon_provider() {
         // rpc 节点
@@ -329,7 +331,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 137)
+        return new JsonRpcProvider(rpc_url, 137)
     },
     arb_provider() {
         // rpc 节点
@@ -361,7 +363,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 42161)
+        return new JsonRpcProvider(rpc_url, 42161)
     },
     op_provider() {
         // rpc 节点
@@ -373,7 +375,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 10)
+        return new JsonRpcProvider(rpc_url, 10)
     },
     starknet_provider() {
         // rpc 节点
@@ -411,8 +413,8 @@ const providers = {
             // 'https://exchaintestrpc.okex.org'
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
-        return new ethers.providers.JsonRpcProvider(rpc_url, 66)
-        // return new ethers.providers.JsonRpcProvider(rpc_url, 65)
+        return new JsonRpcProvider(rpc_url, 66)
+        // return new JsonRpcProvider(rpc_url, 65)
     },
     dym_provider() {
         // rpc 节点
@@ -427,7 +429,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 1100)
+        return new JsonRpcProvider(rpc_url, 1100)
     },
     zksync_provider() {
         // rpc 节点
@@ -483,7 +485,7 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url, 9001)
+        return new JsonRpcProvider(rpc_url, 9001)
     },
     nexus_dev_provider() {
         // rpc 节点
@@ -492,62 +494,62 @@ const providers = {
         ]
         const rpc_url = rpc_list[Math.floor(Math.random() * rpc_list.length)]
 
-        return new ethers.providers.JsonRpcProvider(rpc_url)
+        return new JsonRpcProvider(rpc_url)
     },
 }
 
 export const utils = {
     get_provider(key) {
         if (key === 'eth') {
-            return providers.eth_provider()
+            return providerMethods.eth_provider()
         } else if (key === 'linea') {
-            return providers.linea_provider()
+            return providerMethods.linea_provider()
         } else if (key === 'opbnb') {
-            return providers.opbnb_provider()
+            return providerMethods.opbnb_provider()
         } else if (key === 'geth') {
-            return providers.geth_provider()
+            return providerMethods.geth_provider()
         } else if (key === 'sepolia') {
-            return providers.sepolia_provider()
+            return providerMethods.sepolia_provider()
         } else if (key === 'holesky') {
-            return providers.holesky_provider()
+            return providerMethods.holesky_provider()
         } else if (key === 'scroll') {
-            return providers.scroll_eth_provider()
+            return providerMethods.scroll_eth_provider()
         } else if (key === 'arb') {
-            return providers.arb_provider()
+            return providerMethods.arb_provider()
         } else if (key === 'op') {
-            return providers.op_provider()
+            return providerMethods.op_provider()
         } else if (key === 'binance') {
-            return providers.binance_provider()
+            return providerMethods.binance_provider()
         } else if (key === 'polygon') {
-            return providers.polygon_provider()
+            return providerMethods.polygon_provider()
         } else if (key === 'avax') {
-            return providers.avax_provider()
+            return providerMethods.avax_provider()
         } else if (key === 'starknet') {
-            return providers.starknet_provider()
+            return providerMethods.starknet_provider()
         } else if (key === 'okt') {
-            return providers.okt_provider()
+            return providerMethods.okt_provider()
         } else if (key === 'base') {
-            return providers.base_provider()
+            return providerMethods.base_provider()
         } else if (key === 'sol') {
-            return providers.sol_provider()
+            return providerMethods.sol_provider()
         } else if (key === 'dym') {
-            return providers.dym_provider()
+            return providerMethods.dym_provider()
         } else if (key === 'evmos') {
-            return providers.evmos_provider()
+            return providerMethods.evmos_provider()
         } else if (key === 'zksync') {
-            return providers.zksync_provider()
+            return providerMethods.zksync_provider()
         } else if (key === 'bevm') {
-            return providers.bevm_provider()
+            return providerMethods.bevm_provider()
         } else if (key === '0g') {
-            return providers.zgs_provider()
+            return providerMethods.zgs_provider()
         } else if (key === 'manta') {
-            return providers.manta_provider()
+            return providerMethods.manta_provider()
         } else if (key === 'story_test') {
-            return providers.story_test_provider()
+            return providerMethods.story_test_provider()
         } else if (key === 'sahara_test') {
-            return providers.sahara_test_provider()
+            return providerMethods.sahara_test_provider()
         } else if (key === 'nexus_dev') {
-            return providers.nexus_dev_provider()
+            return providerMethods.nexus_dev_provider()
         }
     },
     get_base_gas_price(key) {
@@ -555,7 +557,7 @@ export const utils = {
             this.get_provider(key)
                 .getGasPrice()
                 .then((gas_price) => {
-                    resolve(Number(ethers.utils.formatUnits(gas_price, 'gwei')))
+                    resolve(Number(formatUnits(gas_price, 'gwei')))
                 }).catch((err) => {
                 reject(err)
             })

@@ -1,5 +1,6 @@
 import {utils} from "@/scripts/common/provider.js";
-import {ethers} from "ethers";
+import {ethers, Wallet} from "ethers";
+const {formatUnits} = ethers.utils;
 
 const token_balance = {
 
@@ -10,11 +11,11 @@ const token_balance = {
             const provider = utils.get_provider(chain)
             console.log('当前RPC地址：',provider.connection.url)
             // 通过私钥创建钱包
-            let wallet = new ethers.Wallet(item.private_key, provider);
+            let wallet = new Wallet(item.private_key, provider);
             let balance_wei = contract.connect(wallet).balanceOf(wallet.address);
             let decimals = contract.connect(wallet).decimals();
             Promise.all([balance_wei, decimals]).then(async (values) => {
-                item.coin_balance = parseFloat(ethers.utils.formatUnits(values[0], values[1])).toFixed(4).toString()
+                item.coin_balance = parseFloat(formatUnits(values[0], values[1])).toFixed(4).toString()
                 resolve()
             }).catch((err) => {
                 item.coin_balance = ''
@@ -34,7 +35,7 @@ const token_balance = {
             let decimals = contract.connect(provider).decimals();
             let nonce = provider.getTransactionCount(item.address)
             Promise.all([balance_wei, decimals, nonce]).then(async (values) => {
-                item.coin_balance = parseFloat(ethers.utils.formatUnits(values[0], values[1])).toFixed(4).toString()
+                item.coin_balance = parseFloat(formatUnits(values[0], values[1])).toFixed(4).toString()
                 item.nonce = values[2]
                 resolve()
             }).catch((err) => {

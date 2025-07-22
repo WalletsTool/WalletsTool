@@ -1,7 +1,8 @@
 import {CurrencyAmount, Percent, SupportedChainId, Token, TradeType,} from "@uniswap/sdk-core";
 import {FeeAmount, Pool, Route, SwapQuoter, SwapRouter, Trade} from "@uniswap/v3-sdk";
 import JSBI from "jsbi";
-import {BigNumber, ethers} from "ethers";
+import {ethers, Wallet, Contract} from "ethers";
+const {parseUnits, AbiCoder} = ethers.utils;
 import {
     ERC20_ABI,
     MAX_FEE_PER_GAS, MAX_PRIORITY_FEE_PER_GAS,
@@ -46,7 +47,7 @@ const CurrentConfig = {
 // 创建交易
 async function createAndExecTrade(CurrentConfig) {
     const provider = provider_utils.get_provider(CurrentConfig.chain)
-    const wallet = new ethers.Wallet(CurrentConfig.wallet.privateKey, provider)
+    const wallet = new Wallet(CurrentConfig.wallet.privateKey, provider)
     const walletAddress = wallet.address
 
     if (!walletAddress || !provider) {
@@ -76,12 +77,10 @@ async function createAndExecTrade(CurrentConfig) {
         route: swapRoute,
         inputAmount: CurrencyAmount.fromRawAmount(
             CurrentConfig.tokens.in,
-            ethers.utils
-                .parseUnits(
-                    CurrentConfig.tokens.amountIn.toString(),
-                    CurrentConfig.tokens.in.decimals
-                )
-                .toString()
+            parseUnits(
+                CurrentConfig.tokens.amountIn.toString(),
+                CurrentConfig.tokens.in.decimals
+            ).toString()
         ),
         outputAmount: CurrencyAmount.fromRawAmount(
             CurrentConfig.tokens.out,
@@ -124,12 +123,10 @@ async function getOutputQuote(provider, CurrentConfig, route) {
         route,
         CurrencyAmount.fromRawAmount(
             CurrentConfig.tokens.in,
-            ethers.utils
-                .parseUnits(
-                    CurrentConfig.tokens.amountIn.toString(),
-                    CurrentConfig.tokens.in.decimals
-                )
-                .toString()
+            parseUnits(
+                CurrentConfig.tokens.amountIn.toString(),
+                CurrentConfig.tokens.in.decimals
+            ).toString()
         ),
         TradeType.EXACT_INPUT,
         {
@@ -142,12 +139,13 @@ async function getOutputQuote(provider, CurrentConfig, route) {
         data: calldata,
     });
 
-    return ethers.utils.defaultAbiCoder.decode(["uint256"], quoteCallReturnData);
+    const abiCoder = new AbiCoder();
+    return abiCoder.decode(["uint256"], quoteCallReturnData);
 }
 
 async function getTokenTransferApproval(wallet, provider, token) {
     try {
-        const tokenContract = new ethers.Contract(
+        const tokenContract = new Contract(
             token.address,
             ERC20_ABI,
             provider
@@ -155,7 +153,7 @@ async function getTokenTransferApproval(wallet, provider, token) {
 
         const transaction = await tokenContract.populateTransaction.approve(
             SWAP_ROUTER_ADDRESS,
-            ethers.utils.parseUnits(TOKEN_AMOUNT_TO_APPROVE_FOR_TRANSFER.toString(), token.decimals).toString()
+            parseUnits(TOKEN_AMOUNT_TO_APPROVE_FOR_TRANSFER.toString(), token.decimals).toString()
         )
 
         return sendTransaction(wallet, provider, {
@@ -170,7 +168,7 @@ async function getTokenTransferApproval(wallet, provider, token) {
 
 async function sendTransaction(wallet, provider, transaction) {
     if (transaction.value) {
-        transaction.value = BigNumber.from(transaction.value)
+        transaction.value = BigInt(transaction.value)
     }
     const txRes = await wallet.sendTransaction(transaction)
 

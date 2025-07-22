@@ -1,4 +1,5 @@
-import {BigNumber, ethers} from "ethers";
+import {ethers, Wallet} from "ethers";
+const {parseUnits, formatUnits} = ethers.utils;
 import utils from "@/scripts/transfer/transfer_utils.js";
 import {utils as provider_utils} from "@/scripts/common/provider.js";
 import {utils as common_utils} from "@/scripts/common/utils.js";
@@ -27,7 +28,7 @@ const token_transfer = {
         return new Promise((resolve, reject) => {
             item.retry_flag = false
             // 通过私钥创建钱包
-            let wallet = new ethers.Wallet(item.private_key, provider);
+            let wallet = new Wallet(item.private_key, provider);
             let balance_wei = contract.connect(wallet).balanceOf(wallet.address);
             let decimals = contract.connect(wallet).decimals();
             let gasPrice = utils.getGasPrice(config, provider);
@@ -37,13 +38,13 @@ const token_transfer = {
                     reject('base gas price 超出最大值限制')
                     return
                 }
-                const balance = ethers.utils.formatUnits(values[0], values[1])
+                const balance = formatUnits(values[0], values[1])
 
                 console.log('序号：', index, '当前余额为:', balance)
-                console.log('序号：', index, '当前 gasPrice 为:', ethers.utils.formatUnits(values[2], 'gwei'))
+                console.log('序号：', index, '当前 gasPrice 为:', formatUnits(values[2], 'gwei'))
 
                 if (Number(balance) > 0) {
-                    let transfer_amount = BigNumber.from(0)
+                    let transfer_amount = 0n
                     if (config.transfer_type === '1') {
                         // 全部转账
                         transfer_amount = values[0]
@@ -53,7 +54,7 @@ const token_transfer = {
                             return
                         }
                         // 转账固定数量
-                        transfer_amount = ethers.utils.parseUnits(config.transfer_amount, values[1])
+                        transfer_amount = parseUnits(config.transfer_amount, values[1])
                     } else if (config.transfer_type === '3') {
                         const temp = (Math.random() * (Number(config.transfer_amount_list[1]) - Number(config.transfer_amount_list[0])) + Number(config.transfer_amount_list[0])).toFixed(Number(config.amount_precision))
                         if (parseFloat(temp) >= parseFloat(balance)) {
@@ -61,7 +62,7 @@ const token_transfer = {
                             return
                         }
                         // 转账随机数量
-                        transfer_amount = ethers.utils.parseUnits(temp, values[1])
+                        transfer_amount = parseUnits(temp, values[1])
                     } else if (config.transfer_type === '4') {
                         if (parseFloat(balance) >= Number(config.left_amount_list[0]) && parseFloat(balance) <= Number(config.left_amount_list[1])) {
                             reject('当前余额为：' + balance + ' 在设置的剩余范围内，不做转账操作！')
@@ -74,10 +75,10 @@ const token_transfer = {
                             return
                         }
                         // 剩余固定数量
-                        transfer_amount = ethers.utils.parseUnits((parseFloat(balance) - parseFloat(left_amount)).toFixed(Number(config.amount_precision)), values[1])
+                        transfer_amount = parseUnits((parseFloat(balance) - parseFloat(left_amount)).toFixed(Number(config.amount_precision)), values[1])
                     }
 
-                    console.log('序号：', index, '转账数量为:', ethers.utils.formatUnits(transfer_amount, values[1]))
+                    console.log('序号：', index, '转账数量为:', formatUnits(transfer_amount, values[1]))
 
                     const gasLimit = await utils.getContractGasLimit(config, provider, contract, wallet, item.to_addr, transfer_amount)
                     console.log('序号：', index, 'gasLimit:', gasLimit)

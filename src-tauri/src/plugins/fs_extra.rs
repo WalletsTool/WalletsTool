@@ -24,6 +24,7 @@ impl Serialize for Error {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Permissions {

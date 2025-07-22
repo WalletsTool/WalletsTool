@@ -1,0 +1,40 @@
+[package]
+name = "web3_tools"
+version = "1.0.0"
+description = "web3 链上交易工具集，基于 Node.js Vue3 Tauri 等技术"
+authors = ["renmengkai"]
+license = ""
+repository = ""
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.0.0", features = ["tray-icon"] }
+anyhow = "1.0.65"
+thiserror = "1.0.37"
+tokio = { version = "1.22.0", features = ["macros", "rt-multi-thread", "time"] }
+# HTTP 客户端
+reqwest = { version = "0.11", features = ["json"] }
+# 以太坊相关
+ethers = "2.0"
+# 序列化
+base64 = "0.22"
+hex = "0.4"
+# 异步流处理
+futures = "0.3"
+# 随机数
+rand = "0.8"
+
+[features]
+# by default Tauri runs in production mode
+# when `tauri dev` runs it is executed with `cargo run --no-default-features` if `devPath` is an URL
+default = ["custom-protocol"]
+# this feature is used used for production builds where `devPath` points to the filesystem
+# DO NOT remove this
+custom-protocol = ["tauri/custom-protocol"]

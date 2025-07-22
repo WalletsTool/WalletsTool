@@ -1,5 +1,7 @@
-import {BigNumber, ethers} from "ethers";
+import {ethers} from "ethers";
+const {parseUnits, formatEther, formatUnits} = ethers.utils;
 import { asL2Provider } from "@constellation-labs/bedrock-sdk";
+
 const transfer_utils = {
     //判断字符串是否为数字
     checkNum(num) {
@@ -25,7 +27,7 @@ const transfer_utils = {
                     let gas_price_final = gas_price
                     // 如果存在最大值 gas price 限制
                     if (config.max_gas_price) {
-                        if (Number(ethers.utils.formatUnits(gas_price, 'gwei')) > Number(config.max_gas_price)) {
+                        if (Number(formatUnits(gas_price, 'gwei')) > Number(config.max_gas_price)) {
                             resolve('base gas price 超出最大值限制')
                         } else {
                             resolve(gas_price_final)
@@ -38,20 +40,20 @@ const transfer_utils = {
                     reject('获取gas_price 失败，' + err)
                 })
             } else if (config.gas_price_type === '2') {
-                resolve(ethers.utils.parseUnits(config.gas_price, 'gwei'))
+                resolve(parseUnits(config.gas_price, 'gwei'))
             } else if (config.gas_price_type === '3') {
                 // 计算 gas_price 溢价
-                let gas_price_final = BigNumber.from('0')
+                let gas_price_final = 0n
                 provider.getGasPrice().then((gas_price) => {
-                    const gas_price_by_rate = BigNumber.from(Math.ceil(Number(gas_price.toString()) * (1 + Number(config.gas_price_rate))).toString())
+                    const gas_price_by_rate = BigInt(Math.ceil(Number(gas_price.toString()) * (1 + Number(config.gas_price_rate))))
                     gas_price_final = gas_price_by_rate
                     let flag = false
                     if (config.max_gas_price) {
-                        if (Number(ethers.utils.formatUnits(gas_price, 'gwei')) > Number(config.max_gas_price)) {
+                        if (Number(formatUnits(gas_price, 'gwei')) > Number(config.max_gas_price)) {
                             flag = true
                         } else {
-                            if (Number(ethers.utils.formatUnits(gas_price_by_rate, 'gwei')) >= Number(config.max_gas_price)) {
-                                gas_price_final = ethers.utils.parseUnits(config.max_gas_price, 'gwei')
+                            if (Number(formatUnits(gas_price_by_rate, 'gwei')) >= Number(config.max_gas_price)) {
+                                gas_price_final = parseUnits(config.max_gas_price, 'gwei')
                             }
                         }
                     }
@@ -81,10 +83,10 @@ const transfer_utils = {
                     reject('获取gas_limit 失败，' + err)
                 })
             } else if (config.limit_type === '2') {
-                resolve(BigNumber.from(config.limit_count))
+                resolve(BigInt(config.limit_count))
             } else if (config.limit_type === '3') {
                 let gas_limit_final = Math.floor(Math.random() * (Number(config.limit_count_list[1]) - Number(config.limit_count_list[0])) + Number(config.limit_count_list[0]));
-                resolve(BigNumber.from(gas_limit_final.toString()))
+                resolve(BigInt(gas_limit_final.toString()))
             } else {
                 reject('gas limit type error')
             }
@@ -97,29 +99,29 @@ const transfer_utils = {
             provider.estimateFee({
                 from: await wallet.getAddress(),
                 to: to_address,
-                value: amount.toHexString()
+                value: amount.toString()
             }).then(async (fee) => {
                 // 计算gas_price的设置
                 const gas_price = await this.getGasPrice(config, provider)
                 // 计算 gas_limit
                 if (config.limit_type === '1') {
                     resolve({
-                        gas_fee: ethers.utils.formatEther(gas_price.mul(BigNumber.from(fee.gas_limit))).toString(),
+                        gas_fee: formatEther(gas_price * BigInt(fee.gas_limit)).toString(),
                         gas_price: gas_price,
-                        gas_limit: BigNumber.from(fee.gas_limit)
+                        gas_limit: BigInt(fee.gas_limit)
                     })
                 } else if (config.limit_type === '2') {
                     resolve({
-                        gas_fee: ethers.utils.formatEther(gas_price.mul(BigNumber.from(config.limit_count))).toString(),
+                        gas_fee: formatEther(gas_price * BigInt(config.limit_count)).toString(),
                         gas_price: gas_price,
-                        gas_limit: BigNumber.from(config.limit_count)
+                        gas_limit: BigInt(config.limit_count)
                     })
                 } else if (config.limit_type === '3') {
                     let gas_limit_final = Math.floor(Math.random() * (Number(config.limit_count_list[1]) - Number(config.limit_count_list[0])) + Number(config.limit_count_list[0]));
                     resolve({
-                        gas_fee: ethers.utils.formatEther(gas_price.mul(BigNumber.from(gas_limit_final.toString()))).toString(),
+                        gas_fee: formatEther(gas_price * BigInt(gas_limit_final.toString())).toString(),
                         gas_price: gas_price,
-                        gas_limit: BigNumber.from(gas_limit_final.toString())
+                        gas_limit: BigInt(gas_limit_final.toString())
                     })
                 } else {
                     reject('gas limit type error')
@@ -141,7 +143,7 @@ const transfer_utils = {
                     to: to_address,
                     type: 2,
                 }).then(async (fee) => {
-                    resolve(ethers.utils.formatEther(fee).toString())
+                    resolve(formatEther(fee).toString())
                 }).catch((err) => {
                     console.log('获取gas_fee 失败，', err)
                     reject('获取gas_fee 失败，' + err)
@@ -178,10 +180,10 @@ const transfer_utils = {
                     })
                 }
             } else if (config.limit_type === '2') {
-                resolve(BigNumber.from(config.limit_count))
+                resolve(BigInt(config.limit_count))
             } else if (config.limit_type === '3') {
                 let gas_limit_final = Math.floor(Math.random() * (Number(config.limit_count_list[1]) - Number(config.limit_count_list[0])) + Number(config.limit_count_list[0]));
-                resolve(BigNumber.from(gas_limit_final.toString()))
+                resolve(BigInt(gas_limit_final.toString()))
             } else {
                 reject('gas limit type error')
             }

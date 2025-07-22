@@ -1,8 +1,9 @@
 import {utils} from "@/scripts/common/provider.js";
-import {ethers} from "ethers";
+import {ethers, Wallet as EthersWallet} from "ethers";
+const {formatEther} = ethers.utils;
 import * as web3 from "@solana/web3.js";
 import bs58 from "bs58";
-import {Wallet} from "zksync-ethers";
+import {Wallet as ZksyncWallet} from "zksync-ethers";
 
 const base_coin_balance = {
 
@@ -26,9 +27,9 @@ const base_coin_balance = {
                     })
                 } else if (chain === 'zksync') {
                     // 通过私钥创建钱包
-                    let wallet = new Wallet(item.private_key, provider);
+                    let wallet = new ZksyncWallet(item.private_key, provider);
                     wallet.getBalance().then((balance) => {
-                        item.plat_balance = parseFloat(ethers.utils.formatEther(balance)).toFixed(6).toString()
+                        item.plat_balance = parseFloat(formatEther(balance)).toFixed(6).toString()
                         resolve()
                     }).catch((err) => {
                         item.plat_balance = ''
@@ -39,9 +40,9 @@ const base_coin_balance = {
                 } else {
                     console.log('当前RPC地址：', provider.connection.url)
                     // 通过私钥创建钱包
-                    let wallet = new ethers.Wallet(item.private_key, provider);
+                    let wallet = new EthersWallet(item.private_key, provider);
                     wallet.getBalance().then((balance) => {
-                        item.plat_balance = parseFloat(ethers.utils.formatEther(balance)).toFixed(6).toString()
+                        item.plat_balance = parseFloat(formatEther(balance)).toFixed(6).toString()
                         resolve()
                     }).catch((err) => {
                         item.plat_balance = ''
@@ -78,7 +79,7 @@ const base_coin_balance = {
                 })
             } else if (chain === 'zksync') {
                 provider.getBalance(item.address).then((balance_wei) => {
-                    item.plat_balance = parseFloat(ethers.utils.formatEther(balance_wei)).toFixed(6).toString()
+                    item.plat_balance = parseFloat(formatEther(balance_wei)).toFixed(6).toString()
                     item.nonce = ''
                     resolve()
                 }).catch((err) => {
@@ -93,7 +94,7 @@ const base_coin_balance = {
                 const nonce = provider.getTransactionCount(item.address)
                 const balance_wei = provider.getBalance(item.address)
                 Promise.all([balance_wei, nonce]).then(([balance_wei, nonce]) => {
-                    item.plat_balance = parseFloat(ethers.utils.formatEther(balance_wei)).toFixed(6).toString()
+                    item.plat_balance = parseFloat(formatEther(balance_wei)).toFixed(6).toString()
                     item.nonce = nonce
                     resolve()
                 }).catch((err) => {

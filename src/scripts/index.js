@@ -1,5 +1,5 @@
 // import {Contract, Account, Provider, uint256} from "starknet";
-// import {BigNumber, utils} from "ethers"
+// import {formatUnits} from "ethers"
 //
 // const provider = new Provider({sequencer: {network: 'SN_GOERLI'}})
 //
@@ -17,7 +17,7 @@
 // const resutl = await ethContract.decimals()
 // console.log(resutl.decimals)
 // console.log(uint256.uint256ToBN(result.balance).toString())
-// console.log(utils.formatUnits(BigNumber.from(uint256.uint256ToBN(result.balance).toString()), resutl.decimals.toString()))
+// console.log(formatUnits(BigInt(uint256.uint256ToBN(result.balance).toString()), resutl.decimals.toString()))
 import {ethers} from "ethers";
 const op = {
     "key": "op",

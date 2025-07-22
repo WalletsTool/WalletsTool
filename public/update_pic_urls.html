@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>更新链图标路径</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        button {
+            background-color: #007cba;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover {
+            background-color: #005a87;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>链图标路径更新工具</h1>
+        <p>点击下面的按钮来更新数据库中的链图标路径，使其与chain_setting.json配置文件保持一致。</p>
+        
+        <button id="updateBtn" onclick="updatePicUrls()">更新链图标路径</button>
+        
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'success' ? 'success' : type === 'error' ? 'error' : '';
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function updatePicUrls() {
+            const btn = document.getElementById('updateBtn');
+            btn.disabled = true;
+            btn.textContent = '更新中...';
+            
+            log('开始更新链图标路径...');
+            
+            try {
+                // 调用Tauri命令
+                await window.__TAURI__.invoke('update_chain_pic_urls');
+                log('✅ 链图标路径更新成功！', 'success');
+            } catch (error) {
+                log(`❌ 更新失败: ${error}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '更新链图标路径';
+            }
+        }
+
+        // 页面加载完成后显示说明
+        window.addEventListener('DOMContentLoaded', () => {
+            log('工具已准备就绪，点击按钮开始更新');
+        });
+    </script>
+</body>
+</html>

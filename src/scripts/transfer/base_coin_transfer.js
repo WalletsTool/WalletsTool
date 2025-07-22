@@ -1,10 +1,11 @@
-import {BigNumber, ethers} from "ethers";
+import {ethers, Wallet as EthersWallet} from "ethers";
+const {parseEther, formatEther, formatUnits} = ethers.utils;
 import utils from "@/scripts/transfer/transfer_utils.js";
 import {utils as provider_utils} from "@/scripts/common/provider.js";
 import {utils as common_utils} from "@/scripts/common/utils.js";
 import * as web3 from "@solana/web3.js";
 import bs58 from "bs58";
-import {Wallet} from "zksync-ethers";
+import {Wallet as ZksyncWallet} from "zksync-ethers";
 
 
 // 转账配置说明
@@ -59,7 +60,7 @@ const base_coin_transfer = {
                     const balance = balance_lam / web3.LAMPORTS_PER_SOL;
                     console.log("序号：", index, "当前余额为:", balance, " SOL");
                     if (Number(balance) > 0) {
-                        let transfer_amount = BigNumber.from(0);
+                        let transfer_amount = 0n;
                         if (config.transfer_type === "1") {
                             const fee = await this.getSolFee(provider, feePayer, item, parseFloat(balance));
                             if (parseFloat(fee) >= parseFloat(balance)) {
@@ -177,24 +178,24 @@ const base_coin_transfer = {
                     // 随机获取rpc服务
                     const provider = provider_utils.get_provider(config.chain);
                     // 通过私钥创建钱包
-                    let wallet = new Wallet(item.private_key, provider);
+                    let wallet = new ZksyncWallet(item.private_key, provider);
                     let balance_wei = await wallet.getBalance();
                     let fee_info = await utils.getWalletFeeZks(config, provider, wallet, item.to_addr, balance_wei);
-                    const balance = ethers.utils.formatEther(balance_wei);
+                    const balance = formatEther(balance_wei);
                     const gas_fee = fee_info.gas_fee;
 
                     console.log("序号：", index, "当前余额为:", balance);
                     console.log("序号：", index, "当前预估 gas_fee 为:", gas_fee);
 
                     if (Number(balance) > 0) {
-                        let transfer_amount = BigNumber.from(0);
+                        let transfer_amount = 0n;
                         if (config.transfer_type === "1") {
                             if (parseFloat(gas_fee) >= parseFloat(balance)) {
                                 reject("当前余额不足，不做转账操作！");
                                 return;
                             }
                             // 全部转账
-                            transfer_amount = balance_wei.sub(ethers.utils.parseEther(gas_fee));
+                            transfer_amount = balance_wei - parseEther(gas_fee);
                         } else if (config.transfer_type === "2") {
                             if (
                                 parseFloat(config.transfer_amount) + parseFloat(gas_fee) >=
@@ -204,7 +205,7 @@ const base_coin_transfer = {
                                 return;
                             }
                             // 转账固定数量
-                            transfer_amount = ethers.utils.parseEther(
+                            transfer_amount = parseEther(
                                 config.transfer_amount
                             );
                         } else if (config.transfer_type === "3") {
@@ -222,7 +223,7 @@ const base_coin_transfer = {
                                 return;
                             }
                             // 转账范围随机
-                            transfer_amount = ethers.utils.parseEther(temp);
+                            transfer_amount = parseEther(temp);
                         } else if (config.transfer_type === "4") {
                             if (
                                 parseFloat(balance) >= Number(config.left_amount_list[0]) &&
@@ -249,7 +250,7 @@ const base_coin_transfer = {
                                 return;
                             }
                             // 剩余随机数量
-                            transfer_amount = ethers.utils.parseEther(
+                            transfer_amount = parseEther(
                                 (
                                     parseFloat(balance) -
                                     parseFloat(gas_fee) -
@@ -262,7 +263,7 @@ const base_coin_transfer = {
                             "序号：",
                             index,
                             "转账数量为:",
-                            ethers.utils.formatEther(transfer_amount)
+                            formatEther(transfer_amount)
                         );
                         const tx = {
                             from: wallet.address,
@@ -319,25 +320,25 @@ const base_coin_transfer = {
                     const provider = provider_utils.get_provider(config.chain);
                     debugger
                     // 通过私钥创建钱包
-                    let wallet = new ethers.Wallet(item.private_key, provider);
-                    let balance_wei = await wallet.getBalance();Y
+                    let wallet = new EthersWallet(item.private_key, provider);
+                    let balance_wei = await wallet.getBalance();
 
                     let fee_info = await utils.getWalletFeeManta(config, provider, wallet, item.to_addr, balance_wei);
-                    const balance = ethers.utils.formatEther(balance_wei);
+                    const balance = formatEther(balance_wei);
                     const gas_fee = fee_info.gas_fee;
 
                     console.log("序号：", index, "当前余额为:", balance);
                     console.log("序号：", index, "当前预估 gas_fee 为:", gas_fee);
 
                     if (Number(balance) > 0) {
-                        let transfer_amount = BigNumber.from(0);
+                        let transfer_amount = 0n;
                         if (config.transfer_type === "1") {
                             if (parseFloat(gas_fee) >= parseFloat(balance)) {
                                 reject("当前余额不足，不做转账操作！");
                                 return;
                             }
                             // 全部转账
-                            transfer_amount = balance_wei.sub(ethers.utils.parseEther(gas_fee));
+                            transfer_amount = balance_wei - parseEther(gas_fee);
                         } else if (config.transfer_type === "2") {
                             if (
                                 parseFloat(config.transfer_amount) + parseFloat(gas_fee) >=
@@ -347,7 +348,7 @@ const base_coin_transfer = {
                                 return;
                             }
                             // 转账固定数量
-                            transfer_amount = ethers.utils.parseEther(
+                            transfer_amount = parseEther(
                                 config.transfer_amount
                             );
                         } else if (config.transfer_type === "3") {
@@ -365,7 +366,7 @@ const base_coin_transfer = {
                                 return;
                             }
                             // 转账范围随机
-                            transfer_amount = ethers.utils.parseEther(temp);
+                            transfer_amount = parseEther(temp);
                         } else if (config.transfer_type === "4") {
                             if (
                                 parseFloat(balance) >= Number(config.left_amount_list[0]) &&
@@ -392,7 +393,7 @@ const base_coin_transfer = {
                                 return;
                             }
                             // 剩余随机数量
-                            transfer_amount = ethers.utils.parseEther(
+                            transfer_amount = parseEther(
                                 (
                                     parseFloat(balance) -
                                     parseFloat(gas_fee) -
@@ -405,7 +406,7 @@ const base_coin_transfer = {
                             "序号：",
                             index,
                             "转账数量为:",
-                            ethers.utils.formatEther(transfer_amount)
+                            formatEther(transfer_amount)
                         );
                         const tx = {
                             from: wallet.address,
@@ -459,7 +460,7 @@ const base_coin_transfer = {
                 // 随机获取rpc服务
                 const provider = provider_utils.get_provider(config.chain);
                 // 通过私钥创建钱包
-                let wallet = new ethers.Wallet(item.private_key, provider);
+                let wallet = new EthersWallet(item.private_key, provider);
                 let balance_wei = wallet.getBalance();
                 let gas_limit = utils.getWalletGasLimit(config, wallet, item.to_addr);
                 let nonce = wallet.getTransactionCount();
@@ -472,27 +473,27 @@ const base_coin_transfer = {
                             return;
                         }
 
-                        const balance = ethers.utils.formatEther(values[0]);
-                        const gas_fee = ethers.utils.formatEther(values[1].mul(values[3]));
+                        const balance = formatEther(values[0]);
+                        const gas_fee = formatEther(values[1] * values[3]);
 
                         console.log("序号：", index, "当前余额为:", balance);
                         console.log(
                             "序号：",
                             index,
                             "当前 gas_limit 为:",
-                            values[3].toNumber()
+                            Number(values[3])
                         );
                         console.log(
                             "序号：",
                             index,
                             "当前设置 gas_price 为:",
-                            ethers.utils.formatUnits(values[1], "gwei"),
+                            formatUnits(values[1], "gwei"),
                             " Gwei"
                         );
                         console.log("序号：", index, "当前预估 gas_fee 为:", gas_fee);
 
                         if (Number(balance) > 0) {
-                            let transfer_amount = BigNumber.from(0);
+                            let transfer_amount = 0n;
                             if (config.transfer_type === "1") {
                                 if (parseFloat(gas_fee) >= parseFloat(balance)) {
                                     reject("当前余额不足，不做转账操作！");
@@ -502,7 +503,7 @@ const base_coin_transfer = {
                                     const l1Provider = provider_utils.get_provider(config.l1);
                                     let l1_gas_limit = await utils.getWalletGasLimit(
                                         config,
-                                        new ethers.Wallet(item.private_key, l1Provider),
+                                        new EthersWallet(item.private_key, l1Provider),
                                         item.to_addr
                                     );
                                     let l1_gas_price = await utils.getGasPrice(
@@ -517,7 +518,7 @@ const base_coin_transfer = {
                                     if (
                                         parseFloat(gas_fee) +
                                         parseFloat(
-                                            ethers.utils.formatEther(l1_gas_price.mul(l1_gas_limit))
+                                            formatEther(l1_gas_price * l1_gas_limit)
                                         ) >=
                                         parseFloat(balance)
                                     ) {
@@ -526,23 +527,16 @@ const base_coin_transfer = {
                                     }
                                     // 计算l1的gas消耗
                                     const rate = Math.round((config.scalar ?? 1) * 1000);
-                                    const l1_gas_fee_wei = l1_gas_price
-                                        .mul(l1_gas_limit)
-                                        .mul(rate)
-                                        .div(1000);
+                                    const l1_gas_fee_wei = l1_gas_price * l1_gas_limit * BigInt(rate) / 1000n;
                                     // 全部转账
-                                    transfer_amount = values[0]
-                                        .sub(values[1].mul(values[3])) // l2 的gas费
-                                        .sub(l1_gas_fee_wei); // l1 的gas费
+                                    transfer_amount = values[0] - (values[1] * values[3]) - l1_gas_fee_wei;
                                     // 处理scroll无法转账为0的问题
                                     if (config.chain === "scroll") {
-                                        transfer_amount = transfer_amount.sub(
-                                            ethers.utils.parseEther("0.0000000001")
-                                        );
+                                        transfer_amount = transfer_amount - parseEther("0.0000000001");
                                     }
                                 } else {
                                     // 全部转账
-                                    transfer_amount = values[0].sub(values[1].mul(values[3]));
+                                    transfer_amount = values[0] - (values[1] * values[3]);
                                 }
                             } else if (config.transfer_type === "2") {
                                 if (
@@ -553,7 +547,7 @@ const base_coin_transfer = {
                                     return;
                                 }
                                 // 转账固定数量
-                                transfer_amount = ethers.utils.parseEther(
+                                transfer_amount = parseEther(
                                     config.transfer_amount
                                 );
                             } else if (config.transfer_type === "3") {
@@ -571,7 +565,7 @@ const base_coin_transfer = {
                                     return;
                                 }
                                 // 转账范围随机
-                                transfer_amount = ethers.utils.parseEther(temp);
+                                transfer_amount = parseEther(temp);
                             } else if (config.transfer_type === "4") {
                                 if (
                                     parseFloat(balance) >= Number(config.left_amount_list[0]) &&
@@ -598,7 +592,7 @@ const base_coin_transfer = {
                                     return;
                                 }
                                 // 剩余随机数量
-                                transfer_amount = ethers.utils.parseEther(
+                                transfer_amount = parseEther(
                                     (
                                         parseFloat(balance) -
                                         parseFloat(gas_fee) -
@@ -611,7 +605,7 @@ const base_coin_transfer = {
                                 "序号：",
                                 index,
                                 "转账数量为:",
-                                ethers.utils.formatEther(transfer_amount)
+                                formatEther(transfer_amount)
                             );
 
                             const tx = {

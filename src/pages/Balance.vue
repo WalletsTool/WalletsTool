@@ -98,11 +98,6 @@ const progress = ref(0);
 // 分页
 const pagination = ref(false);
 const scrollbar = ref(true);
-// 滚动条设置
-let scroll = {
-  y: document.documentElement.clientHeight >= 625 ? document.documentElement.clientHeight - 445 : 180
-}
-let tableBool = ref(true)
 // rpc默认值
 const rpcValue = ref('');
 // 当前rpc
@@ -140,11 +135,6 @@ let currentItemKey = ref('')
 
 // 虚拟滚动相关配置
 const tableContainer = ref(null)
-const tableHeight = computed(() => {
-  return document.documentElement.clientHeight >= 625
-    ? document.documentElement.clientHeight - 445
-    : 355
-})
 
 // 虚拟滚动器配置
 const virtualizer = computed(() => {
@@ -193,31 +183,7 @@ onBeforeMount(async () => {
 })
 
 onMounted(async () => {
-  // 监听页面高度
-  window.onresize = () => {
-    return (() => {
-      window.screenHeight = document.documentElement.clientHeight
-      setTimeout(() => {
-        if (window.screenHeight >= 700) {
-          tableBool.value = false
-          scroll = {
-            y: window.screenHeight - 445
-          }
-          nextTick(() => {
-            tableBool.value = true
-          })
-        } else {
-          tableBool.value = false
-          scroll = {
-            y: 180
-          }
-          nextTick(() => {
-            tableBool.value = true
-          })
-        }
-      }, 200)
-    })()
-  }
+  // 页面高度现在通过 CSS 自动调整，无需监听器
 
   // 监听余额查询更新事件
   await listen('balance_item_update', (event) => {
@@ -685,24 +651,25 @@ async function closeWindow() {
 </script>
 
 <template>
-  <div class="container balance">
-    <div class="title-bar">
-      <div class="title-bar-text">链上工具箱 - 余额查询</div>
-      <div class="title-bar-controls">
-        <button class="title-bar-control" @click="minimizeWindow" title="最小化">
-          <span class="minimize-icon">—</span>
-        </button>
-        <button class="title-bar-control" @click="maximizeWindow" title="最大化">
-          <span class="maximize-icon">□</span>
-        </button>
-        <button class="title-bar-control close" @click="closeWindow" title="关闭">
-          <span class="close-icon">×</span>
-        </button>
-      </div>
+  <div class="title-bar">
+    <div class="title-bar-text">链上工具箱 - 余额查询</div>
+    <div class="title-bar-controls">
+      <button class="title-bar-control" @click="minimizeWindow" title="最小化">
+        <span class="minimize-icon">—</span>
+      </button>
+      <button class="title-bar-control" @click="maximizeWindow" title="最大化">
+        <span class="maximize-icon">口</span>
+      </button>
+      <button class="title-bar-control close" @click="closeWindow" title="关闭">
+        <span class="close-icon">×</span>
+      </button>
     </div>
+  </div>
+
+  <div class="container balance" style="height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden;">
     <!-- <span class="pageTitle">余额查询</span> -->
     <!-- 工具栏 -->
-    <div class="toolBar">
+    <div class="toolBar" style="flex-shrink: 0;">
       <a-button type="primary" @click="handleClick()">录入钱包地址</a-button>
       <a-divider direction="vertical" />
       <!-- 选择操作区按钮 -->
@@ -735,9 +702,9 @@ async function closeWindow() {
     </div>
     <!-- 操作账号表格 -->
     <!-- 虚拟滚动表格 -->
-    <div class="mainTable">
+    <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;">
       <!-- 表头 -->
-      <div class="virtual-table-header">
+      <div class="virtual-table-header" style="flex-shrink: 0;">
         <div class="virtual-header-cell" style="width: 40px">
           <a-checkbox v-model:checked="selectAll" :indeterminate="indeterminate"
             @change="handleSelectAll">全选</a-checkbox>
@@ -753,7 +720,7 @@ async function closeWindow() {
       </div>
 
       <!-- 虚拟滚动容器 -->
-      <div ref="tableContainer" class="virtual-table-container" :style="{ height: `${tableHeight}px` }">
+      <div ref="tableContainer" class="virtual-table-container" style="flex: 1; overflow: auto; min-height: 0;">
         <div v-if="virtualizer && data.length > 0" class="virtual-table-viewport" :style="{ height: `${virtualizer.value.getTotalSize()}px` }">
           <div v-for="virtualItem in virtualizer.value.getVirtualItems()" :key="virtualItem.index" class="virtual-table-row"
             :style="{
@@ -805,13 +772,13 @@ async function closeWindow() {
         </div>
       </div>
     </div>
-    <a-progress v-if="balanceLoading" style="margin-top: 15px" :percent="progress" :style="{ width: '100%' }"
+    <a-progress v-if="balanceLoading" style="margin-top: 15px; flex-shrink: 0;" :percent="progress" :style="{ width: '100%' }"
       stroke-width="5" :animation="true" :color="{
         '0%': '#37ecba',
         '100%': '#009efd',
       }" />
     <!-- 链选择器和代币选择器的容器 -->
-    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
       <!-- 链选择器 -->
       <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
         :style="{ width: '70%' }">
@@ -842,7 +809,7 @@ async function closeWindow() {
         </a-select>
     </div>
     <!-- 管理代币按钮区域 -->
-    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
       <a-button type="outline" status="normal" @click="handleAddCoinClick">
         <icon-plus />
         <span style="margin-left: 5px">添加代币</span>
@@ -851,19 +818,19 @@ async function closeWindow() {
       <a-checkbox v-model="onlyCoin" style="margin-left: auto;">仅查询目标代币</a-checkbox>
     </div>
     <!-- 相关设置 -->
-    <div style="display: flex;padding-top: 10px;flex-direction: column;">
+    <div style="display: flex;padding-top: 5px;flex-direction: column; flex-shrink: 0;">
       <div style="display: flex">
         <!-- 细节配置 -->
         <a-form ref="formRef" :model="form" layout="vertical">
-          <a-row style="height: 100px">
-            <a-form-item field="thread_count" label="线程数" style="width: 240px;padding: 10px"
+          <a-row style="height: 70px">
+            <a-form-item field="thread_count" label="线程数" style="width: 240px;padding: 5px 10px;"
               tooltip="同时执行查询的钱包数量（1-10）之间">
               <a-input-number :max="50" :min="1" mode="button" v-model="form.thread_count" />
             </a-form-item>
           </a-row>
         </a-form>
         <div style="width: 300px;display: flex;align-items: center;justify-content: center;">
-          <a-button type="outline" status="normal" style="margin-left: 10px;height: 50px;width: 200px;"
+          <a-button type="outline" status="normal" style="margin-left: 10px;height: 40px;width: 180px;font-size: 14px;"
             @click="queryBalance" :loading="balanceLoading">查询余额
           </a-button>
         </div>
@@ -978,21 +945,60 @@ async function closeWindow() {
 }
 
 .container {
-  margin-top: 30px;
-}
-
-.container {
+  height: calc(100vh - 30px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background-color: white;
   padding: 10px;
   min-width: 1240px;
 }
 
+/* 隐藏滚动条但保持滚动功能 */
+.container::-webkit-scrollbar {
+  display: none;
+}
+
+.container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 隐藏表格滚动条 */
+.arco-table-content::-webkit-scrollbar {
+  display: none;
+}
+
+.arco-table-content {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.arco-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.arco-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 隐藏虚拟表格滚动条 */
+.virtual-table-container::-webkit-scrollbar {
+  display: none;
+}
+
+.virtual-table-container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 .balance {
   .arco-table-body {
-    min-height: 355px;
+    min-height: 200px;
 
     .arco-table-element .arco-empty {
-      min-height: 330px;
+      min-height: 180px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -1020,7 +1026,7 @@ async function closeWindow() {
 }
 
 .toolBar {
-  margin-top: 10px;
+  margin-top: 35px;
 }
 
 .goHome {
@@ -1142,17 +1148,17 @@ async function closeWindow() {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 300px;
+  height: 150px;
   width: 100%;
 }
 </style>
 <style lang="less">
 .balance {
   .arco-table-body {
-    min-height: 355px;
+    min-height: 150px;
 
     .arco-table-element .arco-empty {
-      min-height: 330px;
+      min-height: 130px;
       display: flex;
       flex-direction: column;
       align-items: center;

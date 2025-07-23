@@ -113,12 +113,7 @@ function rowClick(record, event) {
 const pagination = ref(false);
 const scrollbar = ref(true);
 // 滚动条设置
-let scroll = {
-  y:
-    document.documentElement.clientHeight >= 625
-      ? document.documentElement.clientHeight - 445
-      : 180,
-};
+// 滚动配置现在通过 CSS calc() 动态计算
 let tableBool = ref(true);
 // rpc默认值
 const chainValue = ref("");
@@ -238,31 +233,7 @@ onMounted(async () => {
     console.error('Error getting window title:', error);
   }
 
-  // 监听页面高度
-  window.onresize = () => {
-    return (() => {
-      window.screenHeight = document.documentElement.clientHeight;
-      setTimeout(() => {
-        if (window.screenHeight >= 700) {
-          tableBool.value = false;
-          scroll = {
-            y: window.screenHeight - 445,
-          };
-          nextTick(() => {
-            tableBool.value = true;
-          });
-        } else {
-          tableBool.value = false;
-          scroll = {
-            y: 180,
-          };
-          nextTick(() => {
-            tableBool.value = true;
-          });
-        }
-      }, 200);
-    })();
-  };
+  // 页面高度现在通过 CSS 自动调整，无需监听器
 
   // 监听余额查询更新事件
   await listen('balance_item_update', (event) => {
@@ -1787,10 +1758,10 @@ async function closeWindow() {
     </div>
   </div>
 
-  <div class="container transfer">
+  <div class="container transfer" style="height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden;">
     <!-- <span class="pageTitle">批量转账</span> -->
     <!-- 工具栏 -->
-    <div class="toolBar">
+    <div class="toolBar" style="flex-shrink: 0;">
       <a-button type="primary" @click="handleClick('send')">录入发送方
       </a-button>
       <a-button type="primary" style="margin-left: 10px" @click="handleClick('receive')">录入接收地址
@@ -1823,10 +1794,10 @@ async function closeWindow() {
       </a-button>
     </div>
     <!-- 操作账号表格 -->
-    <div class="mainTable">
+    <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;">
       <a-table v-if="tableBool" row-key="key" :columns="columns" :column-resizable="true" :data="data"
-        :row-selection="rowSelection" :loading="tableLoading" :scroll="scroll" :scrollbar="scrollbar"
-        @row-click="rowClick" v-model:selectedKeys="selectedKeys" :pagination="pagination">
+        :row-selection="rowSelection" :loading="tableLoading" :scrollbar="scrollbar"
+        @row-click="rowClick" v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
         <template #index="{ rowIndex }">
           {{ rowIndex + 1 }}
         </template>
@@ -1846,7 +1817,7 @@ async function closeWindow() {
       </a-table>
     </div>
     <!-- 管理代币按钮嵌入 -->
-    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
       <!-- 链管理按钮 -->
       <a-button type="outline" @click="showChainManage" style="white-space: nowrap;">
         区块链管理
@@ -1892,12 +1863,13 @@ async function closeWindow() {
         </template>
       </a-select>
     </div>
-  </div>
-  <div style="display: flex; padding-top: 10px">
+    
+    <!-- 细节配置 -->
+    <div style="display: flex; padding-top: 5px; flex-shrink: 0;">
     <!-- 细节配置 -->
     <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="vertical">
-      <a-row style="height: 80px">
-        <a-form-item field="send_type" label="发送方式" style="width: 315px; padding: 10px">
+      <a-row style="height: 70px">
+        <a-form-item field="send_type" label="发送方式" style="width: 315px; padding: 5px 10px;">
           <a-radio-group v-model="form.send_type" type="button">
             <a-radio value="1">全部</a-radio>
             <a-radio value="2">指定数量</a-radio>
@@ -1906,89 +1878,89 @@ async function closeWindow() {
           </a-radio-group>
         </a-form-item>
         <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" tooltip="如果选择表格数据则应导入带有转账数量的表格数据"
-          style="width: 180px; padding: 10px">
+          style="width: 180px; padding: 5px 10px;">
           <a-radio-group v-model="form.amount_from" type="button">
             <a-radio value="1">表格数据</a-radio>
             <a-radio value="2">当前指定</a-radio>
           </a-radio-group>
         </a-form-item>
         <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量"
-          style="width: 150px; padding: 10px">
+          style="width: 150px; padding: 5px 10px;">
           <a-input v-model="form.send_count" />
         </a-form-item>
         <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope"
-          :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 180px; padding: 10px">
+          :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 180px; padding: 5px 10px;">
           <a-input v-model="form.send_min_count" />
           <span style="padding: 0 5px">至</span>
           <a-input v-model="form.send_max_count" />
         </a-form-item>
         <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度"
-          style="width: 110px; padding: 10px" tooltip="金额小数点位数">
+          style="width: 110px; padding: 5px 10px;" tooltip="金额小数点位数">
           <a-input v-model="form.amount_precision" />
         </a-form-item>
-        <a-divider direction="vertical" style="height: 60px; margin: 20px 10px 0 10px;" />
-        <a-form-item field="interval_scope" label="发送间隔（秒）" style="width: 215px; padding: 10px">
+        <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
+        <a-form-item field="interval_scope" label="发送间隔（秒）" style="width: 215px; padding: 5px 10px;">
           <a-input v-model="form.min_interval" />
           <span style="padding: 0 5px">至</span>
           <a-input v-model="form.max_interval" />
         </a-form-item>
-        <a-form-item field="thread_count" label="线程数" style="width: 130px; padding: 10px" tooltip="同时执行的钱包数量">
+        <a-form-item field="thread_count" label="线程数" style="width: 130px; padding: 5px 10px;" tooltip="同时执行的钱包数量">
           <a-input-number v-model="threadCount" :min="1" :max="100" :step="1" :default-value="1" mode="button" />
         </a-form-item>
-        <a-form-item field="error_retry" label="失败自动重试" style="width: 110px; padding: 10px" tooltip="转账失败时是否自动重试">
+        <a-form-item field="error_retry" label="失败自动重试" style="width: 110px; padding: 5px 10px;" tooltip="转账失败时是否自动重试">
           <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0" />
         </a-form-item>
       </a-row>
-      <a-row v-show="chainValue !== 'sol'" style="height: 80px">
-        <a-form-item field="limit_type" label="Gas Limit" style="width: 230px; padding: 10px">
+      <a-row v-show="chainValue !== 'sol'" style="height: 70px">
+        <a-form-item field="limit_type" label="Gas Limit" style="width: 230px; padding: 5px 10px;">
           <a-radio-group v-model="form.limit_type" type="button">
             <a-radio value="1">自动</a-radio>
             <a-radio value="2">指定数量</a-radio>
             <a-radio value="3">范围随机</a-radio>
           </a-radio-group>
         </a-form-item>
-        <a-form-item v-if="form.limit_type === '2'" style="width: 150px; padding: 10px" field="limit_count"
+        <a-form-item v-if="form.limit_type === '2'" style="width: 150px; padding: 5px 10px;" field="limit_count"
           label="Gas Limit">
           <a-input v-model="form.limit_count" />
         </a-form-item>
-        <a-form-item v-if="form.limit_type === '3'" style="width: 265px; padding: 10px" field="limit_count_scope"
+        <a-form-item v-if="form.limit_type === '3'" style="width: 265px; padding: 5px 10px;" field="limit_count_scope"
           label="Gas Limit 范围">
           <a-input v-model="form.limit_min_count" />
           <span style="padding: 0 5px">至</span>
           <a-input v-model="form.limit_max_count" />
         </a-form-item>
-        <a-divider direction="vertical" style="height: 60px; margin: 20px 10px 0 10px;" />
-        <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 225px; padding: 10px">
+        <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
+        <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 225px; padding: 5px 10px;">
           <a-radio-group v-model="form.gas_price_type" type="button">
             <a-radio value="1">自动</a-radio>
             <a-radio value="2">固定值</a-radio>
             <a-radio value="3">指定比例</a-radio>
           </a-radio-group>
         </a-form-item>
-        <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" style="width: 120px; padding: 10px"
+        <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" style="width: 120px; padding: 5px 10px;"
           label="Gas Price">
           <a-input v-model="form.gas_price" />
         </a-form-item>
-        <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate" style="width: 100px; padding: 10px"
+        <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate" style="width: 100px; padding: 5px 10px;"
           label="提高比例">
           <a-input v-model="form.gas_price_rate">
             <template #append> %</template>
           </a-input>
         </a-form-item>
         <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price"
-          style="width: 130px; padding: 10px" label="最大 Gas Price" tooltip="为空时则不设置上限（单位：Gwei）">
+          style="width: 130px; padding: 5px 10px;" label="最大 Gas Price" tooltip="为空时则不设置上限（单位：Gwei）">
           <a-input v-model="form.max_gas_price" />
         </a-form-item>
       </a-row>
     </a-form>
   </div>
-  <!-- 核心操作区 -->
-  <div style="display: flex; align-items: center; padding: 20px; background: #f8f9fa; border-top: 1px solid #e5e6e9; margin-top: 10px; justify-content: center; gap: 30px;">
+    <!-- 核心操作区 -->
+    <div style="display: flex; align-items: center; padding: 10px 20px; margin-top: 5px; justify-content: center; gap: 30px; flex-shrink: 0;">
     <!-- 左侧区域 -->
     <div style="display: flex; align-items: center; gap: 20px;">
       <!-- 查询余额 -->
       <a-dropdown>
-        <a-button type="primary" :loading="balanceLoading" :style="{ width: '150px', height: '50px', fontSize: '16px' }">查询余额</a-button>
+        <a-button type="primary" :loading="balanceLoading" :style="{ width: '130px', height: '40px', fontSize: '14px' }">查询余额</a-button>
         <template #content>
           <a-doption @click="queryBalance">⤴️ 查出账地址</a-doption>
           <a-doption disabled>⤵️ 查到账地址</a-doption>
@@ -1999,14 +1971,15 @@ async function closeWindow() {
     <!-- 右侧区域 -->
     <div style="display: flex; align-items: center; gap: 20px;">
       <!-- 执行转账按钮 -->
-      <a-button v-if="!startLoading && stopStatus" class="execute-btn" @click="startTransfer(data.value)">执行转账</a-button>
+      <a-button v-if="!startLoading && stopStatus" class="execute-btn" @click="startTransfer(data.value)" :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行转账</a-button>
       <a-tooltip v-else content="点击可以提前停止执行">
         <div @click="stopTransfer">
-          <a-button v-if="!stopFlag" class="execute-btn executing" loading>执行中...</a-button>
-          <a-button v-if="stopFlag && !stopStatus" class="execute-btn stopping" loading>正在停止...</a-button>
+          <a-button v-if="!stopFlag" class="execute-btn executing" loading :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行中...</a-button>
+          <a-button v-if="stopFlag && !stopStatus" class="execute-btn stopping" loading :style="{ width: '130px', height: '40px', fontSize: '14px' }">正在停止...</a-button>
         </div>
       </a-tooltip>
     </div>
+  </div>
   </div>
   <a-modal v-model:visible="visible" :width="700" :title="importModalTitle" @cancel="handleCancel"
     :on-before-ok="handleBeforeOk">
@@ -2218,7 +2191,7 @@ async function closeWindow() {
 }
 
 .toolBar {
-  margin-top: 5px;
+  margin-top: 35px;
 }
 
 .goHome {
@@ -2390,7 +2363,39 @@ async function closeWindow() {
 
 /* 调整容器以适应自定义标题栏 */
 .container {
-  margin-top: 30px;
+  height: calc(100vh - 30px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 隐藏滚动条但保持滚动功能 */
+.container::-webkit-scrollbar {
+  display: none;
+}
+
+.container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 隐藏表格滚动条 */
+.arco-table-content::-webkit-scrollbar {
+  display: none;
+}
+
+.arco-table-content {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.arco-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.arco-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .rpc-urls {
@@ -2400,10 +2405,10 @@ async function closeWindow() {
 <style lang="less">
 .transfer {
   .arco-table-body {
-    min-height: 355px;
+    min-height: 150px;
 
     .arco-table-element .arco-empty {
-      min-height: 330px;
+      min-height: 130px;
       display: flex;
       flex-direction: column;
       align-items: center;

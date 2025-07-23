@@ -1,7 +1,31 @@
 @font-face {
-    font-family: 'MiSans';
-    src: url('./assets/MiSans-Medium.ttf') format('truetype');
+    font-family: 'HarmonyOS Sans';
+    src: url('/font/HarmonyOS_Sans_Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'HarmonyOS Sans';
+    src: url('/font/HarmonyOS_Sans_Medium.ttf') format('truetype');
     font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'HarmonyOS Sans';
+    src: url('/font/HarmonyOS_Sans_Bold.ttf') format('truetype');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'HarmonyOS Sans';
+    src: url('/font/HarmonyOS_Sans_Black.ttf') format('truetype');
+    font-weight: 700;
     font-style: normal;
     font-display: swap;
 }
@@ -10,7 +34,7 @@
     width: 100%;
     height: 100%;
 
-    font-family: 'MiSans', Inter, Avenir, Helvetica, Arial, sans-serif;
+    font-family: 'HarmonyOS Sans', Inter, Avenir, Helvetica, Arial, sans-serif !important;
     font-size: 16px;
     line-height: 24px;
     font-weight: 500;
@@ -23,6 +47,31 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-text-size-adjust: 100%;
+}
+
+/* 强制覆盖 Arco 框架的字体设置 */
+body,
+html,
+#app,
+.arco-app,
+* {
+    font-family: 'HarmonyOS Sans', Inter, Avenir, Helvetica, Arial, sans-serif !important;
+}
+
+/* 确保 Arco 组件也使用 MiSans 字体 */
+.arco-btn,
+.arco-input,
+.arco-select,
+.arco-table,
+.arco-menu,
+.arco-card,
+.arco-modal,
+.arco-drawer,
+.arco-notification,
+.arco-message,
+.arco-tooltip,
+.arco-popover {
+    font-family: 'HarmonyOS Sans', Inter, Avenir, Helvetica, Arial, sans-serif !important;
 }
 
 #app {

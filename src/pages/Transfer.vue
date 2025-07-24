@@ -162,6 +162,29 @@ let addCoinVisible = ref(false);
 let coinAddress = ref("");
 // 删除代币弹窗
 let deleteTokenVisible = ref(false);
+// 代币管理弹窗显示状态
+let tokenManageVisible = ref(false);
+// 代币编辑弹窗显示状态（新增和编辑共用）
+let tokenFormVisible = ref(false);
+// 是否为代币编辑模式（false为新增，true为编辑）
+let isTokenEditMode = ref(false);
+// 代币管理表格数据
+let tokenManageData = ref([]);
+// 当前编辑的代币
+let currentEditToken = ref(null);
+// 代币管理表格加载状态
+let tokenTableLoading = ref(false);
+// 代币信息表单（添加和编辑共用）
+const tokenForm = reactive({
+  key: '',
+  name: '',
+  symbol: '',
+  decimals: 18,
+  type: 'token',
+  contract_type: '',
+  contract_address: '',
+  abi: ''
+});
 // 链管理弹窗显示状态
 let chainManageVisible = ref(false);
 // 链编辑弹窗显示状态（新增和编辑共用）
@@ -203,6 +226,9 @@ let stopFlag = ref(false);
 let stopStatus = ref(true);
 // 线程数设置，默认为1
 let threadCount = ref(1);
+// 数据库管理相关状态
+let databaseStatus = ref(null);
+let databaseLoading = ref(false);
 // 获取gas
 const timer = setInterval(fetchGas, 5000);
 
@@ -219,6 +245,8 @@ onBeforeMount(async () => {
   currentChain.value = chainOptions.value[0];
   // 获取rpc对应的代币列表
   await chainChange();
+  // 检查数据库状态
+  await checkDatabaseStatus();
 });
 
 onMounted(async () => {
@@ -1224,6 +1252,184 @@ function goHome() {
   });
 }
 
+// 代币管理相关方法
+// 显示代币管理弹窗
+function showTokenManage() {
+  if (!chainValue.value) {
+    Notification.warning('请先选择区块链！');
+    return;
+  }
+  tokenManageVisible.value = true;
+  loadTokenManageData();
+}
+
+// 加载代币管理数据
+async function loadTokenManageData() {
+  tokenTableLoading.value = true;
+  try {
+    const tokenList = await invoke("get_coin_list", {
+      chain: chainValue.value
+    });
+    tokenManageData.value = tokenList.map(token => ({
+      key: token.key,
+      coin: token.coin,
+      type: token.type || token.coin_type,
+      contract_type: token.contract_type || '',
+      contract_address: token.contract_address || '',
+      abi: token.abi || '',
+      decimals: token.decimals || 18,
+      label: token.label || token.coin
+    }));
+  } catch (error) {
+    console.error('加载代币数据失败:', error);
+    Notification.error('加载代币数据失败：' + error);
+  } finally {
+    tokenTableLoading.value = false;
+  }
+}
+
+// 显示添加代币弹窗
+function showAddToken() {
+  // 设置为添加模式
+  isTokenEditMode.value = false;
+  currentEditToken.value = null;
+  
+  // 重置表单
+  Object.assign(tokenForm, {
+    key: '',
+    name: '',
+    symbol: '',
+    decimals: 18,
+    type: 'token',
+    contract_type: '',
+    contract_address: '',
+    abi: ''
+  });
+  tokenFormVisible.value = true;
+}
+
+// 显示编辑代币弹窗
+function showEditToken(record) {
+  // 设置为编辑模式
+  isTokenEditMode.value = true;
+  currentEditToken.value = record;
+  
+  // 填充表单数据，确保所有字段都有默认值
+  Object.assign(tokenForm, {
+    key: record.key || '',
+    name: record.name || record.coin || '',
+    symbol: record.symbol || record.coin || '',
+    decimals: record.decimals || 18,
+    type: record.type || 'token',
+    contract_type: record.contract_type || '',
+    contract_address: record.contract_address || '',
+    abi: record.abi || ''
+  });
+  tokenFormVisible.value = true;
+}
+
+// 提交代币表单（统一处理添加和编辑）
+async function submitTokenForm() {
+  try {
+    // 验证必填项，确保字段存在且不为空
+    if (!tokenForm.name || !tokenForm.name.trim()) {
+      Notification.warning('请输入代币名称');
+      return false;
+    }
+    if (!tokenForm.symbol || !tokenForm.symbol.trim()) {
+      Notification.warning('请输入代币符号');
+      return false;
+    }
+    if (!tokenForm.key || !tokenForm.key.trim()) {
+      Notification.warning('请输入代币标识');
+      return false;
+    }
+    if (tokenForm.type === 'token' && (!tokenForm.contract_address || !tokenForm.contract_address.trim())) {
+      Notification.warning('代币类型为token时，合约地址不能为空');
+      return false;
+    }
+    if (!tokenForm.decimals || tokenForm.decimals < 0) {
+      Notification.warning('请输入有效的小数位数');
+      return false;
+    }
+    
+    // 如果是添加模式且没有输入key，自动生成
+    if (!isTokenEditMode.value && !tokenForm.key.trim()) {
+      tokenForm.key = tokenForm.symbol.toLowerCase();
+    }
+    
+    const requestData = {
+      key: tokenForm.key,
+      name: tokenForm.name,
+      symbol: tokenForm.symbol,
+      coin_type: tokenForm.type,
+      contract_address: tokenForm.contract_address,
+      decimals: tokenForm.decimals,
+      abi: tokenForm.abi
+    };
+    
+    if (isTokenEditMode.value) {
+      // 更新代币
+      await invoke('update_coin', {
+        chain: chainValue.value,
+        key: tokenForm.key,
+        objJson: JSON.stringify(requestData)
+      });
+      Notification.success('编辑代币成功！');
+    } else {
+      // 添加代币
+      await invoke('add_coin', {
+        chain: chainValue.value,
+        objJson: JSON.stringify(requestData)
+      });
+      Notification.success('添加代币成功！');
+    }
+    
+    // 刷新代币列表
+    loadTokenManageData();
+    
+    // 重新加载主页面的代币选择器
+    await chainChange();
+    
+    tokenFormVisible.value = false;
+    return true;
+  } catch (error) {
+    console.error('代币操作失败:', error);
+    Notification.error('代币操作失败：' + error);
+    return false;
+  }
+}
+
+// 删除代币
+async function deleteTokenFromManage(tokenKey) {
+  try {
+    await invoke('remove_coin', {
+      chain: chainValue.value,
+      key: tokenKey
+    });
+    Notification.success('删除代币成功！');
+    
+    // 刷新代币列表
+    loadTokenManageData();
+    
+    // 重新加载主页面的代币选择器
+    await chainChange();
+  } catch (error) {
+    console.error('删除代币失败:', error);
+    Notification.error('删除代币失败：' + error);
+  }
+}
+
+// 关闭代币管理弹窗
+function closeTokenManage() {
+  tokenManageVisible.value = false;
+}
+
+// 关闭添加代币弹窗
+function closeAddToken() {
+  tokenFormVisible.value = false;
+}
+
 // 链管理相关方法
 // 显示链管理弹窗
 function showChainManage() {
@@ -1712,6 +1918,64 @@ function removeEditRpcUrl(index) {
   }
 }
 
+// 数据库管理方法
+// 检查数据库状态
+async function checkDatabaseStatus() {
+  try {
+    databaseLoading.value = true;
+    const status = await invoke('check_database_schema');
+    databaseStatus.value = status;
+    console.log('数据库状态:', status);
+  } catch (error) {
+    console.error('检查数据库状态失败:', error);
+    Notification.error('检查数据库状态失败：' + error);
+  } finally {
+    databaseLoading.value = false;
+  }
+}
+
+// 重载数据库
+async function reloadDatabase() {
+  try {
+    databaseLoading.value = true;
+    const result = await invoke('reload_database');
+    Notification.success(result);
+    // 重新检查数据库状态
+    await checkDatabaseStatus();
+    // 刷新页面数据
+    await refreshPageData();
+  } catch (error) {
+    console.error('重载数据库失败:', error);
+    Notification.error('重载数据库失败：' + error);
+  } finally {
+    databaseLoading.value = false;
+  }
+}
+
+// 刷新页面数据
+async function refreshPageData() {
+  try {
+    // 重新加载链列表
+    const chainList = await invoke("get_chain_list");
+    chainOptions.value = chainList.filter((item) => item.key !== "starknet");
+    
+    // 如果当前选中的链还存在，保持选中状态
+    const currentChainExists = chainOptions.value.find(item => item.key === chainValue.value);
+    if (!currentChainExists && chainOptions.value.length > 0) {
+      chainValue.value = chainOptions.value[0].key;
+      currentChain.value = chainOptions.value[0];
+    }
+    
+    // 重新加载代币列表
+    await chainChange();
+    
+    Notification.success('页面数据已刷新');
+  } catch (error) {
+    console.error('刷新页面数据失败:', error);
+    Notification.error('刷新页面数据失败：' + error);
+  }
+}
+
 // 标题栏控制方法
 async function minimizeWindow() {
   try {
@@ -1734,7 +1998,7 @@ async function maximizeWindow() {
 async function closeWindow() {
   try {
     const currentWindow = getCurrentWindow()
-    await currentWindow.close()
+    await currentWindow.destroy()
   } catch (error) {
     console.error('Error closing window:', error)
   }
@@ -1747,13 +2011,13 @@ async function closeWindow() {
     <div class="title-bar-text">{{ windowTitle }}</div>
     <div class="title-bar-controls">
       <button class="title-bar-control" @click="minimizeWindow" title="最小化">
-        <span class="minimize-icon">—</span>
+        <span class="minimize-icon">―</span>
       </button>
       <button class="title-bar-control" @click="maximizeWindow" title="最大化">
-        <span class="maximize-icon">□</span>
+        <span class="maximize-icon">▢</span>
       </button>
       <button class="title-bar-control close" @click="closeWindow" title="关闭">
-        <span class="close-icon">×</span>
+        <span class="close-icon">✕</span>
       </button>
     </div>
   </div>
@@ -1848,7 +2112,7 @@ async function closeWindow() {
           </div>
         </template>
       </a-select>
-      <a-button type="outline" @click="handleAddCoinClick" style="white-space: nowrap;" >
+      <a-button type="outline" @click="showTokenManage" style="white-space: nowrap;" >
         代币管理
       </a-button>
       <!-- 代币 选择器 -->
@@ -1958,6 +2222,25 @@ async function closeWindow() {
     <div style="display: flex; align-items: center; padding: 10px 20px; margin-top: 5px; justify-content: center; gap: 30px; flex-shrink: 0;">
     <!-- 左侧区域 -->
     <div style="display: flex; align-items: center; gap: 20px;">
+      <!-- 数据库管理 -->
+      <a-dropdown>
+        <a-button type="outline" :loading="databaseLoading" :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+          <template #icon>
+            <span v-if="databaseStatus?.needs_migration" style="color: #ff4d4f;">⚠️</span>
+            <span v-else style="color: #52c41a;">✅</span>
+          </template>
+          数据库管理
+        </a-button>
+        <template #content>
+          <a-doption @click="checkDatabaseStatus">🔍 检查状态</a-doption>
+          <a-doption @click="reloadDatabase" :disabled="databaseLoading">
+            <span v-if="databaseStatus?.needs_migration" style="color: #ff4d4f;">🔄 执行迁移</span>
+            <span v-else>🔄 重载数据库</span>
+          </a-doption>
+          <a-doption @click="refreshPageData">🔃 刷新页面</a-doption>
+        </template>
+      </a-dropdown>
+      
       <!-- 查询余额 -->
       <a-dropdown>
         <a-button type="primary" :loading="balanceLoading" :style="{ width: '130px', height: '40px', fontSize: '14px' }">查询余额</a-button>
@@ -2159,6 +2442,101 @@ async function closeWindow() {
           </a-button>
         </div>
         </div>
+      </a-form-item>
+    </a-form>
+  </a-modal>
+  
+  <!-- 代币管理弹窗 -->
+  <a-modal v-model:visible="tokenManageVisible" title="代币管理" :width="1000" @cancel="closeTokenManage">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h3 style="margin: 0;">{{ chainOptions.find(c => c.key === chainValue)?.name || '当前区块链' }} - 代币配置管理</h3>
+      <a-button type="primary" @click="showAddToken">
+        <icon-plus />
+        添加代币
+      </a-button>
+    </div>
+    
+    <a-table :data="tokenManageData" :loading="tokenTableLoading" :pagination="false" :scroll="{ y: 400 }">
+      <template #columns>
+        <a-table-column title="标识" data-index="key" :width="80" />
+        <a-table-column title="代币符号" data-index="coin" :width="100" />
+        <a-table-column title="类型" data-index="type" :width="80" />
+        <a-table-column title="合约地址" data-index="contract_address" :width="200" :ellipsis="true" :tooltip="true" />
+        <a-table-column title="合约类型" data-index="contract_type" :width="100" />
+        <a-table-column title="小数位数" data-index="decimals" :width="80" />
+        <a-table-column title="操作" :width="150">
+          <template #cell="{ record }">
+            <a-button type="text" @click="showEditToken(record)" size="small">
+              编辑
+            </a-button>
+            <a-popconfirm content="确定要删除这个代币吗？" 
+                         @ok="deleteTokenFromManage(record.key)">
+              <a-button type="text" status="danger" size="small">
+                <icon-delete />
+                删除
+              </a-button>
+            </a-popconfirm>
+          </template>
+        </a-table-column>
+      </template>
+    </a-table>
+    
+    <template #footer>
+      <a-button @click="closeTokenManage">关闭</a-button>
+    </template>
+  </a-modal>
+  
+  <!-- 添加/编辑代币弹窗 -->
+  <a-modal v-model:visible="tokenFormVisible" :title="isTokenEditMode ? '编辑代币' : '添加代币'" :width="600" @cancel="closeAddToken" :on-before-ok="submitTokenForm">
+    <a-form :model="tokenForm" layout="vertical">
+      <a-row :gutter="16">
+        <a-col :span="12">
+          <a-form-item label="代币标识" :required="!isTokenEditMode">
+            <a-input v-model="tokenForm.key" placeholder="例如：usdt, usdc" :disabled="isTokenEditMode" />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="代币名称" required>
+            <a-input v-model="tokenForm.name" placeholder="例如：Tether USD, USD Coin" />
+          </a-form-item>
+        </a-col>
+      </a-row>
+      
+      <a-row :gutter="16">
+        <a-col :span="12">
+          <a-form-item label="代币符号" required>
+            <a-input v-model="tokenForm.symbol" placeholder="例如：USDT, USDC" />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="小数位数" required>
+            <a-input-number v-model="tokenForm.decimals" :min="0" :max="18" placeholder="18" />
+          </a-form-item>
+        </a-col>
+      </a-row>
+      
+      <a-row :gutter="16">
+        <a-col :span="12">
+          <a-form-item label="代币类型" required>
+            <a-select v-model="tokenForm.type" placeholder="选择代币类型">
+              <a-option value="base">原生代币</a-option>
+              <a-option value="token">合约代币</a-option>
+            </a-select>
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="合约类型">
+            <a-input v-model="tokenForm.contract_type" placeholder="例如：ERC20, BEP20" />
+          </a-form-item>
+        </a-col>
+      </a-row>
+      
+      <a-form-item label="合约地址" :required="tokenForm.type === 'token'">
+        <a-input v-model="tokenForm.contract_address" placeholder="代币合约地址" />
+      </a-form-item>
+      
+      <a-form-item label="ABI (可选)">
+        <a-textarea v-model="tokenForm.abi" placeholder="合约ABI JSON字符串" :auto-size="{ minRows: 3, maxRows: 6 }" />
       </a-form-item>
     </a-form>
   </a-modal>

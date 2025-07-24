@@ -85,6 +85,7 @@ async fn main() {
             web3_tools::chain_config::get_coin_list,
             web3_tools::chain_config::add_coin,
             web3_tools::chain_config::remove_coin,
+            web3_tools::chain_config::update_coin,
             web3_tools::chain_config::update_chain_pic_urls,
             web3_tools::chain_config::update_token_abi,
             // chain management commands
@@ -104,6 +105,9 @@ async fn main() {
             close_all_child_windows,
             get_all_child_windows,
             force_close_main_window,
+            // database hot reload functions
+            database::reload_database,
+            database::check_database_schema,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -50,6 +50,7 @@ pub async fn get_coin_list(chain: &str) -> Result<Vec<Value>, String> {
                     "contract_address": token.contract_address,
                     "decimals": token.decimals,
                     "coin_type": token.coin_type,
+                    "contract_type": token.contract_type,
                     "abi": token.abi
                 })
             }).collect())
@@ -74,6 +75,7 @@ pub async fn add_coin(chain: &str, obj_json: &str) -> Result<(), String> {
         contract_address: coin_data["contract_address"].as_str().map(|s| s.to_string()),
         decimals: coin_data["decimals"].as_i64().unwrap_or(18) as i32,
         token_type: coin_data["coin_type"].as_str().unwrap_or("token").to_string(),
+        contract_type: coin_data["contract_type"].as_str().map(|s| s.to_string()),
         abi: coin_data["abi"].as_str().map(|s| s.to_string()),
     };
     
@@ -93,6 +95,30 @@ pub async fn remove_coin(chain: &str, key: &str) -> Result<(), String> {
     
     chain_service.remove_token(chain, key).await
         .map_err(|e| format!("删除代币失败: {}", e))?;
+    
+    Ok(())
+}
+
+#[command]
+pub async fn update_coin(chain: &str, key: &str, obj_json: &str) -> Result<(), String> {
+    let coin_data: Value = serde_json::from_str(obj_json)
+        .map_err(|e| format!("解析JSON失败: {}", e))?;
+    
+    let request = UpdateTokenRequest {
+        token_name: coin_data["name"].as_str().unwrap_or("").to_string(),
+        symbol: coin_data["symbol"].as_str().unwrap_or("").to_string(),
+        contract_address: coin_data["contract_address"].as_str().map(|s| s.to_string()),
+        decimals: coin_data["decimals"].as_i64().unwrap_or(18) as i32,
+        token_type: coin_data["coin_type"].as_str().unwrap_or("token").to_string(),
+        contract_type: coin_data["contract_type"].as_str().map(|s| s.to_string()),
+        abi: coin_data["abi"].as_str().map(|s| s.to_string()),
+    };
+    
+    let db_manager = get_database_manager();
+    let chain_service = ChainService::new(db_manager.get_pool());
+    
+    chain_service.update_token(chain, key, request).await
+        .map_err(|e| format!("更新代币失败: {}", e))?;
     
     Ok(())
 }

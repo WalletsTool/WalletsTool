@@ -9,6 +9,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     create_tokens_table(pool).await?;
     create_balance_history_table(pool).await?;
     add_abi_column_to_tokens_table(pool).await?;
+    add_contract_type_column_to_tokens_table(pool).await?;
     insert_default_data(pool).await?;
     
     Ok(())
@@ -148,6 +149,27 @@ async fn add_abi_column_to_tokens_table(pool: &SqlitePool) -> Result<()> {
     if !column_exists {
         // 添加abi列，用于存储智能合约的ABI JSON
         sqlx::query("ALTER TABLE tokens ADD COLUMN abi TEXT")
+            .execute(pool)
+            .await?;
+    }
+    
+    Ok(())
+}
+
+/// 为tokens表添加contract_type列（数据库迁移）
+async fn add_contract_type_column_to_tokens_table(pool: &SqlitePool) -> Result<()> {
+    // 检查contract_type列是否已经存在
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('tokens') WHERE name = 'contract_type'"
+    )
+    .fetch_one(pool)
+    .await?;
+    
+    let column_exists = count > 0;
+    
+    if !column_exists {
+        // 添加contract_type列，用于存储合约类型
+        sqlx::query("ALTER TABLE tokens ADD COLUMN contract_type TEXT DEFAULT ''")
             .execute(pool)
             .await?;
     }

@@ -87,6 +87,7 @@ impl<'a> ChainService<'a> {
             key: token.token_key,
             coin: token.token_name,
             coin_type: token.token_type,
+            contract_type: token.contract_type,
             contract_address: token.contract_address,
             decimals: token.decimals,
             abi: token.abi, // 使用数据库中的abi字段
@@ -128,8 +129,8 @@ impl<'a> ChainService<'a> {
         sqlx::query(
             r#"
             INSERT INTO tokens (
-                chain_id, token_key, token_name, symbol, decimals, token_type, abi, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 'base', NULL, ?, ?)
+                chain_id, token_key, token_name, symbol, decimals, token_type, contract_type, abi, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 'base', NULL, NULL, ?, ?)
             "#
         )
         .bind(chain_id)
@@ -296,8 +297,8 @@ impl<'a> ChainService<'a> {
             r#"
             INSERT INTO tokens (
                 chain_id, token_key, token_name, symbol, contract_address, 
-                decimals, token_type, abi, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                decimals, token_type, contract_type, abi, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             "#
         )
@@ -308,6 +309,7 @@ impl<'a> ChainService<'a> {
         .bind(&request.contract_address)
         .bind(request.decimals)
         .bind(&request.token_type)
+        .bind(&request.contract_type)
         .bind(&request.abi)
         .bind(now)
         .bind(now)
@@ -369,6 +371,42 @@ impl<'a> ChainService<'a> {
         )
         .bind(&abi)
         .bind(Utc::now())
+        .bind(chain.id)
+        .bind(token_key)
+        .execute(self.pool)
+        .await?
+        .rows_affected();
+        
+        if rows_affected == 0 {
+            return Err(anyhow::anyhow!("代币不存在或已禁用: {}/{}", chain_key, token_key));
+        }
+        
+        Ok(())
+    }
+
+    /// 更新代币信息
+    pub async fn update_token(&self, chain_key: &str, token_key: &str, request: UpdateTokenRequest) -> Result<()> {
+        // 获取链信息验证链是否存在
+        let chain = self.get_chain_by_key(chain_key).await?
+            .ok_or_else(|| anyhow::anyhow!("链不存在: {}", chain_key))?;
+        
+        let now = Utc::now();
+        let rows_affected = sqlx::query(
+            r#"
+            UPDATE tokens SET 
+                token_name = ?, symbol = ?, contract_address = ?, 
+                decimals = ?, token_type = ?, contract_type = ?, abi = ?, updated_at = ?
+            WHERE chain_id = ? AND token_key = ? AND is_active = TRUE
+            "#
+        )
+        .bind(&request.token_name)
+        .bind(&request.symbol)
+        .bind(&request.contract_address)
+        .bind(request.decimals)
+        .bind(&request.token_type)
+        .bind(&request.contract_type)
+        .bind(&request.abi)
+        .bind(now)
         .bind(chain.id)
         .bind(token_key)
         .execute(self.pool)

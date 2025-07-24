@@ -48,6 +48,7 @@ pub struct Token {
     pub contract_address: Option<String>,
     pub decimals: i32,
     pub token_type: String, // "base" or "token"
+    pub contract_type: Option<String>, // 合约类型
     pub abi: Option<String>, // 智能合约ABI JSON字符串
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
@@ -124,6 +125,19 @@ pub struct CreateTokenRequest {
     pub contract_address: Option<String>,
     pub decimals: i32,
     pub token_type: String,
+    pub contract_type: Option<String>, // 合约类型
+    pub abi: Option<String>, // 智能合约ABI JSON字符串
+}
+
+/// 更新代币的请求模型
+#[derive(Debug, Deserialize)]
+pub struct UpdateTokenRequest {
+    pub token_name: String,
+    pub symbol: String,
+    pub contract_address: Option<String>,
+    pub decimals: i32,
+    pub token_type: String,
+    pub contract_type: Option<String>, // 合约类型
     pub abi: Option<String>, // 智能合约ABI JSON字符串
 }
 
@@ -151,6 +165,7 @@ pub struct TokenInfo {
     pub coin: String,
     #[serde(rename = "type")]
     pub coin_type: String,
+    pub contract_type: Option<String>,
     pub contract_address: Option<String>,
     pub decimals: i32,
     pub abi: Option<String>,

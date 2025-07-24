@@ -14,8 +14,8 @@
   "config": {
     "database": {
       "forceInit": false,
-      "enableDebugLog": true,
-      "initSqlPath": "sql/init.sql"
+      "enableDebugLog": false,
+      "initSqlPath": "data/init.sql"
     }
   },
   "dependencies": {

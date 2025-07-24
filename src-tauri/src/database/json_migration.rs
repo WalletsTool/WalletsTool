@@ -125,6 +125,7 @@ async fn migrate_chain_coins_from_json(
                     contract_address,
                     decimals,
                     token_type: coin_type,
+                    contract_type: coin_item["contract_type"].as_str().map(|s| s.to_string()),
                     abi: coin_item["abi"].as_str().map(|s| s.to_string()),
                 };
                 

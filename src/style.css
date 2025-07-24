@@ -58,7 +58,7 @@ html,
     font-family: 'HarmonyOS Sans', Inter, Avenir, Helvetica, Arial, sans-serif !important;
 }
 
-/* 确保 Arco 组件也使用 MiSans 字体 */
+/* 确保 Arco 组件也使用 HarmonyOS Sans 字体 */
 .arco-btn,
 .arco-input,
 .arco-select,

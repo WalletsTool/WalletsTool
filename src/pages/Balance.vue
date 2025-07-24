@@ -643,7 +643,7 @@ async function maximizeWindow() {
 async function closeWindow() {
   try {
     const currentWindow = getCurrentWindow()
-    await currentWindow.close()
+    await currentWindow.destroy()
   } catch (error) {
     console.error('Error closing window:', error)
   }
@@ -655,18 +655,19 @@ async function closeWindow() {
     <div class="title-bar-text">链上工具箱 - 余额查询</div>
     <div class="title-bar-controls">
       <button class="title-bar-control" @click="minimizeWindow" title="最小化">
-        <span class="minimize-icon">—</span>
+        <span class="minimize-icon">―</span>
       </button>
       <button class="title-bar-control" @click="maximizeWindow" title="最大化">
-        <span class="maximize-icon">口</span>
+        <span class="maximize-icon">▢</span>
       </button>
       <button class="title-bar-control close" @click="closeWindow" title="关闭">
-        <span class="close-icon">×</span>
+        <span class="close-icon">✕</span>
       </button>
     </div>
   </div>
 
-  <div class="container balance" style="height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden;">
+  <div class="container balance"
+    style="height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden;">
     <!-- <span class="pageTitle">余额查询</span> -->
     <!-- 工具栏 -->
     <div class="toolBar" style="flex-shrink: 0;">
@@ -721,9 +722,10 @@ async function closeWindow() {
 
       <!-- 虚拟滚动容器 -->
       <div ref="tableContainer" class="virtual-table-container" style="flex: 1; overflow: auto; min-height: 0;">
-        <div v-if="virtualizer && data.length > 0" class="virtual-table-viewport" :style="{ height: `${virtualizer.value.getTotalSize()}px` }">
-          <div v-for="virtualItem in virtualizer.value.getVirtualItems()" :key="virtualItem.index" class="virtual-table-row"
-            :style="{
+        <div v-if="virtualizer && data.length > 0" class="virtual-table-viewport"
+          :style="{ height: `${virtualizer.value.getTotalSize()}px` }">
+          <div v-for="virtualItem in virtualizer.value.getVirtualItems()" :key="virtualItem.index"
+            class="virtual-table-row" :style="{
               position: 'absolute',
               top: 0,
               left: 0,
@@ -772,8 +774,8 @@ async function closeWindow() {
         </div>
       </div>
     </div>
-    <a-progress v-if="balanceLoading" style="margin-top: 15px; flex-shrink: 0;" :percent="progress" :style="{ width: '100%' }"
-      stroke-width="5" :animation="true" :color="{
+    <a-progress v-if="balanceLoading" style="margin-top: 15px; flex-shrink: 0;" :percent="progress"
+      :style="{ width: '100%' }" stroke-width="5" :animation="true" :color="{
         '0%': '#37ecba',
         '100%': '#009efd',
       }" />
@@ -782,31 +784,31 @@ async function closeWindow() {
       <!-- 链选择器 -->
       <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
         :style="{ width: '70%' }">
-      <template #label="{ data }">
-        <div style="display: flex;flex-direction: row;align-items: center;">
-          <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 18px;height: 18px">
-          <span style="margin-left: 10px">{{ data?.chain }}</span>
-          <span style="margin-left: 30px;">{{ data?.scan_url }}</span>
-        </div>
-      </template>
-      <template #option="{ data }">
-        <div style="display: flex;flex-direction: row;align-items: center;height: 32px;">
-          <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 18px;height: 18px">
-          <span style="margin-left: 10px">{{ data?.chain }}</span>
-          <span style="margin-left: 30px;color: gray;">{{ data?.scan_url }}</span>
-        </div>
-      </template>
-    </a-select>
-    <!-- 代币 选择器 -->
-    <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames"
-      :style="{ width: '30%' }" @change="coinChange">
-          <template #label="{ data }">
-            <span style="margin-left: 10px;line-height: 30px;">{{ data?.label }}</span>
-          </template>
-          <template #option="{ data }">
-            <span style="margin-left: 10px;line-height: 30px;">{{ data?.label }}</span>
-          </template>
-        </a-select>
+        <template #label="{ data }">
+          <div style="display: flex;flex-direction: row;align-items: center;">
+            <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 18px;height: 18px">
+            <span style="margin-left: 10px">{{ data?.chain }}</span>
+            <span style="margin-left: 30px;">{{ data?.scan_url }}</span>
+          </div>
+        </template>
+        <template #option="{ data }">
+          <div style="display: flex;flex-direction: row;align-items: center;height: 32px;">
+            <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 18px;height: 18px">
+            <span style="margin-left: 10px">{{ data?.chain }}</span>
+            <span style="margin-left: 30px;color: gray;">{{ data?.scan_url }}</span>
+          </div>
+        </template>
+      </a-select>
+      <!-- 代币 选择器 -->
+      <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames" :style="{ width: '30%' }"
+        @change="coinChange">
+        <template #label="{ data }">
+          <span style="margin-left: 10px;line-height: 30px;">{{ data?.label }}</span>
+        </template>
+        <template #option="{ data }">
+          <span style="margin-left: 10px;line-height: 30px;">{{ data?.label }}</span>
+        </template>
+      </a-select>
     </div>
     <!-- 管理代币按钮区域 -->
     <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">

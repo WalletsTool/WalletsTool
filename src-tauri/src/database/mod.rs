@@ -1,8 +1,6 @@
 pub mod models;
-pub mod migrations;
 pub mod chain_service;
 pub mod rpc_service;
-pub mod json_migration;
 
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use anyhow::Result;
@@ -196,17 +194,6 @@ pub async fn init_database() -> Result<()> {
         println!("数据库初始化完成");
     }
     
-    // 运行数据库迁移
-    let pool = DATABASE_MANAGER.get().expect("Database manager not initialized").get_pool();
-    if let Err(e) = migrations::run_migrations(pool).await {
-        eprintln!("数据库迁移失败: {}", e);
-        return Err(e);
-    }
-    
-    if enable_debug {
-        println!("数据库迁移完成");
-    }
-    
     Ok(())
 }
 
@@ -215,21 +202,95 @@ pub fn get_database_manager() -> &'static DatabaseManager {
     DATABASE_MANAGER.get().expect("Database not initialized")
 }
 
-/// 手动触发数据库迁移（热重载功能）
+/// 重新加载数据库（删除所有数据并从init.sql重新导入）
 #[tauri::command]
 pub async fn reload_database() -> Result<String, String> {
+    let config = load_database_config();
+    let enable_debug = config.enable_debug_log.unwrap_or(false);
     let pool = get_database_manager().get_pool();
     
-    match migrations::run_migrations(pool).await {
-        Ok(_) => {
-            println!("数据库迁移完成");
-            Ok("数据库迁移成功完成".to_string())
-        }
-        Err(e) => {
-            eprintln!("数据库迁移失败: {}", e);
-            Err(format!("数据库迁移失败: {}", e))
+    if enable_debug {
+        println!("开始重新加载数据库...");
+    }
+    
+    // 获取所有表名
+    let tables: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("获取表名失败: {}", e))?;
+    
+    // 删除所有表的数据（保留表结构）
+    for table in &tables {
+        let delete_sql = format!("DELETE FROM {}", table);
+        sqlx::query(&delete_sql)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("删除表 {} 数据失败: {}", table, e))?;
+        
+        if enable_debug {
+            println!("已清空表: {}", table);
         }
     }
+    
+    // 重置自增ID
+    sqlx::query("DELETE FROM sqlite_sequence")
+        .execute(pool)
+        .await
+        .map_err(|e| format!("重置自增ID失败: {}", e))?;
+    
+    if enable_debug {
+        println!("已重置所有自增ID");
+    }
+    
+    // 从init.sql重新导入数据
+    let init_sql_path = config.init_sql_path.unwrap_or_else(|| "data/init.sql".to_string());
+    let init_sql = std::fs::read_to_string(&init_sql_path)
+        .map_err(|e| format!("读取init.sql文件失败: {}", e))?;
+    
+    if enable_debug {
+        println!("已加载 SQL 文件，大小: {} 字节", init_sql.len());
+    }
+    
+    // 执行SQL语句
+    let mut executed_count = 0;
+    let statements: Vec<&str> = init_sql
+        .split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && !s.starts_with("--"))
+        .collect();
+    
+    for statement in statements {
+        if !statement.is_empty() {
+            match sqlx::query(statement).execute(pool).await {
+                Ok(_) => {
+                    executed_count += 1;
+                    if enable_debug {
+                        println!("执行 SQL 语句成功: {} 个", executed_count);
+                    }
+                }
+                Err(e) => {
+                    // 忽略重复插入错误和表已存在错误
+                    if !e.to_string().contains("UNIQUE constraint failed") 
+                        && !e.to_string().contains("already exists")
+                        && !e.to_string().contains("table") {
+                        eprintln!("执行 SQL 语句错误: {}", e);
+                        eprintln!("错误语句: {}", statement);
+                        return Err(format!("执行SQL语句失败: {}", e));
+                    } else if enable_debug {
+                        println!("忽略重复创建/插入错误");
+                    }
+                }
+            }
+        }
+    }
+    
+    if enable_debug {
+        println!("数据库重新加载完成，共执行 {} 个 SQL 语句", executed_count);
+    }
+    
+    Ok(format!("数据库重新加载成功，共执行 {} 个 SQL 语句", executed_count))
 }
 
 /// 检查数据库结构是否需要更新

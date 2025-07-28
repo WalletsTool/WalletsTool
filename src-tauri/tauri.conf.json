@@ -54,7 +54,11 @@
       "signingIdentity": null
     },
     "resources": [
-      "conf/*"
+      "conf/*",
+      "../public/chainIcons/*",
+      "../public/avatar/*",
+      "../public/font/*",
+      "../public/template/*"
     ],
     "shortDescription": "",
     "targets": "all",

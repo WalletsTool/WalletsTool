@@ -5,7 +5,7 @@ import { nextTick, onBeforeMount, onMounted, reactive, ref, computed } from "vue
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Notification } from "@arco-design/web-vue";
-import token_utils from "@/scripts/token/token_utils.js";
+// import token_utils from "@/scripts/token/token_utils.js"; // 已迁移到Rust后端
 import { utils as xlUtils, writeFile } from "xlsx";
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useVirtualizer } from '@tanstack/vue-virtual'
@@ -312,56 +312,40 @@ function handleAddCoinCancel() {
   addCoinVisible.value = false
 }
 
-// 添加代币核心方法
+// 添加代币核心方法 - 使用Rust后端
 function addCoinFunc() {
-  return new Promise((resolve, reject) => {
-    const scan_api = currentRpc.value.scan_api
-    const verify_api = currentRpc.value.verify_api
-    const check_verify_api = currentRpc.value.check_verify_api
-
-    console.log('校验是否存在代理合约')
-    // 校验是否存在代理合约
-    token_utils.getProxyAddress(coinAddress.value, verify_api, check_verify_api).then(proxy_address => {
-      let address = coinAddress.value
-      if (proxy_address) {
-        address = proxy_address
-      }
-      console.log('获取合约ABI')
-      // 获取合约ABI
-      token_utils.getAbi(address, scan_api).then(abi => {
-        console.log('获取代币名称')
-        token_utils.getTokenSymbol(rpcValue.value, coinAddress.value, abi).then(symbol => {
-          let json = {
-            "key": symbol.toLowerCase(),
-            "coin": symbol,
-            "type": "token",
-            "contract_type": "",
-            "contract_address": coinAddress.value,
-            "abi": abi
-          }
-          console.log('添加代币')
-          // 添加代币
-          invoke('add_coin', {
-            chain: rpcValue.value,
-            objJson: JSON.stringify(json)
-          }).then(() => {
-            addCoinVisible.value = false
-            coinAddress.value = ''
-            resolve()
-          }).catch(err => {
-            console.log(err)
-            reject('添加代币失败！')
-          })
-        }).catch(err => {
-          console.log(err)
-          reject('获取代币名称异常，添加代币失败！')
-        })
-      }).catch(err => {
-        reject(err)
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log('获取代币信息')
+      // 直接使用Rust后端获取代币信息
+      const tokenInfo = await invoke('get_token_info', {
+        chain: rpcValue.value,
+        contractAddress: coinAddress.value
       })
-    }).catch(() => {
-      reject('校验合约地址异常，添加代币失败！')
-    })
+      
+      let json = {
+        "key": tokenInfo.symbol.toLowerCase(),
+        "coin": tokenInfo.symbol,
+        "type": "token",
+        "contract_type": "",
+        "contract_address": coinAddress.value,
+        "abi": null // 使用标准ERC20 ABI
+      }
+      
+      console.log('添加代币')
+      // 添加代币
+      await invoke('add_coin', {
+        chain: rpcValue.value,
+        objJson: JSON.stringify(json)
+      })
+      
+      addCoinVisible.value = false
+      coinAddress.value = ''
+      resolve()
+    } catch (err) {
+      console.log(err)
+      reject('添加代币失败：' + err)
+    }
   })
 }
 

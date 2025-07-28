@@ -1,10 +1,7 @@
 import {createRouter, createWebHashHistory} from "vue-router";
-
-const Home = () => import("@/pages/Home.vue")
-const Transfer = () => import("@/pages/Transfer.vue")
-const Balance = () => import("@/pages/Balance.vue")
-const Monitor = () => import("@/pages/Monitor.vue")
-const Uniswap = () => import("@/pages/Uniswap.vue")
+import Home from "@/pages/Home.vue"
+import Transfer from "@/pages/Transfer.vue"
+import Balance from "@/pages/Balance.vue"
 const routes = [
     {path: "/", redirect: "/home"},
     {
@@ -21,16 +18,6 @@ const routes = [
         path: "/balance",
         name: "balance",
         component: Balance
-    },
-    {
-        path: "/monitor",
-        name: "monitor",
-        component: Monitor
-    },
-    {
-        path: "/uniswap",
-        name: "uniswap",
-        component: Uniswap
     }
 ]
 

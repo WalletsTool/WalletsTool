@@ -19,6 +19,7 @@ export default defineConfig({
         ]
     },
     optimizeDeps: {
+        include: ['ethers', '@solana/web3.js', 'vue', 'vue-router'],
         esbuildOptions: {
             // Node.js global to browser globalThis
             define: {
@@ -57,5 +58,5 @@ export default defineConfig({
         minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
         // produce sourcemaps for debug builds
         sourcemap: !!process.env.TAURI_DEBUG,
-    },
+    }
 });

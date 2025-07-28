@@ -20,6 +20,13 @@ let unlistenCloseEvent = null
 // 关闭确认标记位
 let closeConfirmed = ref(false)
 
+// 调试模式相关状态
+let debugMode = ref(false)
+
+// 数据库管理相关状态
+let databaseStatus = ref(null)
+let databaseLoading = ref(false)
+
 onMounted(async () => {
   const newFlag = funcList.filter(item => item.isNew).length > 0
   if (newFlag && store.status) {
@@ -40,9 +47,13 @@ onMounted(async () => {
 
   // 监听主窗口关闭请求事件
   try {
+    // 检查是否在Tauri环境中
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
     unlistenCloseEvent = await listen('main-window-close-requested', async () => {
       await handleMainWindowCloseRequest()
     })
+  }
   } catch (error) {
     console.error('Failed to listen for close event:', error)
   }
@@ -91,6 +102,14 @@ function goPage(pageName) {
   
   if (pageName === 'monitor' || pageName === 'uniswap') {
     Notification.success('功能建设中，敬请期待')
+    return
+  }
+  
+  // 检查是否在Tauri环境中
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (!isTauri) {
+    // 在浏览器环境中，使用路由跳转
+    router.push(`/${pageName}`)
     return
   }
   
@@ -146,11 +165,163 @@ function goPage(pageName) {
   }
 }
 
+// 切换调试模式
+function toggleDebugMode() {
+  debugMode.value = !debugMode.value
+  if (debugMode.value) {
+    Notification.info('调试模式已开启')
+  } else {
+    Notification.info('调试模式已关闭')
+  }
+}
+
+// 检查数据库状态
+async function checkDatabaseStatus() {
+  try {
+    databaseLoading.value = true
+    let status
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      status = await invoke('check_database_schema')
+    } else {
+      // 浏览器环境下模拟正常状态
+      status = { abi_column_exists: true, contract_type_column_exists: true, needs_migration: false }
+    }
+    
+    // 将状态对象转换为友好的中文描述
+    let statusText = ''
+    let notificationType = 'success'
+    
+    if (typeof status === 'object' && status !== null) {
+      const { abi_column_exists, contract_type_column_exists, needs_migration } = status
+      
+      if (needs_migration) {
+        statusText = '⚠️ 数据库需要迁移更新'
+        notificationType = 'warning'
+      } else if (abi_column_exists && contract_type_column_exists) {
+        statusText = '✅ 数据库结构完整，运行正常'
+      } else {
+        const missingColumns = []
+        if (!abi_column_exists) missingColumns.push('ABI列')
+        if (!contract_type_column_exists) missingColumns.push('合约类型列')
+        statusText = `❌ 数据库缺少必要字段：${missingColumns.join('、')}`
+        notificationType = 'error'
+      }
+    } else {
+      statusText = typeof status === 'string' ? status : JSON.stringify(status)
+    }
+    
+    databaseStatus.value = statusText
+    
+    if (notificationType === 'success') {
+      Notification.success({
+        title: '数据库状态检查完成',
+        content: statusText
+      })
+    } else if (notificationType === 'warning') {
+      Notification.warning({
+        title: '数据库状态检查完成',
+        content: statusText
+      })
+    } else {
+      Notification.error({
+        title: '数据库状态检查完成',
+        content: statusText
+      })
+    }
+    
+    console.log('数据库状态:', statusText)
+  } catch (error) {
+    console.error('检查数据库状态失败:', error)
+    const errorText = typeof error === 'string' ? error : error.message || '未知错误'
+    databaseStatus.value = '检查失败: ' + errorText
+    Notification.error({
+      title: '检查数据库状态失败',
+      content: errorText
+    })
+  } finally {
+    databaseLoading.value = false
+  }
+}
+
+// 重载数据库
+async function reloadDatabase() {
+  try {
+    databaseLoading.value = true
+    let result
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      result = await invoke('reload_database')
+    } else {
+      // 浏览器环境下模拟成功
+      result = '数据库重载成功'
+    }
+    
+    // 确保result是字符串格式
+    const resultText = typeof result === 'string' ? result : JSON.stringify(result)
+    
+    Notification.success({
+      title: '数据库重载完成',
+      content: resultText
+    })
+    
+    // 重新检查数据库状态
+    setTimeout(async () => {
+      await checkDatabaseStatus()
+    }, 500)
+    
+  } catch (error) {
+    console.error('重载数据库失败:', error)
+    const errorText = typeof error === 'string' ? error : error.message || '未知错误'
+    Notification.error({
+      title: '重载数据库失败',
+      content: errorText
+    })
+  } finally {
+    databaseLoading.value = false
+  }
+}
+
+// 刷新页面数据
+async function refreshPageData() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      // 在Home页面，主要是刷新一些基础数据
+      // 可以根据需要添加更多刷新逻辑
+    }
+    
+    // 重置数据库状态
+    databaseStatus.value = null
+    
+    Notification.success({
+      title: '页面数据已刷新',
+      content: '所有状态已重置'
+    })
+    
+    // 自动重新检查数据库状态
+    setTimeout(async () => {
+      await checkDatabaseStatus()
+    }, 300)
+    
+  } catch (error) {
+    console.error('刷新页面数据失败:', error)
+    const errorText = typeof error === 'string' ? error : error.message || '未知错误'
+    Notification.error({
+      title: '刷新页面数据失败',
+      content: errorText
+    })
+  }
+}
+
 // 标题栏控制方法
 async function minimizeWindow() {
   try {
-    const currentWindow = getCurrentWindow()
-    await currentWindow.minimize()
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      const currentWindow = getCurrentWindow()
+      await currentWindow.minimize()
+    }
   } catch (error) {
     console.error('Error minimizing window:', error)
   }
@@ -158,8 +329,11 @@ async function minimizeWindow() {
 
 async function closeWindow() {
   try {
-    const currentWindow = getCurrentWindow()
-    await currentWindow.close()
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      const currentWindow = getCurrentWindow()
+      await currentWindow.close()
+    }
   } catch (error) {
     console.error('Error closing window:', error)
   }
@@ -168,6 +342,12 @@ async function closeWindow() {
 // 处理主窗口关闭请求
 async function handleMainWindowCloseRequest() {
   try {
+    // 检查是否在Tauri环境中
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (!isTauri) {
+      return true
+    }
+    
     // 检查关闭确认标记位
     if (closeConfirmed.value) {
       // 如果已经确认过，直接关闭
@@ -367,6 +547,52 @@ async function handleMainWindowCloseRequest() {
         
         <!-- 悬浮效果 -->
         <div class="card-hover-effect"></div>
+      </div>
+    </div>
+    
+    <!-- 调试模式区域 -->
+    <div class="debug-area">
+      <!-- 调试模式切换按钮 -->
+      <div class="debug-toggle" @click="toggleDebugMode" title="调试">
+        <span class="debug-icon">🔧</span>
+      </div>
+      
+      <!-- 数据库管理面板 -->
+      <div v-if="debugMode" class="database-panel">
+        <div class="panel-header">
+          <span class="panel-title">数据库管理</span>
+          <span v-if="databaseStatus" class="status-indicator" :class="{ 'status-ok': databaseStatus.includes('valid') }">
+            {{ databaseStatus.includes('valid') ? '✓' : '⚠' }}
+          </span>
+        </div>
+        <div class="panel-actions">
+          <a-button 
+            size="small" 
+            type="outline" 
+            @click="checkDatabaseStatus" 
+            :loading="databaseLoading"
+            class="action-btn"
+          >
+            检查状态
+          </a-button>
+          <a-button 
+            size="small" 
+            type="outline" 
+            @click="reloadDatabase" 
+            :loading="databaseLoading"
+            class="action-btn"
+          >
+            重载数据库
+          </a-button>
+          <a-button 
+            size="small" 
+            type="outline" 
+            @click="refreshPageData"
+            class="action-btn"
+          >
+            刷新页面
+          </a-button>
+        </div>
       </div>
     </div>
   </div>
@@ -801,6 +1027,113 @@ async function handleMainWindowCloseRequest() {
   50% {
     transform: scale(1.05);
   }
+}
+
+/* 调试区域样式 */
+.debug-area {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+.debug-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-size: 12px;
+  color: #666;
+}
+
+.debug-toggle:hover {
+  background: rgba(255, 255, 255, 0.95);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.debug-icon {
+  font-size: 16px;
+}
+
+.database-panel {
+  position: absolute;
+  bottom: 50px;
+  right: 0;
+  min-width: 280px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.status-indicator {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.status-indicator.status-ok {
+  color: #52c41a;
+}
+
+.status-indicator:not(.status-ok) {
+  color: #ff4d4f;
+}
+
+.panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-btn {
+  width: 100%;
+  font-size: 12px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 /* 响应式设计 */

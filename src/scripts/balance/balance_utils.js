@@ -1,7 +1,7 @@
 // 余额查询工具类 - 仅使用 Rust 后端
 
 import { invoke } from '@tauri-apps/api/core';
-import starknet_balance from "@/scripts/balance/starknet_balance.js";
+// import starknet_balance from "@/scripts/balance/starknet_balance.js"; // StarkNet功能暂时禁用
 
 class BalanceUtils {
     constructor() {
@@ -16,9 +16,14 @@ class BalanceUtils {
     // 执行余额查询 - 仅使用 Rust 后端
     async exec_group_query(key, currentCoin, data, onlyCoinConfig, callback, threadCount = 3) {
         try {
-            // 特殊处理StarkNet
+            // 特殊处理StarkNet - 暂时禁用
             if (key === 'starknet' && currentCoin.coin_type === 'token') {
-                return this.execStarknetQuery(data, currentCoin, callback);
+                data.forEach(item => {
+                    item.exec_status = '3';
+                    item.error_msg = 'StarkNet功能暂时禁用，请等待后续更新';
+                });
+                callback();
+                return;
             }
             
             // 使用 Rust 后端查询
@@ -92,31 +97,10 @@ class BalanceUtils {
         }
     }
     
-    // 处理StarkNet查询（保持原有逻辑）
-    async execStarknetQuery(data, currentCoin, callback) {
-        try {
-            const tasks = data.map(item => {
-                item.exec_status = '1';
-                item.error_msg = '';
-                return starknet_balance.query_balance_by_address(item, currentCoin.contract_address, currentCoin.abi);
-            });
-            
-            await Promise.all(tasks);
-            
-            data.forEach(item => {
-                item.exec_status = item.error_msg ? '3' : '2';
-            });
-            
-            callback();
-        } catch (error) {
-            console.error('StarkNet查询失败:', error);
-            data.forEach(item => {
-                item.exec_status = '3';
-                item.error_msg = '查询失败！';
-            });
-            callback();
-        }
-    }
+    // StarkNet查询功能已禁用
+    // async execStarknetQuery(data, currentCoin, callback) {
+    //     // StarkNet功能暂时禁用
+    // }
 }
 
 // 创建单例实例

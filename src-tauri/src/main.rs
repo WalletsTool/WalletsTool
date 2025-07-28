@@ -108,6 +108,19 @@ async fn main() {
             // database hot reload functions
             database::reload_database,
             database::check_database_schema,
+            // transfer functions
+            web3_tools::transfer::base_coin_transfer,
+            web3_tools::transfer::query_balance,
+            // token transfer functions
+            web3_tools::token_transfer::token_transfer,
+            web3_tools::token_transfer::query_token_balance,
+            web3_tools::token_transfer::get_token_info,
+            // provider functions
+            web3_tools::provider::get_supported_chains,
+            web3_tools::provider::get_chain_gas_price,
+            web3_tools::provider::test_rpc_url,
+            web3_tools::provider::get_chain_info,
+            web3_tools::provider::get_multiple_gas_prices,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

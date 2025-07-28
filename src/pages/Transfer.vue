@@ -1,24 +1,19 @@
 <script setup name="transfer">
 import { IconDelete, IconDoubleLeft, IconPlus, IconUpload } from "@arco-design/web-vue/es/icon";
 import { useRouter } from "vue-router";
-import { nextTick, onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, } from "vue";
+import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Notification } from "@arco-design/web-vue";
-import utils from "@/scripts/transfer/transfer_utils.js";
-import { utils as rpcUtils } from "@/scripts/common/provider.js";
-import base_coin_transfer from "@/scripts/transfer/base_coin_transfer.js";
-import token_transfer from "@/scripts/transfer/token_transfer.js";
 import { ethers } from "ethers";
 import { debounce } from "throttle-debounce";
 import { read, utils as xlUtils } from "xlsx";
-import balance_utils from "@/scripts/balance/balance_utils.js";
-import token_utils from "@/scripts/token/token_utils.js";
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 const router = useRouter();
 // 窗口标题
 const windowTitle = ref('Web3 Tools - 批量转账');
+
 // table列名
 const columns = [
   {
@@ -226,9 +221,7 @@ let stopFlag = ref(false);
 let stopStatus = ref(true);
 // 线程数设置，默认为1
 let threadCount = ref(1);
-// 数据库管理相关状态
-let databaseStatus = ref(null);
-let databaseLoading = ref(false);
+
 // 获取gas
 const timer = setInterval(fetchGas, 5000);
 
@@ -238,40 +231,62 @@ watch(stopStatus, (newValue, oldValue) => {
 
 // 初始化RPC列表
 onBeforeMount(async () => {
-  const chainList = await invoke("get_chain_list");
-  // 过滤掉starknet
-  chainOptions.value = chainList.filter((item) => item.key !== "starknet");
-  chainValue.value = chainOptions.value[0].key;
-  currentChain.value = chainOptions.value[0];
-  // 获取rpc对应的代币列表
-  await chainChange();
-  // 检查数据库状态
-  await checkDatabaseStatus();
+  // 检查是否在Tauri环境中
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    const chainList = await invoke("get_chain_list");
+    // 过滤掉starknet
+    chainOptions.value = chainList.filter((item) => item.key !== "starknet");
+    chainValue.value = chainOptions.value[0].key;
+    currentChain.value = chainOptions.value[0];
+    // 获取rpc对应的代币列表
+    await chainChange();
+
+  } else {
+    // 浏览器环境下的模拟数据
+    chainOptions.value = [
+      { key: 'eth', name: 'Ethereum', scan_url: 'etherscan.io', pic_url: 'eth.png' },
+      { key: 'bnb', name: 'BNB Chain', scan_url: 'bscscan.com', pic_url: 'bnb.png' }
+    ];
+    chainValue.value = chainOptions.value[0].key;
+    currentChain.value = chainOptions.value[0];
+    // 获取rpc对应的代币列表
+    await chainChange();
+  }
 });
 
 onMounted(async () => {
   // 获取窗口标题
-  try {
-    const currentWindow = getCurrentWindow();
-    const title = await currentWindow.title();
-    if (title) {
-      windowTitle.value = title;
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow();
+      const title = await currentWindow.title();
+      if (title) {
+        windowTitle.value = title;
+      }
+    } catch (error) {
+      console.error('Error getting window title:', error);
     }
-  } catch (error) {
-    console.error('Error getting window title:', error);
+  } else {
+    // 浏览器环境下设置默认标题
+    windowTitle.value = 'Transfer - Web3 Tools';
   }
 
   // 页面高度现在通过 CSS 自动调整，无需监听器
 
   // 监听余额查询更新事件
-  await listen('balance_item_update', (event) => {
-    console.log('Transfer页面收到余额更新:', event.payload);
-    const { index, item } = event.payload;
-    if (data.value[index]) {
-      // 更新对应索引的数据
-      Object.assign(data.value[index], item);
-    }
-  });
+  const isTauriMounted = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauriMounted) {
+    await listen('balance_item_update', (event) => {
+      console.log('Transfer页面收到余额更新:', event.payload);
+      const { index, item } = event.payload;
+      if (data.value[index]) {
+        // 更新对应索引的数据
+        Object.assign(data.value[index], item);
+      }
+    });
+  }
 });
 
 onBeforeUnmount(() => {
@@ -352,9 +367,18 @@ const downloadFile = debounce(1000, () => {
 
 // RPC变化事件
 async function chainChange() {
-  coinOptions.value = await invoke("get_coin_list", {
-    chain: chainValue.value
-  });
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    coinOptions.value = await invoke("get_coin_list", {
+      chain: chainValue.value
+    });
+  } else {
+    // 浏览器环境下的模拟数据
+    coinOptions.value = [
+      { key: 'eth', coin: 'ETH', type: 'native' },
+      { key: 'usdt', coin: 'USDT', type: 'token' }
+    ];
+  }
   coinValue.value = coinOptions.value[0].key;
   currentCoin.value = coinOptions.value[0];
   currentChain.value = chainOptions.value.filter(
@@ -365,30 +389,28 @@ async function chainChange() {
   fetchGas();
 }
 
-function fetchGas() {
+async function fetchGas() {
   const temp = chainValue.value;
   if (temp === "sol") {
     currentChain.value.gas_price = "";
     return
   }
   // 获取gas价格
-  rpcUtils
-    .get_base_gas_price(chainValue.value)
-    .then((res) => {
-      if (temp === chainValue.value) {
-        if (chainValue.value === "eth") {
-          currentChain.value.gas_price = res.toFixed(3);
-        } else {
-          currentChain.value.gas_price = res.toFixed(7);
-        }
+  try {
+    const res = await invoke("get_chain_gas_price", { chain: chainValue.value });
+    if (temp === chainValue.value) {
+      if (chainValue.value === "eth") {
+        currentChain.value.gas_price = res.toFixed(3);
       } else {
-        console.log("gas price 已失效");
+        currentChain.value.gas_price = res.toFixed(7);
       }
-    })
-    .catch((err) => {
-      console.log(err);
-      currentChain.value.gas_price = "查询错误";
-    });
+    } else {
+      console.log("gas price 已失效");
+    }
+  } catch (err) {
+    console.log(err);
+    currentChain.value.gas_price = "查询错误";
+  }
 }
 
 // coin变化事件
@@ -436,67 +458,38 @@ function handleAddCoinCancel() {
 }
 
 // 添加代币核心方法
-function addCoinFunc() {
-  return new Promise((resolve, reject) => {
-    const scan_api = currentChain.value.scan_api;
-    const verify_api = currentChain.value.verify_api;
-    const check_verify_api = currentChain.value.check_verify_api;
-
-    console.log("校验是否存在代理合约");
-    // 校验是否存在代理合约
-    token_utils
-      .getProxyAddress(coinAddress.value, verify_api, check_verify_api)
-      .then((proxy_address) => {
-        let address = coinAddress.value;
-        if (proxy_address) {
-          address = proxy_address;
-        }
-        console.log("获取合约ABI");
-        // 获取合约ABI
-        token_utils
-          .getAbi(address, scan_api)
-          .then((abi) => {
-            console.log("获取代币名称");
-            token_utils
-              .getTokenSymbol(chainValue.value, coinAddress.value, abi)
-              .then((symbol) => {
-                let json = {
-                  key: symbol.toLowerCase(),
-                  coin: symbol,
-                  type: "token",
-                  contract_type: "",
-                  contract_address: coinAddress.value,
-                  abi: abi,
-                };
-                console.log("添加代币");
-                // 添加代币
-                invoke("add_coin", {
-                  chain: chainValue.value,
-                  objJson: JSON.stringify(json),
-                })
-                  .then(() => {
-                    addCoinVisible.value = false;
-                    coinAddress.value = "";
-                    resolve();
-                  })
-                  .catch((err) => {
-                    console.log(err);
-                    reject("添加代币失败！");
-                  });
-              })
-              .catch((err) => {
-                console.log(err);
-                reject("获取代币名称异常，添加代币失败！");
-              });
-          })
-          .catch((err) => {
-            reject(err);
-          });
-      })
-      .catch(() => {
-        reject("校验合约地址异常，添加代币失败！");
-      });
-  });
+async function addCoinFunc() {
+  try {
+    console.log("获取代币信息");
+    // 使用Rust后端获取代币信息
+    const tokenInfo = await invoke("get_token_info", {
+      chain: chainValue.value,
+      contractAddress: coinAddress.value
+    });
+    
+    let json = {
+      key: tokenInfo.symbol.toLowerCase(),
+      coin: tokenInfo.symbol,
+      type: "token",
+      contract_type: "",
+      contract_address: coinAddress.value,
+      abi: tokenInfo.abi,
+    };
+    
+    console.log("添加代币");
+    // 添加代币
+    await invoke("add_coin", {
+      chain: chainValue.value,
+      objJson: JSON.stringify(json),
+    });
+    
+    addCoinVisible.value = false;
+    coinAddress.value = "";
+    return Promise.resolve();
+  } catch (err) {
+    console.log(err);
+    return Promise.reject(err.toString() || "添加代币失败！");
+  }
 }
 
 // 添加代币弹窗确认
@@ -712,7 +705,24 @@ async function queryBalance() {
         thread_count: threadCount.value
       };
 
-      const result = await invoke('query_balances_with_updates', { params });
+      let result;
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        result = await invoke('query_balances_with_updates', { params });
+      } else {
+        // 浏览器环境下的模拟数据
+        result = {
+          success: true,
+          items: data.value.map(item => ({
+            ...item,
+            plat_balance: '1.0',
+            coin_balance: '100.0',
+            nonce: 1,
+            exec_status: '2',
+            error_msg: null
+          }))
+        };
+      }
 
       if (result.success || result.items) {
         // 更新数据 - 无论总体是否成功，都要更新单条记录的状态
@@ -800,18 +810,25 @@ function deleteToken() {
 async function deleteTokenConfirm() {
   console.log("确认删除代币");
   deleteTokenVisible.value = false;
-  await invoke("remove_coin", {
-    chain: chainValue.value,
-    key: currentCoin.value.key,
-  })
-    .then(() => {
-      Notification.success("删除成功！");
-      // 删除成功后重新获取代币列表
-      chainChange();
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    await invoke("remove_coin", {
+      chain: chainValue.value,
+      key: currentCoin.value.key,
     })
-    .catch(() => {
-      Notification.error("删除失败！");
-    });
+      .then(() => {
+        Notification.success("删除成功！");
+        // 删除成功后重新获取代币列表
+        chainChange();
+      })
+      .catch(() => {
+        Notification.error("删除失败！");
+      });
+  } else {
+    // 浏览器环境下模拟成功
+    Notification.success("删除成功！");
+    chainChange();
+  }
 }
 
 //  转账方法
@@ -922,24 +939,26 @@ async function iterTransfer(accountData) {
         }
         // 设置状态 为执行中
         accountData[i].exec_status = "1";
-        await base_coin_transfer
-          .single_transfer(i + 1, accountData[i], config)
-          .then((res) => {
-            accountData[i].exec_status = "2";
-            accountData[i].error_msg = res;
-          })
-          .catch((err) => {
-            if (err === "base gas price 超出最大值限制") {
-              Notification.error("base gas price 超出最大值限制");
-              // 停止
-              stopTransfer();
-              accountData[i].exec_status = "0";
-              accountData[i].error_msg = "";
-            } else {
-              accountData[i].exec_status = "3";
-              accountData[i].error_msg = err;
-            }
+        try {
+          const res = await invoke("base_coin_transfer", {
+            index: i + 1,
+            item: accountData[i],
+            config: config
           });
+          accountData[i].exec_status = "2";
+          accountData[i].error_msg = res;
+        } catch (err) {
+          if (err === "base gas price 超出最大值限制") {
+            Notification.error("base gas price 超出最大值限制");
+            // 停止
+            stopTransfer();
+            accountData[i].exec_status = "0";
+            accountData[i].error_msg = "";
+          } else {
+            accountData[i].exec_status = "3";
+            accountData[i].error_msg = err;
+          }
+        }
       } else if (currentCoin.value.coin_type === "token") {
         if (stopFlag.value) {
           stopStatus.value = true;
@@ -947,24 +966,30 @@ async function iterTransfer(accountData) {
         }
         // 设置状态 为执行中
         accountData[i].exec_status = "1";
-        await token_transfer
-          .single_transfer(i + 1, accountData[i], config, contract)
-          .then((res) => {
-            accountData[i].exec_status = "2";
-            accountData[i].error_msg = res;
-          })
-          .catch((err) => {
-            if (err === "base gas price 超出最大值限制") {
-              Notification.error("base gas price 超出最大值限制");
-              // 停止
-              stopTransfer();
-              accountData[i].exec_status = "0";
-              accountData[i].error_msg = "";
-            } else {
-              accountData[i].exec_status = "3";
-              accountData[i].error_msg = err;
+        try {
+          const res = await invoke("token_transfer", {
+            index: i + 1,
+            item: accountData[i],
+            config: {
+              ...config,
+              contract_address: contract.address,
+              abi: contract.abi
             }
           });
+          accountData[i].exec_status = "2";
+          accountData[i].error_msg = res;
+        } catch (err) {
+          if (err === "base gas price 超出最大值限制") {
+            Notification.error("base gas price 超出最大值限制");
+            // 停止
+            stopTransfer();
+            accountData[i].exec_status = "0";
+            accountData[i].error_msg = "";
+          } else {
+            accountData[i].exec_status = "3";
+            accountData[i].error_msg = err;
+          }
+        }
       } else {
         Notification.error("未知币种类型");
         console.log("未知币种类型：", currentCoin.value.coin_type);
@@ -1007,7 +1032,7 @@ function checkSendType() {
   if (form.send_type === "1") {
     return true;
   } else if (form.send_type === "2") {
-    const bool = utils.checkNum(form.send_count) && Number(form.send_count) > 0;
+    const bool = /^\d+(\.\d+)?$/.test(form.send_count) && Number(form.send_count) > 0;
     if (form.amount_from === "2" && !bool) {
       Notification.error("发送数量必须为数字且大于0");
       formRef.value.setFields({
@@ -1022,8 +1047,8 @@ function checkSendType() {
     }
   } else if (form.send_type === "3" || form.send_type === "4") {
     const bool =
-      utils.checkNum(form.send_min_count) &&
-      utils.checkNum(form.send_max_count) &&
+      /^\d+(\.\d+)?$/.test(form.send_min_count) &&
+      /^\d+(\.\d+)?$/.test(form.send_max_count) &&
       Number(form.send_min_count) > 0 &&
       Number(form.send_max_count) > 0;
     if (!bool) {
@@ -1064,7 +1089,7 @@ function checkSendType() {
 // 检验精度
 function checkPrecision() {
   const bool =
-    utils.checkNum(form.amount_precision) &&
+    /^\d+(\.\d+)?$/.test(form.amount_precision) &&
     Number(form.amount_precision) > 0 &&
     Number(form.amount_precision) < 18;
   if (!bool) {
@@ -1086,7 +1111,7 @@ function checkGasPrice() {
   if (form.gas_price_type === "1") {
     return true;
   } else if (form.gas_price_type === "2") {
-    const bool = utils.checkNum(form.gas_price) && Number(form.gas_price) > 0;
+    const bool = /^\d+(\.\d+)?$/.test(form.gas_price) && Number(form.gas_price) > 0;
     if (!bool) {
       Notification.error("Gas Price必须为数字且大于0");
       formRef.value.setFields({
@@ -1100,7 +1125,7 @@ function checkGasPrice() {
       return true;
     }
   } else if (form.gas_price_type === "3") {
-    const bool = utils.checkPositiveInteger(form.gas_price_rate);
+    const bool = /^\d+$/.test(form.gas_price_rate) && Number(form.gas_price_rate) > 0;
     if (!bool) {
       Notification.error("Gas Price 提高比例应为正整数");
       formRef.value.setFields({
@@ -1114,7 +1139,7 @@ function checkGasPrice() {
     // 如果有最大Gas Price
     if (form.max_gas_price) {
       const bool1 =
-        utils.checkNum(form.max_gas_price) && Number(form.max_gas_price) > 0;
+        /^\d+(\.\d+)?$/.test(form.max_gas_price) && Number(form.max_gas_price) > 0;
       if (!bool1) {
         Notification.error("最大 Gas Price 设置必须为数字且大于0");
         formRef.value.setFields({
@@ -1141,7 +1166,7 @@ function checkGasLimit() {
   if (form.limit_type === "1") {
     return true;
   } else if (form.limit_type === "2") {
-    const bool = utils.checkPositiveInteger(form.limit_count);
+    const bool = /^\d+$/.test(form.limit_count) && Number(form.limit_count) > 0;
     if (!bool) {
       Notification.error("Gas Limit 数量必须为正整数");
       formRef.value.setFields({
@@ -1156,8 +1181,8 @@ function checkGasLimit() {
     }
   } else if (form.limit_type === "3") {
     const bool =
-      utils.checkPositiveInteger(form.limit_min_count) &&
-      utils.checkPositiveInteger(form.limit_max_count);
+      /^\d+$/.test(form.limit_min_count) && Number(form.limit_min_count) > 0 &&
+      /^\d+$/.test(form.limit_max_count) && Number(form.limit_max_count) > 0;
     if (!bool) {
       Notification.error("Gas Limit 数量范围必须为正整数");
       formRef.value.setFields({
@@ -1189,9 +1214,9 @@ function checkGasLimit() {
 function checkDelay() {
   const bool =
     (form.min_interval === "0" ||
-      utils.checkPositiveInteger(form.min_interval)) &&
+      /^\d+$/.test(form.min_interval) && Number(form.min_interval) >= 0) &&
     (form.max_interval === "0" ||
-      utils.checkPositiveInteger(form.max_interval));
+      /^\d+$/.test(form.max_interval) && Number(form.max_interval) >= 0);
   if (!bool) {
     Notification.error("发送间隔必须为正整数或者0");
     formRef.value.setFields({
@@ -1267,9 +1292,19 @@ function showTokenManage() {
 async function loadTokenManageData() {
   tokenTableLoading.value = true;
   try {
-    const tokenList = await invoke("get_coin_list", {
-      chain: chainValue.value
-    });
+    let tokenList;
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      tokenList = await invoke("get_coin_list", {
+        chain: chainValue.value
+      });
+    } else {
+      // 浏览器环境下的模拟数据
+      tokenList = [
+        { key: 'eth', coin: 'ETH', type: 'native', decimals: 18 },
+        { key: 'usdt', coin: 'USDT', type: 'token', contract_address: '0x...', decimals: 6 }
+      ];
+    }
     tokenManageData.value = tokenList.map(token => ({
       key: token.key,
       coin: token.coin,
@@ -1368,21 +1403,31 @@ async function submitTokenForm() {
       abi: tokenForm.abi
     };
     
-    if (isTokenEditMode.value) {
-      // 更新代币
-      await invoke('update_coin', {
-        chain: chainValue.value,
-        key: tokenForm.key,
-        objJson: JSON.stringify(requestData)
-      });
-      Notification.success('编辑代币成功！');
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      if (isTokenEditMode.value) {
+        // 更新代币
+        await invoke('update_coin', {
+          chain: chainValue.value,
+          key: tokenForm.key,
+          objJson: JSON.stringify(requestData)
+        });
+        Notification.success('编辑代币成功！');
+      } else {
+        // 添加代币
+        await invoke('add_coin', {
+          chain: chainValue.value,
+          objJson: JSON.stringify(requestData)
+        });
+        Notification.success('添加代币成功！');
+      }
     } else {
-      // 添加代币
-      await invoke('add_coin', {
-        chain: chainValue.value,
-        objJson: JSON.stringify(requestData)
-      });
-      Notification.success('添加代币成功！');
+      // 浏览器环境下模拟成功
+      if (isTokenEditMode.value) {
+        Notification.success('编辑代币成功！');
+      } else {
+        Notification.success('添加代币成功！');
+      }
     }
     
     // 刷新代币列表
@@ -1403,10 +1448,13 @@ async function submitTokenForm() {
 // 删除代币
 async function deleteTokenFromManage(tokenKey) {
   try {
-    await invoke('remove_coin', {
-      chain: chainValue.value,
-      key: tokenKey
-    });
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      await invoke('remove_coin', {
+        chain: chainValue.value,
+        key: tokenKey
+      });
+    }
     Notification.success('删除代币成功！');
     
     // 刷新代币列表
@@ -1441,7 +1489,28 @@ function showChainManage() {
 async function loadChainManageData() {
   chainTableLoading.value = true;
   try {
-    const chainList = await invoke("get_chain_list");
+    let chainList;
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      chainList = await invoke("get_chain_list");
+    } else {
+      // 浏览器环境下的模拟数据
+      chainList = [
+        {
+          key: 'eth',
+          name: 'Ethereum',
+          chain_id: 1,
+          symbol: 'ETH',
+          currency_name: 'Ethereum',
+          pic_url: 'eth.png',
+          scan_url: 'https://etherscan.io',
+          scan_api: 'https://api.etherscan.io/api',
+          verify_api: 'https://api.etherscan.io/api',
+          check_verify_api: 'https://api.etherscan.io/api',
+          rpc_urls: ['https://mainnet.infura.io/v3/YOUR-PROJECT-ID']
+        }
+      ];
+    }
     chainManageData.value = chainList.map(chain => ({
       key: chain.key,
       chain_key: chain.key,
@@ -1676,10 +1745,14 @@ async function uploadChainIcon(option) {
     }
     
     // 调用 Tauri 命令保存文件
-    await invoke('save_chain_icon', {
-      fileName: targetFileName,
-      fileData: Array.from(uint8Array)
-    });
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      await invoke('save_chain_icon', {
+        fileName: targetFileName,
+        fileData: Array.from(uint8Array)
+      });
+    }
+    // 浏览器环境下模拟成功
     
     Notification.success('图标上传成功！');
   } catch (error) {
@@ -1730,28 +1803,41 @@ async function submitChainForm() {
       rpc_urls: filteredRpcUrls.length > 0 ? filteredRpcUrls : null
     };
     
-    if (isEditMode.value) {
-      // 更新链
-      await invoke('update_chain', {
-        chainKey: chainForm.chain_key,
-        requestJson: JSON.stringify(requestData)
-      });
-      Notification.success('编辑链成功！');
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      if (isEditMode.value) {
+        // 更新链
+        await invoke('update_chain', {
+          chainKey: chainForm.chain_key,
+          requestJson: JSON.stringify(requestData)
+        });
+        Notification.success('编辑链成功！');
+      } else {
+        // 添加链
+        await invoke('add_chain', { requestJson: JSON.stringify({
+          ...requestData,
+          chain_key: chainForm.chain_key
+        })});
+        Notification.success('添加链成功！');
+      }
+      
+      // 刷新链列表
+      loadChainManageData();
+      
+      // 重新加载主页面的链选择器
+      const chainList = await invoke("get_chain_list");
+      chainOptions.value = chainList.filter((item) => item.key !== "starknet");
     } else {
-      // 添加链
-      await invoke('add_chain', { requestJson: JSON.stringify({
-        ...requestData,
-        chain_key: chainForm.chain_key
-      })});
-      Notification.success('添加链成功！');
+      // 浏览器环境下模拟成功
+      if (isEditMode.value) {
+        Notification.success('编辑链成功！');
+      } else {
+        Notification.success('添加链成功！');
+      }
+      
+      // 刷新链列表
+      loadChainManageData();
     }
-    
-    // 刷新链列表
-    loadChainManageData();
-    
-    // 重新加载主页面的链选择器
-    const chainList = await invoke("get_chain_list");
-    chainOptions.value = chainList.filter((item) => item.key !== "starknet");
     
     // 如果编辑的是当前选中的链，更新当前链的信息
     if (isEditMode.value && chainValue.value === chainForm.chain_key) {
@@ -1770,22 +1856,28 @@ async function submitChainForm() {
 // 删除链
 async function deleteChain(chainKey) {
   try {
-    await invoke('remove_chain', { chainKey });
-    Notification.success('删除链成功！');
-    
-    // 刷新链列表
-    loadChainManageData();
-    
-    // 重新加载主页面的链选择器
-    const chainList = await invoke("get_chain_list");
-    chainOptions.value = chainList.filter((item) => item.key !== "starknet");
-    
-    // 如果删除的是当前选中的链，切换到第一个链
-    if (chainValue.value === chainKey && chainOptions.value.length > 0) {
-      chainValue.value = chainOptions.value[0].key;
-      currentChain.value = chainOptions.value[0];
-      await chainChange();
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      await invoke('remove_chain', { chainKey });
+      
+      // 刷新链列表
+      loadChainManageData();
+      
+      // 重新加载主页面的链选择器
+      const chainList = await invoke("get_chain_list");
+      chainOptions.value = chainList.filter((item) => item.key !== "starknet");
+      
+      // 如果删除的是当前选中的链，切换到第一个链
+      if (chainValue.value === chainKey && chainOptions.value.length > 0) {
+        chainValue.value = chainOptions.value[0].key;
+        currentChain.value = chainOptions.value[0];
+        await chainChange();
+      }
+    } else {
+      // 浏览器环境下模拟成功
+      loadChainManageData();
     }
+    Notification.success('删除链成功！');
   } catch (error) {
     console.error('删除链失败:', error);
     Notification.error('删除链失败：' + error);
@@ -1809,7 +1901,27 @@ async function showEditChain(record) {
     isEditMode.value = true;
 
     // 获取链详情
-    const chainDetail = await invoke('get_chain_detail', { chainKey: record.chain_key });
+    let chainDetail;
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      chainDetail = await invoke('get_chain_detail', { chainKey: record.chain_key });
+    } else {
+      // 浏览器环境下的模拟数据
+      chainDetail = {
+        chain_key: record.chain_key,
+        chain_name: record.chain_name,
+        chain_id: record.chain_id,
+        native_currency_symbol: record.symbol,
+        native_currency_name: record.currency_name,
+        native_currency_decimals: 18,
+        pic_url: record.pic_url,
+        scan_url: record.scan_url,
+        scan_api: record.scan_api,
+        verify_api: record.verify_api,
+        check_verify_api: record.check_verify_api,
+        rpc_urls: record.rpc_urls
+      };
+    }
     if (chainDetail) {
       // 填充表单数据
       Object.assign(chainForm, {
@@ -1879,18 +1991,24 @@ async function saveEditedChain() {
       rpc_urls: filteredRpcUrls.length > 0 ? filteredRpcUrls : null
     };
     
-    await invoke('update_chain', { 
-      chainKey: editChainForm.chain_key, 
-      requestJson: JSON.stringify(requestData) 
-    });
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      await invoke('update_chain', { 
+        chainKey: editChainForm.chain_key, 
+        requestJson: JSON.stringify(requestData) 
+      });
+      
+      // 刷新链列表
+      loadChainManageData();
+      
+      // 重新加载主页面的链选择器
+      const chainList = await invoke("get_chain_list");
+      chainOptions.value = chainList.filter((item) => item.key !== "starknet");
+    } else {
+      // 浏览器环境下模拟成功
+      loadChainManageData();
+    }
     Notification.success('更新链成功！');
-    
-    // 刷新链列表
-    loadChainManageData();
-    
-    // 重新加载主页面的链选择器
-    const chainList = await invoke("get_chain_list");
-    chainOptions.value = chainList.filter((item) => item.key !== "starknet");
     
     // 如果编辑的是当前选中的链，更新当前链的信息
     if (chainValue.value === editChainForm.chain_key) {
@@ -1918,89 +2036,43 @@ function removeEditRpcUrl(index) {
   }
 }
 
-// 数据库管理方法
-// 检查数据库状态
-async function checkDatabaseStatus() {
-  try {
-    databaseLoading.value = true;
-    const status = await invoke('check_database_schema');
-    databaseStatus.value = status;
-    console.log('数据库状态:', status);
-  } catch (error) {
-    console.error('检查数据库状态失败:', error);
-    Notification.error('检查数据库状态失败：' + error);
-  } finally {
-    databaseLoading.value = false;
-  }
-}
 
-// 重载数据库
-async function reloadDatabase() {
-  try {
-    databaseLoading.value = true;
-    const result = await invoke('reload_database');
-    Notification.success(result);
-    // 重新检查数据库状态
-    await checkDatabaseStatus();
-    // 刷新页面数据
-    await refreshPageData();
-  } catch (error) {
-    console.error('重载数据库失败:', error);
-    Notification.error('重载数据库失败：' + error);
-  } finally {
-    databaseLoading.value = false;
-  }
-}
 
-// 刷新页面数据
-async function refreshPageData() {
-  try {
-    // 重新加载链列表
-    const chainList = await invoke("get_chain_list");
-    chainOptions.value = chainList.filter((item) => item.key !== "starknet");
-    
-    // 如果当前选中的链还存在，保持选中状态
-    const currentChainExists = chainOptions.value.find(item => item.key === chainValue.value);
-    if (!currentChainExists && chainOptions.value.length > 0) {
-      chainValue.value = chainOptions.value[0].key;
-      currentChain.value = chainOptions.value[0];
-    }
-    
-    // 重新加载代币列表
-    await chainChange();
-    
-    Notification.success('页面数据已刷新');
-  } catch (error) {
-    console.error('刷新页面数据失败:', error);
-    Notification.error('刷新页面数据失败：' + error);
-  }
-}
 
 // 标题栏控制方法
 async function minimizeWindow() {
-  try {
-    const currentWindow = getCurrentWindow()
-    await currentWindow.minimize()
-  } catch (error) {
-    console.error('Error minimizing window:', error)
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow()
+      await currentWindow.minimize()
+    } catch (error) {
+      console.error('Error minimizing window:', error)
+    }
   }
 }
 
 async function maximizeWindow() {
-  try {
-    const currentWindow = getCurrentWindow()
-    await currentWindow.toggleMaximize()
-  } catch (error) {
-    console.error('Error maximizing window:', error)
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow()
+      await currentWindow.toggleMaximize()
+    } catch (error) {
+      console.error('Error maximizing window:', error)
+    }
   }
 }
 
 async function closeWindow() {
-  try {
-    const currentWindow = getCurrentWindow()
-    await currentWindow.destroy()
-  } catch (error) {
-    console.error('Error closing window:', error)
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow()
+      await currentWindow.destroy()
+    } catch (error) {
+      console.error('Error closing window:', error)
+    }
   }
 }
 </script>
@@ -2222,24 +2294,7 @@ async function closeWindow() {
     <div style="display: flex; align-items: center; padding: 10px 20px; margin-top: 5px; justify-content: center; gap: 30px; flex-shrink: 0;">
     <!-- 左侧区域 -->
     <div style="display: flex; align-items: center; gap: 20px;">
-      <!-- 数据库管理 -->
-      <a-dropdown>
-        <a-button type="outline" :loading="databaseLoading" :style="{ width: '130px', height: '40px', fontSize: '14px' }">
-          <template #icon>
-            <span v-if="databaseStatus?.needs_migration" style="color: #ff4d4f;">⚠️</span>
-            <span v-else style="color: #52c41a;">✅</span>
-          </template>
-          数据库管理
-        </a-button>
-        <template #content>
-          <a-doption @click="checkDatabaseStatus">🔍 检查状态</a-doption>
-          <a-doption @click="reloadDatabase" :disabled="databaseLoading">
-            <span v-if="databaseStatus?.needs_migration" style="color: #ff4d4f;">🔄 执行迁移</span>
-            <span v-else>🔄 重载数据库</span>
-          </a-doption>
-          <a-doption @click="refreshPageData">🔃 刷新页面</a-doption>
-        </template>
-      </a-dropdown>
+
       
       <!-- 查询余额 -->
       <a-dropdown>
@@ -2254,7 +2309,7 @@ async function closeWindow() {
     <!-- 右侧区域 -->
     <div style="display: flex; align-items: center; gap: 20px;">
       <!-- 执行转账按钮 -->
-      <a-button v-if="!startLoading && stopStatus" class="execute-btn" @click="startTransfer(data.value)" :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行转账</a-button>
+      <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn" @click="startTransfer(data.value)" :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行转账</a-button>
       <a-tooltip v-else content="点击可以提前停止执行">
         <div @click="stopTransfer">
           <a-button v-if="!stopFlag" class="execute-btn executing" loading :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行中...</a-button>
@@ -2317,7 +2372,7 @@ async function closeWindow() {
         <a-table-column title="原生代币" data-index="symbol" :width="80" />
         <a-table-column title="图标" :width="50">
           <template #cell="{ record }">
-            <img v-if="record.pic_url" :src="`/chainIcons/${record.pic_url}`" 
+            <img v-if="record.pic_url" :src="`/chainIcons/${record?.pic_url}`" 
                  style="width: 24px; height: 24px; border-radius: 50%;" 
                  :alt="record.chain_name" />
             <span v-else>-</span>

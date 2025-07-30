@@ -409,6 +409,7 @@ impl<'a> ChainService<'a> {
     }
 
     /// 获取所有 RPC 提供商
+    #[allow(dead_code)]
     pub async fn get_all_rpc_providers(&self) -> Result<Vec<RpcProvider>> {
         let providers = sqlx::query_as::<_, RpcProvider>(
             "SELECT * FROM rpc_providers ORDER BY chain_id, priority ASC"

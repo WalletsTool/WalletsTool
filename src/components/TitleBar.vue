@@ -21,8 +21,9 @@
 </template>
 
 <script setup>
-import { ref, getCurrentInstance } from 'vue'
+import { computed, onMounted } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { useThemeStore } from '@/stores'
 
 // Props
 const props = defineProps({
@@ -33,23 +34,18 @@ const props = defineProps({
 })
 
 // 主题管理
-const currentTheme = ref('dark')
-const instance = getCurrentInstance()
+const themeStore = useThemeStore()
+const currentTheme = computed(() => themeStore.currentTheme)
 
 // 主题切换方法
 function toggleTheme() {
-  if (instance?.appContext.config.globalProperties.$themeManager) {
-    instance.appContext.config.globalProperties.$themeManager.toggleTheme()
-    currentTheme.value = instance.appContext.config.globalProperties.$themeManager.getTheme()
-  }
+  themeStore.toggleTheme()
 }
 
-// 初始化主题状态
-function initTheme() {
-  if (instance?.appContext.config.globalProperties.$themeManager) {
-    currentTheme.value = instance.appContext.config.globalProperties.$themeManager.getTheme()
-  }
-}
+// 初始化主题
+onMounted(() => {
+  themeStore.initTheme()
+})
 
 // 窗口控制方法
 async function minimizeWindow() {
@@ -92,9 +88,6 @@ async function closeWindow() {
     }
   }
 }
-
-// 初始化主题
-initTheme()
 </script>
 
 <style scoped>
@@ -162,5 +155,25 @@ initTheme()
 
 .close-icon {
   font-size: 14px;
+}
+
+/* 明亮主题样式 */
+:root[data-theme="light"] .title-bar {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  color: #1a202c;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+:root[data-theme="light"] .title-bar-control {
+  color: #4a5568;
+}
+
+:root[data-theme="light"] .title-bar-control:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+:root[data-theme="light"] .title-bar-control.close:hover {
+  background-color: #e53e3e;
+  color: white;
 }
 </style>

@@ -1,9 +1,9 @@
 <script setup name="home">
 import {useRouter} from 'vue-router'
 import {Notification, Modal} from "@arco-design/web-vue";
-import {onMounted, onBeforeUnmount, ref, h} from "vue";
+import {onMounted, onBeforeUnmount, ref, h, computed} from "vue";
 import party from "party-js";
-import {confettiStore} from '@/stores'
+import {confettiStore, useThemeStore} from '@/stores'
 import {WebviewWindow} from '@tauri-apps/api/webviewWindow'
 import {getCurrentWindow} from '@tauri-apps/api/window'
 import {invoke} from '@tauri-apps/api/core'
@@ -11,6 +11,7 @@ import {listen} from '@tauri-apps/api/event'
 
 const router = useRouter()
 const store = confettiStore()
+const themeStore = useThemeStore()
 let windowCount = ref({})
 let windowListObj = ref({})
 
@@ -27,7 +28,13 @@ let debugMode = ref(false)
 let databaseStatus = ref(null)
 let databaseLoading = ref(false)
 
+// 主题切换相关状态 - 使用computed从themeStore获取
+const isDarkTheme = computed(() => themeStore.currentTheme === 'dark')
+
 onMounted(async () => {
+  // 初始化主题状态
+  themeStore.initTheme()
+  
   const newFlag = funcList.filter(item => item.isNew).length > 0
   if (newFlag && store.status) {
     // 动画效果
@@ -129,7 +136,8 @@ function goPage(pageName) {
       title: `▶ 窗口 ${windowCount.value[pageName]} 🧡 ${title}`,
       resizable: true,
       center: true,
-      decorations: false  // 移除Windows原生窗口边框
+      decorations: false,  // 移除Windows原生窗口边框
+      backgroundColor: '#1a1a2e'  // 设置窗口背景色
     })
     
     windowListObj.value[pageName].set(windowLabel, webview)
@@ -167,6 +175,16 @@ function toggleDebugMode() {
   } else {
     Notification.error('调试模式关闭')
   }
+}
+
+// 切换主题
+function toggleTheme() {
+  themeStore.toggleTheme()
+  // if (isDarkTheme.value) {
+  //   Notification.success('已切换到暗黑主题')
+  // } else {
+  //   Notification.success('已切换到明亮主题')
+  // }
 }
 
 // 检查数据库状态
@@ -499,16 +517,25 @@ async function handleMainWindowCloseRequest() {
 </script>
 
 <template>
-  <div class="container home">
+  <div class="container home" :class="{ 'light-theme': !isDarkTheme }">
     <!-- 自定义标题栏 -->
     <div class="custom-titlebar">
       <div class="titlebar-content">
         <div class="titlebar-left" data-tauri-drag-region>
           <div class="app-icon"></div>
-          <span class="app-title">钱包管理工具</span>
+          <!-- <span class="app-title">钱包管理工具</span> -->
         </div>
         <div class="titlebar-drag-area" data-tauri-drag-region></div>
         <div class="titlebar-right">
+          <button class="titlebar-btn theme-btn" @click="toggleTheme" :title="isDarkTheme ? '切换到明亮主题' : '切换到暗黑主题'">
+            <svg v-if="isDarkTheme" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"/>
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+            <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          </button>
           <button class="titlebar-btn minimize-btn" @click="minimizeWindow">
             <svg width="12" height="12" viewBox="0 0 12 12">
               <path d="M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -727,6 +754,14 @@ async function handleMainWindowCloseRequest() {
 .titlebar-btn:hover {
   background: rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.9);
+}
+
+.theme-btn {
+  transition: all 0.3s ease;
+}
+
+.theme-btn:hover {
+  transform: rotate(180deg);
 }
 
 .close-btn:hover {
@@ -1186,6 +1221,111 @@ async function handleMainWindowCloseRequest() {
 .action-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* 明亮主题样式 */
+.light-theme {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 50%, #e0eafc 100%) !important;
+}
+
+.light-theme .custom-titlebar {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+.light-theme .app-title {
+  color: rgba(0, 0, 0, 0.8) !important;
+}
+
+.light-theme .titlebar-btn {
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: rgba(0, 0, 0, 0.7) !important;
+}
+
+.light-theme .titlebar-btn:hover {
+  background: rgba(0, 0, 0, 0.1) !important;
+  color: rgba(0, 0, 0, 0.9) !important;
+}
+
+.light-theme .bg-circle {
+  background: rgba(103, 126, 234, 0.1) !important;
+}
+
+.light-theme .bg-circle-2 {
+  background: rgba(118, 75, 162, 0.1) !important;
+}
+
+.light-theme .bg-circle-3 {
+  background: rgba(52, 152, 219, 0.1) !important;
+}
+
+.light-theme .bg-gradient {
+  background: linear-gradient(45deg, 
+    rgba(103, 126, 234, 0.08) 0%, 
+    rgba(118, 75, 162, 0.05) 50%, 
+    rgba(52, 152, 219, 0.08) 100%) !important;
+}
+
+.light-theme .title-text {
+  color: #2c3e50 !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.light-theme .subtitle {
+  color: rgba(0, 0, 0, 0.7) !important;
+}
+
+.light-theme .func-card {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
+}
+
+.light-theme .func-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15) !important;
+}
+
+.light-theme .card-title {
+  color: #2c3e50 !important;
+}
+
+.light-theme .card-desc {
+  color: rgba(0, 0, 0, 0.6) !important;
+}
+
+.light-theme .func-card--disabled .card-title {
+  color: rgba(0, 0, 0, 0.4) !important;
+}
+
+.light-theme .func-card--disabled .card-desc {
+  color: rgba(0, 0, 0, 0.3) !important;
+}
+
+.light-theme .card-arrow {
+  color: #667eea !important;
+}
+
+.light-theme .func-card--disabled .card-arrow {
+  color: #999 !important;
+}
+
+.light-theme .debug-toggle {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  color: #666 !important;
+}
+
+.light-theme .debug-toggle:hover {
+  background: rgba(255, 255, 255, 1) !important;
+}
+
+.light-theme .database-panel {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+.light-theme .panel-title {
+  color: #2c3e50 !important;
 }
 
 /* 响应式设计 */

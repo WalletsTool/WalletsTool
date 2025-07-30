@@ -9,6 +9,7 @@ import { Notification } from "@arco-design/web-vue";
 import { utils as xlUtils, writeFile } from "xlsx";
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useVirtualizer } from '@tanstack/vue-virtual'
+ import ChainIcon from '@/components/ChainIcon.vue';
 
 const router = useRouter()
 // table列名
@@ -176,10 +177,12 @@ const handleSelectAll = (checked) => {
 // 初始化RPC列表
 onBeforeMount(async () => {
   rpcOptions.value = await invoke('get_chain_list')
-  rpcValue.value = rpcOptions.value[0].key
-  currentRpc.value = rpcOptions.value[0]
-  // 获取rpc对应的代币列表
-  await rpcChange()
+  if (rpcOptions.value && rpcOptions.value.length > 0) {
+    rpcValue.value = rpcOptions.value[0].key
+    currentRpc.value = rpcOptions.value[0]
+    // 获取rpc对应的代币列表
+    await rpcChange()
+  }
 })
 
 onMounted(async () => {
@@ -187,7 +190,6 @@ onMounted(async () => {
 
   // 监听余额查询更新事件
   await listen('balance_item_update', (event) => {
-    console.log('收到余额更新:', event.payload)
     const { index, item } = event.payload
     if (data.value[index]) {
       // 更新对应索引的数据
@@ -204,10 +206,12 @@ onMounted(async () => {
 
 // RPC变化事件
 async function rpcChange() {
-  coinOptions.value = await invoke("get_coin_list", { chain: rpcValue.value })
-  coinValue.value = coinOptions.value[0].key
-  currentCoin.value = coinOptions.value[0]
-  currentRpc.value = rpcOptions.value.filter(item => item.key === rpcValue.value)[0]
+  coinOptions.value = await invoke("get_coin_list", { chainKey: rpcValue.value })
+  if (coinOptions.value && coinOptions.value.length > 0) {
+    coinValue.value = coinOptions.value[0].key
+    currentCoin.value = coinOptions.value[0]
+  }
+  currentRpc.value = rpcOptions.value.find(item => item.key === rpcValue.value) || {}
 }
 
 // coin变化事件
@@ -259,7 +263,6 @@ function deleteTokenCancel() {
 
 // 删除代币确认
 async function deleteTokenConfirm() {
-  console.log('确认删除代币')
   deleteTokenVisible.value = false
   await invoke("remove_coin", { chain: rpcValue.value, key: currentCoin.value.key }).then(() => {
     Notification.success('删除成功！');
@@ -316,7 +319,6 @@ function handleAddCoinCancel() {
 function addCoinFunc() {
   return new Promise(async (resolve, reject) => {
     try {
-      console.log('获取代币信息')
       // 直接使用Rust后端获取代币信息
       const tokenInfo = await invoke('get_token_info', {
         chain: rpcValue.value,
@@ -332,7 +334,6 @@ function addCoinFunc() {
         "abi": null // 使用标准ERC20 ABI
       }
       
-      console.log('添加代币')
       // 添加代币
       await invoke('add_coin', {
         chain: rpcValue.value,
@@ -343,7 +344,6 @@ function addCoinFunc() {
       coinAddress.value = ''
       resolve()
     } catch (err) {
-      console.log(err)
       reject('添加代币失败：' + err)
     }
   })
@@ -465,7 +465,6 @@ async function queryBalance() {
     })
 
     progress.value = 0
-    console.log(`开始查询 ${data.value.length} 个地址`)
 
     try {
       // 使用Rust后端进行查询
@@ -507,7 +506,7 @@ async function queryBalance() {
         const failCount = result.items.filter(item => item.exec_status === '3').length
         const totalCount = result.items.length
 
-        console.log(`查询完成: 成功 ${successCount}, 失败 ${failCount}, 总计 ${totalCount}`)
+        // 查询完成统计
 
         if (successCount === totalCount) {
           Notification.success('查询成功！')
@@ -636,7 +635,7 @@ async function closeWindow() {
 
 <template>
   <div class="title-bar">
-    <div class="title-bar-text">链上工具箱 - 余额查询</div>
+    <div class="title-bar-text">钱包管理工具 - 余额查询</div>
     <div class="title-bar-controls">
       <button class="title-bar-control" @click="minimizeWindow" title="最小化">
         <span class="minimize-icon">―</span>
@@ -705,7 +704,7 @@ async function closeWindow() {
       </div>
 
       <!-- 虚拟滚动容器 -->
-      <div ref="tableContainer" class="virtual-table-container" style="flex: 1; overflow: auto; min-height: 0;">
+      <div ref="tableContainer" class="virtual-table-container" style="flex: 1; overflow: auto; min-height: 400px; height: 100%;">
         <div v-if="virtualizer && data.length > 0" class="virtual-table-viewport"
           :style="{ height: `${virtualizer.value.getTotalSize()}px` }">
           <div v-for="virtualItem in virtualizer.value.getVirtualItems()" :key="virtualItem.index"
@@ -723,28 +722,28 @@ async function closeWindow() {
                 <a-checkbox :checked="isItemSelected(data[virtualItem.index].address)"
                   @change="toggleRowSelection(data[virtualItem.index].address)"></a-checkbox>
               </div>
-              <div class="virtual-cell" style="width: 60px; text-align: center">{{ virtualItem.index + 1 }}</div>
-              <div class="virtual-cell" style="flex: 2; text-align: center; overflow: hidden; text-overflow: ellipsis">
+              <div class="virtual-cell" style="width: 60px; justify-content: center;">{{ virtualItem.index + 1 }}</div>
+              <div class="virtual-cell" style="flex: 2; justify-content: center; overflow: hidden; text-overflow: ellipsis">
                 {{
                   data[virtualItem.index].address }}</div>
-              <div class="virtual-cell" style="width: 80px; text-align: center">{{ data[virtualItem.index].nonce }}
+              <div class="virtual-cell" style="width: 80px; justify-content: center;">{{ data[virtualItem.index].nonce }}
               </div>
-              <div class="virtual-cell" style="width: 120px; text-align: center">{{ data[virtualItem.index].plat_balance
+              <div class="virtual-cell" style="width: 120px; justify-content: center;">{{ data[virtualItem.index].plat_balance
               }}
               </div>
-              <div class="virtual-cell" style="width: 120px; text-align: center">{{ data[virtualItem.index].coin_balance
+              <div class="virtual-cell" style="width: 120px; justify-content: center;">{{ data[virtualItem.index].coin_balance
               }}
               </div>
-              <div class="virtual-cell" style="width: 100px; text-align: center">
-                <a-tag v-if="data[virtualItem.index].exec_status === '0'" color="#86909c">等待执行</a-tag>
-                <a-tag v-if="data[virtualItem.index].exec_status === '1'" color="#ff7d00">执行中</a-tag>
-                <a-tag v-if="data[virtualItem.index].exec_status === '2'" color="#00b42a">执行成功</a-tag>
-                <a-tag v-if="data[virtualItem.index].exec_status === '3'" color="#f53f3f">执行失败</a-tag>
+              <div class="virtual-cell" style="width: 100px; justify-content: center;">
+                <a-tag v-if="data[virtualItem.index].exec_status === '0'" color="gray">等待执行</a-tag>
+                <a-tag v-if="data[virtualItem.index].exec_status === '1'" color="orange">执行中</a-tag>
+                <a-tag v-if="data[virtualItem.index].exec_status === '2'" color="green">执行成功</a-tag>
+                <a-tag v-if="data[virtualItem.index].exec_status === '3'" color="red">执行失败</a-tag>
               </div>
-              <div class="virtual-cell" style="flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis">
+              <div class="virtual-cell" style="flex: 1; justify-content: center; overflow: hidden; text-overflow: ellipsis">
                 {{
                   data[virtualItem.index].error_msg }}</div>
-              <div class="virtual-cell" style="width: 60px; text-align: center">
+              <div class="virtual-cell" style="width: 60px; justify-content: center;">
                 <icon-delete style="font-size: 16px; cursor: pointer;"
                   @click.stop="deleteItem(data[virtualItem.index])" />
               </div>
@@ -767,19 +766,27 @@ async function closeWindow() {
     <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
       <!-- 链选择器 -->
       <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
-        :style="{ width: '70%' }">
+        :style="{ width: '65%' }">
         <template #label="{ data }">
-          <div style="display: flex;flex-direction: row;align-items: center;">
-            <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 18px;height: 18px">
+          <div style="
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            width: 100%;
+          ">
+            <span style="color: gray;">区块链：</span>
+            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.chain"
+              style="width: 18px; height: 18px;" />
             <span style="margin-left: 10px">{{ data?.chain }}</span>
-            <span style="margin-left: 30px;">{{ data?.scan_url }}</span>
+            <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
           </div>
         </template>
         <template #option="{ data }">
-          <div style="display: flex;flex-direction: row;align-items: center;height: 32px;">
-            <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 18px;height: 18px">
+          <div style="display: flex; flex-direction: row; align-items: center;height: 32px;">
+            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.chain"
+              style="width: 18px; height: 18px;" />
             <span style="margin-left: 10px">{{ data?.chain }}</span>
-            <span style="margin-left: 30px;color: gray;">{{ data?.scan_url }}</span>
+            <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
           </div>
         </template>
       </a-select>
@@ -787,20 +794,22 @@ async function closeWindow() {
       <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames" :style="{ width: '30%' }"
         @change="coinChange">
         <template #label="{ data }">
-          <span style="margin-left: 10px;line-height: 30px;">{{ data?.label }}</span>
+          <span style="color: gray;">代币：</span>
+          <span style="margin-left: 10px">{{ data?.label }}</span>
         </template>
         <template #option="{ data }">
-          <span style="margin-left: 10px;line-height: 30px;">{{ data?.label }}</span>
+          <span style="margin-left: 10px">{{ data?.label }}</span>
         </template>
       </a-select>
     </div>
     <!-- 管理代币按钮区域 -->
     <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
-      <a-button type="outline" status="normal" @click="handleAddCoinClick">
-        <icon-plus />
-        <span style="margin-left: 5px">添加代币</span>
+      <a-button type="outline" @click="handleAddCoinClick" style="white-space: nowrap;">
+        添加代币
       </a-button>
-      <a-button type="primary" status="danger" @click="deleteToken">删除代币</a-button>
+      <a-button type="outline" @click="deleteToken" style="white-space: nowrap;">
+        删除代币
+      </a-button>
       <a-checkbox v-model="onlyCoin" style="margin-left: auto;">仅查询目标代币</a-checkbox>
     </div>
     <!-- 相关设置 -->
@@ -865,7 +874,9 @@ async function closeWindow() {
   justify-content: space-between;
   align-items: center;
   height: 30px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(22, 33, 62, 0.95) 50%, rgba(15, 52, 96, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(103, 126, 234, 0.3);
   color: white;
   padding: 0 10px;
   -webkit-app-region: drag;
@@ -898,104 +909,61 @@ async function closeWindow() {
   height: 30px;
   background: transparent;
   border: none;
-  color: white;
+  color: rgba(255, 255, 255, 0.8);
   cursor: pointer;
+  transition: all 0.2s ease;
   font-size: 16px;
-  transition: background-color 0.2s;
-  -webkit-app-region: no-drag;
 }
 
 .title-bar-control:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .title-bar-control.close:hover {
-  background-color: #e81123;
+  background: #ff5555;
 }
 
 .minimize-icon {
   font-size: 14px;
-  font-weight: bold;
-  margin-top: -2px;
-}
-
-.maximize-icon {
-  font-size: 14px;
-  font-weight: normal;
 }
 
 .close-icon {
-  font-size: 18px;
-  font-weight: normal;
-  line-height: 1;
+  font-size: 14px;
 }
 
 .container {
-  height: calc(100vh - 30px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background-color: white;
-  padding: 10px;
-  min-width: 1240px;
-}
-
-/* 隐藏滚动条但保持滚动功能 */
-.container::-webkit-scrollbar {
-  display: none;
-}
-
-.container {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* 隐藏表格滚动条 */
-.arco-table-content::-webkit-scrollbar {
-  display: none;
-}
-
-.arco-table-content {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.arco-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
-.arco-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* 隐藏虚拟表格滚动条 */
-.virtual-table-container::-webkit-scrollbar {
-  display: none;
-}
-
-.virtual-table-container {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.balance {
-  .arco-table-body {
-    min-height: 200px;
-
-    .arco-table-element .arco-empty {
-      min-height: 180px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-    }
-  }
+  padding: 40px 20px 20px;
+  height: 100vh;
+  box-sizing: border-box;
 }
 
 .pageTitle {
-  position: fixed;
-  padding: 0 30px;
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  background: linear-gradient(120deg, #11c06f 0%, #165dff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-fill-color: transparent;
+  position: relative;
+  display: inline-block;
+}
+
+.pageTitle::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(120deg, #11c06f 0%, #165dff 100%);
+  border-radius: 3px;
+}
+
+.pageTitle::before {
+  content: "💰";
+  margin-right: 10px;
   user-select: none;
   text-align: start;
   line-height: 100px;
@@ -1060,26 +1028,27 @@ async function closeWindow() {
   background-color: #165dff;
 }
 
-/* 虚拟滚动表格样式 */
+/* Arco Design风格的表格样式 */
 .virtual-table-header {
   display: flex;
   align-items: center;
-  background-color: #f8f9fa;
-  border: 1px solid #e0e0e0;
-  border-bottom: 2px solid #ccc;
+  background-color: var(--color-fill-2);
+  border: 1px solid var(--color-neutral-3);
+  border-bottom: 2px solid var(--color-neutral-4);
   height: 45px;
   padding: 0 10px;
+  font-weight: 500;
+  color: var(--color-text-2);
 }
 
 .virtual-header-cell {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
-  color: #333;
-  border-right: 1px solid #e0e0e0;
   padding: 8px;
   white-space: nowrap;
+  border-right: 1px solid var(--color-neutral-3);
+  font-size: 14px;
 }
 
 .virtual-header-cell:last-child {
@@ -1087,11 +1056,11 @@ async function closeWindow() {
 }
 
 .virtual-table-container {
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-neutral-3);
   border-top: none;
   overflow: auto;
   position: relative;
-  background: #fff;
+  background: var(--color-bg-2);
 }
 
 .virtual-table-viewport {
@@ -1100,30 +1069,39 @@ async function closeWindow() {
 }
 
 .virtual-table-row {
-  display: flex;
-  border-bottom: 1px solid #f0f0f0;
-  background: #fff;
-  transition: background-color 0.2s;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  transform: translateY(0);
+  border-bottom: 1px solid var(--color-neutral-3);
+}
+
+.virtual-table-row:last-child {
+  border-bottom: none;
 }
 
 .virtual-table-row:hover {
-  background: #f8f9fa;
+  background-color: var(--color-fill-1);
 }
 
 .virtual-row-content {
   display: flex;
   align-items: center;
-  width: 100%;
   height: 100%;
-  padding: 0 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--color-text-1);
 }
 
 .virtual-cell {
   display: flex;
   align-items: center;
   padding: 8px;
-  border-right: 1px solid #f0f0f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  border-right: 1px solid var(--color-neutral-3);
 }
 
 .virtual-cell:last-child {
@@ -1134,8 +1112,34 @@ async function closeWindow() {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 150px;
-  width: 100%;
+  height: 300px;
+  color: var(--color-text-3);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .container {
+    padding: 40px 10px 10px;
+  }
+  
+  .toolBar {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  
+  .toolBar > * {
+    margin: 5px;
+  }
+  
+  .virtual-header-cell,
+  .virtual-cell {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+  
+  .virtual-row-content {
+    padding: 4px 6px;
+  }
 }
 </style>
 <style lang="less">

@@ -12,7 +12,7 @@ pub struct Chain {
     pub native_currency_symbol: String,
     pub native_currency_name: String,
     pub native_currency_decimals: i32,
-    pub pic_url: Option<String>,
+    pub pic_data: Option<String>,  // Base64编码的图标数据
     pub scan_url: Option<String>,
     pub scan_api: Option<String>,
     pub verify_api: Option<String>,
@@ -55,21 +55,7 @@ pub struct Token {
     pub updated_at: DateTime<Utc>,
 }
 
-/// 余额查询历史记录模型
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct BalanceHistory {
-    pub id: i64,
-    pub address: String,
-    pub chain_id: i64,
-    pub token_id: Option<i64>,
-    pub balance: String,
-    pub nonce: Option<i64>,
-    pub query_status: String, // "success", "failed", "timeout"
-    pub error_message: Option<String>,
-    pub rpc_url: String,
-    pub response_time_ms: Option<i32>,
-    pub created_at: DateTime<Utc>,
-}
+
 
 /// 创建链的请求模型
 #[derive(Debug, Deserialize)]
@@ -80,7 +66,7 @@ pub struct CreateChainRequest {
     pub native_currency_symbol: String,
     pub native_currency_name: String,
     pub native_currency_decimals: i32,
-    pub pic_url: Option<String>,
+    pub pic_data: Option<String>,  // Base64编码的图标数据
     pub scan_url: Option<String>,
     pub scan_api: Option<String>,
     pub verify_api: Option<String>,
@@ -96,7 +82,7 @@ pub struct UpdateChainRequest {
     pub native_currency_symbol: String,
     pub native_currency_name: String,
     pub native_currency_decimals: i32,
-    pub pic_url: Option<String>,
+    pub pic_data: Option<String>,  // Base64编码的图标数据
     pub scan_url: Option<String>,
     pub scan_api: Option<String>,
     pub verify_api: Option<String>,
@@ -150,7 +136,7 @@ pub struct ChainInfo {
     pub symbol: String,
     pub currency_name: String,
     pub decimals: i32,
-    pub pic_url: String,
+    pub pic_data: Option<String>,
     pub scan_url: String,
     pub scan_api: String,
     pub verify_api: String,

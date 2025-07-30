@@ -50,7 +50,15 @@ export default defineConfig({
         rollupOptions: {
             plugins: [
                 rollupNodePolyFill()
-            ]
+            ],
+            output: {
+                manualChunks: {
+                // 将大型依赖分离到独立chunk
+                'vendor-crypto': ['ethers', '@solana/web3.js'],
+                'vendor-ui': ['vue', 'vue-router', '@arco-design/web-vue'],
+                'vendor-utils': ['axios', 'xlsx', 'pinia']
+                }
+            }
         },
         // Tauri supports es2021
         target: process.env.TAURI_PLATFORM == "windows" ? "chrome105" : "safari14",

@@ -39,14 +39,39 @@
     line-height: 24px;
     font-weight: 500;
 
-    color: #0f0f0f;
-    background-color: white;
-
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-text-size-adjust: 100%;
+}
+
+/* 明亮主题变量 */
+:root[data-theme="light"] {
+    --primary-color: #1890ff;
+    --text-color: #333333;
+    --bg-color: #ffffff;
+    --bg-gradient: linear-gradient(135deg, #f0f2f5 0%, #ffffff 50%, #f5f7fa 100%);
+    --card-bg: #ffffff;
+    --border-color: #e5e5e5;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
+/* 暗黑主题变量 */
+:root[data-theme="dark"] {
+    --primary-color: #3370ff;
+    --text-color: #ffffff;
+    --bg-color: #1a1a2e;
+    --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    --card-bg: #2a2a3e;
+    --border-color: #3a3a4e;
+    --shadow-color: rgba(0, 0, 0, 0.3);
+}
+
+/* 应用主题变量 */
+:root {
+    color: var(--text-color, #ffffff);
+    background: var(--bg-gradient, linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%));
 }
 
 /* 强制覆盖 Arco 框架的字体设置 */

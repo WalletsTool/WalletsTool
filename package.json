@@ -1,5 +1,5 @@
 {
-  "name": "web3_tools",
+  "name": "wallet_manager",
   "private": true,
   "version": "0.2.0",
   "type": "module",
@@ -8,8 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "icon": "tauri icon",
-    "tauri build": "tauri build",
-    "tauri dev": "tauri dev"
+    "tauri-build": "tauri build",
+    "tauri-dev": "tauri dev"
   },
   "config": {
     "database": {
@@ -25,6 +25,7 @@
     "@solana/web3.js": "^1.98.2",
     "@tanstack/vue-virtual": "^3.13.12",
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.3.0",
     "@uniswap/sdk-core": "^7.7.2",
     "@uniswap/v3-core": "^1.0.1",
     "@uniswap/v3-sdk": "^3.25.2",
@@ -47,6 +48,7 @@
   },
   "devDependencies": {
     "@arco-design/web-vue": "^2.57.0",
+    "@playwright/test": "^1.54.1",
     "@tauri-apps/cli": "^2.0.0",
     "@vitejs/plugin-vue": "^5.1.4",
     "chalk": "^5.4.1",

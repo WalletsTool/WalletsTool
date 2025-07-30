@@ -1,14 +1,19 @@
 <script setup name="transfer">
-import { IconDelete, IconDoubleLeft, IconPlus, IconUpload } from "@arco-design/web-vue/es/icon";
+import { IconDelete, IconDoubleLeft, IconPlus, IconUpload, IconShareExternal } from "@arco-design/web-vue/es/icon";
 import { useRouter } from "vue-router";
-import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, } from "vue";
+import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Notification } from "@arco-design/web-vue";
 import { ethers } from "ethers";
 import { debounce } from "throttle-debounce";
 import { read, utils as xlUtils } from "xlsx";
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import ChainIcon from '../components/ChainIcon.vue'
+import TitleBar from '../components/TitleBar.vue'
+import ChainManagement from '../components/ChainManagement.vue'
+import RpcManagement from '../components/RpcManagement.vue'
+import TokenManagement from '../components/TokenManagement.vue'
 
 const router = useRouter();
 // 窗口标题
@@ -23,7 +28,7 @@ const columns = [
     slotName: "index",
   },
   {
-    title: "发送秘钥",
+    title: "发送方私钥",
     align: "center",
     width: "400",
     dataIndex: "private_key",
@@ -74,7 +79,7 @@ const columns = [
     align: "center",
     dataIndex: "error_msg",
     ellipsis: "true",
-    tooltip: "true",
+    tooltip: { position: 'left' },
   },
   {
     title: "操作",
@@ -157,56 +162,12 @@ let addCoinVisible = ref(false);
 let coinAddress = ref("");
 // 删除代币弹窗
 let deleteTokenVisible = ref(false);
-// 代币管理弹窗显示状态
-let tokenManageVisible = ref(false);
-// 代币编辑弹窗显示状态（新增和编辑共用）
-let tokenFormVisible = ref(false);
-// 是否为代币编辑模式（false为新增，true为编辑）
-let isTokenEditMode = ref(false);
-// 代币管理表格数据
-let tokenManageData = ref([]);
-// 当前编辑的代币
-let currentEditToken = ref(null);
-// 代币管理表格加载状态
-let tokenTableLoading = ref(false);
-// 代币信息表单（添加和编辑共用）
-const tokenForm = reactive({
-  key: '',
-  name: '',
-  symbol: '',
-  decimals: 18,
-  type: 'token',
-  contract_type: '',
-  contract_address: '',
-  abi: ''
-});
-// 链管理弹窗显示状态
-let chainManageVisible = ref(false);
-// 链编辑弹窗显示状态（新增和编辑共用）
-let chainFormVisible = ref(false);
-// 是否为编辑模式（false为新增，true为编辑）
-let isEditMode = ref(false);
-// 链管理表格数据
-let chainManageData = ref([]);
-// 当前编辑的链
-let currentEditChain = ref(null);
-// 链管理表格加载状态
-let chainTableLoading = ref(false);
-// 链信息表单（添加和编辑共用）
-const chainForm = reactive({
-  chain_key: '',
-  chain_name: '',
-  chain_id: '',
-  native_currency_symbol: '',
-  native_currency_name: '',
-  native_currency_decimals: 18,
-  pic_url: '',
-  scan_url: '',
-  scan_api: '',
-  verify_api: '',
-  check_verify_api: '',
-  rpc_urls: ['']
-});
+// 链管理组件引用
+const chainManageRef = ref(null);
+// RPC管理组件引用
+const rpcManageRef = ref(null);
+// 代币管理组件引用
+const tokenManageRef = ref(null);
 // 删除信息弹窗
 let deleteItemVisible = ref(false);
 // 当前币种名称
@@ -222,11 +183,28 @@ let stopStatus = ref(true);
 // 线程数设置，默认为1
 let threadCount = ref(1);
 
+// 代币管理相关变量
+const tokenTableLoading = ref(false);
+const tokenManageData = ref([]);
+const tokenFormVisible = ref(false);
+const isTokenEditMode = ref(false);
+const currentEditToken = ref(null);
+const tokenForm = reactive({
+  key: '',
+  name: '',
+  symbol: '',
+  decimals: 18,
+  type: 'token',
+  contract_type: '',
+  contract_address: '',
+  abi: ''
+});
+
 // 获取gas
 const timer = setInterval(fetchGas, 5000);
 
 watch(stopStatus, (newValue, oldValue) => {
-  console.log(`count的值已从${oldValue}更新为${newValue}`);
+  // 停止状态变化监听
 });
 
 // 初始化RPC列表
@@ -234,14 +212,21 @@ onBeforeMount(async () => {
   // 检查是否在Tauri环境中
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (isTauri) {
-    const chainList = await invoke("get_chain_list");
-    // 过滤掉starknet
-    chainOptions.value = chainList.filter((item) => item.key !== "starknet");
-    chainValue.value = chainOptions.value[0].key;
-    currentChain.value = chainOptions.value[0];
-    // 获取rpc对应的代币列表
-    await chainChange();
+    // 初始化加载链列表
+    try {
+      const result = await invoke('get_chain_list');
+      chainOptions.value = result || [];
 
+      // 设置默认选中第一个链
+      if (chainOptions.value.length > 0) {
+        chainValue.value = chainOptions.value[0].key;
+        currentChain.value = chainOptions.value[0];
+        // 获取对应的代币列表
+        await chainChange();
+      }
+    } catch (error) {
+      console.error('初始化链列表失败:', error);
+    }
   } else {
     // 浏览器环境下的模拟数据
     chainOptions.value = [
@@ -279,11 +264,20 @@ onMounted(async () => {
   const isTauriMounted = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (isTauriMounted) {
     await listen('balance_item_update', (event) => {
-      console.log('Transfer页面收到余额更新:', event.payload);
       const { index, item } = event.payload;
       if (data.value[index]) {
         // 更新对应索引的数据
         Object.assign(data.value[index], item);
+      }
+    });
+    
+    // 监听转账状态更新事件
+    await listen('transfer_status_update', (event) => {
+      const { index, error_msg, exec_status } = event.payload;
+      if (data.value[index]) {
+        // 更新对应索引的状态和返回信息
+        data.value[index].error_msg = error_msg;
+        data.value[index].exec_status = exec_status;
       }
     });
   }
@@ -346,7 +340,7 @@ function UploadFile() {
   };
   reader.onloadend = function () {
     tableLoading.value = false;
-    console.log("读取完成");
+    // 文件读取完成
   };
 }
 
@@ -367,30 +361,74 @@ const downloadFile = debounce(1000, () => {
 
 // RPC变化事件
 async function chainChange() {
-  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-  if (isTauri) {
-    coinOptions.value = await invoke("get_coin_list", {
-      chain: chainValue.value
-    });
-  } else {
-    // 浏览器环境下的模拟数据
-    coinOptions.value = [
-      { key: 'eth', coin: 'ETH', type: 'native' },
-      { key: 'usdt', coin: 'USDT', type: 'token' }
-    ];
-  }
-  coinValue.value = coinOptions.value[0].key;
-  currentCoin.value = coinOptions.value[0];
-  currentChain.value = chainOptions.value.filter(
+  const chainResult = chainOptions.value.filter(
     (item) => item.key === chainValue.value
-  )[0];
-  currentChain.value.gas_price = "查询中...";
-  // 查询gas
-  fetchGas();
+  );
+
+  if (chainResult.length > 0) {
+    currentChain.value = chainResult[0];
+    currentChain.value.gas_price = "查询中...";
+    // 查询gas
+    fetchGas();
+
+    // 加载对应链的代币列表
+    try {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        const tokenList = await invoke("get_coin_list", {
+          chainKey: chainValue.value
+        });
+
+        coinOptions.value = tokenList.map(token => ({
+          key: token.key,
+          label: token.label,
+          symbol: token.symbol,
+          contract_address: token.contract_address,
+          decimals: token.decimals,
+          coin_type: token.coin_type,
+          contract_type: token.contract_type,
+          abi: token.abi
+        }));
+
+        // 设置默认选中第一个代币
+        if (coinOptions.value.length > 0) {
+          coinValue.value = coinOptions.value[0].key;
+          currentCoin.value = coinOptions.value[0];
+        } else {
+          coinValue.value = '';
+          currentCoin.value = null;
+        }
+      } else {
+        // 浏览器环境下的模拟数据
+        coinOptions.value = [
+          { key: 'eth', label: 'ETH', symbol: 'ETH', coin_type: 'native', decimals: 18 },
+          { key: 'usdt', label: 'USDT', symbol: 'USDT', coin_type: 'token', contract_address: '0x...', decimals: 6 }
+        ];
+        coinValue.value = coinOptions.value[0].key;
+        currentCoin.value = coinOptions.value[0];
+      }
+    } catch (error) {
+      console.error('加载代币列表失败:', error);
+      coinOptions.value = [];
+      coinValue.value = '';
+      currentCoin.value = null;
+    }
+  } else {
+    currentChain.value = null;
+    coinOptions.value = [];
+    coinValue.value = '';
+    currentCoin.value = null;
+  }
 }
 
 async function fetchGas() {
   const temp = chainValue.value;
+
+  // 检查 currentChain 是否为 null
+  if (!currentChain.value) {
+    return;
+  }
+
   if (temp === "sol") {
     currentChain.value.gas_price = "";
     return
@@ -398,58 +436,51 @@ async function fetchGas() {
   // 获取gas价格
   try {
     const res = await invoke("get_chain_gas_price", { chain: chainValue.value });
-    if (temp === chainValue.value) {
-      if (chainValue.value === "eth") {
-        currentChain.value.gas_price = res.toFixed(3);
+    if (temp === chainValue.value && currentChain.value) {
+      // 确保 res 是数字类型
+      const gasPrice = res?.gas_price_gwei || undefined;
+      if (isNaN(gasPrice)) {
+        currentChain.value.gas_price = "数据格式错误";
       } else {
-        currentChain.value.gas_price = res.toFixed(7);
+        if (chainValue.value === "eth") {
+          currentChain.value.gas_price = gasPrice.toFixed(3);
+        } else {
+          currentChain.value.gas_price = gasPrice.toFixed(7);
+        }
       }
     } else {
-      console.log("gas price 已失效");
+      // gas price 已失效
     }
   } catch (err) {
-    console.log(err);
-    currentChain.value.gas_price = "查询错误";
+    if (currentChain.value) {
+      currentChain.value.gas_price = "查询错误";
+    }
   }
 }
 
 // coin变化事件
 async function coinChange(value) {
   currentCoin.value = coinOptions.value.filter((item) => item.key === value)[0];
-  console.log(currentCoin.value);
 }
 
-// 导入事件触发
-function handleAddCoinClick() {
-  if (chainValue.value === "okt") {
-    Notification.warning(" OKT Chain 暂不支持添加代币！");
-    return;
+// 打开区块链浏览器
+function openBlockchainScan() {
+  if (currentChain.value?.scan_url) {
+    // 检查是否在Tauri环境中
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      // 在Tauri环境中使用shell打开默认浏览器
+      import('@tauri-apps/plugin-shell').then(({ open }) => {
+        open(currentChain.value.scan_url);
+      }).catch(error => {
+        console.error('打开浏览器失败:', error);
+        Notification.error('打开浏览器失败');
+      });
+    } else {
+      // 在浏览器环境中直接打开新窗口
+      window.open(currentChain.value.scan_url, '_blank');
+    }
   }
-  if (chainValue.value === "evmos") {
-    Notification.warning(" EVMOS Chain 暂不支持添加代币！");
-    return;
-  }
-  if (chainValue.value === "geth") {
-    Notification.warning(" Goerli Ethereum 暂不支持添加代币！");
-    return;
-  }
-  if (chainValue.value === "sepolia") {
-    Notification.warning(" Sepolia Ethereum 暂不支持添加代币！");
-    return;
-  }
-  if (chainValue.value === "scroll") {
-    Notification.warning(" Scroll Alpha TestNet 暂不支持添加代币！");
-    return;
-  }
-  if (chainValue.value === "linea") {
-    Notification.warning(" Linea MainNet 暂不支持添加代币！");
-    return;
-  }
-  if (chainValue.value === "base") {
-    Notification.warning(" Base MainNet 暂不支持添加代币！");
-    return;
-  }
-  addCoinVisible.value = true;
 }
 
 // 添加代币弹窗取消
@@ -460,13 +491,12 @@ function handleAddCoinCancel() {
 // 添加代币核心方法
 async function addCoinFunc() {
   try {
-    console.log("获取代币信息");
     // 使用Rust后端获取代币信息
     const tokenInfo = await invoke("get_token_info", {
       chain: chainValue.value,
       contractAddress: coinAddress.value
     });
-    
+
     let json = {
       key: tokenInfo.symbol.toLowerCase(),
       coin: tokenInfo.symbol,
@@ -475,19 +505,17 @@ async function addCoinFunc() {
       contract_address: coinAddress.value,
       abi: tokenInfo.abi,
     };
-    
-    console.log("添加代币");
+
     // 添加代币
     await invoke("add_coin", {
       chain: chainValue.value,
       objJson: JSON.stringify(json),
     });
-    
+
     addCoinVisible.value = false;
     coinAddress.value = "";
     return Promise.resolve();
   } catch (err) {
-    console.log(err);
     return Promise.reject(err.toString() || "添加代币失败！");
   }
 }
@@ -519,10 +547,26 @@ function clearData() {
   Notification.success("清空列表成功！");
 }
 
+// 清空私钥
+function clearPrivateKey() {
+  data.value.forEach((item) => {
+    item.private_key = "";
+  });
+  // 删除私钥和地址都为空的行
+  data.value = data.value.filter((item) => {
+    return item.private_key.trim() !== "" || item.to_addr.trim() !== "";
+  });
+  Notification.success("清空私钥成功！");
+}
+
 // 清空地址
 function clearAddress() {
   data.value.forEach((item) => {
     item.to_addr = "";
+  });
+  // 删除私钥和地址都为空的行
+  data.value = data.value.filter((item) => {
+    return item.private_key.trim() !== "" || item.to_addr.trim() !== "";
   });
   Notification.success("清空地址成功！");
 }
@@ -649,9 +693,9 @@ function deleteItemCancel() {
 // 删除item确认
 async function deleteItemConfirm() {
   deleteItemVisible.value = false;
-  console.log(data.value.length);
+  // 数据长度记录
   data.value = data.value.filter((obj) => currentItemKey.value !== obj.key);
-  console.log(data.value.length);
+  // 数据长度记录
   Notification.success("删除成功！");
 }
 
@@ -681,7 +725,7 @@ async function queryBalance() {
       item.exec_status = "0";
     });
 
-    console.log(`开始查询 ${data.value.length} 个地址的余额`);
+    // 开始查询地址余额
 
     try {
       // 使用Rust后端进行查询 - 支持实时更新
@@ -737,7 +781,7 @@ async function queryBalance() {
         const failCount = result.items.filter(item => item.exec_status === '3').length;
         const totalCount = result.items.length;
 
-        console.log(`查询完成: 成功 ${successCount}, 失败 ${failCount}, 总计 ${totalCount}`);
+        // 查询完成统计
 
         if (successCount === totalCount) {
           Notification.success('查询成功！');
@@ -773,42 +817,9 @@ async function queryBalance() {
   }
 }
 
-// 删除代币方法
-function deleteToken() {
-  if (chainValue.value === "okt") {
-    Notification.warning(" OKT Chain 暂不支持删除代币！");
-    return;
-  }
-  if (chainValue.value === "evmos") {
-    Notification.warning(" EVMOS Chain 暂不支持删除代币！");
-    return;
-  }
-  if (chainValue.value === "geth") {
-    Notification.warning(" Goerli Ethereum 暂不支持删除代币！");
-    return;
-  }
-  if (chainValue.value === "sepolia") {
-    Notification.warning(" Sepolia Ethereum 暂不支持删除代币！");
-    return;
-  }
-  if (chainValue.value === "scroll") {
-    Notification.warning(" Scroll Alpha TestNet 暂不支持删除代币！");
-    return;
-  }
-  if (chainValue.value === "linea") {
-    Notification.warning(" Linea MainNet 暂不支持删除代币！");
-    return;
-  }
-  if (chainValue.value === "base") {
-    Notification.warning(" Base MainNet 暂不支持删除代币！");
-    return;
-  }
-  deleteTokenVisible.value = true;
-}
 
 // 删除代币确认
 async function deleteTokenConfirm() {
-  console.log("确认删除代币");
   deleteTokenVisible.value = false;
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (isTauri) {
@@ -880,7 +891,7 @@ function startTransfer() {
   }
   validateForm()
     .then(async () => {
-      console.log("验证通过");
+      // 验证通过
       startLoading.value = true;
       stopFlag.value = false;
       stopStatus.value = false;
@@ -893,7 +904,7 @@ function startTransfer() {
       await transferFnc(data.value);
     })
     .catch(() => {
-      console.log("验证失败");
+      // 验证失败
       startLoading.value = false;
     });
 }
@@ -918,19 +929,19 @@ async function iterTransfer(accountData) {
         chainLayer: currentChain.value.layer,
         l1: currentChain.value.l1,
         scalar: currentChain.value.scalar,
-        delay: [form.min_interval, form.max_interval], // 延迟时间
+        delay: [form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) : 1, form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) : 3], // 延迟时间
         transfer_type: form.send_type, // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
-        transfer_amount: form.amount_from === '1' ? accountData[i].amount : form.send_count, // 转账当前指定的固定金额
-        transfer_amount_list: [form.send_min_count, form.send_max_count], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
-        left_amount_list: [form.send_min_count, form.send_max_count], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
-        amount_precision: Number(form.amount_precision), // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
+        transfer_amount: form.amount_from === '1' ? (accountData[i].amount && accountData[i].amount.trim() !== '' ? Number(accountData[i].amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
+        transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
+        left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
+        amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
         limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
-        limit_count: form.limit_count, // limit_count 指定数量 (limit_type 为 2 时生效)
-        limit_count_list: [form.limit_min_count, form.limit_max_count],
+        limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000, // limit_count 指定数量 (limit_type 为 2 时生效)
+        limit_count_list: [form.limit_min_count && form.limit_min_count.trim() !== '' ? Number(form.limit_min_count) : 21000, form.limit_max_count && form.limit_max_count.trim() !== '' ? Number(form.limit_max_count) : 30000],
         gas_price_type: form.gas_price_type, // gas price类型 1: 自动 2：固定gas price 3：gas price溢价率
-        gas_price_rate: Number(form.gas_price_rate) / 100, // gas price溢价率，0.05代表gas price是当前gas price的105%
-        gas_price: form.gas_price, // 设置最大的gas price，单位gwei
-        max_gas_price: form.max_gas_price, // 设置最大的gas price，单位gwei
+        gas_price_rate: form.gas_price_rate && form.gas_price_rate.trim() !== '' ? Number(form.gas_price_rate) / 100 : 0.05, // gas price溢价率，0.05代表gas price是当前gas price的105%
+        gas_price: form.gas_price && form.gas_price.trim() !== '' ? Number(form.gas_price) : 30, // 设置最大的gas price，单位gwei
+        max_gas_price: form.max_gas_price && form.max_gas_price.trim() !== '' ? Number(form.max_gas_price) : 0, // 设置最大的gas price，单位gwei
       };
       if (currentCoin.value.coin_type === "base") {
         if (stopFlag.value) {
@@ -940,13 +951,24 @@ async function iterTransfer(accountData) {
         // 设置状态 为执行中
         accountData[i].exec_status = "1";
         try {
+          console.log("config:", config);
           const res = await invoke("base_coin_transfer", {
             index: i + 1,
             item: accountData[i],
             config: config
           });
+          console.log("base_coin_transfer 返回信息:", res);
           accountData[i].exec_status = "2";
-          accountData[i].error_msg = res;
+          // 转账成功时只显示tx_hash
+          if (typeof res === 'object' && res !== null) {
+            if (res.success && res.tx_hash) {
+              accountData[i].error_msg = res.tx_hash;
+            } else {
+              accountData[i].error_msg = res.error || '转账失败';
+            }
+          } else {
+            accountData[i].error_msg = String(res || '转账成功');
+          }
         } catch (err) {
           if (err === "base gas price 超出最大值限制") {
             Notification.error("base gas price 超出最大值限制");
@@ -976,8 +998,18 @@ async function iterTransfer(accountData) {
               abi: contract.abi
             }
           });
+          console.log("token_transfer 返回信息:", res);
           accountData[i].exec_status = "2";
-          accountData[i].error_msg = res;
+          // 转账成功时只显示tx_hash
+          if (typeof res === 'object' && res !== null) {
+            if (res.success && res.tx_hash) {
+              accountData[i].error_msg = res.tx_hash;
+            } else {
+              accountData[i].error_msg = res.error || '转账失败';
+            }
+          } else {
+            accountData[i].error_msg = String(res || '转账成功');
+          }
         } catch (err) {
           if (err === "base gas price 超出最大值限制") {
             Notification.error("base gas price 超出最大值限制");
@@ -992,12 +1024,12 @@ async function iterTransfer(accountData) {
         }
       } else {
         Notification.error("未知币种类型");
-        console.log("未知币种类型：", currentCoin.value.coin_type);
+        // 未知币种类型
         return;
       }
     } catch (e) {
-      console.log("序号：", i + 1, "交易失败！");
-      console.log(e);
+      // 交易失败
+      // 错误信息
     }
   }
 }
@@ -1281,11 +1313,10 @@ function goHome() {
 // 显示代币管理弹窗
 function showTokenManage() {
   if (!chainValue.value) {
-    Notification.warning('请先选择区块链！');
+    Notification.warning("请先选择区块链！");
     return;
   }
-  tokenManageVisible.value = true;
-  loadTokenManageData();
+  tokenManageRef.value?.show();
 }
 
 // 加载代币管理数据
@@ -1296,7 +1327,7 @@ async function loadTokenManageData() {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) {
       tokenList = await invoke("get_coin_list", {
-        chain: chainValue.value
+        chainKey: chainValue.value
       });
     } else {
       // 浏览器环境下的模拟数据
@@ -1307,7 +1338,9 @@ async function loadTokenManageData() {
     }
     tokenManageData.value = tokenList.map(token => ({
       key: token.key,
-      coin: token.coin,
+      coin: token.symbol || token.coin || token.label, // 使用symbol作为显示的代币符号
+      name: token.label || token.coin, // 添加name字段映射
+      symbol: token.symbol || token.coin || token.label, // 正确映射symbol字段
       type: token.type || token.coin_type,
       contract_type: token.contract_type || '',
       contract_address: token.contract_address || '',
@@ -1328,7 +1361,7 @@ function showAddToken() {
   // 设置为添加模式
   isTokenEditMode.value = false;
   currentEditToken.value = null;
-  
+
   // 重置表单
   Object.assign(tokenForm, {
     key: '',
@@ -1348,12 +1381,12 @@ function showEditToken(record) {
   // 设置为编辑模式
   isTokenEditMode.value = true;
   currentEditToken.value = record;
-  
+
   // 填充表单数据，确保所有字段都有默认值
   Object.assign(tokenForm, {
     key: record.key || '',
-    name: record.name || record.coin || '',
-    symbol: record.symbol || record.coin || '',
+    name: record.name || record.coin || record.label || '',
+    symbol: record.symbol || record.coin || record.label || '',
     decimals: record.decimals || 18,
     type: record.type || 'token',
     contract_type: record.contract_type || '',
@@ -1383,16 +1416,20 @@ async function submitTokenForm() {
       Notification.warning('代币类型为token时，合约地址不能为空');
       return false;
     }
+    if (tokenForm.type === 'token' && (!tokenForm.abi || !tokenForm.abi.trim())) {
+      Notification.warning('代币类型为合约代币时，ABI不能为空');
+      return false;
+    }
     if (!tokenForm.decimals || tokenForm.decimals < 0) {
       Notification.warning('请输入有效的小数位数');
       return false;
     }
-    
+
     // 如果是添加模式且没有输入key，自动生成
     if (!isTokenEditMode.value && !tokenForm.key.trim()) {
       tokenForm.key = tokenForm.symbol.toLowerCase();
     }
-    
+
     const requestData = {
       key: tokenForm.key,
       name: tokenForm.name,
@@ -1402,7 +1439,7 @@ async function submitTokenForm() {
       decimals: tokenForm.decimals,
       abi: tokenForm.abi
     };
-    
+
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) {
       if (isTokenEditMode.value) {
@@ -1429,13 +1466,13 @@ async function submitTokenForm() {
         Notification.success('添加代币成功！');
       }
     }
-    
+
     // 刷新代币列表
     loadTokenManageData();
-    
+
     // 重新加载主页面的代币选择器
     await chainChange();
-    
+
     tokenFormVisible.value = false;
     return true;
   } catch (error) {
@@ -1455,11 +1492,12 @@ async function deleteTokenFromManage(tokenKey) {
         key: tokenKey
       });
     }
+
     Notification.success('删除代币成功！');
-    
+
     // 刷新代币列表
     loadTokenManageData();
-    
+
     // 重新加载主页面的代币选择器
     await chainChange();
   } catch (error) {
@@ -1468,633 +1506,78 @@ async function deleteTokenFromManage(tokenKey) {
   }
 }
 
-// 关闭代币管理弹窗
-function closeTokenManage() {
-  tokenManageVisible.value = false;
+// 事件处理函数
+// 处理链更新事件
+async function handleChainUpdated() {
+  // 重新加载链数据
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      // 从后端重新获取链列表
+      const result = await invoke('get_chain_list');
+      chainOptions.value = result || [];
+
+      // 检查当前选中的链是否还存在
+      const currentChainExists = chainOptions.value.find(chain => chain.key === chainValue.value);
+      if (!currentChainExists && chainOptions.value.length > 0) {
+        // 如果当前选中的链不存在了，选择第一个可用的链
+        chainValue.value = chainOptions.value[0].key;
+        await chainChange();
+      } else if (currentChainExists) {
+        // 如果当前链仍然存在，更新当前链信息
+        currentChain.value = currentChainExists;
+      } else {
+        // 如果没有可用的链，清空选择
+        chainValue.value = '';
+        currentChain.value = null;
+        coinOptions.value = [];
+        coinValue.value = '';
+        currentCoin.value = null;
+      }
+
+      console.log('链列表已更新');
+    }
+  } catch (error) {
+    console.error('更新链列表失败:', error);
+    Notification.error('更新链列表失败');
+  }
 }
 
-// 关闭添加代币弹窗
-function closeAddToken() {
-  tokenFormVisible.value = false;
+// 处理RPC更新事件
+function handleRpcUpdated() {
+  // 可以在这里处理RPC更新后的逻辑
+  console.log('RPC已更新');
 }
 
-// 链管理相关方法
+// 处理代币更新事件
+function handleTokenUpdated() {
+  // 重新加载代币选择器
+  chainChange();
+}
+
+// 显示RPC管理弹窗
+function showRpcManage() {
+  if (!chainValue.value) {
+    Notification.warning("请先选择区块链！");
+    return;
+  }
+  rpcManageRef.value?.show();
+}
+
 // 显示链管理弹窗
 function showChainManage() {
-  chainManageVisible.value = true;
-  loadChainManageData();
-}
-
-// 加载链管理数据
-async function loadChainManageData() {
-  chainTableLoading.value = true;
-  try {
-    let chainList;
-    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-    if (isTauri) {
-      chainList = await invoke("get_chain_list");
-    } else {
-      // 浏览器环境下的模拟数据
-      chainList = [
-        {
-          key: 'eth',
-          name: 'Ethereum',
-          chain_id: 1,
-          symbol: 'ETH',
-          currency_name: 'Ethereum',
-          pic_url: 'eth.png',
-          scan_url: 'https://etherscan.io',
-          scan_api: 'https://api.etherscan.io/api',
-          verify_api: 'https://api.etherscan.io/api',
-          check_verify_api: 'https://api.etherscan.io/api',
-          rpc_urls: ['https://mainnet.infura.io/v3/YOUR-PROJECT-ID']
-        }
-      ];
-    }
-    chainManageData.value = chainList.map(chain => ({
-      key: chain.key,
-      chain_key: chain.key,
-      chain_name: chain.name,
-      chain_id: chain.chain_id,
-      symbol: chain.symbol,
-      currency_name: chain.currency_name,
-      pic_url: chain.pic_url,
-      scan_url: chain.scan_url,
-      scan_api: chain.scan_api,
-      verify_api: chain.verify_api,
-      check_verify_api: chain.check_verify_api,
-      rpc_urls: chain.rpc_urls
-    }));
-  } catch (error) {
-    console.error('加载链数据失败:', error);
-    Notification.error('加载链数据失败：' + error);
-  } finally {
-    chainTableLoading.value = false;
-  }
-}
-
-// 显示添加链弹窗
-function showAddChain() {
-  // 设置为添加模式
-  isEditMode.value = false;
-  currentEditChain.value = null;
-  
-  // 重置表单
-  Object.assign(chainForm, {
-    chain_key: '',
-    chain_name: '',
-    chain_id: '',
-    native_currency_symbol: '',
-    native_currency_name: '',
-    native_currency_decimals: 18,
-    pic_url: '',
-    scan_url: '',
-    scan_api: '',
-    verify_api: '',
-    check_verify_api: '',
-    rpc_urls: ['']
-  });
-  chainFormVisible.value = true;
-}
-
-// 添加RPC URL输入框
-function addRpcUrl() {
-  chainForm.rpc_urls.push('');
-}
-
-// 删除RPC URL输入框
-function removeRpcUrl(index) {
-  if (chainForm.rpc_urls.length > 1) {
-    chainForm.rpc_urls.splice(index, 1);
-  }
-}
-
-// 上传链图标
-async function uploadChainIcon(option) {
-  try {
-    // 从 option 中解构出 file 对象，兼容不同的参数格式
-    let file = option.file || option;
-    
-    // 检查 file 对象是否存在
-    if (!file) {
-      Notification.error('未选择文件');
-      return;
-    }
-    
-    // 尝试从不同的属性中获取真正的文件对象
-    if (file.fileItem) {
-      file = file.fileItem;
-    } else if (file.originFileObj) {
-      file = file.originFileObj;
-    } else if (file.file) {
-      file = file.file;
-    }
-    
-    // 检查文件对象是否有必要的属性（name, size等）
-    if (!file || typeof file !== 'object' || !file.name) {
-      console.error('无法获取有效的文件对象:', file);
-      Notification.error('文件对象无效，请重新选择文件');
-      return;
-    }
-    
-    // 如果不是标准的File或Blob对象，但有必要的属性，尝试重构为File对象
-    if (!(file instanceof File) && !(file instanceof Blob)) {
-      console.warn('文件对象不是标准的File或Blob类型，尝试重构为File对象:', file);
-      
-      // 检查是否有原始文件数据
-      let fileData = null;
-      let fileName = file.name || 'unknown';
-      let fileType = file.type || '';
-      
-      // 尝试从不同属性获取文件数据
-      if (file.raw) {
-        fileData = file.raw;
-      } else if (file.originFileObj) {
-        fileData = file.originFileObj;
-      } else if (file.file) {
-        fileData = file.file;
-      } else if (file instanceof ArrayBuffer) {
-        fileData = new Blob([file], { type: fileType });
-      } else if (file.buffer) {
-        fileData = new Blob([file.buffer], { type: fileType });
-      }
-      
-      // 如果找到了文件数据，创建新的File对象
-      if (fileData && (fileData instanceof File || fileData instanceof Blob)) {
-        file = fileData;
-        console.log('成功重构文件对象:', file);
-      } else if (fileData instanceof ArrayBuffer) {
-        file = new Blob([fileData], { type: fileType });
-        console.log('从ArrayBuffer创建Blob对象:', file);
-      } else {
-        console.error('无法重构文件对象，没有找到有效的文件数据:', file);
-        Notification.error('文件对象格式不支持，请重新选择文件');
-        return;
-      }
-    }
-
-    console.log('上传文件：', file);
-    console.log('文件名：', file.name);
-    console.log('文件类型：', file.type);
-    console.log('文件大小：', file.size);
-    console.log('文件对象类型：', file.constructor.name);
-    console.log('是否为File实例：', file instanceof File);
-    console.log('是否为Blob实例：', file instanceof Blob);
-    
-    // 如果file.type为undefined，尝试从文件名推断类型
-    let fileType = file.type;
-    if (!fileType && file.name) {
-      const extension = file.name.split('.').pop().toLowerCase();
-      const typeMap = {
-        'png': 'image/png',
-        'jpg': 'image/jpeg',
-        'jpeg': 'image/jpeg',
-        'gif': 'image/gif',
-        'svg': 'image/svg+xml',
-        'webp': 'image/webp'
-      };
-      fileType = typeMap[extension] || '';
-      console.log('从文件扩展名推断的类型：', fileType);
-    }
-    
-    // 检查文件类型
-    if (!fileType || !fileType.startsWith('image/')) {
-      Notification.error('请选择图片文件（支持PNG、JPG、JPEG、GIF、SVG、WEBP格式）');
-      return;
-    }
-    
-    // 检查是否输入了图标文件名
-    if (!chainForm.pic_url.trim()) {
-      Notification.error('请先输入图标文件名');
-      return;
-    }
-    
-    // 获取文件扩展名
-    const fileExtension = file.name.split('.').pop().toLowerCase();
-    const allowedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'];
-    
-    if (!allowedExtensions.includes(fileExtension)) {
-      Notification.error('不支持的图片格式，请选择 PNG、JPG、JPEG、GIF、SVG 或 WEBP 格式');
-      return;
-    }
-    
-    // 构建目标文件名（使用输入的文件名，但保持原始扩展名）
-    let targetFileName = chainForm.pic_url.trim();
-    if (!targetFileName.includes('.')) {
-      targetFileName += '.' + fileExtension;
-      chainForm.pic_url = targetFileName; // 更新表单中的文件名
-    }
-    
-    // 读取文件内容 - 确保文件对象兼容性
-    let uint8Array;
-    
-    // 最后检查：确保文件对象是可读取的
-    if (!(file instanceof File) && !(file instanceof Blob)) {
-      console.error('经过重构后文件对象仍然不是File或Blob类型:', file);
-      Notification.error('文件对象类型不兼容，无法读取');
-      return;
-    }
-    
-    try {
-      // 方法1: 直接使用 FileReader
-      uint8Array = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const arrayBuffer = reader.result;
-          resolve(new Uint8Array(arrayBuffer));
-        };
-        reader.onerror = (error) => {
-          console.error('FileReader错误详情:', error);
-          reject(new Error('FileReader读取失败: ' + (error.target?.error?.message || '未知错误')));
-        };
-        
-        try {
-          reader.readAsArrayBuffer(file);
-        } catch (readError) {
-          console.error('FileReader.readAsArrayBuffer调用失败:', readError);
-          reject(new Error('FileReader调用失败: ' + readError.message));
-        }
-      });
-    } catch (error1) {
-      console.warn('FileReader读取失败，尝试其他方法:', error1);
-      try {
-        // 方法2: 如果文件有 arrayBuffer 方法
-        if (file.arrayBuffer && typeof file.arrayBuffer === 'function') {
-          const arrayBuffer = await file.arrayBuffer();
-          uint8Array = new Uint8Array(arrayBuffer);
-        } else {
-          throw new Error('文件对象不支持 arrayBuffer 方法');
-        }
-      } catch (error2) {
-        console.warn('arrayBuffer方法失败，尝试最后的方法:', error2);
-        try {
-          // 方法3: 如果文件有 stream 方法
-          if (file.stream && typeof file.stream === 'function') {
-            const stream = file.stream();
-            const response = new Response(stream);
-            const arrayBuffer = await response.arrayBuffer();
-            uint8Array = new Uint8Array(arrayBuffer);
-          } else {
-            throw new Error('文件对象不支持任何读取方法');
-          }
-        } catch (error3) {
-          console.error('所有文件读取方法都失败:', { error1, error2, error3 });
-          throw new Error('无法读取文件内容：文件对象不支持读取操作');
-        }
-      }
-    }
-    
-    // 调用 Tauri 命令保存文件
-    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-    if (isTauri) {
-      await invoke('save_chain_icon', {
-        fileName: targetFileName,
-        fileData: Array.from(uint8Array)
-      });
-    }
-    // 浏览器环境下模拟成功
-    
-    Notification.success('图标上传成功！');
-  } catch (error) {
-    console.error('上传图标失败:', error);
-    Notification.error('上传图标失败：' + error);
-  }
-}
-
-// 提交链表单（统一处理添加和编辑）
-async function submitChainForm() {
-  try {
-    // 验证必填项
-    if (!chainForm.chain_key.trim()) {
-      Notification.warning('请输入链标识符');
-      return false;
-    }
-    if (!chainForm.chain_name.trim()) {
-      Notification.warning('请输入链名称');
-      return false;
-    }
-    if (!chainForm.chain_id) {
-      Notification.warning('请输入链ID');
-      return false;
-    }
-    if (!chainForm.native_currency_symbol.trim()) {
-      Notification.warning('请输入原生代币符号');
-      return false;
-    }
-    if (!chainForm.native_currency_name.trim()) {
-      Notification.warning('请输入原生代币名称');
-      return false;
-    }
-    
-    // 过滤空的RPC URLs
-    const filteredRpcUrls = chainForm.rpc_urls.filter(url => url.trim());
-    
-    const requestData = {
-      chain_name: chainForm.chain_name,
-      chain_id: parseInt(chainForm.chain_id),
-      native_currency_symbol: chainForm.native_currency_symbol,
-      native_currency_name: chainForm.native_currency_name,
-      native_currency_decimals: chainForm.native_currency_decimals,
-      pic_url: chainForm.pic_url,
-      scan_url: chainForm.scan_url,
-      scan_api: chainForm.scan_api,
-      verify_api: chainForm.verify_api,
-      check_verify_api: chainForm.check_verify_api,
-      rpc_urls: filteredRpcUrls.length > 0 ? filteredRpcUrls : null
-    };
-    
-    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-    if (isTauri) {
-      if (isEditMode.value) {
-        // 更新链
-        await invoke('update_chain', {
-          chainKey: chainForm.chain_key,
-          requestJson: JSON.stringify(requestData)
-        });
-        Notification.success('编辑链成功！');
-      } else {
-        // 添加链
-        await invoke('add_chain', { requestJson: JSON.stringify({
-          ...requestData,
-          chain_key: chainForm.chain_key
-        })});
-        Notification.success('添加链成功！');
-      }
-      
-      // 刷新链列表
-      loadChainManageData();
-      
-      // 重新加载主页面的链选择器
-      const chainList = await invoke("get_chain_list");
-      chainOptions.value = chainList.filter((item) => item.key !== "starknet");
-    } else {
-      // 浏览器环境下模拟成功
-      if (isEditMode.value) {
-        Notification.success('编辑链成功！');
-      } else {
-        Notification.success('添加链成功！');
-      }
-      
-      // 刷新链列表
-      loadChainManageData();
-    }
-    
-    // 如果编辑的是当前选中的链，更新当前链的信息
-    if (isEditMode.value && chainValue.value === chainForm.chain_key) {
-      currentChain.value = chainOptions.value.find(item => item.key === chainForm.chain_key);
-    }
-    
-    chainFormVisible.value = false;
-    return true;
-  } catch (error) {
-    console.error('链操作失败:', error);
-    Notification.error('链操作失败：' + error);
-    return false;
-  }
-}
-
-// 删除链
-async function deleteChain(chainKey) {
-  try {
-    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-    if (isTauri) {
-      await invoke('remove_chain', { chainKey });
-      
-      // 刷新链列表
-      loadChainManageData();
-      
-      // 重新加载主页面的链选择器
-      const chainList = await invoke("get_chain_list");
-      chainOptions.value = chainList.filter((item) => item.key !== "starknet");
-      
-      // 如果删除的是当前选中的链，切换到第一个链
-      if (chainValue.value === chainKey && chainOptions.value.length > 0) {
-        chainValue.value = chainOptions.value[0].key;
-        currentChain.value = chainOptions.value[0];
-        await chainChange();
-      }
-    } else {
-      // 浏览器环境下模拟成功
-      loadChainManageData();
-    }
-    Notification.success('删除链成功！');
-  } catch (error) {
-    console.error('删除链失败:', error);
-    Notification.error('删除链失败：' + error);
-  }
-}
-
-// 关闭链管理弹窗
-function closeChainManage() {
-  chainManageVisible.value = false;
-}
-
-// 关闭添加链弹窗
-function closeAddChain() {
-  chainFormVisible.value = false;
-}
-
-// 显示编辑链弹窗
-async function showEditChain(record) {
-  try {
-    // 设置为编辑模式
-    isEditMode.value = true;
-
-    // 获取链详情
-    let chainDetail;
-    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-    if (isTauri) {
-      chainDetail = await invoke('get_chain_detail', { chainKey: record.chain_key });
-    } else {
-      // 浏览器环境下的模拟数据
-      chainDetail = {
-        chain_key: record.chain_key,
-        chain_name: record.chain_name,
-        chain_id: record.chain_id,
-        native_currency_symbol: record.symbol,
-        native_currency_name: record.currency_name,
-        native_currency_decimals: 18,
-        pic_url: record.pic_url,
-        scan_url: record.scan_url,
-        scan_api: record.scan_api,
-        verify_api: record.verify_api,
-        check_verify_api: record.check_verify_api,
-        rpc_urls: record.rpc_urls
-      };
-    }
-    if (chainDetail) {
-      // 填充表单数据
-      Object.assign(chainForm, {
-        chain_key: chainDetail.chain_key,
-        chain_name: chainDetail.chain_name,
-        chain_id: chainDetail.chain_id.toString(),
-        native_currency_symbol: chainDetail.native_currency_symbol,
-        native_currency_name: chainDetail.native_currency_name,
-        native_currency_decimals: chainDetail.native_currency_decimals,
-        pic_url: chainDetail.pic_url || '',
-        scan_url: chainDetail.scan_url || '',
-        scan_api: chainDetail.scan_api || '',
-        verify_api: chainDetail.verify_api || '',
-        check_verify_api: chainDetail.check_verify_api || '',
-        rpc_urls: chainDetail.rpc_urls && chainDetail.rpc_urls.length > 0 ? chainDetail.rpc_urls : ['']
-      });
-      currentEditChain.value = record;
-      chainFormVisible.value = true;
-    }
-  } catch (error) {
-    console.error('获取链详情失败:', error);
-    Notification.error('获取链详情失败：' + error);
-  }
-}
-
-// 关闭编辑链弹窗
-function closeEditChain() {
-  editChainVisible.value = false;
-  currentEditChain.value = null;
-}
-
-// 保存编辑的链
-async function saveEditedChain() {
-  try {
-    // 验证必填项
-    if (!editChainForm.chain_name.trim()) {
-      Notification.warning('请输入链名称');
-      return false;
-    }
-    if (!editChainForm.chain_id) {
-      Notification.warning('请输入链ID');
-      return false;
-    }
-    if (!editChainForm.native_currency_symbol.trim()) {
-      Notification.warning('请输入原生代币符号');
-      return false;
-    }
-    if (!editChainForm.native_currency_name.trim()) {
-      Notification.warning('请输入原生代币名称');
-      return false;
-    }
-    
-    // 过滤空的RPC URLs
-    const filteredRpcUrls = editChainForm.rpc_urls.filter(url => url.trim());
-    
-    const requestData = {
-      chain_name: editChainForm.chain_name,
-      chain_id: parseInt(editChainForm.chain_id),
-      native_currency_symbol: editChainForm.native_currency_symbol,
-      native_currency_name: editChainForm.native_currency_name,
-      native_currency_decimals: editChainForm.native_currency_decimals,
-      pic_url: editChainForm.pic_url,
-      scan_url: editChainForm.scan_url,
-      scan_api: editChainForm.scan_api,
-      verify_api: editChainForm.verify_api,
-      check_verify_api: editChainForm.check_verify_api,
-      rpc_urls: filteredRpcUrls.length > 0 ? filteredRpcUrls : null
-    };
-    
-    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-    if (isTauri) {
-      await invoke('update_chain', { 
-        chainKey: editChainForm.chain_key, 
-        requestJson: JSON.stringify(requestData) 
-      });
-      
-      // 刷新链列表
-      loadChainManageData();
-      
-      // 重新加载主页面的链选择器
-      const chainList = await invoke("get_chain_list");
-      chainOptions.value = chainList.filter((item) => item.key !== "starknet");
-    } else {
-      // 浏览器环境下模拟成功
-      loadChainManageData();
-    }
-    Notification.success('更新链成功！');
-    
-    // 如果编辑的是当前选中的链，更新当前链的信息
-    if (chainValue.value === editChainForm.chain_key) {
-      currentChain.value = chainOptions.value.find(item => item.key === editChainForm.chain_key);
-    }
-    
-    editChainVisible.value = false;
-    return true;
-  } catch (error) {
-    console.error('更新链失败:', error);
-    Notification.error('更新链失败：' + error);
-    return false;
-  }
-}
-
-// 编辑链时添加RPC URL输入框
-function addEditRpcUrl() {
-  editChainForm.rpc_urls.push('');
-}
-
-// 编辑链时删除RPC URL输入框
-function removeEditRpcUrl(index) {
-  if (editChainForm.rpc_urls.length > 1) {
-    editChainForm.rpc_urls.splice(index, 1);
-  }
-}
-
-
-
-
-// 标题栏控制方法
-async function minimizeWindow() {
-  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-  if (isTauri) {
-    try {
-      const currentWindow = getCurrentWindow()
-      await currentWindow.minimize()
-    } catch (error) {
-      console.error('Error minimizing window:', error)
-    }
-  }
-}
-
-async function maximizeWindow() {
-  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-  if (isTauri) {
-    try {
-      const currentWindow = getCurrentWindow()
-      await currentWindow.toggleMaximize()
-    } catch (error) {
-      console.error('Error maximizing window:', error)
-    }
-  }
-}
-
-async function closeWindow() {
-  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-  if (isTauri) {
-    try {
-      const currentWindow = getCurrentWindow()
-      await currentWindow.destroy()
-    } catch (error) {
-      console.error('Error closing window:', error)
-    }
+  if (chainManageRef.value) {
+    chainManageRef.value.show();
   }
 }
 </script>
 
 <template>
-  <!-- 自定义标题栏 -->
-  <div class="title-bar">
-    <div class="title-bar-text">{{ windowTitle }}</div>
-    <div class="title-bar-controls">
-      <button class="title-bar-control" @click="minimizeWindow" title="最小化">
-        <span class="minimize-icon">―</span>
-      </button>
-      <button class="title-bar-control" @click="maximizeWindow" title="最大化">
-        <span class="maximize-icon">▢</span>
-      </button>
-      <button class="title-bar-control close" @click="closeWindow" title="关闭">
-        <span class="close-icon">✕</span>
-      </button>
-    </div>
-  </div>
+  <!-- 标题栏组件 -->
+  <TitleBar :title="windowTitle" />
 
-  <div class="container transfer" style="height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden;">
+  <div class="container transfer"
+    style="height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden;">
     <!-- <span class="pageTitle">批量转账</span> -->
     <!-- 工具栏 -->
     <div class="toolBar" style="flex-shrink: 0;">
@@ -2126,14 +1609,16 @@ async function closeWindow() {
       </a-button>
       <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearData">清空列表
       </a-button>
+      <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearPrivateKey">清空私钥
+      </a-button>
       <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearAddress">清空地址
       </a-button>
     </div>
     <!-- 操作账号表格 -->
     <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;">
       <a-table v-if="tableBool" row-key="key" :columns="columns" :column-resizable="true" :data="data"
-        :row-selection="rowSelection" :loading="tableLoading" :scrollbar="scrollbar"
-        @row-click="rowClick" v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
+        :row-selection="rowSelection" :loading="tableLoading" :scrollbar="scrollbar" @row-click="rowClick"
+        v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
         <template #index="{ rowIndex }">
           {{ rowIndex + 1 }}
         </template>
@@ -2155,8 +1640,11 @@ async function closeWindow() {
     <!-- 管理代币按钮嵌入 -->
     <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
       <!-- 链管理按钮 -->
-      <a-button type="outline" @click="showChainManage" style="white-space: nowrap;">
+      <a-button type="primary" @click="showChainManage" style="white-space: nowrap;">
         区块链管理
+      </a-button>
+      <a-button type="primary" @click="showRpcManage" :disabled="!chainValue" style="white-space: nowrap;">
+        RPC管理
       </a-button>
       <!-- 链 选择器 -->
       <a-select v-model="chainValue" :options="chainOptions" @change="chainChange" :field-names="chainFieldNames"
@@ -2169,7 +1657,8 @@ async function closeWindow() {
             width: 100%;
           ">
             <span style="color: gray;">区块链：</span>
-            <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 18px; height: 18px" />
+            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
+              style="width: 18px; height: 18px;" />
             <span style="margin-left: 10px">{{ data?.name }}</span>
             <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
             <span v-show="chainValue !== 'sol'" style="flex: 1; text-align: end; color: #00b42a">Gas Price: {{
@@ -2178,13 +1667,20 @@ async function closeWindow() {
         </template>
         <template #option="{ data }">
           <div style="display: flex; flex-direction: row; align-items: center;height: 32px;">
-            <img alt="" :src="`/chainIcons/${data?.pic_url}`" style="width: 18px; height: 18px" />
+            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
+              style="width: 18px; height: 18px;" />
             <span style="margin-left: 10px">{{ data?.name }}</span>
             <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
           </div>
         </template>
       </a-select>
-      <a-button type="outline" @click="showTokenManage" style="white-space: nowrap;" >
+      <!-- 区块链浏览器跳转按钮 -->
+      <a-tooltip v-if="currentChain?.scan_url" content="在浏览器中打开区块链浏览器">
+        <a-button type="primary" @click="openBlockchainScan" shape="round" style="white-space: nowrap; padding: 0 8px;">
+          <icon-share-external />
+        </a-button>
+      </a-tooltip>
+      <a-button type="primary" @click="showTokenManage" :disabled="!chainValue" style="white-space: nowrap;">
         代币管理
       </a-button>
       <!-- 代币 选择器 -->
@@ -2199,132 +1695,139 @@ async function closeWindow() {
         </template>
       </a-select>
     </div>
-    
+
     <!-- 细节配置 -->
     <div style="display: flex; padding-top: 5px; flex-shrink: 0;">
-    <!-- 细节配置 -->
-    <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="vertical">
-      <a-row style="height: 70px">
-        <a-form-item field="send_type" label="发送方式" style="width: 315px; padding: 5px 10px;">
-          <a-radio-group v-model="form.send_type" type="button">
-            <a-radio value="1">全部</a-radio>
-            <a-radio value="2">指定数量</a-radio>
-            <a-radio value="3">范围随机</a-radio>
-            <a-radio value="4">剩余数量</a-radio>
-          </a-radio-group>
-        </a-form-item>
-        <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" tooltip="如果选择表格数据则应导入带有转账数量的表格数据"
-          style="width: 180px; padding: 5px 10px;">
-          <a-radio-group v-model="form.amount_from" type="button">
-            <a-radio value="1">表格数据</a-radio>
-            <a-radio value="2">当前指定</a-radio>
-          </a-radio-group>
-        </a-form-item>
-        <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量"
-          style="width: 150px; padding: 5px 10px;">
-          <a-input v-model="form.send_count" />
-        </a-form-item>
-        <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope"
-          :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 180px; padding: 5px 10px;">
-          <a-input v-model="form.send_min_count" />
-          <span style="padding: 0 5px">至</span>
-          <a-input v-model="form.send_max_count" />
-        </a-form-item>
-        <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度"
-          style="width: 110px; padding: 5px 10px;" tooltip="金额小数点位数">
-          <a-input v-model="form.amount_precision" />
-        </a-form-item>
-        <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
-        <a-form-item field="interval_scope" label="发送间隔（秒）" style="width: 215px; padding: 5px 10px;">
-          <a-input v-model="form.min_interval" />
-          <span style="padding: 0 5px">至</span>
-          <a-input v-model="form.max_interval" />
-        </a-form-item>
-        <a-form-item field="thread_count" label="线程数" style="width: 130px; padding: 5px 10px;" tooltip="同时执行的钱包数量">
-          <a-input-number v-model="threadCount" :min="1" :max="100" :step="1" :default-value="1" mode="button" />
-        </a-form-item>
-        <a-form-item field="error_retry" label="失败自动重试" style="width: 110px; padding: 5px 10px;" tooltip="转账失败时是否自动重试">
-          <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0" />
-        </a-form-item>
-      </a-row>
-      <a-row v-show="chainValue !== 'sol'" style="height: 70px">
-        <a-form-item field="limit_type" label="Gas Limit" style="width: 230px; padding: 5px 10px;">
-          <a-radio-group v-model="form.limit_type" type="button">
-            <a-radio value="1">自动</a-radio>
-            <a-radio value="2">指定数量</a-radio>
-            <a-radio value="3">范围随机</a-radio>
-          </a-radio-group>
-        </a-form-item>
-        <a-form-item v-if="form.limit_type === '2'" style="width: 150px; padding: 5px 10px;" field="limit_count"
-          label="Gas Limit">
-          <a-input v-model="form.limit_count" />
-        </a-form-item>
-        <a-form-item v-if="form.limit_type === '3'" style="width: 265px; padding: 5px 10px;" field="limit_count_scope"
-          label="Gas Limit 范围">
-          <a-input v-model="form.limit_min_count" />
-          <span style="padding: 0 5px">至</span>
-          <a-input v-model="form.limit_max_count" />
-        </a-form-item>
-        <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
-        <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 225px; padding: 5px 10px;">
-          <a-radio-group v-model="form.gas_price_type" type="button">
-            <a-radio value="1">自动</a-radio>
-            <a-radio value="2">固定值</a-radio>
-            <a-radio value="3">指定比例</a-radio>
-          </a-radio-group>
-        </a-form-item>
-        <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" style="width: 120px; padding: 5px 10px;"
-          label="Gas Price">
-          <a-input v-model="form.gas_price" />
-        </a-form-item>
-        <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate" style="width: 100px; padding: 5px 10px;"
-          label="提高比例">
-          <a-input v-model="form.gas_price_rate">
-            <template #append> %</template>
-          </a-input>
-        </a-form-item>
-        <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price"
-          style="width: 130px; padding: 5px 10px;" label="最大 Gas Price" tooltip="为空时则不设置上限（单位：Gwei）">
-          <a-input v-model="form.max_gas_price" />
-        </a-form-item>
-      </a-row>
-    </a-form>
-  </div>
+      <!-- 细节配置 -->
+      <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="vertical">
+        <a-row style="height: 70px">
+          <a-form-item field="send_type" label="发送方式" style="width: 315px; padding: 5px 10px;">
+            <a-radio-group v-model="form.send_type" type="button">
+              <a-radio value="1">全部</a-radio>
+              <a-radio value="2">指定数量</a-radio>
+              <a-radio value="3">范围随机</a-radio>
+              <a-radio value="4">剩余数量</a-radio>
+            </a-radio-group>
+          </a-form-item>
+          <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" tooltip="如果选择表格数据则应导入带有转账数量的表格数据"
+            style="width: 180px; padding: 5px 10px;">
+            <a-radio-group v-model="form.amount_from" type="button">
+              <a-radio value="1">表格数据</a-radio>
+              <a-radio value="2">当前指定</a-radio>
+            </a-radio-group>
+          </a-form-item>
+          <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量"
+            style="width: 150px; padding: 5px 10px;">
+            <a-input v-model="form.send_count" />
+          </a-form-item>
+          <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope"
+            :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 180px; padding: 5px 10px;">
+            <a-input v-model="form.send_min_count" />
+            <span style="padding: 0 5px">至</span>
+            <a-input v-model="form.send_max_count" />
+          </a-form-item>
+          <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度"
+            style="width: 110px; padding: 5px 10px;" tooltip="金额小数点位数">
+            <a-input v-model="form.amount_precision" />
+          </a-form-item>
+          <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
+          <a-form-item field="interval_scope" label="发送间隔（秒）" style="width: 215px; padding: 5px 10px;">
+            <a-input v-model="form.min_interval" />
+            <span style="padding: 0 5px">至</span>
+            <a-input v-model="form.max_interval" />
+          </a-form-item>
+          <a-form-item field="thread_count" label="线程数" style="width: 130px; padding: 5px 10px;" tooltip="同时执行的钱包数量">
+            <a-input-number v-model="threadCount" :min="1" :max="100" :step="1" :default-value="1" mode="button" />
+          </a-form-item>
+          <a-form-item field="error_retry" label="失败自动重试" style="width: 110px; padding: 5px 10px;"
+            tooltip="转账失败时是否自动重试">
+            <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0" />
+          </a-form-item>
+        </a-row>
+        <a-row v-show="chainValue !== 'sol'" style="height: 70px">
+          <a-form-item field="limit_type" label="Gas Limit" style="width: 230px; padding: 5px 10px;">
+            <a-radio-group v-model="form.limit_type" type="button">
+              <a-radio value="1">自动</a-radio>
+              <a-radio value="2">指定数量</a-radio>
+              <a-radio value="3">范围随机</a-radio>
+            </a-radio-group>
+          </a-form-item>
+          <a-form-item v-if="form.limit_type === '2'" style="width: 150px; padding: 5px 10px;" field="limit_count"
+            label="Gas Limit">
+            <a-input v-model="form.limit_count" />
+          </a-form-item>
+          <a-form-item v-if="form.limit_type === '3'" style="width: 265px; padding: 5px 10px;" field="limit_count_scope"
+            label="Gas Limit 范围">
+            <a-input v-model="form.limit_min_count" />
+            <span style="padding: 0 5px">至</span>
+            <a-input v-model="form.limit_max_count" />
+          </a-form-item>
+          <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
+          <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 225px; padding: 5px 10px;">
+            <a-radio-group v-model="form.gas_price_type" type="button">
+              <a-radio value="1">自动</a-radio>
+              <a-radio value="2">固定值</a-radio>
+              <a-radio value="3">指定比例</a-radio>
+            </a-radio-group>
+          </a-form-item>
+          <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" style="width: 120px; padding: 5px 10px;"
+            label="Gas Price">
+            <a-input v-model="form.gas_price" />
+          </a-form-item>
+          <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate"
+            style="width: 100px; padding: 5px 10px;" label="提高比例">
+            <a-input v-model="form.gas_price_rate">
+              <template #append> %</template>
+            </a-input>
+          </a-form-item>
+          <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price"
+            style="width: 130px; padding: 5px 10px;" label="最大 Gas Price" tooltip="为空时则不设置上限（单位：Gwei）">
+            <a-input v-model="form.max_gas_price" />
+          </a-form-item>
+        </a-row>
+      </a-form>
+    </div>
     <!-- 核心操作区 -->
-    <div style="display: flex; align-items: center; padding: 10px 20px; margin-top: 5px; justify-content: center; gap: 30px; flex-shrink: 0;">
-    <!-- 左侧区域 -->
-    <div style="display: flex; align-items: center; gap: 20px;">
+    <div
+      style="display: flex; align-items: center; padding: 10px 20px; margin-top: 5px; justify-content: center; gap: 30px; flex-shrink: 0;">
+      <!-- 左侧区域 -->
+      <div style="display: flex; align-items: center; gap: 20px;">
 
-      
-      <!-- 查询余额 -->
-      <a-dropdown>
-        <a-button type="primary" :loading="balanceLoading" :style="{ width: '130px', height: '40px', fontSize: '14px' }">查询余额</a-button>
-        <template #content>
-          <a-doption @click="queryBalance">⤴️ 查出账地址</a-doption>
-          <a-doption disabled>⤵️ 查到账地址</a-doption>
-        </template>
-      </a-dropdown>
+
+        <!-- 查询余额 -->
+        <a-dropdown>
+          <a-button type="primary" :loading="balanceLoading"
+            :style="{ width: '130px', height: '40px', fontSize: '14px' }">查询余额</a-button>
+          <template #content>
+            <a-doption @click="queryBalance">⤴️ 查出账地址</a-doption>
+            <a-doption disabled>⤵️ 查到账地址</a-doption>
+          </template>
+        </a-dropdown>
+      </div>
+
+      <!-- 右侧区域 -->
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <!-- 执行转账按钮 -->
+        <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn"
+          @click="startTransfer(data.value)"
+          :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行转账</a-button>
+        <a-tooltip v-else content="点击可以提前停止执行">
+          <div @click="stopTransfer">
+            <a-button v-if="!stopFlag" class="execute-btn executing" loading
+              :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行中...</a-button>
+            <a-button v-if="stopFlag && !stopStatus" class="execute-btn stopping" loading
+              :style="{ width: '130px', height: '40px', fontSize: '14px' }">正在停止...</a-button>
+          </div>
+        </a-tooltip>
+      </div>
     </div>
-    
-    <!-- 右侧区域 -->
-    <div style="display: flex; align-items: center; gap: 20px;">
-      <!-- 执行转账按钮 -->
-      <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn" @click="startTransfer(data.value)" :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行转账</a-button>
-      <a-tooltip v-else content="点击可以提前停止执行">
-        <div @click="stopTransfer">
-          <a-button v-if="!stopFlag" class="execute-btn executing" loading :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行中...</a-button>
-          <a-button v-if="stopFlag && !stopStatus" class="execute-btn stopping" loading :style="{ width: '130px', height: '40px', fontSize: '14px' }">正在停止...</a-button>
-        </div>
-      </a-tooltip>
-    </div>
-  </div>
   </div>
   <a-modal v-model:visible="visible" :width="700" :title="importModalTitle" @cancel="handleCancel"
     :on-before-ok="handleBeforeOk">
     <a-textarea v-model="importText" style="margin-top: 10px" placeholder="格式：一行一个" allow-clear :auto-size="{
-        minRows: 15,
-        maxRows: 20,
-      }" />
+      minRows: 15,
+      maxRows: 20,
+    }" />
   </a-modal>
   <!-- 添加代币弹窗 -->
   <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"
@@ -2333,7 +1836,7 @@ async function closeWindow() {
   </a-modal>
   <!-- 删除代币确认框 -->
   <a-modal v-model:visible="deleteTokenVisible" title="删除确认">
-    <div>确认删除【 {{ currentCoin.coin }} 】代币？</div>
+    <div>确认删除【 {{ currentCoin?.coin || '未知' }} 】代币？</div>
     <template #footer>
       <a-button @click="deleteTokenCancel">取消</a-button>
       <a-button type="primary" status="danger" @click="deleteTokenConfirm" style="margin-left: 10px">确定
@@ -2353,253 +1856,23 @@ async function closeWindow() {
       </a-button>
     </template>
   </a-modal>
-  
-  <!-- 链管理弹窗 -->
-  <a-modal v-model:visible="chainManageVisible" title="区块链管理" :width="1100" @cancel="closeChainManage">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-      <h3 style="margin: 0;">链配置管理</h3>
-      <a-button type="primary" @click="showAddChain">
-        <icon-plus />
-        添加新链
-      </a-button>
-    </div>
-    
-    <a-table :data="chainManageData" :loading="chainTableLoading" :pagination="false" :scroll="{ y: 500 }">
-      <template #columns>
-        <a-table-column title="链标识" data-index="chain_key" :width="80" />
-        <a-table-column title="链名称" data-index="chain_name" :width="100" />
-        <a-table-column title="链ID" data-index="chain_id" :width="80" />
-        <a-table-column title="原生代币" data-index="symbol" :width="80" />
-        <a-table-column title="图标" :width="50">
-          <template #cell="{ record }">
-            <img v-if="record.pic_url" :src="`/chainIcons/${record?.pic_url}`" 
-                 style="width: 24px; height: 24px; border-radius: 50%;" 
-                 :alt="record.chain_name" />
-            <span v-else>-</span>
-          </template>
-        </a-table-column>
-        <a-table-column title="浏览器" data-index="scan_url" :width="150" :ellipsis="true" :tooltip="true" />
-        <a-table-column title="RPC数量" :width="70">
-          <template #cell="{ record }">
-            {{ record.rpc_urls ? record.rpc_urls.length : 0 }} 个
-          </template>
-        </a-table-column>
-        <a-table-column title="操作" :width="150">
-          <template #cell="{ record }">
-            <a-button type="text" @click="showEditChain(record)" size="small">
-              编辑
-            </a-button>
-            <a-popconfirm content="确定要删除这个链吗？这将同时删除该链下的所有代币！" 
-                         @ok="deleteChain(record.chain_key)">
-              <a-button type="text" status="danger" size="small">
-                <icon-delete />
-                删除
-              </a-button>
-            </a-popconfirm>
-          </template>
-        </a-table-column>
-      </template>
-    </a-table>
-    
-    <template #footer>
-      <a-button @click="closeChainManage">关闭</a-button>
-    </template>
-  </a-modal>
-  
-  <!-- 添加/编辑链弹窗 -->
-  <a-modal v-model:visible="chainFormVisible" :title="isEditMode ? '编辑链' : '添加新链'" :width="800" :body-style="{ maxHeight: '400px', overflowY: 'auto' }" @cancel="closeAddChain" :on-before-ok="submitChainForm">
-    <a-form :model="chainForm" layout="vertical">
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="链标识符" required>
-            <a-input v-model="chainForm.chain_key" placeholder="例如：eth, bsc, polygon" :disabled="isEditMode" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="链名称" required>
-            <a-input v-model="chainForm.chain_name" placeholder="例如：Ethereum, BSC" />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="链ID" required>
-            <a-input v-model="chainForm.chain_id" placeholder="例如：1, 56, 137" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="原生代币符号" required>
-            <a-input v-model="chainForm.native_currency_symbol" placeholder="例如：ETH, BNB, MATIC" />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="原生代币名称" required>
-            <a-input v-model="chainForm.native_currency_name" placeholder="例如：Ethereum, Binance Coin" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="小数位数">
-            <a-input-number v-model="chainForm.native_currency_decimals" :min="0" :max="18" />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      
-      <a-form-item label="图标文件名">
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <a-input v-model="chainForm.pic_url" placeholder="例如：ethereum.png" style="flex: 1;" />
-          <a-upload
-            :custom-request="uploadChainIcon"
-            :show-file-list="false"
-            accept="image/*"
-          >
-            <template #upload-button>
-              <a-button type="outline">
-                <icon-upload />
-                上传图标
-              </a-button>
-            </template>
-          </a-upload>
-        </div>
-      </a-form-item>
-      
-      <a-form-item label="区块链浏览器URL">
-        <a-input v-model="chainForm.scan_url" placeholder="例如：https://etherscan.io" />
-      </a-form-item>
-      
-      <a-form-item label="浏览器API">
-        <a-input v-model="chainForm.scan_api" placeholder="例如：https://api.etherscan.io/api" />
-      </a-form-item>
-      
-      <a-form-item label="验证API">
-        <a-input v-model="chainForm.verify_api" placeholder="验证合约的API地址" />
-      </a-form-item>
-      
-      <a-form-item label="检查验证API">
-        <a-input v-model="chainForm.check_verify_api" placeholder="检查合约验证状态的API地址" />
-      </a-form-item>
-      
-      <a-form-item label="RPC URLs">
-        <div class="rpc-urls"> 
-          <div v-for="(url, index) in chainForm.rpc_urls" :key="index" style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-          <a-input v-model="chainForm.rpc_urls[index]" placeholder="RPC节点地址" style="flex: 1;" />
-          <a-button v-if="chainForm.rpc_urls.length > 1" @click="removeRpcUrl(index)" type="outline" status="danger" size="small">
-            <icon-delete />
-          </a-button>
-        </div>
-        <div style="margin-top: 8px;">
-          <a-button @click="addRpcUrl" type="outline" size="small">
-            <icon-plus />
-            添加RPC
-          </a-button>
-        </div>
-        </div>
-      </a-form-item>
-    </a-form>
-  </a-modal>
-  
-  <!-- 代币管理弹窗 -->
-  <a-modal v-model:visible="tokenManageVisible" title="代币管理" :width="1000" @cancel="closeTokenManage">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-      <h3 style="margin: 0;">{{ chainOptions.find(c => c.key === chainValue)?.name || '当前区块链' }} - 代币配置管理</h3>
-      <a-button type="primary" @click="showAddToken">
-        <icon-plus />
-        添加代币
-      </a-button>
-    </div>
-    
-    <a-table :data="tokenManageData" :loading="tokenTableLoading" :pagination="false" :scroll="{ y: 400 }">
-      <template #columns>
-        <a-table-column title="标识" data-index="key" :width="80" />
-        <a-table-column title="代币符号" data-index="coin" :width="100" />
-        <a-table-column title="类型" data-index="type" :width="80" />
-        <a-table-column title="合约地址" data-index="contract_address" :width="200" :ellipsis="true" :tooltip="true" />
-        <a-table-column title="合约类型" data-index="contract_type" :width="100" />
-        <a-table-column title="小数位数" data-index="decimals" :width="80" />
-        <a-table-column title="操作" :width="150">
-          <template #cell="{ record }">
-            <a-button type="text" @click="showEditToken(record)" size="small">
-              编辑
-            </a-button>
-            <a-popconfirm content="确定要删除这个代币吗？" 
-                         @ok="deleteTokenFromManage(record.key)">
-              <a-button type="text" status="danger" size="small">
-                <icon-delete />
-                删除
-              </a-button>
-            </a-popconfirm>
-          </template>
-        </a-table-column>
-      </template>
-    </a-table>
-    
-    <template #footer>
-      <a-button @click="closeTokenManage">关闭</a-button>
-    </template>
-  </a-modal>
-  
-  <!-- 添加/编辑代币弹窗 -->
-  <a-modal v-model:visible="tokenFormVisible" :title="isTokenEditMode ? '编辑代币' : '添加代币'" :width="600" @cancel="closeAddToken" :on-before-ok="submitTokenForm">
-    <a-form :model="tokenForm" layout="vertical">
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="代币标识" :required="!isTokenEditMode">
-            <a-input v-model="tokenForm.key" placeholder="例如：usdt, usdc" :disabled="isTokenEditMode" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="代币名称" required>
-            <a-input v-model="tokenForm.name" placeholder="例如：Tether USD, USD Coin" />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="代币符号" required>
-            <a-input v-model="tokenForm.symbol" placeholder="例如：USDT, USDC" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="小数位数" required>
-            <a-input-number v-model="tokenForm.decimals" :min="0" :max="18" placeholder="18" />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="代币类型" required>
-            <a-select v-model="tokenForm.type" placeholder="选择代币类型">
-              <a-option value="base">原生代币</a-option>
-              <a-option value="token">合约代币</a-option>
-            </a-select>
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="合约类型">
-            <a-input v-model="tokenForm.contract_type" placeholder="例如：ERC20, BEP20" />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      
-      <a-form-item label="合约地址" :required="tokenForm.type === 'token'">
-        <a-input v-model="tokenForm.contract_address" placeholder="代币合约地址" />
-      </a-form-item>
-      
-      <a-form-item label="ABI (可选)">
-        <a-textarea v-model="tokenForm.abi" placeholder="合约ABI JSON字符串" :auto-size="{ minRows: 3, maxRows: 6 }" />
-      </a-form-item>
-    </a-form>
-  </a-modal>
+
+  <!-- 链管理组件 -->
+  <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" />
+
+  <!-- 代币管理组件 -->
+  <TokenManagement ref="tokenManageRef" :chain-value="chainValue" :chain-options="chainOptions"
+    @token-updated="handleTokenUpdated" />
+
+  <!-- RPC管理组件 -->
+  <RpcManagement ref="rpcManageRef" :chain-value="chainValue" :chain-options="chainOptions"
+    @rpc-updated="handleRpcUpdated" />
+
+
 </template>
 
 <style scoped>
 .container {
-  background-color: white;
   padding: 10px;
   min-width: 1240px;
 }
@@ -2638,6 +1911,51 @@ async function closeWindow() {
 
 .mainTable {
   margin-top: 15px;
+  height: calc(100vh - 200px);
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.mainTable .arco-table {
+  flex: 1;
+  height: 100%;
+}
+
+.mainTable .arco-table-container {
+  height: 100%;
+}
+
+.mainTable .arco-table-content {
+  height: 100%;
+}
+
+.mainTable .arco-empty {
+  height: 100%;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.mainTable .arco-table-cell {
+  height: 100%;
+}
+
+.mainTable .arco-table-td-content {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mainTable .arco-table-tbody {
+  height: 100%;
+}
+
+.mainTable .arco-table-tr {
+  height: 100%;
 }
 
 .subTitle {
@@ -2729,7 +2047,9 @@ async function closeWindow() {
   justify-content: space-between;
   align-items: center;
   height: 30px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(30, 58, 138, 0.3);
   color: white;
   padding: 0 10px;
   -webkit-app-region: drag;
@@ -2775,6 +2095,25 @@ async function closeWindow() {
 
 .title-bar-control.close:hover {
   background-color: #e81123;
+}
+
+.title-bar-control.theme-toggle {
+  width: 40px;
+  margin-right: 5px;
+}
+
+.title-bar-control.theme-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.theme-icon {
+  font-size: 16px;
+  transition: transform 0.3s ease;
+}
+
+.title-bar-control.theme-toggle:hover .theme-icon {
+  transform: scale(1.1);
 }
 
 .minimize-icon {

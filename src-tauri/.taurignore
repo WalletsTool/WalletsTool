@@ -1,2 +1,2 @@
 # 忽略 src-tauri 目录下的所有文件变更
-conf
+data/*

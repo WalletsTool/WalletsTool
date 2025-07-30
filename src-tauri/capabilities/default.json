@@ -28,6 +28,7 @@
     "core:window:allow-get-all-windows",
     "core:app:allow-version",
     "core:app:allow-name",
-    "core:app:allow-tauri-version"
+    "core:app:allow-tauri-version",
+    "shell:allow-open"
   ]
 }

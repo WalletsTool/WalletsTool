@@ -1,7 +1,7 @@
 <script setup name="home">
 import {useRouter} from 'vue-router'
 import {Notification, Modal} from "@arco-design/web-vue";
-import {onMounted, onBeforeUnmount, ref} from "vue";
+import {onMounted, onBeforeUnmount, ref, h} from "vue";
 import party from "party-js";
 import {confettiStore} from '@/stores'
 import {WebviewWindow} from '@tauri-apps/api/webviewWindow'
@@ -87,19 +87,17 @@ const funcList = [
     picture: "avatar/monitor.png",
     pageName: "monitor"
   },
-  {
-    title: "Uniswap批量交易",
-    isBuilding: true,
-    desc: "支持 Uniswap  V3 交易（建设中）",
-    picture: "avatar/uniswap.png",
-    pageName: "uniswap"
-  }
+  // {
+  //   title: "Uniswap批量交易",
+  //   isBuilding: true,
+  //   desc: "支持 Uniswap  V3 交易（建设中）",
+  //   picture: "avatar/uniswap.png",
+  //   pageName: "uniswap"
+  // }
 ]
 
 // 跳转到批量转账
 function goPage(pageName) {
-  console.log('goPage called with:', pageName)
-  
   if (pageName === 'monitor' || pageName === 'uniswap') {
     Notification.success('功能建设中，敬请期待')
     return
@@ -124,8 +122,6 @@ function goPage(pageName) {
     const windowLabel = pageName + windowCount.value[pageName]
     const windowUrl = `/#/${pageName}`
     
-    console.log('Creating window:', windowLabel, 'with URL:', windowUrl)
-    
     const webview = new WebviewWindow(windowLabel, {
       url: windowUrl,
       width: 1275,
@@ -139,17 +135,15 @@ function goPage(pageName) {
     windowListObj.value[pageName].set(windowLabel, webview)
 
     webview.once('tauri://created', function () {
-      console.log('Window created successfully:', windowLabel)
+      // Window created successfully
     })
     
     webview.once('tauri://close-requested', function (event) {
-      console.log('Window close requested:', event.windowLabel)
       // 在 Tauri 2.x 中，需要手动关闭窗口
       webview.close()
     })
     
     webview.once('tauri://destroyed', function (event) {
-      console.log('Window destroyed:', event.windowLabel)
       windowListObj.value[pageName].delete(event.windowLabel)
       if (windowListObj.value[pageName].size === 0) {
         windowCount.value[pageName] = 0
@@ -169,9 +163,9 @@ function goPage(pageName) {
 function toggleDebugMode() {
   debugMode.value = !debugMode.value
   if (debugMode.value) {
-    Notification.info('调试模式已开启')
+    Notification.success('调试模式开启')
   } else {
-    Notification.info('调试模式已关闭')
+    Notification.error('调试模式关闭')
   }
 }
 
@@ -185,7 +179,15 @@ async function checkDatabaseStatus() {
       status = await invoke('check_database_schema')
     } else {
       // 浏览器环境下模拟正常状态
-      status = { abi_column_exists: true, contract_type_column_exists: true, needs_migration: false }
+      status = { 
+        db_exists: true, 
+        chains_table_exists: true, 
+        tokens_table_exists: true, 
+        rpc_table_exists: true,
+        abi_column_exists: true, 
+        contract_type_column_exists: true, 
+        needs_migration: false 
+      }
     }
     
     // 将状态对象转换为友好的中文描述
@@ -193,19 +195,22 @@ async function checkDatabaseStatus() {
     let notificationType = 'success'
     
     if (typeof status === 'object' && status !== null) {
-      const { abi_column_exists, contract_type_column_exists, needs_migration } = status
-      
-      if (needs_migration) {
+      // 根据新的检查逻辑生成状态文本
+      if (!status.db_exists) {
+        statusText = '❌ 数据库文件不存在'
+        notificationType = 'error'
+      } else if (!(status.chains_table_exists && status.tokens_table_exists && status.rpc_table_exists)) {
+        const missingTables = []
+        if (!status.chains_table_exists) missingTables.push('链表(chains)')
+        if (!status.tokens_table_exists) missingTables.push('代币表(tokens)')
+        if (!status.rpc_table_exists) missingTables.push('RPC表(rpc_providers)')
+        statusText = `❌ 数据库缺少必要表：\n${missingTables.join('\n')}`
+        notificationType = 'error'
+      } else if (status.needs_migration) {
         statusText = '⚠️ 数据库需要迁移更新'
         notificationType = 'warning'
-      } else if (abi_column_exists && contract_type_column_exists) {
-        statusText = '✅ 数据库结构完整，运行正常'
       } else {
-        const missingColumns = []
-        if (!abi_column_exists) missingColumns.push('ABI列')
-        if (!contract_type_column_exists) missingColumns.push('合约类型列')
-        statusText = `❌ 数据库缺少必要字段：${missingColumns.join('、')}`
-        notificationType = 'error'
+        statusText = '✅ 数据库结构完整，运行正常'
       }
     } else {
       statusText = typeof status === 'string' ? status : JSON.stringify(status)
@@ -230,7 +235,7 @@ async function checkDatabaseStatus() {
       })
     }
     
-    console.log('数据库状态:', statusText)
+    // 数据库状态检查完成
   } catch (error) {
     console.error('检查数据库状态失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
@@ -314,6 +319,41 @@ async function refreshPageData() {
   }
 }
 
+// 导出数据库数据到init.sql
+async function exportDatabaseToInitSql() {
+  try {
+    databaseLoading.value = true
+    let result
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      result = await invoke('export_database_to_init_sql')
+    } else {
+      // 浏览器环境下模拟成功
+      result = '数据库导出成功（浏览器环境模拟）'
+    }
+    
+    // 确保result是字符串格式
+    const resultText = typeof result === 'string' ? result : JSON.stringify(result)
+    
+    Notification.success({
+      title: '数据库导出完成',
+      content: resultText
+    })
+    
+    // 数据库导出完成
+    
+  } catch (error) {
+    console.error('导出数据库失败:', error)
+    const errorText = typeof error === 'string' ? error : error.message || '未知错误'
+    Notification.error({
+      title: '导出数据库失败',
+      content: errorText
+    })
+  } finally {
+    databaseLoading.value = false
+  }
+}
+
 // 标题栏控制方法
 async function minimizeWindow() {
   try {
@@ -331,8 +371,8 @@ async function closeWindow() {
   try {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) {
-      const currentWindow = getCurrentWindow()
-      await currentWindow.close()
+      // 调用确认关闭函数而不是直接关闭窗口
+      await handleMainWindowCloseRequest()
     }
   } catch (error) {
     console.error('Error closing window:', error)
@@ -351,17 +391,17 @@ async function handleMainWindowCloseRequest() {
     // 检查关闭确认标记位
     if (closeConfirmed.value) {
       // 如果已经确认过，直接关闭
-      console.log('关闭确认已存在，直接关闭主窗口...')
+      // 关闭确认已存在，直接关闭主窗口
       // await invoke('force_close_main_window')
       return true
     }
 
     // 先获取所有子窗口
     const childWindows = await invoke('get_all_child_windows', {
-      mainWindowLabel: 'main'
+      mainWindowLabel: 'wallet_manager'
     })
     
-    console.log('子窗口列表:', childWindows)
+    // 获取子窗口列表
     
     let confirmMessage = '确定要关闭应用程序吗？'
     if (childWindows && childWindows.length > 0) {
@@ -376,32 +416,31 @@ async function handleMainWindowCloseRequest() {
       content: confirmMessage,
       okText: '确定',
       cancelText: '取消',
-      width: 320, // 设置较小的宽度
+      width: 250, // 设置较小的宽度
       okButtonProps: {
         status: 'danger'
       },
       onOk: () => {
         return new Promise(async (resolve, reject) => {
           try {
-            console.log('开始关闭应用程序...')
+            // 开始关闭应用程序
             
             // 设置关闭确认标记位
             closeConfirmed.value = true
             
             // 先关闭所有子窗口
             if (childWindows && childWindows.length > 0) {
-              console.log('正在关闭子窗口...')
+              // 正在关闭子窗口
               const closedWindows = await invoke('close_all_child_windows', {
-                mainWindowLabel: 'main'
+                mainWindowLabel: 'wallet_manager'
               })
-              console.log('已关闭子窗口:', closedWindows)
+              // 已关闭子窗口
               
               // 给子窗口一些时间完全关闭
               await new Promise(resolveTimeout => setTimeout(resolveTimeout, 500))
             }
             
             // 最后强制关闭主窗口避免循环
-            console.log('正在关闭主窗口...')
             await invoke('force_close_main_window')
             
             resolve(true) // 操作成功
@@ -419,7 +458,7 @@ async function handleMainWindowCloseRequest() {
         })
       },
       onCancel: () => {
-        console.log('用户取消关闭操作')
+        // 用户取消关闭操作
         // 取消时重置标记位
         closeConfirmed.value = false
       }
@@ -441,7 +480,7 @@ async function handleMainWindowCloseRequest() {
         return new Promise(async (resolve, reject) => {
           try {
             // 使用强制关闭命令避免循环
-            console.log('强制关闭主窗口...')
+            // 强制关闭主窗口
             await invoke('force_close_main_window')
             resolve(true) // 操作成功
           } catch (closeError) {
@@ -466,7 +505,7 @@ async function handleMainWindowCloseRequest() {
       <div class="titlebar-content">
         <div class="titlebar-left" data-tauri-drag-region>
           <div class="app-icon"></div>
-          <span class="app-title">链上工具箱</span>
+          <span class="app-title">钱包管理工具</span>
         </div>
         <div class="titlebar-drag-area" data-tauri-drag-region></div>
         <div class="titlebar-right">
@@ -592,6 +631,15 @@ async function handleMainWindowCloseRequest() {
           >
             刷新页面
           </a-button>
+          <a-button 
+            size="small" 
+            type="outline" 
+            @click="exportDatabaseToInitSql" 
+            :loading="databaseLoading"
+            class="action-btn"
+          >
+            导出数据库
+          </a-button>
         </div>
       </div>
     </div>
@@ -630,7 +678,10 @@ async function handleMainWindowCloseRequest() {
 .app-icon {
   width: 20px;
   height: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-image: url('/src-tauri/icons/32x32.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -694,7 +745,7 @@ async function handleMainWindowCloseRequest() {
   min-height: 100vh;
   height: 100vh;
   padding: 140px 0 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -713,7 +764,7 @@ async function handleMainWindowCloseRequest() {
 .bg-circle {
   position: absolute;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(103, 126, 234, 0.08);
   animation: float 6s ease-in-out infinite;
 }
 
@@ -731,6 +782,7 @@ async function handleMainWindowCloseRequest() {
   top: 60%;
   right: 15%;
   animation-delay: 2s;
+  background: rgba(118, 75, 162, 0.08);
 }
 
 .bg-circle-3 {
@@ -739,6 +791,7 @@ async function handleMainWindowCloseRequest() {
   bottom: 10%;
   left: 20%;
   animation-delay: 4s;
+  background: rgba(52, 152, 219, 0.08);
 }
 
 .bg-gradient {
@@ -748,10 +801,10 @@ async function handleMainWindowCloseRequest() {
   width: 100%;
   height: 100%;
   background: linear-gradient(45deg, 
-    rgba(255, 255, 255, 0.1) 0%, 
-    rgba(255, 255, 255, 0.05) 50%, 
-    rgba(255, 255, 255, 0.1) 100%);
-  opacity: 0.5;
+    rgba(103, 126, 234, 0.05) 0%, 
+    rgba(118, 75, 162, 0.03) 50%, 
+    rgba(52, 152, 219, 0.05) 100%);
+  opacity: 0.6;
 }
 
 /* 标题区域 */
@@ -784,7 +837,7 @@ async function handleMainWindowCloseRequest() {
   transform: translateX(-50%);
   width: 60px;
   height: 4px;
-  background: linear-gradient(90deg, #ff6b6b, #4ecdc4);
+  background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
   border-radius: 2px;
   animation: expandWidth 0.8s ease-out 0.3s both;
 }
@@ -805,20 +858,20 @@ async function handleMainWindowCloseRequest() {
   gap: 20px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 15px;
 }
 
 /* 功能卡片 */
 .func-card {
   position: relative;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(30, 42, 78, 0.85);
   border-radius: 16px;
-  padding: 24px;
+  padding: 15px;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   animation: slideInUp 0.6s ease-out both;
   animation-delay: var(--delay, 0s);
   overflow: hidden;
@@ -831,7 +884,7 @@ async function handleMainWindowCloseRequest() {
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1);
+  background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
   transform: scaleX(0);
   transition: transform 0.3s ease;
 }
@@ -842,7 +895,7 @@ async function handleMainWindowCloseRequest() {
 
 .func-card:hover {
   transform: translateY(-8px);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
 }
 
 .func-card--disabled {
@@ -870,14 +923,14 @@ async function handleMainWindowCloseRequest() {
 }
 
 .new-badge {
-  background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
+  background: linear-gradient(45deg, #ff6b6b, #ee5a24);
   color: white;
   box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
 }
 
 .building-badge {
-  background: linear-gradient(45deg, #ffa726, #ffcc80);
-  color: #333;
+  background: linear-gradient(45deg, #ffa726, #ff9800);
+  color: white;
   box-shadow: 0 4px 12px rgba(255, 167, 38, 0.3);
 }
 
@@ -885,8 +938,7 @@ async function handleMainWindowCloseRequest() {
 .card-content {
   display: flex;
   align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 10px;
 }
 
 .card-icon {
@@ -897,7 +949,7 @@ async function handleMainWindowCloseRequest() {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 16px rgba(103, 126, 234, 0.3);
   transition: transform 0.3s ease;
 }
 
@@ -919,24 +971,24 @@ async function handleMainWindowCloseRequest() {
 .card-title {
   font-size: 20px;
   font-weight: 600;
-  color: #333;
+  color: rgba(255, 255, 255, 0.9);
   margin: 0 0 8px 0;
   line-height: 1.3;
 }
 
 .func-card--disabled .card-title {
-  color: #999;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .card-desc {
   font-size: 14px;
-  color: #666;
+  color: rgba(255, 255, 255, 0.7);
   line-height: 1.5;
   margin: 0;
 }
 
 .func-card--disabled .card-desc {
-  color: #aaa;
+  color: rgba(255, 255, 255, 0.3);
 }
 
 /* 卡片底部 */
@@ -1032,8 +1084,8 @@ async function handleMainWindowCloseRequest() {
 /* 调试区域样式 */
 .debug-area {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
+  bottom: 15px;
+  right: 15px;
   z-index: 1000;
 }
 
@@ -1139,7 +1191,7 @@ async function handleMainWindowCloseRequest() {
 /* 响应式设计 */
 @media (max-width: 768px) {
   .container {
-    padding: 60px 16px 16px;
+    padding: 60px 0 0 0;
   }
   
   .title-text {
@@ -1148,11 +1200,11 @@ async function handleMainWindowCloseRequest() {
   
   .func-grid {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 10px;
   }
   
   .func-card {
-    padding: 20px;
+    padding: 15px 15px 10px 15px;
   }
 }
 </style>
@@ -1168,5 +1220,11 @@ body {
 
 .home {
   overflow: hidden !important;
+}
+
+/* 全局覆盖 */
+.arco-notification {
+  max-width: 320px !important;
+  width: 320px !important;
 }
 </style>

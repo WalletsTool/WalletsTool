@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 mod utils;
-mod web3_tools;
+mod wallet_manager;
 mod plugins;
 mod simple_balance_query;
 mod database;
@@ -61,7 +61,13 @@ async fn main() {
         return;
     }
     
+    // 创建数据库服务
+    let db_manager = database::get_database_manager();
+    let chain_service = database::chain_service::ChainService::new(db_manager.get_pool());
+    
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .manage(chain_service)
         .on_window_event(|window, event| {
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
@@ -81,20 +87,21 @@ async fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            web3_tools::chain_config::get_chain_list,
-            web3_tools::chain_config::get_coin_list,
-            web3_tools::chain_config::add_coin,
-            web3_tools::chain_config::remove_coin,
-            web3_tools::chain_config::update_coin,
-            web3_tools::chain_config::update_chain_pic_urls,
-            web3_tools::chain_config::update_token_abi,
+            wallet_manager::chain_config::get_chain_list,
+            wallet_manager::chain_config::get_coin_list,
+            wallet_manager::chain_config::add_coin,
+            wallet_manager::chain_config::remove_coin,
+            wallet_manager::chain_config::update_coin,
+            wallet_manager::chain_config::update_chain_pic_urls,
+            wallet_manager::chain_config::update_token_abi,
             // chain management commands
-            web3_tools::chain_config::add_chain,
-            web3_tools::chain_config::update_chain,
-            web3_tools::chain_config::remove_chain,
-            web3_tools::chain_config::get_chain_detail,
-            web3_tools::utils::download_file,
-            web3_tools::utils::save_chain_icon,
+            wallet_manager::chain_config::add_chain,
+            wallet_manager::chain_config::update_chain,
+            wallet_manager::chain_config::remove_chain,
+            wallet_manager::chain_config::get_chain_detail,
+            wallet_manager::utils::download_file,
+            wallet_manager::utils::save_chain_icon,
+            wallet_manager::utils::get_chain_icon,
             // fs extra functions
             plugins::fs_extra::exists,
             plugins::fs_extra::open_file,
@@ -108,19 +115,24 @@ async fn main() {
             // database hot reload functions
             database::reload_database,
             database::check_database_schema,
+            database::export_database_to_init_sql,
             // transfer functions
-            web3_tools::transfer::base_coin_transfer,
-            web3_tools::transfer::query_balance,
+            wallet_manager::transfer::base_coin_transfer,
+            wallet_manager::transfer::query_balance,
             // token transfer functions
-            web3_tools::token_transfer::token_transfer,
-            web3_tools::token_transfer::query_token_balance,
-            web3_tools::token_transfer::get_token_info,
+            wallet_manager::token_transfer::token_transfer,
+            wallet_manager::token_transfer::query_token_balance,
+            wallet_manager::token_transfer::get_token_info,
             // provider functions
-            web3_tools::provider::get_supported_chains,
-            web3_tools::provider::get_chain_gas_price,
-            web3_tools::provider::test_rpc_url,
-            web3_tools::provider::get_chain_info,
-            web3_tools::provider::get_multiple_gas_prices,
+            wallet_manager::provider::get_chain_gas_price,
+            wallet_manager::provider::test_rpc_url,
+            wallet_manager::provider::get_multiple_gas_prices,
+            // rpc management functions
+            wallet_manager::rpc_management::get_rpc_providers,
+            wallet_manager::rpc_management::add_rpc_provider,
+            wallet_manager::rpc_management::update_rpc_provider,
+            wallet_manager::rpc_management::delete_rpc_provider,
+            wallet_manager::rpc_management::test_rpc_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

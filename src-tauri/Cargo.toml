@@ -1,11 +1,11 @@
 [package]
-name = "web3_tools"
+name = "wallet_manager"
 version = "1.0.0"
-description = "web3 链上交易工具集，基于 Node.js Vue3 Tauri 等技术"
+description = "web3 链上钱包管理工具集，基于 Vue3 Tauri 等技术"
 authors = ["renmengkai"]
 license = ""
 repository = ""
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,6 +16,7 @@ tauri-build = { version = "2.0.0", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.0.0", features = ["tray-icon"] }
+tauri-plugin-shell = "2.0.0"
 anyhow = "1.0.65"
 thiserror = "1.0.37"
 tokio = { version = "1.22.0", features = ["macros", "rt-multi-thread", "time"] }
@@ -32,7 +33,10 @@ sqlx = { version = "0.6", features = ["runtime-tokio-rustls", "sqlite", "chrono"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 # 以太坊相关
-ethers = "2.0"
+ethers = "1.0"
+# 明确指定兼容版本
+base64ct = "1.6"
+base64 = "0.21"
 # 正则表达式
 regex = "1.0"
 

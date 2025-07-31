@@ -150,7 +150,20 @@ async fn token_transfer_internal(
     let provider = create_provider(&config.chain).await?;
     
     // 创建钱包
-    let wallet = item.private_key.parse::<LocalWallet>()?;
+    if item.private_key.trim().is_empty() {
+        return Err("私钥不能为空！".into());
+    }
+    
+    // 处理私钥格式，兼容带0x和不带0x的格式
+    let private_key = if item.private_key.starts_with("0x") || item.private_key.starts_with("0X") {
+        item.private_key[2..].to_string()
+    } else {
+        item.private_key.clone()
+    };
+    
+    let wallet = private_key.parse::<LocalWallet>().map_err(|e| {
+        format!("私钥格式错误: {}，请检查私钥格式是否正确（应为64位十六进制字符串，可带或不带0x前缀）", e)
+    })?;
     let wallet = wallet.with_chain_id(get_rpc_config(&config.chain).await.unwrap().chain_id);
     let wallet_address = wallet.address();
     

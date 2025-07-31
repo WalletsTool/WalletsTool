@@ -5,7 +5,7 @@ import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, nextTi
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Notification } from "@arco-design/web-vue";
+import { Notification, Modal } from "@arco-design/web-vue";
 import { ethers } from "ethers";
 import { debounce } from "throttle-debounce";
 import { read, utils as xlUtils, writeFile } from "xlsx";
@@ -182,6 +182,19 @@ let stopFlag = ref(false);
 let stopStatus = ref(true);
 // 线程数设置，默认为1
 let threadCount = ref(1);
+
+// 监听线程数变化，自动调整间隔时间
+watch(threadCount, (newValue) => {
+  if (newValue > 1) {
+    // 线程数大于1时，设置间隔时间为0
+    form.min_interval = "0";
+    form.max_interval = "0";
+  } else {
+    // 线程数等于1时，恢复默认间隔时间
+    form.min_interval = "1";
+    form.max_interval = "3";
+  }
+});
 
 // 转账进度相关变量
 const transferProgress = ref(0); // 转账进度百分比
@@ -482,7 +495,7 @@ function UploadFile() {
           const address = wallet.address;
           
           data.value.push({
-            key: privateKey + toAddress,
+            key: `transfer_${validCount}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             private_key: privateKey,
             address: address,
             to_addr: toAddress,
@@ -839,7 +852,7 @@ function handleWalletImportConfirm(importData) {
       const fromAddress = wallet.address;
 
       newData.push({
-        key: privateKey + toAddress,
+        key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         private_key: privateKey,
         address: fromAddress,
         to_addr: toAddress,
@@ -1117,6 +1130,43 @@ function startTransfer() {
     Notification.warning("包含转账金额为空的错误数据请核实！");
     return;
   }
+
+  // 检查是否有未完成的转账记录（转账曾经停止过）
+  const hasIncompleteTransfers = data.value.some(item => 
+    item.exec_status === "1" || item.exec_status === "2" || item.exec_status === "3"
+  );
+
+  if (hasIncompleteTransfers && stopStatus.value) {
+    // 弹出确认对话框
+    Modal.confirm({
+      title: '转账确认',
+      content: '检测到上次转账未完成，请选择操作方式：',
+      okText: '继续上次转账',
+      cancelText: '重新开始转账',
+      onOk: () => {
+        // 继续上次转账 - 只处理等待执行的项目
+        const incompleteData = data.value.filter(item => 
+          item.exec_status === "0"
+        );
+        if (incompleteData.length === 0) {
+          Notification.info("所有转账已完成！");
+          return;
+        }
+        executeTransfer(incompleteData, false);
+      },
+      onCancel: () => {
+        // 重新开始转账 - 重置所有状态
+        executeTransfer(data.value, true);
+      }
+    });
+  } else {
+    // 首次转账或正在进行中，直接开始
+    executeTransfer(data.value, true);
+  }
+}
+
+// 执行转账的通用方法
+function executeTransfer(transferData, resetStatus = true) {
   validateForm()
     .then(async () => {
       // 验证通过
@@ -1125,18 +1175,31 @@ function startTransfer() {
       stopStatus.value = false;
 
       // 初始化进度条
-      transferTotal.value = data.value.length;
-      transferCompleted.value = 0;
-      transferProgress.value = 0;
+      if (resetStatus) {
+        // 重新开始时，总数为所有数据
+        transferTotal.value = data.value.length;
+        transferCompleted.value = 0;
+        transferProgress.value = 0;
+        
+        // 重新开始时重置所有状态
+        data.value.forEach((item) => {
+          item.exec_status = "0";
+          item.error_msg = "";
+          item.retry_flag = false;
+          item.error_count = 0;
+        });
+      } else {
+        // 继续转账时，总数为实际要处理的数据量
+        transferTotal.value = transferData.length;
+        transferCompleted.value = 0;
+        transferProgress.value = 0;
+        
+        // 继续转账时不需要重置状态，因为只处理等待执行的项目
+      }
+      
       showProgress.value = true;
-
-      data.value.forEach((item) => {
-        item.exec_status = "0";
-        item.error_msg = "";
-        item.retry_flag = false;
-        item.error_count = 0;
-      });
-      await transferFnc(data.value);
+      
+      await transferFnc(transferData);
     })
     .catch(() => {
       // 验证失败
@@ -1144,7 +1207,7 @@ function startTransfer() {
     });
 }
 
-// 执行转账
+// 执行转账 - 基于钱包地址的队列管理系统
 async function iterTransfer(accountData) {
   // 判断是主币转账还是代币转账
   let contract;
@@ -1154,9 +1217,28 @@ async function iterTransfer(accountData) {
       currentCoin.value.abi
     );
   }
-  // 遍历所有账户转账
-  for (let i = 0; i < accountData.length; i++) {
-    try {
+
+  // 如果线程数为1，则按照table中的顺序逐一执行，无需分组
+  if (threadCount.value === 1) {
+    for (let index = 0; index < accountData.length; index++) {
+      if (stopFlag.value) {
+        stopStatus.value = true;
+        return;
+      }
+
+      const item = accountData[index];
+      
+      // 跳过已完成或失败的记录，只处理等待执行的记录
+      if (item.exec_status !== '0') {
+        continue;
+      }
+      
+      // 找到该item在原始data.value数组中的真实索引
+      const realIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+      if (realIndex === -1) {
+        console.error('无法找到对应的数据项');
+        continue;
+      }
       const config = {
         error_count_limit: 3, //  错误次数限制
         error_retry: form.error_retry, // 是否自动失败重试
@@ -1166,7 +1248,7 @@ async function iterTransfer(accountData) {
         scalar: currentChain.value.scalar,
         delay: [form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) : 1, form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) : 3], // 延迟时间
         transfer_type: form.send_type, // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
-        transfer_amount: form.amount_from === '1' ? (accountData[i].amount && accountData[i].amount.trim() !== '' ? Number(accountData[i].amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
+        transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
         transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
         left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
         amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
@@ -1178,102 +1260,329 @@ async function iterTransfer(accountData) {
         gas_price: form.gas_price && form.gas_price.trim() !== '' ? Number(form.gas_price) : 30, // 设置最大的gas price，单位gwei
         max_gas_price: form.max_gas_price && form.max_gas_price.trim() !== '' ? Number(form.max_gas_price) : 0, // 设置最大的gas price，单位gwei
       };
-      if (currentCoin.value.coin_type === "base") {
-        if (stopFlag.value) {
-          stopStatus.value = true;
-          return;
-        }
-        // 设置状态 为执行中
-        accountData[i].exec_status = "1";
-        try {
-          console.log("config:", config);
-          const res = await invoke("base_coin_transfer", {
-            index: i + 1,
-            item: accountData[i],
-            config: config
-          });
-          console.log("base_coin_transfer 返回信息:", res);
-          accountData[i].exec_status = "2";
-          // 转账成功时只显示tx_hash
-          if (typeof res === 'object' && res !== null) {
-            if (res.success && res.tx_hash) {
-              accountData[i].error_msg = res.tx_hash;
+
+      try {
+        if (currentCoin.value.coin_type === "base") {
+          // 设置状态 为执行中
+          data.value[realIndex].exec_status = "1";
+          try {
+            console.log("config:", config);
+            const res = await invoke("base_coin_transfer", {
+              index: realIndex + 1,
+              item: item,
+              config: config
+            });
+            console.log("base_coin_transfer 返回信息:", res);
+            data.value[realIndex].exec_status = "2";
+            // 转账成功时只显示tx_hash
+            if (typeof res === 'object' && res !== null) {
+              if (res.success && res.tx_hash) {
+                data.value[realIndex].error_msg = res.tx_hash;
+              } else {
+                data.value[realIndex].error_msg = res.error || '转账失败';
+              }
             } else {
-              accountData[i].error_msg = res.error || '转账失败';
+              data.value[realIndex].error_msg = String(res || '转账成功');
             }
-          } else {
-            accountData[i].error_msg = String(res || '转账成功');
-          }
-          // 更新进度条
-          updateTransferProgress();
-        } catch (err) {
-          if (err === "base gas price 超出最大值限制") {
-            Notification.error("base gas price 超出最大值限制");
-            // 停止
-            stopTransfer();
-            accountData[i].exec_status = "0";
-            accountData[i].error_msg = "";
-          } else {
-            accountData[i].exec_status = "3";
-            accountData[i].error_msg = err;
             // 更新进度条
             updateTransferProgress();
-          }
-        }
-      } else if (currentCoin.value.coin_type === "token") {
-        if (stopFlag.value) {
-          stopStatus.value = true;
-          return;
-        }
-        // 设置状态 为执行中
-        accountData[i].exec_status = "1";
-        try {
-          const res = await invoke("token_transfer", {
-            index: i + 1,
-            item: accountData[i],
-            config: {
-              ...config,
-              contract_address: contract.address,
-              abi: contract.abi
-            }
-          });
-          console.log("token_transfer 返回信息:", res);
-          accountData[i].exec_status = "2";
-          // 转账成功时只显示tx_hash
-          if (typeof res === 'object' && res !== null) {
-            if (res.success && res.tx_hash) {
-              accountData[i].error_msg = res.tx_hash;
+          } catch (err) {
+            if (err === "base gas price 超出最大值限制") {
+              Notification.error("base gas price 超出最大值限制");
+              // 停止
+              stopTransfer();
+              data.value[realIndex].exec_status = "0";
+              data.value[realIndex].error_msg = "";
+              return;
             } else {
-              accountData[i].error_msg = res.error || '转账失败';
+              data.value[realIndex].exec_status = "3";
+              data.value[realIndex].error_msg = err;
+              // 更新进度条
+              updateTransferProgress();
             }
-          } else {
-            accountData[i].error_msg = String(res || '转账成功');
           }
-          // 更新进度条
-          updateTransferProgress();
-        } catch (err) {
-          if (err === "base gas price 超出最大值限制") {
-            Notification.error("base gas price 超出最大值限制");
-            // 停止
-            stopTransfer();
-            accountData[i].exec_status = "0";
-            accountData[i].error_msg = "";
-          } else {
-            accountData[i].exec_status = "3";
-            accountData[i].error_msg = err;
+        } else if (currentCoin.value.coin_type === "token") {
+          // 设置状态 为执行中
+          data.value[realIndex].exec_status = "1";
+          try {
+            const res = await invoke("token_transfer", {
+              index: realIndex + 1,
+              item: item,
+              config: {
+                ...config,
+                contract_address: contract.address,
+                abi: contract.abi
+              }
+            });
+            console.log("token_transfer 返回信息:", res);
+            data.value[realIndex].exec_status = "2";
+            // 转账成功时只显示tx_hash
+            if (typeof res === 'object' && res !== null) {
+              if (res.success && res.tx_hash) {
+                data.value[realIndex].error_msg = res.tx_hash;
+              } else {
+                data.value[realIndex].error_msg = res.error || '转账失败';
+              }
+            } else {
+              data.value[realIndex].error_msg = String(res || '转账成功');
+            }
             // 更新进度条
             updateTransferProgress();
+          } catch (err) {
+            if (err === "base gas price 超出最大值限制") {
+              Notification.error("base gas price 超出最大值限制");
+              // 停止
+              stopTransfer();
+              data.value[realIndex].exec_status = "0";
+              data.value[realIndex].error_msg = "";
+              return;
+            } else {
+              data.value[realIndex].exec_status = "3";
+              data.value[realIndex].error_msg = err;
+              // 更新进度条
+              updateTransferProgress();
+            }
+          }
+        } else {
+          Notification.error("未知币种类型");
+          return;
+        }
+      } catch (e) {
+        // 交易失败
+        data.value[realIndex].exec_status = "3";
+        data.value[realIndex].error_msg = e.message || '转账异常';
+        updateTransferProgress();
+      }
+      
+      // 添加延迟等待（只在实际执行了转账后才延迟，跳过的记录不延迟）
+      if (index < accountData.length - 1 && !stopFlag.value) {
+        const minDelay = form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) * 1000 : 1000;
+        const maxDelay = form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) * 1000 : 3000;
+        const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+        
+        // 找到下一条待执行的数据
+        let nextPendingIndex = -1;
+        for (let i = index + 1; i < accountData.length; i++) {
+          if (accountData[i].exec_status === '0') {
+            nextPendingIndex = data.value.findIndex(dataItem => dataItem.key === accountData[i].key);
+            break;
           }
         }
-      } else {
-        Notification.error("未知币种类型");
-        // 未知币种类型
+        
+        // 如果找到下一条待执行的数据，在其error_msg字段显示倒计时
+        if (nextPendingIndex !== -1) {
+          const originalErrorMsg = data.value[nextPendingIndex].error_msg;
+          let remainingTime = Math.ceil(randomDelay / 1000);
+          
+          // 每秒更新倒计时
+          const countdownInterval = setInterval(() => {
+            if (stopFlag.value) {
+              clearInterval(countdownInterval);
+              // 恢复原始错误信息
+              data.value[nextPendingIndex].error_msg = originalErrorMsg;
+              return;
+            }
+            
+            data.value[nextPendingIndex].error_msg = `等待中...${remainingTime}秒`;
+            remainingTime--;
+            
+            if (remainingTime < 0) {
+              clearInterval(countdownInterval);
+              // 恢复原始错误信息
+              data.value[nextPendingIndex].error_msg = originalErrorMsg;
+            }
+          }, 1000);
+          
+          await new Promise(resolve => {
+            setTimeout(() => {
+              clearInterval(countdownInterval);
+              // 确保恢复原始错误信息
+              if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
+                data.value[nextPendingIndex].error_msg = originalErrorMsg;
+              }
+              resolve();
+            }, randomDelay);
+          });
+        } else {
+          // 如果没有找到下一条待执行的数据，使用原来的延迟方式
+          await new Promise(resolve => setTimeout(resolve, randomDelay));
+        }
+      }
+    }
+    return;
+  }
+
+  // 多线程模式：按钱包地址分组数据，避免nonce冲突
+  const walletGroups = new Map();
+  accountData.forEach((item, index) => {
+    const walletAddress = item.address || item.private_key; // 使用地址或私钥作为分组键
+    if (!walletGroups.has(walletAddress)) {
+      walletGroups.set(walletAddress, []);
+    }
+    // 找到该item在原始data.value数组中的真实索引
+    const realIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+    walletGroups.get(walletAddress).push({ ...item, originalIndex: index, realIndex: realIndex });
+  });
+
+  // 将钱包组转换为数组，便于并发处理
+  const walletGroupsArray = Array.from(walletGroups.values());
+  
+  // 并发处理不同钱包的转账，但同一钱包内的交易串行执行
+  const processWalletGroup = async (walletTransactions) => {
+    // 同一钱包的交易必须串行执行，避免nonce冲突
+    for (const item of walletTransactions) {
+      if (stopFlag.value) {
+        stopStatus.value = true;
         return;
       }
-    } catch (e) {
-      // 交易失败
-      // 错误信息
+      
+      // 跳过已完成或失败的记录，只处理等待执行的记录
+      if (item.exec_status !== '0') {
+        continue;
+      }
+
+      const originalIndex = item.originalIndex;
+      const realIndex = item.realIndex;
+      
+      if (realIndex === -1) {
+        console.error('无法找到对应的数据项');
+        continue;
+      }
+      const config = {
+        error_count_limit: 3, //  错误次数限制
+        error_retry: form.error_retry, // 是否自动失败重试
+        chain: chainValue.value,
+        chainLayer: currentChain.value.layer,
+        l1: currentChain.value.l1,
+        scalar: currentChain.value.scalar,
+        delay: [form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) : 1, form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) : 3], // 延迟时间
+        transfer_type: form.send_type, // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
+        transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
+        transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
+        left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
+        amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
+        limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
+        limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000, // limit_count 指定数量 (limit_type 为 2 时生效)
+        limit_count_list: [form.limit_min_count && form.limit_min_count.trim() !== '' ? Number(form.limit_min_count) : 21000, form.limit_max_count && form.limit_max_count.trim() !== '' ? Number(form.limit_max_count) : 30000],
+        gas_price_type: form.gas_price_type, // gas price类型 1: 自动 2：固定gas price 3：gas price溢价率
+        gas_price_rate: form.gas_price_rate && form.gas_price_rate.trim() !== '' ? Number(form.gas_price_rate) / 100 : 0.05, // gas price溢价率，0.05代表gas price是当前gas price的105%
+        gas_price: form.gas_price && form.gas_price.trim() !== '' ? Number(form.gas_price) : 30, // 设置最大的gas price，单位gwei
+        max_gas_price: form.max_gas_price && form.max_gas_price.trim() !== '' ? Number(form.max_gas_price) : 0, // 设置最大的gas price，单位gwei
+      };
+
+      try {
+        if (currentCoin.value.coin_type === "base") {
+          // 设置状态 为执行中
+          data.value[realIndex].exec_status = "1";
+          try {
+            console.log("config:", config);
+            const res = await invoke("base_coin_transfer", {
+              index: realIndex + 1,
+              item: item,
+              config: config
+            });
+            console.log("base_coin_transfer 返回信息:", res);
+            data.value[realIndex].exec_status = "2";
+            // 转账成功时只显示tx_hash
+            if (typeof res === 'object' && res !== null) {
+              if (res.success && res.tx_hash) {
+                data.value[realIndex].error_msg = res.tx_hash;
+              } else {
+                data.value[realIndex].error_msg = res.error || '转账失败';
+              }
+            } else {
+              data.value[realIndex].error_msg = String(res || '转账成功');
+            }
+            // 更新进度条
+            updateTransferProgress();
+          } catch (err) {
+            if (err === "base gas price 超出最大值限制") {
+              Notification.error("base gas price 超出最大值限制");
+              // 停止
+              stopTransfer();
+              data.value[realIndex].exec_status = "0";
+              data.value[realIndex].error_msg = "";
+              return; // 停止当前钱包组的处理
+            } else {
+              data.value[realIndex].exec_status = "3";
+              data.value[realIndex].error_msg = err;
+              // 更新进度条
+              updateTransferProgress();
+            }
+          }
+        } else if (currentCoin.value.coin_type === "token") {
+          // 设置状态 为执行中
+          data.value[realIndex].exec_status = "1";
+          try {
+            const res = await invoke("token_transfer", {
+              index: realIndex + 1,
+              item: item,
+              config: {
+                ...config,
+                contract_address: contract.address,
+                abi: contract.abi
+              }
+            });
+            console.log("token_transfer 返回信息:", res);
+            data.value[realIndex].exec_status = "2";
+            // 转账成功时只显示tx_hash
+            if (typeof res === 'object' && res !== null) {
+              if (res.success && res.tx_hash) {
+                data.value[realIndex].error_msg = res.tx_hash;
+              } else {
+                data.value[realIndex].error_msg = res.error || '转账失败';
+              }
+            } else {
+              data.value[realIndex].error_msg = String(res || '转账成功');
+            }
+            // 更新进度条
+            updateTransferProgress();
+          } catch (err) {
+            if (err === "base gas price 超出最大值限制") {
+              Notification.error("base gas price 超出最大值限制");
+              // 停止
+              stopTransfer();
+              data.value[realIndex].exec_status = "0";
+              data.value[realIndex].error_msg = "";
+              return; // 停止当前钱包组的处理
+            } else {
+              data.value[realIndex].exec_status = "3";
+              data.value[realIndex].error_msg = err;
+              // 更新进度条
+              updateTransferProgress();
+            }
+          }
+        } else {
+          Notification.error("未知币种类型");
+          return;
+        }
+      } catch (e) {
+        // 交易失败
+        data.value[realIndex].exec_status = "3";
+        data.value[realIndex].error_msg = e.message || '转账异常';
+        updateTransferProgress();
+      }
     }
+  };
+
+  // 使用Promise.all并发处理不同钱包组，但限制并发数量
+  const maxConcurrency = Math.min(threadCount.value, walletGroupsArray.length);
+  const chunks = [];
+  
+  // 将钱包组分批处理，每批最多threadCount个
+  for (let i = 0; i < walletGroupsArray.length; i += maxConcurrency) {
+    chunks.push(walletGroupsArray.slice(i, i + maxConcurrency));
+  }
+
+  // 逐批处理钱包组
+  for (const chunk of chunks) {
+    if (stopFlag.value) {
+      stopStatus.value = true;
+      return;
+    }
+    
+    // 并发处理当前批次的钱包组
+    await Promise.all(chunk.map(processWalletGroup));
   }
 }
 
@@ -1989,9 +2298,9 @@ function showChainManage() {
           </a-form-item>
           <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
           <a-form-item field="interval_scope" label="发送间隔（秒）" style="width: 215px; padding: 5px 10px;">
-            <a-input v-model="form.min_interval" />
+            <a-input v-model="form.min_interval" :disabled="threadCount > 1" />
             <span style="padding: 0 5px">至</span>
-            <a-input v-model="form.max_interval" />
+            <a-input v-model="form.max_interval" :disabled="threadCount > 1" />
           </a-form-item>
           <a-form-item field="thread_count" label="线程数" style="width: 130px; padding: 5px 10px;" tooltip="同时执行的钱包数量">
             <a-input-number v-model="threadCount" :min="1" :max="100" :step="1" :default-value="1" mode="button" />

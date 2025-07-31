@@ -201,6 +201,17 @@ onMounted(async () => {
       progress.value = totalItems > 0 ? Number((completedItems / totalItems).toFixed(2)) : 0
     }
   })
+  
+  // 页面加载完成后发送事件
+  nextTick(() => {
+    setTimeout(() => {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        const currentWindow = getCurrentWindow();
+        currentWindow.emit('page-loaded');
+      }
+    }, 50);
+  });
 })
 
 

@@ -102,3 +102,51 @@ html,
 #app {
     padding: 0;
 }
+
+/* 全局样式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* 字体加载优化 */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* 字体加载期间显示备用字体 */
+  font-display: swap;
+}
+
+/* 字体加载完成后的优化 */
+body.fonts-loaded {
+  /* 字体加载完成后的样式优化 */
+  font-feature-settings: 'liga' 1, 'kern' 1;
+}
+
+/* 预加载关键资源的样式 */
+.preload-critical {
+  /* 关键内容的预加载样式 */
+  will-change: transform, opacity;
+}
+
+/* 页面加载动画优化 */
+.page-loading {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.page-loaded {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 减少重绘和回流 */
+.optimize-rendering {
+  contain: layout style paint;
+  will-change: auto;
+}

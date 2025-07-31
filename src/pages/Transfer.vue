@@ -1,19 +1,20 @@
 <script setup name="transfer">
 import { IconDelete, IconDoubleLeft, IconPlus, IconUpload, IconShareExternal } from "@arco-design/web-vue/es/icon";
 import { useRouter } from "vue-router";
-import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Notification } from "@arco-design/web-vue";
 import { ethers } from "ethers";
 import { debounce } from "throttle-debounce";
-import { read, utils as xlUtils } from "xlsx";
+import { read, utils as xlUtils, writeFile } from "xlsx";
 import ChainIcon from '../components/ChainIcon.vue'
 import TitleBar from '../components/TitleBar.vue'
 import ChainManagement from '../components/ChainManagement.vue'
 import RpcManagement from '../components/RpcManagement.vue'
 import TokenManagement from '../components/TokenManagement.vue'
+import WalletImportModal from '../components/WalletImportModal.vue'
 
 const router = useRouter();
 // 窗口标题
@@ -24,73 +25,75 @@ const columns = [
   {
     title: "序号",
     align: "center",
-    width: "60",
+    width: 60,
     slotName: "index",
   },
   {
     title: "发送方私钥",
     align: "center",
-    width: "400",
+    width: 250,
     dataIndex: "private_key",
-    ellipsis: "true",
-    tooltip: "true",
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: "接收地址",
     align: "center",
     dataIndex: "to_addr",
-    ellipsis: "true",
-    tooltip: "true",
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: "转账数量",
     align: "center",
     dataIndex: "amount",
-    width: "120",
-    ellipsis: "true",
-    tooltip: "true",
+    width: 120,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: "平台币余额",
     align: "center",
     dataIndex: "plat_balance",
-    width: "120",
-    ellipsis: "true",
-    tooltip: "true",
+    width: 120,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: "代币余额",
     align: "center",
     dataIndex: "coin_balance",
-    width: "120",
-    ellipsis: "true",
-    tooltip: "true",
+    width: 120,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: "状态",
     align: "center",
     slotName: "exec_status",
-    width: "100",
-    ellipsis: "true",
-    tooltip: "true",
+    width: 100,
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: "返回信息",
     align: "center",
     dataIndex: "error_msg",
-    ellipsis: "true",
+    ellipsis: true,
     tooltip: { position: 'left' },
   },
   {
     title: "操作",
     align: "center",
     slotName: "optional",
-    width: "60",
-    ellipsis: "true",
-    tooltip: "true",
+    width: 60,
+    ellipsis: true,
+    tooltip: true,
   },
 ];
 let tableLoading = ref(false);
+// 全页面loading状态
+let pageLoading = ref(false);
 const data = ref([]);
 // 选中的数据key
 const selectedKeys = ref([]);
@@ -152,11 +155,6 @@ const form = reactive({
   error_retry: "0",
 });
 
-// 录入 私钥 / 接收地址 弹窗
-let visible = ref(false);
-let importModalTitle = ref("");
-let importModalType = ref("");
-let importText = ref("");
 // 添加代币弹窗
 let addCoinVisible = ref(false);
 let coinAddress = ref("");
@@ -168,6 +166,8 @@ const chainManageRef = ref(null);
 const rpcManageRef = ref(null);
 // 代币管理组件引用
 const tokenManageRef = ref(null);
+// 钱包导入组件引用
+const walletImportRef = ref(null);
 // 删除信息弹窗
 let deleteItemVisible = ref(false);
 // 当前币种名称
@@ -182,6 +182,37 @@ let stopFlag = ref(false);
 let stopStatus = ref(true);
 // 线程数设置，默认为1
 let threadCount = ref(1);
+
+// 转账进度相关变量
+const transferProgress = ref(0); // 转账进度百分比
+const transferTotal = ref(0); // 总转账数量
+const transferCompleted = ref(0); // 已完成转账数量
+const showProgress = ref(false); // 是否显示进度条
+
+// 更新转账进度
+function updateTransferProgress() {
+  if (!showProgress.value) return;
+
+  // 计算已完成的转账数量（成功或失败都算完成）
+  const completed = data.value.filter(item =>
+    item.exec_status === '2' || item.exec_status === '3'
+  ).length;
+
+  transferCompleted.value = completed;
+  // 计算进度百分比
+  if (transferTotal.value > 0) {
+    transferProgress.value = Number((completed / transferTotal.value).toFixed(2));
+  } else {
+    transferProgress.value = 0;
+  }
+
+  // 如果全部完成，延迟隐藏进度条
+  if (completed === transferTotal.value && transferTotal.value > 0) {
+    setTimeout(() => {
+      showProgress.value = false;
+    }, 3000); // 3秒后隐藏进度条
+  }
+}
 
 // 代币管理相关变量
 const tokenTableLoading = ref(false);
@@ -200,12 +231,16 @@ const tokenForm = reactive({
   abi: ''
 });
 
+
+
 // 获取gas
 const timer = setInterval(fetchGas, 5000);
 
 watch(stopStatus, (newValue, oldValue) => {
   // 停止状态变化监听
 });
+
+
 
 // 初始化RPC列表
 onBeforeMount(async () => {
@@ -270,7 +305,7 @@ onMounted(async () => {
         Object.assign(data.value[index], item);
       }
     });
-    
+
     // 监听转账状态更新事件
     await listen('transfer_status_update', (event) => {
       const { index, error_msg, exec_status } = event.payload;
@@ -278,9 +313,23 @@ onMounted(async () => {
         // 更新对应索引的状态和返回信息
         data.value[index].error_msg = error_msg;
         data.value[index].exec_status = exec_status;
+
+        // 更新进度条
+        updateTransferProgress();
       }
     });
   }
+
+  // 页面加载完成后发送事件
+  nextTick(() => {
+    setTimeout(() => {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        const currentWindow = getCurrentWindow();
+        currentWindow.emit('page-loaded');
+      }
+    }, 50);
+  });
 });
 
 onBeforeUnmount(() => {
@@ -290,14 +339,110 @@ onBeforeUnmount(() => {
 });
 
 // 读取上传的文件
+// 验证私钥格式
+function validatePrivateKey(privateKey) {
+  try {
+    // 检查私钥是否为空或undefined
+    if (!privateKey || typeof privateKey !== 'string') {
+      return false;
+    }
+
+    // 去除首尾空格
+    let cleanKey = privateKey.trim();
+
+    // 如果以0x开头，去除0x前缀
+    if (cleanKey.startsWith('0x') || cleanKey.startsWith('0X')) {
+      cleanKey = cleanKey.slice(2);
+    }
+
+    // 检查长度是否为64位
+    if (cleanKey.length !== 64) {
+      return false;
+    }
+
+    // 检查是否为有效的十六进制字符
+    if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
+      return false;
+    }
+    // 尝试创建钱包实例验证私钥有效性
+    new ethers.Wallet(privateKey);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// 验证地址格式
+function validateAddress(address) {
+  try {
+    // 检查地址是否为空或undefined
+    if (!address || typeof address !== 'string') {
+      return false;
+    }
+
+    // 去除首尾空格
+    const trimmedAddress = address.trim();
+
+    // 检查是否以0x开头且长度为42
+    if (!trimmedAddress.startsWith('0x') || trimmedAddress.length !== 42) {
+      return false;
+    }
+
+    // 检查除0x外的部分是否为有效的十六进制字符
+    const hexPart = trimmedAddress.slice(2);
+    if (!/^[0-9a-fA-F]{40}$/.test(hexPart)) {
+      return false;
+    }
+
+    // 使用ethers.js进行最终验证
+    return ethers.utils.isAddress(trimmedAddress);
+  } catch (error) {
+    return false;
+  }
+}
+
+// 导出不合规数据到Excel
+function exportInvalidData(invalidData) {
+  if (invalidData.length === 0) {
+    return;
+  }
+
+  // 创建工作簿
+  const wb = xlUtils.book_new();
+  
+  // 创建工作表数据
+  const wsData = [
+    ['私钥', '地址', '转账数量', '错误原因'], // 表头
+    ...invalidData.map(item => [
+      item.私钥 || '',
+      item.地址 || '',
+      item.转账数量 || '',
+      item.错误原因 || ''
+    ])
+  ];
+  
+  // 创建工作表
+  const ws = xlUtils.aoa_to_sheet(wsData);
+  
+  // 添加工作表到工作簿
+  xlUtils.book_append_sheet(wb, ws, '不合规数据');
+  
+  // 生成文件名（包含时间戳）
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const fileName = `不合规数据_${timestamp}.xlsx`;
+  
+  // 导出文件
+  writeFile(wb, fileName);
+}
+
 function UploadFile() {
-  visible.value = false;
   let file = uploadInputRef.value.files[0];
   let reader = new FileReader();
   //提取excel中文件内容
   reader.readAsArrayBuffer(file);
-  let fileData = [];
   data.value = [];
+  // 开启全页面loading
+  pageLoading.value = true;
   tableLoading.value = true;
   reader.onload = function () {
     const buffer = reader.result;
@@ -312,36 +457,121 @@ function UploadFile() {
       type: "binary",
     });
     const outdata = xlUtils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    //这里for循环将excel表格数据转化成json数据
-    outdata.forEach((i) => {
-      if (i.私钥 && i.地址) {
-        // 从私钥生成地址
-        let address = "";
+    console.log(outdata);
+    // 用于存储不合规数据
+    const invalidData = [];
+    let validCount = 0;
+    let invalidCount = 0;
+    
+    // 这里for循环将excel表格数据转化成json数据
+    outdata.forEach((i, index) => {
+      const rowNumber = index + 2; // Excel行号（从第2行开始，第1行是表头）
+      const privateKey = String(i.私钥 || '').trim();
+      const toAddress = String(i.地址 || '').trim();
+      const amount = i.转账数量;
+      
+      // 验证私钥和地址
+      const isPrivateKeyValid = privateKey && validatePrivateKey(privateKey);
+      const isAddressValid = toAddress && validateAddress(toAddress);
+      
+      if (isPrivateKeyValid && isAddressValid) {
+        // 数据合规，添加到表格
         try {
-          const wallet = new ethers.Wallet(String(i.私钥));
-          address = wallet.address;
+          // 从私钥生成地址
+          const wallet = new ethers.Wallet(privateKey);
+          const address = wallet.address;
+          
+          data.value.push({
+            key: privateKey + toAddress,
+            private_key: privateKey,
+            address: address,
+            to_addr: toAddress,
+            amount: amount ? String(amount) : "0", // 转账数量为空时显示为0
+            plat_balance: "",
+            coin_balance: "",
+            exec_status: "0",
+            error_msg: "",
+          });
+          validCount++;
         } catch (error) {
-          console.error('生成地址失败:', error);
-          address = "无效私钥";
+          // 私钥无效，添加到不合规数据
+          const errorReasons = [];
+          errorReasons.push('私钥无效');
+          
+          invalidData.push({
+            私钥: privateKey,
+            地址: toAddress,
+            转账数量: amount || '',
+            错误原因: errorReasons.join('; '),
+            行号: rowNumber
+          });
+          invalidCount++;
         }
-        data.value.push({
-          key: String(i.私钥) + String(i.地址),
-          private_key: String(i.私钥),
-          address: address,
-          to_addr: String(i.地址),
-          amount: String(i.转账数量),
-          plat_balance: "",
-          coin_balance: "",
-          exec_status: "0",
-          error_msg: "",
+      } else {
+        // 数据不合规，记录错误原因
+        const errorReasons = [];
+        if (!isPrivateKeyValid) {
+          if (!privateKey) {
+            errorReasons.push('私钥为空');
+          } else {
+            errorReasons.push('私钥格式错误');
+          }
+        }
+        if (!isAddressValid) {
+          if (!toAddress) {
+            errorReasons.push('地址为空');
+          } else {
+            errorReasons.push('地址格式错误');
+          }
+        }
+        
+        invalidData.push({
+          私钥: privateKey,
+          地址: toAddress,
+          转账数量: amount || '',
+          错误原因: errorReasons.join('; '),
+          行号: rowNumber
         });
+        invalidCount++;
       }
     });
+    
+    // 如果有不合规数据，导出到本地
+    if (invalidData.length > 0) {
+      exportInvalidData(invalidData);
+      
+      // 显示导入结果通知
+      if (validCount > 0) {
+        Notification.warning({
+          title: '导入完成',
+          content: `成功导入 ${validCount} 条数据，${invalidCount} 条不合规数据已导出到本地文件`,
+          duration: 5000
+        });
+      } else {
+        Notification.error({
+          title: '导入失败',
+          content: `所有数据都不合规，共 ${invalidCount} 条数据已导出到本地文件`,
+          duration: 5000
+        });
+      }
+    } else {
+      // 全部数据合规
+      Notification.success({
+        title: '导入成功',
+        content: `成功导入 ${validCount} 条数据`,
+        duration: 3000
+      });
+    }
   };
   reader.onloadend = function () {
     tableLoading.value = false;
+    // 关闭全页面loading
+    pageLoading.value = false;
     // 文件读取完成
   };
+  if (uploadInputRef.value) {
+    uploadInputRef.value.value = '';
+  }
 }
 
 const uploadInputRef = ref(null);
@@ -544,6 +774,12 @@ const handleAddCoinBeforeOk = async () => {
 // 清空列表
 function clearData() {
   data.value = [];
+  // 重置文件输入的value，确保再次选择相同文件时能触发change事件
+  if (uploadInputRef.value) {
+    uploadInputRef.value.value = '';
+  }
+  // 重置页面loading状态
+  pageLoading.value = false;
   Notification.success("清空列表成功！");
 }
 
@@ -572,102 +808,94 @@ function clearAddress() {
 }
 
 // 导入事件触发
-function handleClick(type) {
-  if (type === "send") {
-    importModalTitle.value = "录入私钥";
-  } else if (type === "receive") {
-    importModalTitle.value = "录入接收地址";
-  } else {
-    Notification.warning("导入类型错误！");
-    return;
+function handleClick() {
+  if (walletImportRef.value) {
+    walletImportRef.value.show();
   }
-  importModalType.value = type;
-  visible.value = true;
 }
 
 // 导入弹窗关闭事件
 function handleCancel() {
-  // TODO 判断是否正在进行数据处理 如果进行数据处理则提示
-  visible.value = false;
-  importText.value = "";
-  importModalTitle.value = "";
-  importModalType.value = "";
+  handleWalletImportCancel();
 }
 
-// 导入弹窗保存事件
-const handleBeforeOk = () => {
-  // 导入私钥
-  if (importModalType.value === "send") {
-    let importList = importText.value.split("\n").filter((item) => item !== "");
-    const total_count = importList.length;
-    // importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.key === item))
-    const success_count = importList.length;
-    const fail_count = total_count - success_count;
-    data.value.push(
-      ...importList.map((item) => {
-        // 从私钥生成地址
-        let address = "";
-        try {
-          const wallet = new ethers.Wallet(item);
-          address = wallet.address;
-        } catch (error) {
-          console.error('生成地址失败:', error);
-          address = "无效私钥";
-        }
-        return {
-          key: item,
-          private_key: item,
-          address: address,
-          to_addr: "",
-          plat_balance: "",
-          coin_balance: "",
-          exec_status: "0",
-          error_msg: "",
-        };
-      })
-    );
-    if (fail_count > 0) {
-      Notification.warning({
-        title: "导入完成！",
-        content: `执行${total_count}条，成功${success_count}条，失败${fail_count}条！`,
+
+
+// 处理钱包导入确认事件
+function handleWalletImportConfirm(importData) {
+  const { privateKeys, addresses } = importData;
+  
+  const newData = [];
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < privateKeys.length; i++) {
+    const privateKey = privateKeys[i];
+    const toAddress = addresses[i];
+
+    try {
+      // 从私钥生成发送方地址
+      const wallet = new ethers.Wallet(privateKey);
+      const fromAddress = wallet.address;
+
+      newData.push({
+        key: privateKey + toAddress,
+        private_key: privateKey,
+        address: fromAddress,
+        to_addr: toAddress,
+        amount: "",
+        plat_balance: "",
+        coin_balance: "",
+        exec_status: "0",
+        error_msg: "",
       });
-    } else {
-      Notification.success({
-        title: "导入成功！",
-        content: `成功导入${total_count}条`,
-      });
+      successCount++;
+    } catch (error) {
+      console.error('处理数据失败:', error);
+      failCount++;
     }
-    importText.value = "";
-    return true;
-  } else if (importModalType.value === "receive") {
-    // 导入接收地址
-    const importList = importText.value
-      .split("\n")
-      .filter((item) => item !== "");
-    if (data.value.length === 0) {
-      Notification.warning("请先导入私钥！");
-      return false;
-    }
-    // 如果私有都已经有接收地址了 则不导入
-    if (!data.value.find((item) => !item.to_addr)) {
-      Notification.warning("所有私钥均已有接收地址，无法导入！");
-      return false;
-    }
-    let index = 0;
-    data.value.forEach((item) => {
-      if (!item.to_addr) {
-        item.to_addr = importList[index];
-        item.key = item.key + item.to_addr;
-        index++;
-      }
-    });
-    importText.value = "";
-    return true;
-  } else {
-    Notification.warning("导入类型错误！");
-    return false;
   }
-};
+
+  // 添加到表格数据
+  data.value.push(...newData);
+
+  // 计算重复数据信息
+  const uniqueKeys = new Set(privateKeys);
+  const duplicateKeysCount = privateKeys.length - uniqueKeys.size;
+  const uniqueAddresses = new Set(addresses);
+  const duplicateAddressesCount = addresses.length - uniqueAddresses.size;
+
+  // 显示结果通知
+  const totalCount = privateKeys.length;
+  let notificationContent = `成功导入${successCount}条数据`;
+
+  // 添加重复数据提示
+  if (duplicateKeysCount > 0 || duplicateAddressesCount > 0) {
+    const duplicateInfo = [];
+    if (duplicateKeysCount > 0) duplicateInfo.push(`${duplicateKeysCount}个重复私钥`);
+    if (duplicateAddressesCount > 0) duplicateInfo.push(`${duplicateAddressesCount}个重复地址`);
+    notificationContent += `（包含${duplicateInfo.join('、')}）`;
+  }
+
+  if (failCount > 0) {
+    Notification.warning({
+      title: "导入完成！",
+      content: `总计${totalCount}条，成功${successCount}条，失败${failCount}条（格式错误）。${duplicateKeysCount > 0 || duplicateAddressesCount > 0 ? '注意：已允许重复数据导入。' : ''}`,
+    });
+  } else {
+    Notification.success({
+      title: "导入成功！",
+      content: notificationContent,
+    });
+  }
+  
+  // 弹窗关闭现在由组件内部管理
+}
+
+// 处理钱包导入取消事件
+function handleWalletImportCancel() {
+  // 弹窗关闭现在由组件内部管理
+}
 
 // 删除数据
 function deleteItem(item) {
@@ -895,6 +1123,13 @@ function startTransfer() {
       startLoading.value = true;
       stopFlag.value = false;
       stopStatus.value = false;
+
+      // 初始化进度条
+      transferTotal.value = data.value.length;
+      transferCompleted.value = 0;
+      transferProgress.value = 0;
+      showProgress.value = true;
+
       data.value.forEach((item) => {
         item.exec_status = "0";
         item.error_msg = "";
@@ -969,6 +1204,8 @@ async function iterTransfer(accountData) {
           } else {
             accountData[i].error_msg = String(res || '转账成功');
           }
+          // 更新进度条
+          updateTransferProgress();
         } catch (err) {
           if (err === "base gas price 超出最大值限制") {
             Notification.error("base gas price 超出最大值限制");
@@ -979,6 +1216,8 @@ async function iterTransfer(accountData) {
           } else {
             accountData[i].exec_status = "3";
             accountData[i].error_msg = err;
+            // 更新进度条
+            updateTransferProgress();
           }
         }
       } else if (currentCoin.value.coin_type === "token") {
@@ -1010,6 +1249,8 @@ async function iterTransfer(accountData) {
           } else {
             accountData[i].error_msg = String(res || '转账成功');
           }
+          // 更新进度条
+          updateTransferProgress();
         } catch (err) {
           if (err === "base gas price 超出最大值限制") {
             Notification.error("base gas price 超出最大值限制");
@@ -1020,6 +1261,8 @@ async function iterTransfer(accountData) {
           } else {
             accountData[i].exec_status = "3";
             accountData[i].error_msg = err;
+            // 更新进度条
+            updateTransferProgress();
           }
         }
       } else {
@@ -1038,6 +1281,10 @@ async function iterTransfer(accountData) {
 function stopTransfer() {
   startLoading.value = false;
   stopFlag.value = true;
+  // 隐藏进度条
+  setTimeout(() => {
+    showProgress.value = false;
+  }, 1000);
 }
 
 // 校验数据是否合规
@@ -1576,14 +1823,11 @@ function showChainManage() {
   <!-- 标题栏组件 -->
   <TitleBar :title="windowTitle" />
 
-  <div class="container transfer"
-    style="height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden;">
+  <div class="container transfer" style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
     <!-- <span class="pageTitle">批量转账</span> -->
     <!-- 工具栏 -->
     <div class="toolBar" style="flex-shrink: 0;">
-      <a-button type="primary" @click="handleClick('send')">录入发送方
-      </a-button>
-      <a-button type="primary" style="margin-left: 10px" @click="handleClick('receive')">录入接收地址
+      <a-button type="primary" @click="handleClick()">钱包信息录入
       </a-button>
       <a-divider direction="vertical" />
       <a-button type="outline" status="normal" @click="downloadFile">下载模板
@@ -1609,16 +1853,16 @@ function showChainManage() {
       </a-button>
       <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearData">清空列表
       </a-button>
-      <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearPrivateKey">清空私钥
+      <!-- <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearPrivateKey">清空私钥
       </a-button>
       <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearAddress">清空地址
-      </a-button>
+      </a-button> -->
     </div>
     <!-- 操作账号表格 -->
     <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;">
       <a-table v-if="tableBool" row-key="key" :columns="columns" :column-resizable="true" :data="data"
-        :row-selection="rowSelection" :loading="tableLoading" :scrollbar="scrollbar" @row-click="rowClick"
-        v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
+        :row-selection="rowSelection" :loading="tableLoading" :scrollbar="scrollbar" :scroll="{ y: '100%' }"
+        @row-click="rowClick" v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
         <template #index="{ rowIndex }">
           {{ rowIndex + 1 }}
         </template>
@@ -1627,9 +1871,9 @@ function showChainManage() {
           </a-tag>
           <a-tag v-if="data[rowIndex].exec_status === '1'" color="#ff7d00">执行中
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '2'" color="#00b42a">执行成功
+          <a-tag v-if="data[rowIndex].exec_status === '2'" color="#00b42a">转账成功
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '3'" color="#f53f3f">执行失败
+          <a-tag v-if="data[rowIndex].exec_status === '3'" color="#f53f3f">转账失败
           </a-tag>
         </template>
         <template #optional="{ record }">
@@ -1637,6 +1881,19 @@ function showChainManage() {
         </template>
       </a-table>
     </div>
+
+    <!-- 转账进度条 -->
+    <div v-if="showProgress" style="margin-top: 10px; padding: 0 10px; flex-shrink: 0;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-size: 14px; color: #1d2129; font-weight: 500;">转账进度</span>
+        <span style="font-size: 14px; color: #86909c;">{{ transferCompleted }} / {{ transferTotal }}</span>
+      </div>
+      <a-progress :percent="transferProgress" :show-text="true" :stroke-width="8" :color="{
+        '0%': '#00b42a',
+        '100%': '#00b42a'
+      }" style="width: 100%;" />
+    </div>
+
     <!-- 管理代币按钮嵌入 -->
     <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
       <!-- 链管理按钮 -->
@@ -1701,7 +1958,7 @@ function showChainManage() {
       <!-- 细节配置 -->
       <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="vertical">
         <a-row style="height: 70px">
-          <a-form-item field="send_type" label="发送方式" style="width: 315px; padding: 5px 10px;">
+          <a-form-item field="send_type" label="发送方式" style="width: 330px; padding: 5px 10px;">
             <a-radio-group v-model="form.send_type" type="button">
               <a-radio value="1">全部</a-radio>
               <a-radio value="2">指定数量</a-radio>
@@ -1710,7 +1967,7 @@ function showChainManage() {
             </a-radio-group>
           </a-form-item>
           <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" tooltip="如果选择表格数据则应导入带有转账数量的表格数据"
-            style="width: 180px; padding: 5px 10px;">
+            style="width: 190px; padding: 5px 10px;">
             <a-radio-group v-model="form.amount_from" type="button">
               <a-radio value="1">表格数据</a-radio>
               <a-radio value="2">当前指定</a-radio>
@@ -1739,13 +1996,13 @@ function showChainManage() {
           <a-form-item field="thread_count" label="线程数" style="width: 130px; padding: 5px 10px;" tooltip="同时执行的钱包数量">
             <a-input-number v-model="threadCount" :min="1" :max="100" :step="1" :default-value="1" mode="button" />
           </a-form-item>
-          <a-form-item field="error_retry" label="失败自动重试" style="width: 110px; padding: 5px 10px;"
+          <a-form-item field="error_retry" label="失败自动重试" style="width: 125px; padding: 5px 10px;"
             tooltip="转账失败时是否自动重试">
             <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0" />
           </a-form-item>
         </a-row>
         <a-row v-show="chainValue !== 'sol'" style="height: 70px">
-          <a-form-item field="limit_type" label="Gas Limit" style="width: 230px; padding: 5px 10px;">
+          <a-form-item field="limit_type" label="Gas Limit" style="width: 245px; padding: 5px 10px;">
             <a-radio-group v-model="form.limit_type" type="button">
               <a-radio value="1">自动</a-radio>
               <a-radio value="2">指定数量</a-radio>
@@ -1763,7 +2020,7 @@ function showChainManage() {
             <a-input v-model="form.limit_max_count" />
           </a-form-item>
           <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
-          <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 225px; padding: 5px 10px;">
+          <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 230px; padding: 5px 10px;">
             <a-radio-group v-model="form.gas_price_type" type="button">
               <a-radio value="1">自动</a-radio>
               <a-radio value="2">固定值</a-radio>
@@ -1822,13 +2079,11 @@ function showChainManage() {
       </div>
     </div>
   </div>
-  <a-modal v-model:visible="visible" :width="700" :title="importModalTitle" @cancel="handleCancel"
-    :on-before-ok="handleBeforeOk">
-    <a-textarea v-model="importText" style="margin-top: 10px" placeholder="格式：一行一个" allow-clear :auto-size="{
-      minRows: 15,
-      maxRows: 20,
-    }" />
-  </a-modal>
+  <!-- 钱包信息录入弹窗 -->
+  <WalletImportModal 
+    ref="walletImportRef"
+    @confirm="handleWalletImportConfirm"
+    @cancel="handleWalletImportCancel" />
   <!-- 添加代币弹窗 -->
   <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"
     :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
@@ -1868,6 +2123,13 @@ function showChainManage() {
   <RpcManagement ref="rpcManageRef" :chain-value="chainValue" :chain-options="chainOptions"
     @rpc-updated="handleRpcUpdated" />
 
+  <!-- 全页面Loading覆盖层 -->
+  <div v-if="pageLoading" class="page-loading-overlay">
+    <div class="loading-content">
+      <a-spin size="large" />
+      <div class="loading-text">正在导入文件，请稍候...</div>
+    </div>
+  </div>
 
 </template>
 
@@ -1950,6 +2212,26 @@ function showChainManage() {
   justify-content: center;
 }
 
+/* 确保表格列宽度和省略号生效 */
+.mainTable .arco-table-td {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mainTable .arco-table-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 强制表格布局为固定布局 */
+.mainTable .arco-table-element {
+  table-layout: fixed;
+  width: 100%;
+}
+
 .mainTable .arco-table-tbody {
   height: 100%;
 }
@@ -2025,6 +2307,38 @@ function showChainManage() {
 
 .execute-btn.stopping {
   background-color: #11c06f;
+}
+
+/* 全页面Loading覆盖层样式 */
+.page-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--overlay-bg, rgba(0, 0, 0, 0.5));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  background-color: var(--card-bg, white);
+  padding: 32px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px var(--shadow-color, rgba(0, 0, 0, 0.15));
+  border: 1px solid var(--border-color, transparent);
+}
+
+.loading-text {
+  font-size: 16px;
+  color: var(--text-color, #1d2129);
+  font-weight: 500;
 }
 
 .execute-btn.stopping:hover {
@@ -2173,6 +2487,8 @@ function showChainManage() {
 .rpc-urls {
   width: 100%;
 }
+
+
 </style>
 <style lang="less">
 .transfer {

@@ -19,11 +19,14 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "shadow": true,
-        "backgroundColor": "#1a1a2e"
+        "backgroundColor": "#1a1a2e",
+        "visible": false,
+        "skipTaskbar": false,
+        "alwaysOnTop": false
       }
     ],
     "security": {

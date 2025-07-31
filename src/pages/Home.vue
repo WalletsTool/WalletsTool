@@ -1,7 +1,7 @@
 <script setup name="home">
 import {useRouter} from 'vue-router'
 import {Notification, Modal} from "@arco-design/web-vue";
-import {onMounted, onBeforeUnmount, ref, h, computed} from "vue";
+import {onMounted, onBeforeUnmount, ref, h, computed, nextTick} from "vue";
 import party from "party-js";
 import {confettiStore, useThemeStore} from '@/stores'
 import {WebviewWindow} from '@tauri-apps/api/webviewWindow'
@@ -64,6 +64,21 @@ onMounted(async () => {
   } catch (error) {
     console.error('Failed to listen for close event:', error)
   }
+  
+  // 页面加载完成后显示主窗口
+  nextTick(() => {
+    // 延迟显示主窗口，确保所有组件都已渲染
+    setTimeout(() => {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        const currentWindow = getCurrentWindow();
+        // 显示主窗口
+        currentWindow.show();
+        // 发送页面加载完成事件
+        currentWindow.emit('page-loaded');
+      }
+    }, 100);
+  });
 })
 
 // 组件卸载时清理事件监听器
@@ -137,13 +152,19 @@ function goPage(pageName) {
       resizable: true,
       center: true,
       decorations: false,  // 移除Windows原生窗口边框
-      backgroundColor: '#1a1a2e'  // 设置窗口背景色
+      backgroundColor: '#1a1a2e',  // 设置窗口背景色
+      visible: false,  // 初始隐藏窗口
+      skipTaskbar: false
     })
     
     windowListObj.value[pageName].set(windowLabel, webview)
 
     webview.once('tauri://created', function () {
       // Window created successfully
+      // 延迟显示窗口，等待页面加载
+      setTimeout(() => {
+        webview.show()
+      }, 100)
     })
     
     webview.once('tauri://close-requested', function (event) {
@@ -160,6 +181,11 @@ function goPage(pageName) {
     
     webview.once('tauri://error', function (e) {
       console.error('Window creation error:', e)
+    })
+    
+    // 监听页面加载完成事件
+    webview.listen('page-loaded', () => {
+      webview.show()
     })
     
   } catch (error) {

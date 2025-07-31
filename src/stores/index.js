@@ -13,8 +13,8 @@ export const confettiStore = defineStore('confetti', () => {
 
 // 主题管理store
 export const useThemeStore = defineStore('theme', () => {
-    // 从localStorage获取初始主题，默认为暗黑主题
-    const currentTheme = ref(localStorage.getItem('theme') || 'dark')
+    // 从localStorage获取初始主题，默认为明亮主题
+    const currentTheme = ref(localStorage.getItem('theme') || 'light')
     
     // 应用主题到DOM
     function applyTheme(theme) {

@@ -19,7 +19,7 @@ export default defineConfig({
         ]
     },
     optimizeDeps: {
-        include: ['ethers', '@solana/web3.js', 'vue', 'vue-router'],
+        include: ['ethers', 'vue', 'vue-router'],
         esbuildOptions: {
             // Node.js global to browser globalThis
             define: {
@@ -54,17 +54,27 @@ export default defineConfig({
             output: {
                 manualChunks: {
                 // 将大型依赖分离到独立chunk
-                'vendor-crypto': ['ethers', '@solana/web3.js'],
+                'vendor-crypto': ['ethers'],
                 'vendor-ui': ['vue', 'vue-router', '@arco-design/web-vue'],
-                'vendor-utils': ['axios', 'xlsx', 'pinia']
+                'vendor-utils': ['xlsx', 'pinia']
                 }
             }
         },
         // Tauri supports es2021
         target: process.env.TAURI_PLATFORM == "windows" ? "chrome105" : "safari14",
-        // don't minify for debug builds
-        minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
+        // 启用压缩优化
+        minify: !process.env.TAURI_DEBUG ? "terser" : false,
+        terserOptions: {
+            compress: {
+                drop_console: true,
+                drop_debugger: true
+            }
+        },
         // produce sourcemaps for debug builds
         sourcemap: !!process.env.TAURI_DEBUG,
+        // 设置chunk大小警告限制
+        chunkSizeWarningLimit: 1000,
+        // 启用CSS代码分割
+        cssCodeSplit: true
     }
 });

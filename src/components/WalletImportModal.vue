@@ -263,7 +263,7 @@ defineExpose({
       :style="{ display: 'flex', gap: '10px', marginTop: '10px', width: '1100px', height: showUsageInstructions ? '400px' : '500px' }">
       <!-- 左侧：私钥输入 -->
       <div style="width: 660px; height: 100%; display: flex; flex-direction: column;">
-        <div class="input-label" style="margin-bottom: 8px; font-weight: 500; color: #1d2129;">发送方私钥</div>
+        <div class="input-label" style="margin-bottom: 8px; font-weight: 500;">发送方私钥</div>
         <CodeEditor 
           ref="privateKeyEditorRef"
           v-model="privateKeyText" 
@@ -277,7 +277,7 @@ defineExpose({
 
       <!-- 右侧：接收地址输入 -->
       <div style="width: 430px; height: 100%; display: flex; flex-direction: column;">
-        <div class="input-label" style="margin-bottom: 8px; font-weight: 500; color: #1d2129;">接收地址</div>
+        <div class="input-label" style="margin-bottom: 8px; font-weight: 500;">接收地址</div>
         <CodeEditor 
           ref="addressEditorRef"
           v-model="addressText" 
@@ -343,21 +343,21 @@ defineExpose({
 
 .input-label {
   font-weight: 500;
-  color: #1d2129;
+  color: var(--text-color, #1d2129);
   margin-bottom: 8px;
 }
 
 .usage-instructions {
   margin-top: 15px;
   padding: 12px;
-  background-color: #f7f8fa;
+  background-color: var(--card-bg, #f7f8fa);
   border-radius: 6px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--border-color, #e5e6eb);
 }
 
 .usage-title {
   font-weight: 500;
-  color: #1d2129;
+  color: var(--text-color, #1d2129);
   margin-bottom: 8px;
   display: flex;
   justify-content: space-between;
@@ -376,7 +376,7 @@ defineExpose({
 .usage-column ul {
   margin: 0;
   padding-left: 16px;
-  color: #4e5969;
+  color: var(--text-color, #4e5969);
   font-size: 12px;
 }
 

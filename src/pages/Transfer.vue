@@ -264,6 +264,13 @@ onBeforeMount(async () => {
     try {
       const result = await invoke('get_chain_list');
       chainOptions.value = result || [];
+      
+      // 按照name字段排序
+      chainOptions.value.sort((a, b) => {
+        const nameA = a.name || '';
+        const nameB = b.name || '';
+        return nameA.localeCompare(nameB);
+      });
 
       // 设置默认选中第一个链
       if (chainOptions.value.length > 0) {
@@ -281,6 +288,14 @@ onBeforeMount(async () => {
       { key: 'eth', name: 'Ethereum', scan_url: 'etherscan.io', pic_url: 'eth.png' },
       { key: 'bnb', name: 'BNB Chain', scan_url: 'bscscan.com', pic_url: 'bnb.png' }
     ];
+    
+    // 按照name字段排序
+    chainOptions.value.sort((a, b) => {
+      const nameA = a.name || '';
+      const nameB = b.name || '';
+      return nameA.localeCompare(nameB);
+    });
+    
     chainValue.value = chainOptions.value[0].key;
     currentChain.value = chainOptions.value[0];
     // 获取rpc对应的代币列表
@@ -633,6 +648,19 @@ async function chainChange() {
           abi: token.abi
         }));
 
+        // 对代币列表进行排序：base coin排在第一位，其他代币按label字母顺序排序
+        coinOptions.value.sort((a, b) => {
+          // base coin (coin_type为'base') 排在第一位
+          if (a.coin_type === 'base' && b.coin_type !== 'base') {
+            return -1;
+          }
+          if (a.coin_type !== 'base' && b.coin_type === 'base') {
+            return 1;
+          }
+          // 如果都是base coin或都不是base coin，按label字母顺序排序
+          return a.label.localeCompare(b.label);
+        });
+
         // 设置默认选中第一个代币
         if (coinOptions.value.length > 0) {
           coinValue.value = coinOptions.value[0].key;
@@ -644,9 +672,23 @@ async function chainChange() {
       } else {
         // 浏览器环境下的模拟数据
         coinOptions.value = [
-          { key: 'eth', label: 'ETH', symbol: 'ETH', coin_type: 'native', decimals: 18 },
+          { key: 'eth', label: 'ETH', symbol: 'ETH', coin_type: 'base', decimals: 18 },
           { key: 'usdt', label: 'USDT', symbol: 'USDT', coin_type: 'token', contract_address: '0x...', decimals: 6 }
         ];
+        
+        // 对代币列表进行排序：base coin排在第一位，其他代币按label字母顺序排序
+        coinOptions.value.sort((a, b) => {
+          // base coin (coin_type为'base') 排在第一位
+          if (a.coin_type === 'base' && b.coin_type !== 'base') {
+            return -1;
+          }
+          if (a.coin_type !== 'base' && b.coin_type === 'base') {
+            return 1;
+          }
+          // 如果都是base coin或都不是base coin，按label字母顺序排序
+          return a.label.localeCompare(b.label);
+        });
+        
         coinValue.value = coinOptions.value[0].key;
         currentCoin.value = coinOptions.value[0];
       }
@@ -1888,7 +1930,7 @@ async function loadTokenManageData() {
     } else {
       // 浏览器环境下的模拟数据
       tokenList = [
-        { key: 'eth', coin: 'ETH', type: 'native', decimals: 18 },
+        { key: 'eth', coin: 'ETH', type: 'base', decimals: 18 },
         { key: 'usdt', coin: 'USDT', type: 'token', contract_address: '0x...', decimals: 6 }
       ];
     }

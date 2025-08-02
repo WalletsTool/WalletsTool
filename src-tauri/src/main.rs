@@ -108,6 +108,8 @@ async fn main() {
             // balance query functions
             simple_balance_query::query_balances_simple,
             simple_balance_query::query_balances_with_updates,
+            simple_balance_query::stop_balance_query,
+            simple_balance_query::reset_balance_query_stop,
             // window management functions
             close_all_child_windows,
             get_all_child_windows,

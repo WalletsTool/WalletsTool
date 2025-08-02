@@ -33,6 +33,9 @@ const props = defineProps({
   }
 })
 
+// Emits
+const emit = defineEmits(['before-close'])
+
 // 主题管理
 const themeStore = useThemeStore()
 const currentTheme = computed(() => themeStore.currentTheme)
@@ -81,6 +84,11 @@ async function closeWindow() {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
   if (isTauri) {
     try {
+      console.log('TitleBar窗口关闭事件触发，正在通知父组件执行清理操作...');
+      
+      // 触发before-close事件，让父组件有机会执行清理操作
+      await emit('before-close');
+      
       const currentWindow = getCurrentWindow()
       await currentWindow.destroy()
     } catch (error) {

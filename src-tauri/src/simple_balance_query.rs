@@ -1,12 +1,44 @@
-use anyhow::{anyhow, Result};
+﻿use anyhow::{anyhow, Result};
 use futures::future::join_all;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::sync::{Mutex, LazyLock};
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, Duration};
 use tauri::Emitter;
+use rand;
 use crate::database::{get_database_manager, rpc_service::RpcService};
+
+// 基于窗口ID的停止标志映射
+static STOP_FLAGS: LazyLock<Mutex<HashMap<String, AtomicBool>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+// 辅助函数：获取窗口的停止状态
+fn get_stop_flag(window_id: &str) -> bool {
+    let flags = STOP_FLAGS.lock().unwrap();
+    if let Some(flag) = flags.get(window_id) {
+        flag.load(Ordering::Relaxed)
+    } else {
+        false
+    }
+}
+
+// 辅助函数：设置窗口的停止状态
+fn set_stop_flag(window_id: &str, value: bool) {
+    let mut flags = STOP_FLAGS.lock().unwrap();
+    if let Some(flag) = flags.get(window_id) {
+        flag.store(value, Ordering::Relaxed);
+    } else {
+        flags.insert(window_id.to_string(), AtomicBool::new(value));
+    }
+}
+
+// 辅助函数：重置窗口的停止状态
+fn reset_stop_flag(window_id: &str) {
+    set_stop_flag(window_id, false);
+}
 
 // 查询项目结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,7 +227,14 @@ impl SimpleBalanceQueryService {
     }
 
     // 查询单个项目的余额（带超时控制）
-    async fn query_single_item(&self, mut item: QueryItem, params: &QueryParams) -> QueryItem {
+    async fn query_single_item(&self, mut item: QueryItem, params: &QueryParams, window_id: &str) -> QueryItem {
+        // 检查是否需要停止查询
+        if get_stop_flag(window_id) {
+            item.exec_status = "3".to_string(); // 失败
+            item.error_msg = Some("查询已被用户停止".to_string());
+            return item;
+        }
+
         item.exec_status = "1".to_string(); // 执行中
         item.error_msg = None;
 
@@ -266,7 +305,7 @@ impl SimpleBalanceQueryService {
                 let delay = Duration::from_millis(rand::random::<u64>() % 100);
                 sleep(delay).await;
                 
-                service.query_single_item(item, &params).await
+                service.query_single_item(item, &params, "default").await
             }
         }).collect();
 
@@ -292,8 +331,12 @@ impl SimpleBalanceQueryService {
     pub async fn query_balances_with_updates(
         &self, 
         params: QueryParams, 
-        app_handle: tauri::AppHandle
+        app_handle: tauri::AppHandle,
+        window_id: String
     ) -> QueryResult {
+        // 重置停止标志
+        reset_stop_flag(&window_id);
+        
         let thread_count = params.thread_count.max(1).min(20); // 限制线程数在1-20之间
         let semaphore = Arc::new(Semaphore::new(thread_count));
         
@@ -305,9 +348,26 @@ impl SimpleBalanceQueryService {
             let params = params.clone();
             let service = self;
             let app_handle = app_handle.clone();
+            let window_id = window_id.clone();
             
             async move {
+                // 在获取信号量前检查停止标志
+                if get_stop_flag(&window_id) {
+                    let mut stopped_item = item.clone();
+                    stopped_item.exec_status = "3".to_string();
+                    stopped_item.error_msg = Some("查询已被用户停止".to_string());
+                    return stopped_item;
+                }
+                
                 let _permit = semaphore.acquire().await.unwrap();
+                
+                // 获取信号量后再次检查停止标志
+                if get_stop_flag(&window_id) {
+                    let mut stopped_item = item.clone();
+                    stopped_item.exec_status = "3".to_string();
+                    stopped_item.error_msg = Some("查询已被用户停止".to_string());
+                    return stopped_item;
+                }
                 
                 // 添加随机延迟，避免过快请求
                 let delay = Duration::from_millis(rand::random::<u64>() % 100);
@@ -318,17 +378,19 @@ impl SimpleBalanceQueryService {
                 updating_item.exec_status = "1".to_string();
                 if let Err(e) = app_handle.emit("balance_item_update", serde_json::json!({
                     "index": index,
-                    "item": updating_item
+                    "item": updating_item,
+                    "window_id": window_id
                 })) {
                     println!("发送开始执行事件失败: {}", e);
                 }
                 
-                let result = service.query_single_item(item, &params).await;
+                let result = service.query_single_item(item, &params, &window_id).await;
                 
                 // 通知前端该项目查询完成
                 if let Err(e) = app_handle.emit("balance_item_update", serde_json::json!({
                     "index": index,
-                    "item": result.clone()
+                    "item": result.clone(),
+                    "window_id": window_id
                 })) {
                     println!("发送查询完成事件失败: {}", e);
                 }
@@ -370,9 +432,26 @@ pub async fn query_balances_simple(params: QueryParams) -> Result<QueryResult, S
 pub async fn query_balances_with_updates(
     params: QueryParams,
     app_handle: tauri::AppHandle,
+    window_id: String,
 ) -> Result<QueryResult, String> {
     let service = SimpleBalanceQueryService::new();
     
-    let result = service.query_balances_with_updates(params, app_handle).await;
+    let result = service.query_balances_with_updates(params, app_handle, window_id).await;
     Ok(result)
+}
+
+// 停止余额查询命令
+#[tauri::command]
+pub async fn stop_balance_query(window_id: String) -> Result<(), String> {
+    set_stop_flag(&window_id, true);
+    println!("收到停止余额查询请求，窗口ID: {}", window_id);
+    Ok(())
+}
+
+// 重置停止标志
+#[tauri::command]
+pub async fn reset_balance_query_stop(window_id: String) -> Result<(), String> {
+    reset_stop_flag(&window_id);
+    println!("重置余额查询停止标志，窗口ID: {}", window_id);
+    Ok(())
 }

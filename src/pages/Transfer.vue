@@ -133,6 +133,10 @@ const coinFieldNames = { value: "key", label: "label" };
 const coinOptions = ref([]);
 // 查询余额按钮loading
 let balanceLoading = ref(false);
+// 查询余额中途停止
+let balanceStopFlag = ref(false);
+// 查询余额是否已经停止
+let balanceStopStatus = ref(true);
 // 详细配置
 const form = reactive({
   send_type: "3",
@@ -887,44 +891,7 @@ onMounted(async () => {
       
       // 获取当前窗口ID
       currentWindowId.value = currentWindow.label;
-      console.log('当前窗口ID:', currentWindowId.value);
 
-      // 添加Tauri窗口关闭事件监听器
-      await currentWindow.onCloseRequested(async (event) => {
-        console.log('窗口关闭事件触发，正在停止后台操作...');
-        
-        // 停止转账操作
-        if (startLoading.value) {
-          stopFlag.value = true;
-          startLoading.value = false;
-          stopStatus.value = true;
-          console.log('已停止转账操作');
-        }
-
-        // 停止gas价格监控
-        stopGasPriceMonitoring();
-        console.log('已停止gas价格监控');
-
-        // 清理所有定时器
-        if (timer) {
-          clearInterval(timer);
-          console.log('已清理gas价格定时器');
-        }
-        if (gasPriceTimer.value) {
-          clearInterval(gasPriceTimer.value);
-          gasPriceTimer.value = null;
-          console.log('已清理gas价格监控定时器');
-        }
-
-        // 重置相关状态
-        transferPaused.value = false;
-        pausedTransferData.value = null;
-        gasPriceMonitoring.value = false;
-        gasPriceCountdown.value = 0;
-        currentGasPrice.value = 0;
-
-        console.log('窗口关闭清理完成，所有后台操作已停止');
-      });
       
     } catch (error) {
       console.error('Error getting window title or setting close listener:', error);
@@ -943,7 +910,11 @@ onMounted(async () => {
   const isTauriMounted = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (isTauriMounted) {
     await listen('balance_item_update', (event) => {
-      const { index, item } = event.payload;
+      const { index, item, window_id } = event.payload;
+      // 检查是否是本窗口的事件
+      if (window_id && window_id !== currentWindowId.value) {
+        return; // 不是本窗口的事件，直接返回
+      }
       if (data.value[index]) {
         // 更新对应索引的数据（只更新指定字段）
         data.value[index].plat_balance = item.plat_balance;
@@ -1640,12 +1611,18 @@ async function queryBalance() {
     Notification.warning("请停止或等待执行完成后再查询余额！");
     return;
   }
+  if (!balanceStopStatus.value) {
+    Notification.warning("请停止或等待查询完成后再查询余额！");
+    return;
+  }
   if (data.value.length === 0) {
     Notification.warning("请先导入私钥！");
     return;
   }
   if (currentCoin.value.coin_type === "base" || currentCoin.value.coin_type === "token") {
     balanceLoading.value = true;
+    balanceStopFlag.value = false;
+    balanceStopStatus.value = false;
 
     // 重置所有项目状态
     data.value.forEach((item) => {
@@ -1676,6 +1653,13 @@ async function queryBalance() {
         only_coin_config: false,
         thread_count: Number(threadCount.value)
       };
+
+      // 检查是否需要停止查询
+      if (balanceStopFlag.value) {
+        balanceLoading.value = false;
+        balanceStopStatus.value = true;
+        return;
+      }
 
       let result;
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
@@ -1748,6 +1732,7 @@ async function queryBalance() {
     }
 
     balanceLoading.value = false;
+    balanceStopStatus.value = true;
   } else {
     Notification.warning("查询 coin 类型错误！");
   }
@@ -1757,6 +1742,10 @@ async function queryBalance() {
 async function queryToAddressBalance() {
   if (!stopStatus.value) {
     Notification.warning("请停止或等待执行完成后再查询余额！");
+    return;
+  }
+  if (!balanceStopStatus.value) {
+    Notification.warning("请停止或等待查询完成后再查询余额！");
     return;
   }
   if (data.value.length === 0) {
@@ -1773,6 +1762,8 @@ async function queryToAddressBalance() {
 
   if (currentCoin.value.coin_type === "base" || currentCoin.value.coin_type === "token") {
     balanceLoading.value = true;
+    balanceStopFlag.value = false;
+    balanceStopStatus.value = false;
 
     try {
       // 创建独立的查询数据，避免影响原始数据
@@ -1798,6 +1789,14 @@ async function queryToAddressBalance() {
         only_coin_config: false,
         thread_count: Number(threadCount.value) // 确保类型转换为数字
       };
+      
+      // 检查是否需要停止查询
+      if (balanceStopFlag.value) {
+        balanceLoading.value = false;
+        balanceStopStatus.value = true;
+        return;
+      }
+      
       let result;
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
       if (isTauri) {
@@ -1826,24 +1825,24 @@ async function queryToAddressBalance() {
         const failCount = result.items.filter(item => item.exec_status === '3').length;
         const totalCount = result.items.length;
 
-        // 显示查询结果
-        let message = '到账地址余额查询结果：\n';
-        result.items.forEach((resultItem, index) => {
-          if (resultItem.exec_status === '2') {
-            message += `地址: ${resultItem.address}\n`;
-            message += `平台币余额: ${resultItem.plat_balance}\n`;
-            message += `代币余额: ${resultItem.coin_balance}\n\n`;
-          } else {
-            message += `地址: ${resultItem.address} - 查询失败: ${resultItem.error_msg}\n\n`;
-          }
-        });
+        // // 显示查询结果
+        // let message = '到账地址余额查询结果：\n';
+        // result.items.forEach((resultItem, index) => {
+        //   if (resultItem.exec_status === '2') {
+        //     message += `地址: ${resultItem.address}\n`;
+        //     message += `平台币余额: ${resultItem.plat_balance}\n`;
+        //     message += `代币余额: ${resultItem.coin_balance}\n\n`;
+        //   } else {
+        //     message += `地址: ${resultItem.address} - 查询失败: ${resultItem.error_msg}\n\n`;
+        //   }
+        // });
 
-        // 使用Modal显示详细结果
-        Modal.info({
-          title: '到账地址余额查询结果',
-          content: message,
-          width: 600
-        });
+        // // 使用Modal显示详细结果
+        // Modal.info({
+        //   title: '到账地址余额查询结果',
+        //   content: message,
+        //   width: 600
+        // });
 
         // 查询完成统计
         if (successCount === totalCount) {
@@ -1863,6 +1862,7 @@ async function queryToAddressBalance() {
     }
 
     balanceLoading.value = false;
+    balanceStopStatus.value = true;
   } else {
     Notification.warning("查询 coin 类型错误！");
   }
@@ -2423,6 +2423,26 @@ function stopTransfer() {
   stopFlag.value = true;
 }
 
+// 停止查询余额
+async function stopBalanceQuery() {
+  try {
+    // 调用后端停止接口
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      await invoke('stop_balance_query', {
+        windowId: currentWindowId.value
+      });
+      console.log('已发送停止查询请求到后端，窗口ID:', currentWindowId.value);
+    }
+  } catch (error) {
+    console.error('停止查询请求失败:', error);
+  }
+  
+  balanceLoading.value = false;
+  balanceStopFlag.value = true;
+  balanceStopStatus.value = true;
+}
+
 // 校验数据是否合规
 function validateForm() {
   return new Promise((resolve, reject) => {
@@ -2953,11 +2973,48 @@ function showChainManage() {
     chainManageRef.value.show();
   }
 }
+
+// 处理TitleBar的before-close事件
+async function handleBeforeClose() {
+  try {
+    console.log('TitleBar触发关闭事件，正在停止后台操作...');
+    
+    // 停止余额查询操作
+    if (balanceLoading.value) {
+      await stopBalanceQuery();
+      console.log('已停止余额查询操作');
+    }
+    
+    // 停止转账操作
+    if (startLoading.value) {
+      await stopTransfer();
+      console.log('已停止转账操作');
+    }
+    
+    // 停止gas价格监控
+    if (gasPriceMonitoring.value && gasPriceTimer.value) {
+      clearInterval(gasPriceTimer.value);
+      gasPriceTimer.value = null;
+      gasPriceMonitoring.value = false;
+      console.log('已清理gas价格监控定时器');
+    }
+    
+    // 重置相关状态
+    transferPaused.value = false;
+    pausedTransferData.value = null;
+    gasPriceCountdown.value = 0;
+    currentGasPrice.value = 0;
+    
+    console.log('TitleBar窗口关闭清理完成，所有后台操作已停止');
+  } catch (error) {
+    console.error('处理窗口关闭事件时发生错误:', error);
+  }
+}
 </script>
 
 <template>
   <!-- 标题栏组件 -->
-  <TitleBar :title="windowTitle" />
+  <TitleBar :title="windowTitle" @before-close="handleBeforeClose" />
 
   <div class="container transfer" style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
     <!-- <span class="pageTitle">批量转账</span> -->
@@ -3254,8 +3311,8 @@ function showChainManage() {
 
 
         <!-- 查询余额 -->
-        <a-dropdown>
-          <a-button type="primary" :loading="balanceLoading"
+        <a-dropdown v-if="!balanceLoading && balanceStopStatus">
+          <a-button type="primary"
             :style="{ width: '130px', height: '40px', fontSize: '14px' }">
             <template #icon>
               <Icon icon="mdi:magnify" />
@@ -3273,6 +3330,24 @@ function showChainManage() {
             </a-doption>
           </template>
         </a-dropdown>
+        <a-tooltip v-else content="点击可以提前停止查询">
+          <div @click="stopBalanceQuery">
+            <a-button v-if="!balanceStopFlag" class="execute-btn executing" loading
+              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+              <template #icon>
+                <Icon icon="mdi:stop" />
+              </template>
+              查询中...
+            </a-button>
+            <a-button v-if="balanceStopFlag && !balanceStopStatus" class="execute-btn stopping" loading
+              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+              <template #icon>
+                <Icon icon="mdi:stop" />
+              </template>
+              正在停止...
+            </a-button>
+          </div>
+        </a-tooltip>
       </div>
 
       <!-- 右侧区域 -->

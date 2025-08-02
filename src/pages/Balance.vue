@@ -133,6 +133,8 @@ let deleteItemVisible = ref(false)
 let currentCoin = ref({})
 // 当前数据的key
 let currentItemKey = ref('')
+// 当前窗口ID
+let currentWindowId = ref('')
 
 // 虚拟滚动相关配置
 const tableContainer = ref(null)
@@ -186,11 +188,44 @@ onBeforeMount(async () => {
 })
 
 onMounted(async () => {
+  // 获取窗口标题和ID
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow();
+      // 获取当前窗口ID
+      currentWindowId.value = currentWindow.label;
+      console.log('当前窗口ID:', currentWindowId.value);
+      
+      // 添加Tauri窗口关闭事件监听器
+      await currentWindow.onCloseRequested(async (event) => {
+        console.log('窗口关闭事件触发，正在停止后台操作...');
+        
+        // 停止余额查询操作
+        if (balanceLoading.value) {
+          await stopBalanceQuery();
+          console.log('已停止余额查询操作');
+        }
+        
+        console.log('窗口关闭清理完成，所有后台操作已停止');
+      });
+    } catch (error) {
+      console.error('Error getting window info:', error);
+    }
+  } else {
+    // 浏览器环境下设置默认ID
+    currentWindowId.value = 'browser_window';
+  }
+
   // 页面高度现在通过 CSS 自动调整，无需监听器
 
   // 监听余额查询更新事件
   await listen('balance_item_update', (event) => {
-    const { index, item } = event.payload
+    const { index, item, window_id } = event.payload
+    // 检查是否是本窗口的事件
+    if (window_id && window_id !== currentWindowId.value) {
+      return; // 不是本窗口的事件，直接返回
+    }
     if (data.value[index]) {
       // 更新对应索引的数据
       Object.assign(data.value[index], item)
@@ -499,7 +534,10 @@ async function queryBalance() {
         thread_count: form.thread_count
       }
 
-      const result = await invoke('query_balances_with_updates', { params })
+      const result = await invoke('query_balances_with_updates', { 
+        params,
+        windowId: currentWindowId.value 
+      })
 
       if (result.success || result.items) {
         // 更新数据 - 无论总体是否成功，都要更新单条记录的状态
@@ -552,6 +590,23 @@ async function queryBalance() {
   } else {
     Notification.warning('查询 coin 类型错误！');
   }
+}
+
+// 停止余额查询
+async function stopBalanceQuery() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      await invoke('stop_balance_query', {
+        windowId: currentWindowId.value
+      });
+      console.log('已发送停止查询请求到后端，窗口ID:', currentWindowId.value);
+    }
+  } catch (error) {
+    console.error('停止查询请求失败:', error);
+  }
+  
+  balanceLoading.value = false;
 }
 
 // 选中成功
@@ -636,6 +691,14 @@ async function maximizeWindow() {
 
 async function closeWindow() {
   try {
+    console.log('窗口关闭事件触发，正在停止后台操作...');
+    
+    // 停止余额查询操作
+    if (balanceLoading.value) {
+      await stopBalanceQuery();
+      console.log('已停止余额查询操作');
+    }
+    
     const currentWindow = getCurrentWindow()
     await currentWindow.destroy()
   } catch (error) {

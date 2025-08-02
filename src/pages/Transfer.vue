@@ -1680,7 +1680,7 @@ async function queryBalance() {
       let result;
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
       if (isTauri) {
-        result = await invoke('query_balances_with_window_stop', {
+        result = await invoke('query_balances_with_updates', {
           params,
           windowId: currentWindowId.value
         });
@@ -1801,7 +1801,7 @@ async function queryToAddressBalance() {
       let result;
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
       if (isTauri) {
-        result = await invoke('query_balances_with_window_stop', {
+        result = await invoke('query_balances_with_updates', {
           params,
           windowId: currentWindowId.value
         });

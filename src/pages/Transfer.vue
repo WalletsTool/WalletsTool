@@ -285,7 +285,7 @@ function openMultipleWindow() {
         // center: true,
         resizable: true,
         decorations: false,  // 移除Windows原生窗口边框
-        backgroundColor: '#1a1a2e',  // 设置窗口背景色
+        backgroundColor: localStorage.getItem('theme') === 'dark' ? '#2A2A2B' : '#FFFFFF',  // 根据当前主题动态设置窗口背景色
         skipTaskbar: false
       });
 
@@ -3773,79 +3773,9 @@ async function handleBeforeClose() {
   display: flex;
 }
 
-/* 自定义标题栏样式 */
-.title-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 30px;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(30, 58, 138, 0.3);
-  color: white;
-  padding: 0 10px;
-  -webkit-app-region: drag;
-  user-select: none;
-  font-size: 14px;
-  font-weight: 500;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-}
-
-.title-bar-text {
-  font-size: 13px;
-  font-weight: 500;
-  margin-left: 8px;
-}
-
-.title-bar-controls {
-  display: flex;
-  -webkit-app-region: no-drag;
-}
-
-.title-bar-control {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 30px;
-  background: transparent;
-  border: none;
-  color: white;
-  cursor: pointer;
-  font-size: 16px;
-  transition: background-color 0.2s;
-  -webkit-app-region: no-drag;
-}
-
-.title-bar-control:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
-.title-bar-control.close:hover {
-  background-color: #e81123;
-}
-
-.title-bar-control.theme-toggle {
-  width: 40px;
-  margin-right: 5px;
-}
-
-.title-bar-control.theme-toggle:hover {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-}
-
 .theme-icon {
   font-size: 16px;
   transition: transform 0.3s ease;
-}
-
-.title-bar-control.theme-toggle:hover .theme-icon {
-  transform: scale(1.1);
 }
 
 .minimize-icon {

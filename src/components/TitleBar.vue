@@ -3,10 +3,22 @@
   <div class="title-bar">
     <div class="title-bar-text">{{ title }}</div>
     <div class="title-bar-controls">
-      <!-- 主题切换按钮 -->
-      <button class="title-bar-control theme-toggle" @click="toggleTheme" :title="currentTheme === 'dark' ? '切换到明亮主题' : '切换到暗黑主题'">
-        <span class="theme-icon">{{ currentTheme === 'dark' ? '☀️' : '🌙' }}</span>
-      </button>
+      <!-- 主题切换开关 -->
+      <div class="theme-switch-container" :title="currentTheme === 'dark' ? '切换到明亮主题' : '切换到暗黑主题'">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"/>
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+        <a-switch 
+          v-model="isDarkTheme" 
+          @change="toggleTheme"
+          size="small"
+          class="theme-switch"
+        />
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </div>
       <button class="title-bar-control" @click="minimizeWindow" title="最小化">
         <span class="minimize-icon">―</span>
       </button>
@@ -24,6 +36,7 @@
 import { computed, onMounted } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useThemeStore } from '@/stores'
+import { Icon } from '@iconify/vue'
 
 // Props
 const props = defineProps({
@@ -39,6 +52,12 @@ const emit = defineEmits(['before-close'])
 // 主题管理
 const themeStore = useThemeStore()
 const currentTheme = computed(() => themeStore.currentTheme)
+const isDarkTheme = computed({
+  get: () => currentTheme.value === 'dark',
+  set: (value) => {
+    // 这里不需要处理，因为change事件会调用toggleTheme
+  }
+})
 
 // 主题切换方法
 function toggleTheme() {
@@ -104,21 +123,32 @@ async function closeWindow() {
   justify-content: space-between;
   align-items: center;
   height: 30px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: rgba(255, 255, 255, 0.1);
   color: white;
   font-size: 14px;
   -webkit-app-region: drag;
   user-select: none;
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(30, 58, 138, 0.3);
+  padding: 0 10px;
+  font-weight: 500;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
 }
 
 .title-bar-text {
   margin-left: 10px;
   font-weight: 500;
+  font-size: 13px;
 }
 
 .title-bar-controls {
   display: flex;
   height: 100%;
+  -webkit-app-region: no-drag;
 }
 
 .title-bar-control {
@@ -140,16 +170,66 @@ async function closeWindow() {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
+.title-bar-control.theme-toggle {
+  width: 40px;
+  margin-right: 5px;
+}
+
+.title-bar-control.theme-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.title-bar-control.theme-toggle:hover .theme-icon {
+  transform: scale(1.1);
+}
+
+.theme-icon {
+  font-size: 16px;
+  transition: transform 0.3s ease;
+  width: 14px;
+  height: 14px;
+  opacity: 0.8;
+}
+
 .title-bar-control.close:hover {
   background-color: #e81123;
 }
 
-.theme-toggle {
-  font-size: 14px;
+.theme-switch-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 30px;
+  -webkit-app-region: no-drag;
 }
 
-.theme-icon {
-  font-size: 14px;
+.dark-icon {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.light-icon {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.theme-switch {
+  --color-bg-2: rgba(255, 255, 255, 0.2) !important;
+  --color-bg-3: rgba(255, 255, 255, 0.3) !important;
+}
+
+.theme-switch :deep(.arco-switch) {
+  background-color: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.theme-switch :deep(.arco-switch-checked) {
+  background-color: rgba(255, 255, 255, 0.4);
+}
+
+.theme-switch :deep(.arco-switch-dot) {
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .minimize-icon {
@@ -183,5 +263,27 @@ async function closeWindow() {
 :root[data-theme="light"] .title-bar-control.close:hover {
   background-color: #e53e3e;
   color: white;
+}
+
+:root[data-theme="light"] .theme-switch :deep(.arco-switch) {
+  background-color: rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+:root[data-theme="light"] .theme-switch :deep(.arco-switch-checked) {
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+:root[data-theme="light"] .theme-switch :deep(.arco-switch-dot) {
+  background-color: #4a5568;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+:root[data-theme="light"] .dark-icon {
+  color: #6b7280;
+}
+
+:root[data-theme="light"] .light-icon {
+  color: #6b7280;
 }
 </style>

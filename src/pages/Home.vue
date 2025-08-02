@@ -1,13 +1,13 @@
 <script setup name="home">
-import {useRouter} from 'vue-router'
-import {Notification, Modal} from "@arco-design/web-vue";
-import {onMounted, onBeforeUnmount, ref, h, computed, nextTick} from "vue";
+import { useRouter } from 'vue-router'
+import { Notification, Modal } from "@arco-design/web-vue";
+import { onMounted, onBeforeUnmount, ref, h, computed, nextTick } from "vue";
 import party from "party-js";
-import {confettiStore, useThemeStore} from '@/stores'
-import {WebviewWindow} from '@tauri-apps/api/webviewWindow'
-import {getCurrentWindow} from '@tauri-apps/api/window'
-import {invoke} from '@tauri-apps/api/core'
-import {listen} from '@tauri-apps/api/event'
+import { confettiStore, useThemeStore } from '@/stores'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 const router = useRouter()
 const store = confettiStore()
@@ -34,7 +34,7 @@ const isDarkTheme = computed(() => themeStore.currentTheme === 'dark')
 onMounted(async () => {
   // 初始化主题状态
   themeStore.initTheme()
-  
+
   const newFlag = funcList.filter(item => item.isNew).length > 0
   if (newFlag && store.status) {
     // 动画效果
@@ -55,16 +55,16 @@ onMounted(async () => {
   // 监听主窗口关闭请求事件
   try {
     // 检查是否在Tauri环境中
-  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-  if (isTauri) {
-    unlistenCloseEvent = await listen('main-window-close-requested', async () => {
-      await handleMainWindowCloseRequest()
-    })
-  }
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      unlistenCloseEvent = await listen('main-window-close-requested', async () => {
+        await handleMainWindowCloseRequest()
+      })
+    }
   } catch (error) {
     console.error('Failed to listen for close event:', error)
   }
-  
+
   // 页面加载完成后显示主窗口
   nextTick(() => {
     // 延迟显示主窗口，确保所有组件都已渲染
@@ -124,7 +124,7 @@ function goPage(pageName) {
     Notification.success('功能建设中，敬请期待')
     return
   }
-  
+
   // 检查是否在Tauri环境中
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (!isTauri) {
@@ -132,7 +132,7 @@ function goPage(pageName) {
     router.push(`/${pageName}`)
     return
   }
-  
+
   try {
     // 正确实现多窗口
     const count = windowCount.value[pageName] ?? 0
@@ -143,7 +143,7 @@ function goPage(pageName) {
     const title = funcList.filter(item => item.pageName === pageName)[0].title
     const windowLabel = pageName + windowCount.value[pageName]
     const windowUrl = `/#/${pageName}`
-    
+
     const webview = new WebviewWindow(windowLabel, {
       url: windowUrl,
       width: 1275,
@@ -152,11 +152,11 @@ function goPage(pageName) {
       resizable: true,
       center: true,
       decorations: false,  // 移除Windows原生窗口边框
-      backgroundColor: '#1a1a2e',  // 设置窗口背景色
+      backgroundColor: localStorage.getItem('theme') === 'dark' ? '#2A2A2B' : '#FFFFFF',  // 设置窗口背景色
       visible: false,  // 初始隐藏窗口
       skipTaskbar: false
     })
-    
+
     windowListObj.value[pageName].set(windowLabel, webview)
 
     webview.once('tauri://created', function () {
@@ -166,28 +166,28 @@ function goPage(pageName) {
         webview.show()
       }, 100)
     })
-    
+
     webview.once('tauri://close-requested', function (event) {
       // 在 Tauri 2.x 中，需要手动关闭窗口
       webview.close()
     })
-    
+
     webview.once('tauri://destroyed', function (event) {
       windowListObj.value[pageName].delete(event.windowLabel)
       if (windowListObj.value[pageName].size === 0) {
         windowCount.value[pageName] = 0
       }
     })
-    
+
     webview.once('tauri://error', function (e) {
       console.error('Window creation error:', e)
     })
-    
+
     // 监听页面加载完成事件
     webview.listen('page-loaded', () => {
       webview.show()
     })
-    
+
   } catch (error) {
     console.error('Error in goPage:', error)
   }
@@ -223,21 +223,21 @@ async function checkDatabaseStatus() {
       status = await invoke('check_database_schema')
     } else {
       // 浏览器环境下模拟正常状态
-      status = { 
-        db_exists: true, 
-        chains_table_exists: true, 
-        tokens_table_exists: true, 
+      status = {
+        db_exists: true,
+        chains_table_exists: true,
+        tokens_table_exists: true,
         rpc_table_exists: true,
-        abi_column_exists: true, 
-        contract_type_column_exists: true, 
-        needs_migration: false 
+        abi_column_exists: true,
+        contract_type_column_exists: true,
+        needs_migration: false
       }
     }
-    
+
     // 将状态对象转换为友好的中文描述
     let statusText = ''
     let notificationType = 'success'
-    
+
     if (typeof status === 'object' && status !== null) {
       // 根据新的检查逻辑生成状态文本
       if (!status.db_exists) {
@@ -259,9 +259,9 @@ async function checkDatabaseStatus() {
     } else {
       statusText = typeof status === 'string' ? status : JSON.stringify(status)
     }
-    
+
     databaseStatus.value = statusText
-    
+
     if (notificationType === 'success') {
       Notification.success({
         title: '数据库状态检查完成',
@@ -278,7 +278,7 @@ async function checkDatabaseStatus() {
         content: statusText
       })
     }
-    
+
     // 数据库状态检查完成
   } catch (error) {
     console.error('检查数据库状态失败:', error)
@@ -305,20 +305,20 @@ async function reloadDatabase() {
       // 浏览器环境下模拟成功
       result = '数据库重载成功'
     }
-    
+
     // 确保result是字符串格式
     const resultText = typeof result === 'string' ? result : JSON.stringify(result)
-    
+
     Notification.success({
       title: '数据库重载完成',
       content: resultText
     })
-    
+
     // 重新检查数据库状态
     setTimeout(async () => {
       await checkDatabaseStatus()
     }, 500)
-    
+
   } catch (error) {
     console.error('重载数据库失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
@@ -339,20 +339,20 @@ async function refreshPageData() {
       // 在Home页面，主要是刷新一些基础数据
       // 可以根据需要添加更多刷新逻辑
     }
-    
+
     // 重置数据库状态
     databaseStatus.value = null
-    
+
     Notification.success({
       title: '页面数据已刷新',
       content: '所有状态已重置'
     })
-    
+
     // 自动重新检查数据库状态
     setTimeout(async () => {
       await checkDatabaseStatus()
     }, 300)
-    
+
   } catch (error) {
     console.error('刷新页面数据失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
@@ -375,17 +375,17 @@ async function exportDatabaseToInitSql() {
       // 浏览器环境下模拟成功
       result = '数据库导出成功（浏览器环境模拟）'
     }
-    
+
     // 确保result是字符串格式
     const resultText = typeof result === 'string' ? result : JSON.stringify(result)
-    
+
     Notification.success({
       title: '数据库导出完成',
       content: resultText
     })
-    
+
     // 数据库导出完成
-    
+
   } catch (error) {
     console.error('导出数据库失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
@@ -431,7 +431,7 @@ async function handleMainWindowCloseRequest() {
     if (!isTauri) {
       return true
     }
-    
+
     // 检查关闭确认标记位
     if (closeConfirmed.value) {
       // 如果已经确认过，直接关闭
@@ -444,14 +444,14 @@ async function handleMainWindowCloseRequest() {
     const childWindows = await invoke('get_all_child_windows', {
       mainWindowLabel: 'wallet_manager'
     })
-    
+
     // 获取子窗口列表
-    
+
     let confirmMessage = '确定要关闭应用程序吗？'
     if (childWindows && childWindows.length > 0) {
       confirmMessage = `当前还有 ${childWindows.length} 个子窗口正在运行，关闭主窗口将关闭所有窗口。确定要继续吗？`
     }
-    
+
 
 
     // 显示确认对话框
@@ -468,10 +468,10 @@ async function handleMainWindowCloseRequest() {
         return new Promise(async (resolve, reject) => {
           try {
             // 开始关闭应用程序
-            
+
             // 设置关闭确认标记位
             closeConfirmed.value = true
-            
+
             // 先关闭所有子窗口
             if (childWindows && childWindows.length > 0) {
               // 正在关闭子窗口
@@ -479,16 +479,16 @@ async function handleMainWindowCloseRequest() {
                 mainWindowLabel: 'wallet_manager'
               })
               // 已关闭子窗口
-              
+
               // 给子窗口一些时间完全关闭
               await new Promise(resolveTimeout => setTimeout(resolveTimeout, 500))
             }
-            
+
             // 最后强制关闭主窗口避免循环
             await invoke('force_close_main_window')
-            
+
             resolve(true) // 操作成功
-            
+
           } catch (error) {
             console.error('关闭窗口时发生错误:', error)
             // 发生错误时重置标记位
@@ -507,7 +507,7 @@ async function handleMainWindowCloseRequest() {
         closeConfirmed.value = false
       }
     })
-    
+
   } catch (error) {
     console.error('处理窗口关闭请求时发生错误:', error)
     // 如果出现错误，显示简单的确认对话框
@@ -553,29 +553,29 @@ async function handleMainWindowCloseRequest() {
         </div>
         <div class="titlebar-drag-area" data-tauri-drag-region></div>
         <div class="titlebar-right">
-          <button class="titlebar-btn theme-btn" @click="toggleTheme" :title="isDarkTheme ? '切换到明亮主题' : '切换到暗黑主题'">
-            <svg v-if="isDarkTheme" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="5"/>
-              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-            </svg>
-            <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-            </svg>
-          </button>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5" />
+            <path
+              d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+          <a-switch v-model="isDarkTheme" @change="toggleTheme" size="small" class="theme-switch" />
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
           <button class="titlebar-btn minimize-btn" @click="minimizeWindow">
             <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
           </button>
           <button class="titlebar-btn close-btn" @click="closeWindow">
             <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
           </button>
         </div>
       </div>
     </div>
-    
+
     <!-- 背景装饰 -->
     <div class="bg-decoration">
       <div class="bg-circle bg-circle-1"></div>
@@ -583,7 +583,7 @@ async function handleMainWindowCloseRequest() {
       <div class="bg-circle bg-circle-3"></div>
       <div class="bg-gradient"></div>
     </div>
-    
+
     <!-- 标题区域 -->
     <div class="header-section">
       <div class="funcListTitle">
@@ -592,105 +592,79 @@ async function handleMainWindowCloseRequest() {
       </div>
       <div class="subtitle">探索强大的Web3工具集合</div>
     </div>
-    
+
     <!-- 功能卡片网格 -->
     <div class="func-grid">
-      <div 
-        class="func-card" 
-        :class="{
-          'func-card--disabled': item.isBuilding,
-          'func-card--new': item.isNew
-        }"
-        @click="goPage(item.pageName)" 
-        v-for="(item, idx) in funcList" 
-        :key="idx"
-        :style="{ '--delay': idx * 0.1 + 's' }"
-      >
+      <div class="func-card" :class="{
+        'func-card--disabled': item.isBuilding,
+        'func-card--new': item.isNew
+      }" @click="goPage(item.pageName)" v-for="(item, idx) in funcList" :key="idx"
+        :style="{ '--delay': idx * 0.1 + 's' }">
         <!-- 新功能标识 -->
         <div v-if="item.isNew" class="new-badge">
           <span>NEW</span>
         </div>
-        
+
         <!-- 建设中标识 -->
         <div v-if="item.isBuilding" class="building-badge">
           <span>建设中</span>
         </div>
-        
+
         <!-- 卡片内容 -->
         <div class="card-content">
           <div class="card-icon">
             <img :src="item.picture" alt="功能图标" />
           </div>
-          
+
           <div class="card-info">
             <h3 class="card-title">{{ item.title }}</h3>
             <p class="card-desc">{{ item.desc }}</p>
           </div>
         </div>
-        
+
         <!-- 卡片底部装饰 -->
         <div class="card-footer">
           <div class="card-arrow">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
+              <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
           </div>
         </div>
-        
+
         <!-- 悬浮效果 -->
         <div class="card-hover-effect"></div>
       </div>
     </div>
-    
+
     <!-- 调试模式区域 -->
     <div class="debug-area">
       <!-- 调试模式切换按钮 -->
       <div class="debug-toggle" @click="toggleDebugMode" title="调试">
         <span class="debug-icon">🔧</span>
       </div>
-      
+
       <!-- 数据库管理面板 -->
       <div v-if="debugMode" class="database-panel">
         <div class="panel-header">
           <span class="panel-title">数据库管理</span>
-          <span v-if="databaseStatus" class="status-indicator" :class="{ 'status-ok': databaseStatus.includes('valid') }">
+          <span v-if="databaseStatus" class="status-indicator"
+            :class="{ 'status-ok': databaseStatus.includes('valid') }">
             {{ databaseStatus.includes('valid') ? '✓' : '⚠' }}
           </span>
         </div>
         <div class="panel-actions">
-          <a-button 
-            size="small" 
-            type="outline" 
-            @click="checkDatabaseStatus" 
-            :loading="databaseLoading"
-            class="action-btn"
-          >
+          <a-button size="small" type="outline" @click="checkDatabaseStatus" :loading="databaseLoading"
+            class="action-btn">
             检查状态
           </a-button>
-          <a-button 
-            size="small" 
-            type="outline" 
-            @click="reloadDatabase" 
-            :loading="databaseLoading"
-            class="action-btn"
-          >
+          <a-button size="small" type="outline" @click="reloadDatabase" :loading="databaseLoading" class="action-btn">
             重载数据库
           </a-button>
-          <a-button 
-            size="small" 
-            type="outline" 
-            @click="refreshPageData"
-            class="action-btn"
-          >
+          <a-button size="small" type="outline" @click="refreshPageData" class="action-btn">
             刷新页面
           </a-button>
-          <a-button 
-            size="small" 
-            type="outline" 
-            @click="exportDatabaseToInitSql" 
-            :loading="databaseLoading"
-            class="action-btn"
-          >
+          <a-button size="small" type="outline" @click="exportDatabaseToInitSql" :loading="databaseLoading"
+            class="action-btn">
             导出数据库
           </a-button>
         </div>
@@ -806,7 +780,7 @@ async function handleMainWindowCloseRequest() {
   min-height: 100vh;
   height: 100vh;
   padding: 140px 0 0;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: var(--bg-gradient);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -861,10 +835,10 @@ async function handleMainWindowCloseRequest() {
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(45deg, 
-    rgba(103, 126, 234, 0.05) 0%, 
-    rgba(118, 75, 162, 0.03) 50%, 
-    rgba(52, 152, 219, 0.05) 100%);
+  background: linear-gradient(45deg,
+      rgba(103, 126, 234, 0.05) 0%,
+      rgba(118, 75, 162, 0.03) 50%,
+      rgba(52, 152, 219, 0.05) 100%);
   opacity: 0.6;
 }
 
@@ -925,7 +899,7 @@ async function handleMainWindowCloseRequest() {
 /* 功能卡片 */
 .func-card {
   position: relative;
-  background: rgba(30, 42, 78, 0.85);
+  background: rgb(53 56 61);
   border-radius: 16px;
   padding: 15px;
   cursor: pointer;
@@ -1094,9 +1068,12 @@ async function handleMainWindowCloseRequest() {
 
 /* 动画 */
 @keyframes float {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0px);
   }
+
   50% {
     transform: translateY(-20px);
   }
@@ -1107,6 +1084,7 @@ async function handleMainWindowCloseRequest() {
     opacity: 0;
     transform: translateY(-30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1118,6 +1096,7 @@ async function handleMainWindowCloseRequest() {
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1128,15 +1107,19 @@ async function handleMainWindowCloseRequest() {
   from {
     width: 0;
   }
+
   to {
     width: 60px;
   }
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.05);
   }
@@ -1197,6 +1180,7 @@ async function handleMainWindowCloseRequest() {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1286,10 +1270,10 @@ async function handleMainWindowCloseRequest() {
 }
 
 .light-theme .bg-gradient {
-  background: linear-gradient(45deg, 
-    rgba(103, 126, 234, 0.08) 0%, 
-    rgba(118, 75, 162, 0.05) 50%, 
-    rgba(52, 152, 219, 0.08) 100%) !important;
+  background: linear-gradient(45deg,
+      rgba(103, 126, 234, 0.08) 0%,
+      rgba(118, 75, 162, 0.05) 50%,
+      rgba(52, 152, 219, 0.08) 100%) !important;
 }
 
 .light-theme .title-text {
@@ -1359,16 +1343,16 @@ async function handleMainWindowCloseRequest() {
   .container {
     padding: 60px 0 0 0;
   }
-  
+
   .title-text {
     font-size: 24px;
   }
-  
+
   .func-grid {
     grid-template-columns: 1fr;
     gap: 10px;
   }
-  
+
   .func-card {
     padding: 15px 15px 10px 15px;
   }

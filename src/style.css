@@ -61,9 +61,9 @@
 :root[data-theme="dark"] {
     --primary-color: #3370ff;
     --text-color: #ffffff;
-    --bg-color: #1a1a2e;
-    --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-    --card-bg: #2a2a3e;
+    --bg-color: rgb(42, 42, 43);
+    --bg-gradient: rgb(42, 42, 43);
+    --card-bg: rgb(53 56 61);
     --border-color: #3a3a4e;
     --shadow-color: rgba(0, 0, 0, 0.3);
 }
@@ -71,7 +71,7 @@
 /* 应用主题变量 */
 :root {
     color: var(--text-color, #ffffff);
-    background: var(--bg-gradient, linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%));
+    background: var(--bg-gradient, rgb(42, 42, 43));
 }
 
 /* 强制覆盖 Arco 框架的字体设置 */

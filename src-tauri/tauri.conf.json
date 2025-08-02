@@ -23,7 +23,7 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "shadow": true,
-        "backgroundColor": "#1a1a2e",
+        "backgroundColor": "#2A2A2B",
         "visible": false,
         "skipTaskbar": false,
         "alwaysOnTop": false

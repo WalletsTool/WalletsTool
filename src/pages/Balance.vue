@@ -1408,61 +1408,6 @@ async function handleBeforeClose() {
   font-weight: 500;
 }
 
-/* 自定义标题栏 */
-.title-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 30px;
-  background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(22, 33, 62, 0.95) 50%, rgba(15, 52, 96, 0.95) 100%);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(103, 126, 234, 0.3);
-  color: white;
-  padding: 0 10px;
-  -webkit-app-region: drag;
-  user-select: none;
-  font-size: 14px;
-  font-weight: 500;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-}
-
-.title-bar-text {
-  font-size: 13px;
-  font-weight: 500;
-  margin-left: 8px;
-}
-
-.title-bar-controls {
-  display: flex;
-  -webkit-app-region: no-drag;
-}
-
-.title-bar-control {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 30px;
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.8);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 16px;
-}
-
-.title-bar-control:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.title-bar-control.close:hover {
-  background: #ff5555;
-}
-
 .minimize-icon {
   font-size: 14px;
 }

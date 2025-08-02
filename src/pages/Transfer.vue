@@ -172,6 +172,15 @@ const rpcManageRef = ref(null);
 const tokenManageRef = ref(null);
 // 钱包导入组件引用
 const walletImportRef = ref(null);
+// 高级筛选相关变量
+const advancedFilterVisible = ref(false);
+const filterForm = reactive({
+  platBalanceOperator: 'gt', // gt: 大于, eq: 等于, lt: 小于
+  platBalanceValue: '',
+  coinBalanceOperator: 'gt', // gt: 大于, eq: 等于, lt: 小于
+  coinBalanceValue: '',
+  errorMsg: ''
+});
 // 删除信息弹窗
 let deleteItemVisible = ref(false);
 // 当前币种名称
@@ -2691,6 +2700,69 @@ function InvertSelection() {
     .map((item) => item.key);
 }
 
+// 显示高级筛选弹窗
+function showAdvancedFilter() {
+  advancedFilterVisible.value = true;
+}
+
+// 应用高级筛选
+function applyAdvancedFilter() {
+  let filteredItems = [];
+  
+  data.value.forEach(item => {
+    let shouldSelect = true;
+    
+    // 平台币余额筛选
+    if (filterForm.platBalanceValue && filterForm.platBalanceValue.trim() !== '') {
+      const platBalanceValue = parseFloat(filterForm.platBalanceValue);
+      const itemPlatBalance = parseFloat(item.plat_balance || 0);
+      
+      if (filterForm.platBalanceOperator === 'gt' && itemPlatBalance <= platBalanceValue) {
+        shouldSelect = false;
+      } else if (filterForm.platBalanceOperator === 'eq' && itemPlatBalance !== platBalanceValue) {
+        shouldSelect = false;
+      } else if (filterForm.platBalanceOperator === 'lt' && itemPlatBalance >= platBalanceValue) {
+        shouldSelect = false;
+      }
+    }
+    
+    // 代币余额筛选
+    if (shouldSelect && filterForm.coinBalanceValue && filterForm.coinBalanceValue.trim() !== '') {
+      const coinBalanceValue = parseFloat(filterForm.coinBalanceValue);
+      const itemCoinBalance = parseFloat(item.coin_balance || 0);
+      
+      if (filterForm.coinBalanceOperator === 'gt' && itemCoinBalance <= coinBalanceValue) {
+        shouldSelect = false;
+      } else if (filterForm.coinBalanceOperator === 'eq' && itemCoinBalance !== coinBalanceValue) {
+        shouldSelect = false;
+      } else if (filterForm.coinBalanceOperator === 'lt' && itemCoinBalance >= coinBalanceValue) {
+        shouldSelect = false;
+      }
+    }
+    
+    // 错误信息模糊匹配筛选
+    if (shouldSelect && filterForm.errorMsg && filterForm.errorMsg.trim()) {
+      const errorMsg = item.error_msg || '';
+      if (!errorMsg.toLowerCase().includes(filterForm.errorMsg.toLowerCase())) {
+        shouldSelect = false;
+      }
+    }
+    
+    if (shouldSelect) {
+      filteredItems.push(item.key);
+    }
+  });
+  
+  // 更新选中的项
+  selectedKeys.value = filteredItems;
+  
+  // 关闭弹窗
+  advancedFilterVisible.value = false;
+  
+  // 显示筛选结果
+  Notification.success(`筛选完成，共选中 ${filteredItems.length} 条数据`);
+}
+
 function deleteSelected() {
   if (startLoading.value) {
     Notification.warning("请停止或等待执行完成后再删除数据！");
@@ -3051,6 +3123,13 @@ async function handleBeforeClose() {
         </template>
         选中失败
       </a-button>
+      <!-- 高级筛选按钮 -->
+      <a-button type="outline" status="normal" style="margin-left: 10px" @click="showAdvancedFilter">
+        <template #icon>
+          <Icon icon="mdi:filter" />
+        </template>
+        高级筛选
+      </a-button>
       <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">
         <template #icon>
           <Icon icon="mdi:swap-horizontal" />
@@ -3409,6 +3488,45 @@ async function handleBeforeClose() {
       <a-button @click="deleteItemCancel">取消</a-button>
       <a-button type="primary" status="danger" @click="deleteItemConfirm" style="margin-left: 10px">确定
       </a-button>
+    </template>
+  </a-modal>
+
+  <!-- 高级筛选弹窗 -->
+  <a-modal v-model:visible="advancedFilterVisible" title="高级筛选" width="500px">
+    <a-form :model="filterForm" layout="vertical">
+      <!-- 平台币余额筛选 -->
+      <a-form-item label="平台币余额筛选">
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <a-select v-model="filterForm.platBalanceOperator" style="width: 100px;">
+            <a-option value="gt">大于</a-option>
+            <a-option value="eq">等于</a-option>
+            <a-option value="lt">小于</a-option>
+          </a-select>
+          <a-input v-model="filterForm.platBalanceValue" placeholder="请输入平台币余额值" style="flex: 1;" />
+        </div>
+      </a-form-item>
+      
+      <!-- 代币余额筛选 -->
+      <a-form-item label="代币余额筛选">
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <a-select v-model="filterForm.coinBalanceOperator" style="width: 100px;">
+            <a-option value="gt">大于</a-option>
+            <a-option value="eq">等于</a-option>
+            <a-option value="lt">小于</a-option>
+          </a-select>
+          <a-input v-model="filterForm.coinBalanceValue" placeholder="请输入代币余额值" style="flex: 1;" />
+        </div>
+      </a-form-item>
+      
+      <!-- 错误信息模糊匹配 -->
+      <a-form-item label="错误信息模糊匹配">
+        <a-input v-model="filterForm.errorMsg" placeholder="请输入要匹配的错误信息" />
+      </a-form-item>
+    </a-form>
+    
+    <template #footer>
+      <a-button @click="advancedFilterVisible = false">取消</a-button>
+      <a-button type="primary" @click="applyAdvancedFilter" style="margin-left: 10px;">应用筛选</a-button>
     </template>
   </a-modal>
 

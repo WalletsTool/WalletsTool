@@ -153,6 +153,17 @@ const chainManageRef = ref(null);
 const rpcManageRef = ref(null);
 // 代币管理组件引用
 const tokenManageRef = ref(null);
+// 高级筛选相关变量
+const advancedFilterVisible = ref(false);
+const filterForm = reactive({
+  platBalanceOperator: 'gt', // gt: 大于, eq: 等于, lt: 小于
+  platBalanceValue: '',
+  coinBalanceOperator: 'gt', // gt: 大于, eq: 等于, lt: 小于
+  coinBalanceValue: '',
+  nonceOperator: 'gt',
+  nonceValue: '',
+  errorMsg: ''
+});
 
 // a-table行选择配置
 const rowSelection = reactive({
@@ -774,6 +785,79 @@ function InvertSelection() {
   selectedKeys.value = data.value.filter(item => selectedKeys.value.indexOf(item.address) < 0).map(item => item.address)
 }
 
+// 显示高级筛选弹窗
+function showAdvancedFilter() {
+  advancedFilterVisible.value = true;
+}
+
+// 应用高级筛选
+function applyAdvancedFilter() {
+  const filteredItems = [];
+  
+  data.value.forEach(item => {
+    let shouldSelect = true;
+    
+    // 平台币余额筛选
+    if (filterForm.platBalanceValue && filterForm.platBalanceValue.trim() !== '') {
+      const platBalanceValue = parseFloat(filterForm.platBalanceValue);
+      const itemPlatBalance = parseFloat(item.plat_balance || 0);
+      
+      if (filterForm.platBalanceOperator === 'gt' && itemPlatBalance <= platBalanceValue) {
+        shouldSelect = false;
+      } else if (filterForm.platBalanceOperator === 'eq' && itemPlatBalance !== platBalanceValue) {
+        shouldSelect = false;
+      } else if (filterForm.platBalanceOperator === 'lt' && itemPlatBalance >= platBalanceValue) {
+        shouldSelect = false;
+      }
+    }
+    
+    // 代币余额筛选
+    if (shouldSelect && filterForm.coinBalanceValue && filterForm.coinBalanceValue.trim() !== '') {
+      const coinBalanceValue = parseFloat(filterForm.coinBalanceValue);
+      const itemCoinBalance = parseFloat(item.coin_balance || 0);
+      
+      if (filterForm.coinBalanceOperator === 'gt' && itemCoinBalance <= coinBalanceValue) {
+        shouldSelect = false;
+      } else if (filterForm.coinBalanceOperator === 'eq' && itemCoinBalance !== coinBalanceValue) {
+        shouldSelect = false;
+      } else if (filterForm.coinBalanceOperator === 'lt' && itemCoinBalance >= coinBalanceValue) {
+        shouldSelect = false;
+      }
+    }
+    
+    // Nonce值筛选
+    if (shouldSelect && filterForm.nonceValue && filterForm.nonceValue.trim() !== '') {
+      const nonceValue = parseInt(filterForm.nonceValue);
+      const itemNonce = parseInt(item.nonce || 0);
+      
+      if (filterForm.nonceOperator === 'gt' && itemNonce <= nonceValue) {
+        shouldSelect = false;
+      } else if (filterForm.nonceOperator === 'eq' && itemNonce !== nonceValue) {
+        shouldSelect = false;
+      } else if (filterForm.nonceOperator === 'lt' && itemNonce >= nonceValue) {
+        shouldSelect = false;
+      }
+    }
+    
+    // 错误信息模糊匹配
+    if (shouldSelect && filterForm.errorMsg && filterForm.errorMsg.trim() !== '') {
+      const errorMsg = item.error_msg || '';
+      if (!errorMsg.toLowerCase().includes(filterForm.errorMsg.toLowerCase())) {
+        shouldSelect = false;
+      }
+    }
+    
+    if (shouldSelect) {
+      filteredItems.push(item.address);
+    }
+  });
+  
+  selectedKeys.value = filteredItems;
+  advancedFilterVisible.value = false;
+  
+  Notification.success(`已筛选并选中 ${filteredItems.length} 条数据`);
+}
+
 function deleteSelected() {
   if (balanceLoading.value) {
     Notification.warning('请停止或等待查询完成后再删除数据！');
@@ -992,6 +1076,13 @@ async function handleBeforeClose() {
           <Icon icon="mdi:close" />
         </template>
         选中失败
+      </a-button>
+      <!-- 高级筛选按钮 -->
+      <a-button type="outline" status="normal" style="margin-left: 10px" @click="showAdvancedFilter">
+        <template #icon>
+          <Icon icon="mdi:filter" />
+        </template>
+        高级筛选
       </a-button>
       <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">
         <template #icon>
@@ -1231,6 +1322,57 @@ async function handleBeforeClose() {
       <a-button @click="deleteItemCancel">取消</a-button>
       <a-button type="primary" status="danger" @click="deleteItemConfirm" style="margin-left: 10px">确定
       </a-button>
+    </template>
+  </a-modal>
+
+  <!-- 高级筛选弹窗 -->
+  <a-modal v-model:visible="advancedFilterVisible" title="高级筛选" width="500px">
+    <a-form :model="filterForm" layout="vertical">
+      <!-- 平台币余额筛选 -->
+      <a-form-item label="平台币余额筛选">
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <a-select v-model="filterForm.platBalanceOperator" style="width: 100px;">
+            <a-option value="gt">大于</a-option>
+            <a-option value="eq">等于</a-option>
+            <a-option value="lt">小于</a-option>
+          </a-select>
+          <a-input v-model="filterForm.platBalanceValue" placeholder="请输入平台币余额值" style="flex: 1;" />
+        </div>
+      </a-form-item>
+      
+      <!-- 代币余额筛选 -->
+      <a-form-item label="代币余额筛选">
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <a-select v-model="filterForm.coinBalanceOperator" style="width: 100px;">
+            <a-option value="gt">大于</a-option>
+            <a-option value="eq">等于</a-option>
+            <a-option value="lt">小于</a-option>
+          </a-select>
+          <a-input v-model="filterForm.coinBalanceValue" placeholder="请输入代币余额值" style="flex: 1;" />
+        </div>
+      </a-form-item>
+      
+      <!-- Nonce值筛选 -->
+      <a-form-item label="Nonce值筛选">
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <a-select v-model="filterForm.nonceOperator" style="width: 100px;">
+            <a-option value="gt">大于</a-option>
+            <a-option value="eq">等于</a-option>
+            <a-option value="lt">小于</a-option>
+          </a-select>
+          <a-input v-model="filterForm.nonceValue" placeholder="请输入数值" style="flex: 1;" />
+        </div>
+      </a-form-item>
+      
+      <!-- 错误信息模糊匹配 -->
+      <a-form-item label="错误信息模糊匹配">
+        <a-input v-model="filterForm.errorMsg" placeholder="请输入要匹配的错误信息" />
+      </a-form-item>
+    </a-form>
+    
+    <template #footer>
+      <a-button @click="advancedFilterVisible = false">取消</a-button>
+      <a-button type="primary" @click="applyAdvancedFilter" style="margin-left: 10px;">应用筛选</a-button>
     </template>
   </a-modal>
 

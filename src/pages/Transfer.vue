@@ -3228,7 +3228,7 @@ async function handleBeforeClose() {
             <a-input v-model="form.max_interval" :disabled="threadCount > 1" />
           </a-form-item>
           <a-form-item field="thread_count" label="线程数" style="width: 130px; padding: 5px 10px;" tooltip="同时执行的钱包数量">
-            <a-input-number v-model="threadCount" :min="1" :max="100" :step="1" :default-value="1" mode="button" />
+            <a-input-number v-model="threadCount" :min="1" :max="99" :step="1" :default-value="1" mode="button" />
           </a-form-item>
           <a-form-item field="error_retry" label="失败自动重试" style="width: 125px; padding: 5px 10px;"
             tooltip="转账失败时是否自动重试">

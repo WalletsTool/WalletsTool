@@ -329,7 +329,7 @@ impl SimpleBalanceQueryService {
 
     // 批量查询余额（多线程）
     pub async fn query_balances(&self, params: QueryParams) -> QueryResult {
-        let thread_count = params.thread_count.max(1).min(20); // 限制线程数在1-20之间
+        let thread_count = params.thread_count.max(1).min(99); // 限制线程数在1-99之间
         let semaphore = Arc::new(Semaphore::new(thread_count));
         
         println!("开始批量查询余额，线程数: {}, 总任务数: {}", thread_count, params.items.len());
@@ -379,7 +379,7 @@ impl SimpleBalanceQueryService {
         // 重置停止标志
         reset_stop_flag(&window_id);
         
-        let thread_count = params.thread_count.max(1).min(20); // 限制线程数在1-20之间
+        let thread_count = params.thread_count.max(1).min(99); // 限制线程数在1-99之间
         let semaphore = Arc::new(Semaphore::new(thread_count));
         
         println!("开始批量查询余额（实时更新），线程数: {}, 总任务数: {}", thread_count, params.items.len());

@@ -1,4 +1,4 @@
-﻿use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Result};
 use futures::future::join_all;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -167,6 +167,7 @@ impl SimpleBalanceQueryService {
     async fn query_base_balance(&self, item: &mut QueryItem, chain: &str) -> Result<()> {
         let rpc_url = self.get_rpc_url(chain).await?;
         
+        
         // 查询余额
         let balance_result = self.send_rpc_request(
             &rpc_url,
@@ -175,10 +176,24 @@ impl SimpleBalanceQueryService {
         ).await?;
 
         if let Some(balance_hex) = balance_result.as_str() {
-            // 将十六进制转换为十进制
-            let balance_wei = u64::from_str_radix(&balance_hex[2..], 16)?;
-            let balance_eth = balance_wei as f64 / 1e18;
-            item.plat_balance = Some(format!("{:.6}", balance_eth));
+            
+            // 检查十六进制字符串长度
+            let hex_without_prefix = &balance_hex[2..];
+            
+            // 将十六进制转换为十进制，使用u128避免溢出
+            match u128::from_str_radix(hex_without_prefix, 16) {
+                Ok(balance_wei) => {
+                    let balance_eth = balance_wei as f64 / 1e18;
+                    item.plat_balance = Some(format!("{:.6}", balance_eth));
+                }
+                Err(e) => {
+                    println!("[ERROR] 十六进制转换失败 - 链: {}, 地址: {}, 十六进制: {}, 错误: {}", 
+                            chain, item.address, balance_hex, e);
+                    return Err(anyhow!("余额数值转换失败: {} (原始值: {})", e, balance_hex));
+                }
+            }
+        } else {
+            println!("[WARNING] 余额查询返回空值 - 链: {}, 地址: {}", chain, item.address);
         }
 
         // 查询 nonce
@@ -189,8 +204,20 @@ impl SimpleBalanceQueryService {
         ).await?;
 
         if let Some(nonce_hex) = nonce_result.as_str() {
-            let nonce = u64::from_str_radix(&nonce_hex[2..], 16)?;
-            item.nonce = Some(nonce);
+            let nonce_without_prefix = &nonce_hex[2..];
+            
+            match u64::from_str_radix(nonce_without_prefix, 16) {
+                Ok(nonce) => {
+                    item.nonce = Some(nonce);
+                }
+                Err(e) => {
+                    println!("[ERROR] nonce转换失败 - 链: {}, 地址: {}, 十六进制: {}, 错误: {}", 
+                            chain, item.address, nonce_hex, e);
+                    return Err(anyhow!("nonce数值转换失败: {} (原始值: {})", e, nonce_hex));
+                }
+            }
+        } else {
+            println!("[WARNING] nonce查询返回空值 - 链: {}, 地址: {}", chain, item.address);
         }
 
         Ok(())
@@ -217,10 +244,25 @@ impl SimpleBalanceQueryService {
         ).await?;
 
         if let Some(balance_hex) = balance_result.as_str() {
-            // 将十六进制转换为十进制
-            let balance_wei = u64::from_str_radix(&balance_hex[2..], 16)?;
-            let balance_tokens = balance_wei as f64 / 1e18; // 假设18位小数
-            item.coin_balance = Some(format!("{:.4}", balance_tokens));
+            
+            // 检查十六进制字符串长度
+            let hex_without_prefix = &balance_hex[2..];
+            
+            // 将十六进制转换为十进制，使用u128避免溢出
+            match u128::from_str_radix(hex_without_prefix, 16) {
+                Ok(balance_wei) => {
+                    let balance_tokens = balance_wei as f64 / 1e18; // 假设18位小数
+                    item.coin_balance = Some(format!("{:.4}", balance_tokens));
+                }
+                Err(e) => {
+                    println!("[ERROR] 代币余额十六进制转换失败 - 链: {}, 地址: {}, 合约: {}, 十六进制: {}, 错误: {}", 
+                            chain, item.address, contract_address, balance_hex, e);
+                    return Err(anyhow!("代币余额数值转换失败: {} (原始值: {})", e, balance_hex));
+                }
+            }
+        } else {
+            println!("[WARNING] 代币余额查询返回空值 - 链: {}, 地址: {}, 合约: {}", 
+                    chain, item.address, contract_address);
         }
 
         Ok(())

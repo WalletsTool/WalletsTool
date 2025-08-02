@@ -227,7 +227,20 @@ impl TransferUtils {
             "3" => {
                 // 使用溢价Gas Price
                 let base_gas_price = provider.get_gas_price().await?;
-                let gas_price_with_rate = base_gas_price * (100 + (config.gas_price_rate * 100.0) as u64) / 100;
+                
+                
+                // 安全地计算gas price rate，避免溢出
+                let rate_percentage = config.gas_price_rate * 100.0;
+                if rate_percentage < 0.0 || rate_percentage > f64::MAX / 2.0 {
+                    println!("[ERROR] Gas price rate 值异常: {}", rate_percentage);
+                    return Err(format!("Gas price rate 值异常: {}", rate_percentage).into());
+                }
+                
+                // 使用U256进行安全计算，避免u64溢出
+                let rate_u256 = U256::from((rate_percentage as u64).min(u64::MAX));
+                let multiplier = U256::from(100) + rate_u256;
+                let gas_price_with_rate = base_gas_price * multiplier / U256::from(100);
+                
                 
                 // 检查最大Gas Price限制
                 if config.max_gas_price > 0.0 {

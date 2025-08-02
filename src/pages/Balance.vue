@@ -1,15 +1,20 @@
 <script setup name="balance">
-import { IconDelete, IconDoubleLeft, IconDownload, IconPlus } from '@arco-design/web-vue/es/icon';
+import { Icon } from '@iconify/vue';
+import { IconDelete, IconDoubleLeft } from '@arco-design/web-vue/es/icon';
 import { useRouter } from "vue-router";
-import { nextTick, onBeforeMount, onMounted, reactive, ref, computed } from "vue";
+import { computed, nextTick, onBeforeMount, onMounted, reactive, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { ethers } from "ethers";
 import { Notification } from "@arco-design/web-vue";
-// import token_utils from "@/scripts/token/token_utils.js"; // 已迁移到Rust后端
 import { utils as xlUtils, writeFile } from "xlsx";
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { useVirtualizer } from '@tanstack/vue-virtual'
- import ChainIcon from '@/components/ChainIcon.vue';
+import ChainIcon from '@/components/ChainIcon.vue';
+import TitleBar from '@/components/TitleBar.vue'
+import ChainManagement from '@/components/ChainManagement.vue'
+import RpcManagement from '@/components/RpcManagement.vue'
+import TokenManagement from '@/components/TokenManagement.vue'
+import CodeEditor from '@/components/CodeEditor.vue'
 
 const router = useRouter()
 // table列名
@@ -75,16 +80,10 @@ const columns = [
     tooltip: 'true'
   }
 ]
-let tableLoading = ref(false)
+const tableBool = ref(true)
 const data = ref([])
 // 选中的数据key
 const selectedKeys = ref([]);
-// 选择配置
-const rowSelection = reactive({
-  type: 'checkbox',
-  showCheckedAll: true,
-  onlyCurrent: false,
-});
 
 // 点击行实现选中和取消
 function rowClick(record, event) {
@@ -94,19 +93,24 @@ function rowClick(record, event) {
 
 // 仅查询目标代币
 const onlyCoin = ref(true);
-// 进度
-const progress = ref(0);
+// 余额查询进度相关变量
+const balanceProgress = ref(0); // 余额查询进度百分比
+const balanceTotal = ref(0); // 总查询数量
+const balanceCompleted = ref(0); // 已完成查询数量
+const showProgress = ref(false); // 是否显示进度条
 // 分页
 const pagination = ref(false);
 const scrollbar = ref(true);
-// rpc默认值
-const rpcValue = ref('');
-// 当前rpc
-const currentRpc = ref({});
-// rpc自定义字段名
-const rpcFieldNames = { value: 'key', label: 'scan_url' }
+// 窗口标题
+const windowTitle = ref('Web3 Tools - 余额查询');
+// chain默认值
+const chainValue = ref('');
+// 当前chain
+const currentChain = ref({});
+// chain自定义字段名
+const chainFieldNames = { value: 'key', label: 'scan_url' }
 // 主网选择器
-let rpcOptions = ref([])
+let chainOptions = ref([])
 // coin默认值
 let coinValue = ref('');
 // coin自定义字段名
@@ -122,6 +126,12 @@ const form = reactive({
 // 录入 钱包地址 弹窗
 let visible = ref(false)
 let importText = ref('')
+// 导入loading状态
+let importLoading = ref(false)
+// 地址验证相关
+const validationErrors = ref([])
+const errorsExpanded = ref(false)
+const addressErrorLines = ref([])
 // 添加代币弹窗
 let addCoinVisible = ref(false)
 let coinAddress = ref('')
@@ -135,55 +145,38 @@ let currentCoin = ref({})
 let currentItemKey = ref('')
 // 当前窗口ID
 let currentWindowId = ref('')
+// 链管理组件引用
+const chainManageRef = ref(null);
+// RPC管理组件引用
+const rpcManageRef = ref(null);
+// 代币管理组件引用
+const tokenManageRef = ref(null);
 
-// 虚拟滚动相关配置
-const tableContainer = ref(null)
-
-// 虚拟滚动器配置
-const virtualizer = computed(() => {
-  if (!tableContainer.value || data.value.length === 0) return null
-  return useVirtualizer({
-    count: data.value.length,
-    getScrollElement: () => tableContainer.value,
-    estimateSize: () => 45, // 每行的估计高度
-    overscan: 10 // 预渲染的项目数
-  })
+// a-table行选择配置
+const rowSelection = reactive({
+  type: 'checkbox',
+  showCheckedAll: true,
+  selectedRowKeys: selectedKeys,
+  onSelect: (rowKeys) => {
+    selectedKeys.value = rowKeys
+  },
+  onSelectAll: (selected) => {
+    if (selected) {
+      selectedKeys.value = data.value.map(item => item.address)
+    } else {
+      selectedKeys.value = []
+    }
+  }
 })
 
-// 复选框状态管理
-const isItemSelected = (address) => selectedKeys.value.includes(address)
-const toggleRowSelection = (address) => {
-  const index = selectedKeys.value.indexOf(address)
-  if (index >= 0) {
-    selectedKeys.value.splice(index, 1)
-  } else {
-    selectedKeys.value.push(address)
-  }
-}
-
-// 全选/取消全选
-const selectAll = ref(false)
-const indeterminate = computed(() => {
-  const selectedCount = selectedKeys.value.length
-  return selectedCount > 0 && selectedCount < data.value.length
-})
-const handleSelectAll = (checked) => {
-  if (checked) {
-    selectedKeys.value = data.value.map(item => item.address)
-  } else {
-    selectedKeys.value = []
-  }
-  selectAll.value = checked
-}
-
-// 初始化RPC列表
+// 初始化Chain列表
 onBeforeMount(async () => {
-  rpcOptions.value = await invoke('get_chain_list')
-  if (rpcOptions.value && rpcOptions.value.length > 0) {
-    rpcValue.value = rpcOptions.value[0].key
-    currentRpc.value = rpcOptions.value[0]
-    // 获取rpc对应的代币列表
-    await rpcChange()
+  chainOptions.value = await invoke('get_chain_list')
+  if (chainOptions.value && chainOptions.value.length > 0) {
+    chainValue.value = chainOptions.value[0].key
+    currentChain.value = chainOptions.value[0]
+    // 获取chain对应的代币列表
+    await chainChange()
   }
 })
 
@@ -196,17 +189,17 @@ onMounted(async () => {
       // 获取当前窗口ID
       currentWindowId.value = currentWindow.label;
       console.log('当前窗口ID:', currentWindowId.value);
-      
+
       // 添加Tauri窗口关闭事件监听器
       await currentWindow.onCloseRequested(async (event) => {
         console.log('窗口关闭事件触发，正在停止后台操作...');
-        
+
         // 停止余额查询操作
         if (balanceLoading.value) {
           await stopBalanceQuery();
           console.log('已停止余额查询操作');
         }
-        
+
         console.log('窗口关闭清理完成，所有后台操作已停止');
       });
     } catch (error) {
@@ -231,12 +224,10 @@ onMounted(async () => {
       Object.assign(data.value[index], item)
 
       // 更新进度
-      const completedItems = data.value.filter(item => item.exec_status === '2' || item.exec_status === '3').length
-      const totalItems = data.value.length
-      progress.value = totalItems > 0 ? Number((completedItems / totalItems).toFixed(2)) : 0
+      updateBalanceProgress()
     }
   })
-  
+
   // 页面加载完成后发送事件
   nextTick(() => {
     setTimeout(() => {
@@ -251,13 +242,13 @@ onMounted(async () => {
 
 
 // RPC变化事件
-async function rpcChange() {
-  coinOptions.value = await invoke("get_coin_list", { chainKey: rpcValue.value })
+async function chainChange() {
+  coinOptions.value = await invoke("get_coin_list", { chainKey: chainValue.value })
   if (coinOptions.value && coinOptions.value.length > 0) {
     coinValue.value = coinOptions.value[0].key
     currentCoin.value = coinOptions.value[0]
   }
-  currentRpc.value = rpcOptions.value.find(item => item.key === rpcValue.value) || {}
+  currentChain.value = chainOptions.value.find(item => item.key === chainValue.value) || {}
 }
 
 // coin变化事件
@@ -267,35 +258,35 @@ async function coinChange(value) {
 
 // 删除代币方法
 function deleteToken() {
-  if (rpcValue.value === 'starknet') {
+  if (chainValue.value === 'starknet') {
     Notification.warning(' StarkNet 暂不支持删除代币！');
     return
   }
-  if (rpcValue.value === 'okt') {
+  if (chainValue.value === 'okt') {
     Notification.warning(' OKT Chain 暂不支持删除代币！');
     return
   }
-  if (rpcValue.value === "evmos") {
+  if (chainValue.value === "evmos") {
     Notification.warning(" EVMOS Chain 暂不支持删除代币！");
     return;
   }
-  if (rpcValue.value === 'geth') {
+  if (chainValue.value === 'geth') {
     Notification.warning(' Goerli Ethereum 暂不支持删除代币！');
     return
   }
-  if (rpcValue.value === 'sepolia') {
+  if (chainValue.value === 'sepolia') {
     Notification.warning(' Sepolia Ethereum 暂不支持删除代币！');
     return
   }
-  if (rpcValue.value === 'scroll') {
+  if (chainValue.value === 'scroll') {
     Notification.warning(' Scroll Alpha TestNet 暂不支持删除代币！');
     return
   }
-  if (rpcValue.value === 'linea') {
+  if (chainValue.value === 'linea') {
     Notification.warning(' Linea MainNet 暂不支持删除代币！');
     return
   }
-  if (rpcValue.value === 'base') {
+  if (chainValue.value === 'base') {
     Notification.warning(' Base MainNet 暂不支持删除代币！');
     return
   }
@@ -310,10 +301,10 @@ function deleteTokenCancel() {
 // 删除代币确认
 async function deleteTokenConfirm() {
   deleteTokenVisible.value = false
-  await invoke("remove_coin", { chain: rpcValue.value, key: currentCoin.value.key }).then(() => {
+  await invoke("remove_coin", { chain: chainValue.value, key: currentCoin.value.key }).then(() => {
     Notification.success('删除成功！');
     // 删除成功后重新获取代币列表
-    rpcChange()
+    chainChange()
   }).catch(() => {
     Notification.error('删除失败！');
   })
@@ -321,35 +312,35 @@ async function deleteTokenConfirm() {
 
 // 导入事件触发
 function handleAddCoinClick() {
-  if (rpcValue.value === 'starknet') {
+  if (chainValue.value === 'starknet') {
     Notification.warning(' StarkNet 暂不支持添加代币！');
     return
   }
-  if (rpcValue.value === 'okt') {
+  if (chainValue.value === 'okt') {
     Notification.warning(' OKT Chain 暂不支持添加代币！');
     return
   }
-  if (rpcValue.value === "evmos") {
+  if (chainValue.value === "evmos") {
     Notification.warning(" EVMOS Chain 暂不支持添加代币！");
     return;
   }
-  if (rpcValue.value === 'geth') {
+  if (chainValue.value === 'geth') {
     Notification.warning(' Goerli Ethereum 暂不支持添加代币！');
     return
   }
-  if (rpcValue.value === 'sepolia') {
+  if (chainValue.value === 'sepolia') {
     Notification.warning(' Sepolia Ethereum 暂不支持添加代币！');
     return
   }
-  if (rpcValue.value === 'scroll') {
+  if (chainValue.value === 'scroll') {
     Notification.warning(' Scroll Alpha TestNet 暂不支持添加代币！');
     return
   }
-  if (rpcValue.value === 'linea') {
+  if (chainValue.value === 'linea') {
     Notification.warning(' Linea MainNet 暂不支持添加代币！');
     return
   }
-  if (rpcValue.value === 'base') {
+  if (chainValue.value === 'base') {
     Notification.warning(' Base MainNet 暂不支持添加代币！');
     return
   }
@@ -367,10 +358,10 @@ function addCoinFunc() {
     try {
       // 直接使用Rust后端获取代币信息
       const tokenInfo = await invoke('get_token_info', {
-        chain: rpcValue.value,
+        chain: chainValue.value,
         contractAddress: coinAddress.value
       })
-      
+
       let json = {
         "key": tokenInfo.symbol.toLowerCase(),
         "coin": tokenInfo.symbol,
@@ -379,13 +370,13 @@ function addCoinFunc() {
         "contract_address": coinAddress.value,
         "abi": null // 使用标准ERC20 ABI
       }
-      
+
       // 添加代币
       await invoke('add_coin', {
-        chain: rpcValue.value,
+        chain: chainValue.value,
         objJson: JSON.stringify(json)
       })
-      
+
       addCoinVisible.value = false
       coinAddress.value = ''
       resolve()
@@ -410,7 +401,7 @@ const handleAddCoinBeforeOk = async () => {
     Notification.error(err);
   })
   // 删除成功后重新获取代币列表
-  rpcChange()
+  chainChange()
   return flag
 }
 
@@ -425,43 +416,150 @@ function handleClick() {
   visible.value = true
 }
 
+// 验证地址格式
+function validateAddress(address) {
+  try {
+    // 检查地址是否为空或undefined
+    if (!address || typeof address !== 'string') {
+      return false;
+    }
+
+    // 去除首尾空格
+    const trimmedAddress = address.trim();
+
+    // 检查是否以0x开头且长度为42
+    if (!trimmedAddress.startsWith('0x') || trimmedAddress.length !== 42) {
+      return false;
+    }
+
+    // 检查除0x外的部分是否为有效的十六进制字符
+    const hexPart = trimmedAddress.slice(2);
+    if (!/^[0-9a-fA-F]{40}$/.test(hexPart)) {
+      return false;
+    }
+    // 使用ethers.js进行最终验证
+    return ethers.utils.isAddress(trimmedAddress);
+  } catch (error) {
+    return false;
+  }
+}
+
+// 验证导入的地址数据
+function validateImportData() {
+  const addresses = importText.value.split('\n').filter(line => line.trim() !== '');
+  
+  validationErrors.value = [];
+  const errorLines = new Set();
+  
+  // 验证地址格式
+  addresses.forEach((addr, index) => {
+    const trimmedAddr = addr.trim();
+    if (trimmedAddr && !validateAddress(trimmedAddr)) {
+      validationErrors.value.push(`第${index + 1}行地址格式错误`);
+      errorLines.add(index + 1);
+    }
+  });
+  
+  // 更新错误行号
+  addressErrorLines.value = Array.from(errorLines);
+}
+
+// 切换错误信息展开状态
+function toggleErrorsExpanded() {
+  errorsExpanded.value = !errorsExpanded.value;
+}
+
+// 计算显示的错误信息
+const displayedErrors = computed(() => {
+  if (errorsExpanded.value || validationErrors.value.length <= 3) {
+    return validationErrors.value;
+  }
+  return validationErrors.value.slice(0, 3);
+});
+
 // 导入弹窗关闭事件
 function handleCancel() {
-  // TODO 判断是否正在进行数据处理 如果进行数据处理则提示
+  // 如果正在导入，不允许关闭
+  if (importLoading.value) {
+    Notification.warning('正在导入数据，请稍候...');
+    return false;
+  }
+  
   visible.value = false
   importText.value = ''
+  // 重置验证状态
+  validationErrors.value = []
+  errorsExpanded.value = false
+  addressErrorLines.value = []
 }
 
 // 导入弹窗保存事件
-const handleBeforeOk = () => {
-  let importList = importText.value.split('\n').filter(item => item !== '')
-  const total_count = importList.length
-  importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.address === item))
-  const success_count = importList.length
-  const fail_count = total_count - success_count
-  data.value.push(...importList.map(item => {
-    return {
-      address: item,
-      nonce: '',
-      plat_balance: '',
-      coin_balance: '',
-      exec_status: '0',
-      error_msg: ''
-    }
-  }))
-  if (fail_count > 0) {
-    Notification.warning({
-      title: '导入完成！',
-      content: `执行${total_count}条，成功${success_count}条，失败${fail_count}条！`,
-    })
-  } else {
-    Notification.success({
-      title: '导入成功！',
-      content: `成功导入${total_count}条`,
-    })
+const handleBeforeOk = async () => {
+  // 验证数据
+  validateImportData();
+  
+  if (validationErrors.value.length > 0) {
+    return false;
   }
-  importText.value = ''
-  return true
+  
+  // 开始loading
+  importLoading.value = true;
+  
+  try {
+    // 模拟处理延迟，特别是对于大量数据
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    let importList = importText.value.split('\n').filter(item => item.trim() !== '')
+    const total_count = importList.length
+    importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.address === item.trim()))
+    const success_count = importList.length
+    const fail_count = total_count - success_count
+    
+    // 批量处理数据，避免UI阻塞
+    const batchSize = 100;
+    for (let i = 0; i < importList.length; i += batchSize) {
+      const batch = importList.slice(i, i + batchSize);
+      data.value.push(...batch.map(item => {
+        return {
+          address: item.trim(),
+          nonce: '',
+          plat_balance: '',
+          coin_balance: '',
+          exec_status: '0',
+          error_msg: ''
+        }
+      }));
+      // 让UI有机会更新
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    
+    if (fail_count > 0) {
+      Notification.warning({
+        title: '导入完成！',
+        content: `执行${total_count}条，成功${success_count}条，失败${fail_count}条！`,
+      })
+    } else {
+      Notification.success({
+        title: '导入成功！',
+        content: `成功导入${total_count}条`,
+      })
+    }
+    
+    importText.value = ''
+    // 重置验证状态
+    validationErrors.value = []
+    errorsExpanded.value = false
+    addressErrorLines.value = []
+    
+    return true;
+  } catch (error) {
+    console.error('导入失败:', error);
+    Notification.error('导入失败：' + error.message);
+    return false;
+  } finally {
+    // 结束loading
+    importLoading.value = false;
+  }
 }
 
 // 删除数据
@@ -492,14 +590,36 @@ async function deleteItemConfirm() {
   Notification.success('删除成功！');
 }
 
+// 更新余额查询进度
+function updateBalanceProgress() {
+  balanceCompleted.value = data.value.filter(item =>
+    item.exec_status === '2' || item.exec_status === '3'
+  ).length
+  balanceProgress.value = balanceTotal.value > 0 ? Number((balanceCompleted.value / balanceTotal.value).toFixed(2)) : 0
+}
+
 // 查询余额（改为使用Rust后端）
 async function queryBalance() {
   if (data.value.length === 0) {
     Notification.warning('请先导入地址！');
     return
   }
+  if (!chainValue.value) {
+    Notification.warning('请先选择区块链！');
+    return
+  }
+  if (!coinValue.value) {
+    Notification.warning('请先选择代币！');
+    return
+  }
   if (currentCoin.value.coin_type === 'base' || currentCoin.value.coin_type === 'token') {
     balanceLoading.value = true
+
+    // 初始化进度条
+    balanceTotal.value = data.value.length
+    balanceCompleted.value = 0
+    balanceProgress.value = 0
+    showProgress.value = true
 
     // 重置所有项目状态和进度
     data.value.forEach(item => {
@@ -510,12 +630,10 @@ async function queryBalance() {
       item.exec_status = '0'
     })
 
-    progress.value = 0
-
     try {
       // 使用Rust后端进行查询
       const params = {
-        chain: rpcValue.value,
+        chain: chainValue.value,
         coin_config: {
           coin_type: currentCoin.value.coin_type,
           contract_address: currentCoin.value.contract_address || null,
@@ -534,9 +652,9 @@ async function queryBalance() {
         thread_count: form.thread_count
       }
 
-      const result = await invoke('query_balances_with_updates', { 
+      const result = await invoke('query_balances_with_updates', {
         params,
-        windowId: currentWindowId.value 
+        windowId: currentWindowId.value
       })
 
       if (result.success || result.items) {
@@ -548,7 +666,12 @@ async function queryBalance() {
         })
 
         // 确保进度条显示100%
-        progress.value = 1
+        balanceProgress.value = 1
+
+        // 延迟隐藏进度条
+        setTimeout(() => {
+          showProgress.value = false;
+        }, 3000); // 3秒后隐藏进度条
 
         // 统计成功和失败的数量
         const successCount = result.items.filter(item => item.exec_status === '2').length
@@ -570,7 +693,7 @@ async function queryBalance() {
           item.exec_status = '3'
           item.error_msg = result.error_msg || '查询失败！'
         })
-        progress.value = 1 // 即使失败也要显示100%完成
+        balanceProgress.value = 1 // 即使失败也要显示100%完成
         Notification.error('查询失败：' + (result.error_msg || '未知错误'))
       }
 
@@ -605,7 +728,7 @@ async function stopBalanceQuery() {
   } catch (error) {
     console.error('停止查询请求失败:', error);
   }
-  
+
   balanceLoading.value = false;
 }
 
@@ -692,60 +815,179 @@ async function maximizeWindow() {
 async function closeWindow() {
   try {
     console.log('窗口关闭事件触发，正在停止后台操作...');
-    
+
     // 停止余额查询操作
     if (balanceLoading.value) {
       await stopBalanceQuery();
       console.log('已停止余额查询操作');
     }
-    
+
     const currentWindow = getCurrentWindow()
     await currentWindow.destroy()
   } catch (error) {
     console.error('Error closing window:', error)
   }
 }
+
+// 链管理相关方法
+// 显示链管理弹窗
+function showChainManage() {
+  if (chainManageRef.value) {
+    chainManageRef.value.show();
+  }
+}
+
+// 显示RPC管理弹窗
+function showRpcManage() {
+  if (!chainValue.value) {
+    Notification.warning("请先选择区块链！");
+    return;
+  }
+  rpcManageRef.value?.show();
+}
+
+// 显示代币管理弹窗
+function showTokenManage() {
+  if (!chainValue.value) {
+    Notification.warning("请先选择区块链！");
+    return;
+  }
+  tokenManageRef.value?.show();
+}
+
+// 打开区块链浏览器
+function openBlockchainScan() {
+  if (!currentChain.value?.scan_url) {
+    Notification.warning('当前链没有配置区块链浏览器地址');
+    return;
+  }
+
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    // 在Tauri环境中使用shell打开默认浏览器
+    import('@tauri-apps/plugin-shell').then(({ open }) => {
+      open(currentChain.value.scan_url);
+    }).catch(error => {
+      console.error('打开浏览器失败:', error);
+      Notification.error('打开浏览器失败');
+    });
+  } else {
+    // 在浏览器环境中直接打开新窗口
+    window.open(currentChain.value.scan_url, '_blank');
+  }
+}
+
+// 处理链更新事件
+async function handleChainUpdated() {
+  // 重新加载链数据
+  try {
+    chainOptions.value = await invoke('get_chain_list');
+
+    // 检查当前选中的链是否还存在
+    const currentChainExists = chainOptions.value.find(chain => chain.key === chainValue.value);
+
+    if (!currentChainExists && chainOptions.value.length > 0) {
+      // 如果当前链不存在，选择第一个可用的链
+      chainValue.value = chainOptions.value[0].key;
+      await chainChange();
+    } else if (currentChainExists) {
+      // 如果当前链仍然存在，更新当前链信息
+      currentChain.value = currentChainExists;
+    } else {
+      // 如果没有可用的链，清空选择
+      chainValue.value = '';
+      currentChain.value = null;
+      coinOptions.value = [];
+      coinValue.value = '';
+      currentCoin.value = null;
+    }
+
+    console.log('链列表已更新');
+  } catch (error) {
+    console.error('更新链列表失败:', error);
+  }
+}
+
+// 处理RPC更新事件
+function handleRpcUpdated() {
+  // 可以在这里处理RPC更新后的逻辑
+  console.log('RPC已更新');
+}
+
+// 处理代币更新事件
+function handleTokenUpdated() {
+  // 重新加载代币选择器
+  chainChange();
+}
+
+// 处理TitleBar的before-close事件
+async function handleBeforeClose() {
+  try {
+    console.log('TitleBar触发关闭事件，正在停止后台操作...');
+
+    // 停止余额查询操作
+    if (balanceLoading.value) {
+      await stopBalanceQuery();
+      console.log('已停止余额查询操作');
+    }
+
+    console.log('TitleBar窗口关闭清理完成，所有后台操作已停止');
+  } catch (error) {
+    console.error('处理窗口关闭事件时发生错误:', error);
+  }
+}
 </script>
 
 <template>
-  <div class="title-bar">
-    <div class="title-bar-text">钱包管理工具 - 余额查询</div>
-    <div class="title-bar-controls">
-      <button class="title-bar-control" @click="minimizeWindow" title="最小化">
-        <span class="minimize-icon">―</span>
-      </button>
-      <button class="title-bar-control" @click="maximizeWindow" title="最大化">
-        <span class="maximize-icon">▢</span>
-      </button>
-      <button class="title-bar-control close" @click="closeWindow" title="关闭">
-        <span class="close-icon">✕</span>
-      </button>
-    </div>
-  </div>
+  <!-- 标题栏组件 -->
+  <TitleBar :title="windowTitle" @before-close="handleBeforeClose" />
 
-  <div class="container balance"
-    style="height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden;">
+  <div class="container balance" style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
     <!-- <span class="pageTitle">余额查询</span> -->
     <!-- 工具栏 -->
     <div class="toolBar" style="flex-shrink: 0;">
-      <a-button type="primary" @click="handleClick()">录入钱包地址</a-button>
+      <a-button type="primary" @click="handleClick()">
+        <template #icon>
+          <Icon icon="mdi:wallet" />
+        </template>
+        录入钱包地址
+      </a-button>
       <a-divider direction="vertical" />
       <!-- 选择操作区按钮 -->
-      <a-button type="outline" status="success" @click="selectSucceeded">选中成功</a-button>
-      <a-button type="outline" status="danger" style="margin-left: 10px" @click="selectFailed">选中失败</a-button>
-      <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">反选</a-button>
-      <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">删除选中
+      <a-button type="outline" status="success" @click="selectSucceeded">
+        <template #icon>
+          <Icon icon="mdi:check" />
+        </template>
+        选中成功
+      </a-button>
+      <a-button type="outline" status="danger" style="margin-left: 10px" @click="selectFailed">
+        <template #icon>
+          <Icon icon="mdi:close" />
+        </template>
+        选中失败
+      </a-button>
+      <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">
+        <template #icon>
+          <Icon icon="mdi:swap-horizontal" />
+        </template>
+        反选
+      </a-button>
+      <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">
+        <template #icon>
+          <Icon icon="mdi:delete" />
+        </template>
+        删除选中
       </a-button>
       <a-divider direction="vertical" />
       <a-button type="primary" status="success" @click="exportAllToExcel">
         <template #icon>
-          <icon-download />
+          <Icon icon="mdi:download" />
         </template>
         导出全表
       </a-button>
       <a-button type="outline" status="normal" style="margin-left: 10px" @click="exportSelectToExcel">
         <template #icon>
-          <icon-download />
+          <Icon icon="mdi:download" />
         </template>
         导出选中
       </a-button>
@@ -755,92 +997,71 @@ async function closeWindow() {
         </template>
         返回首页
       </a-button>
-      <a-button type="outline" status="normal" style="float: right;margin-right: 10px" @click="clearData">清空列表
+      <a-button type="outline" status="normal" style="float: right;margin-right: 10px" @click="clearData">
+        <template #icon>
+          <Icon icon="mdi:delete" />
+        </template>
+        清空列表
       </a-button>
     </div>
     <!-- 操作账号表格 -->
-    <!-- 虚拟滚动表格 -->
     <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;">
-      <!-- 表头 -->
-      <div class="virtual-table-header" style="flex-shrink: 0;">
-        <div class="virtual-header-cell" style="width: 40px">
-          <a-checkbox v-model:checked="selectAll" :indeterminate="indeterminate"
-            @change="handleSelectAll">全选</a-checkbox>
-        </div>
-        <div class="virtual-header-cell" style="width: 60px; text-align: center">序号</div>
-        <div class="virtual-header-cell" style="flex: 2; text-align: center">钱包地址</div>
-        <div class="virtual-header-cell" style="width: 80px; text-align: center">Nonce</div>
-        <div class="virtual-header-cell" style="width: 120px; text-align: center">平台币余额</div>
-        <div class="virtual-header-cell" style="width: 120px; text-align: center">代币余额</div>
-        <div class="virtual-header-cell" style="width: 100px; text-align: center">状态</div>
-        <div class="virtual-header-cell" style="flex: 1; text-align: center">错误信息</div>
-        <div class="virtual-header-cell" style="width: 60px; text-align: center">操作</div>
-      </div>
-
-      <!-- 虚拟滚动容器 -->
-      <div ref="tableContainer" class="virtual-table-container" style="flex: 1; overflow: auto; min-height: 400px; height: 100%;">
-        <div v-if="virtualizer && data.length > 0" class="virtual-table-viewport"
-          :style="{ height: `${virtualizer.value.getTotalSize()}px` }">
-          <div v-for="virtualItem in virtualizer.value.getVirtualItems()" :key="virtualItem.index"
-            class="virtual-table-row" :style="{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: `${virtualItem.size}px`,
-              transform: `translateY(${virtualItem.start}px)`
-            }" @click="rowClick(data[virtualItem.index])">
-            <!-- 行内容 -->
-            <div class="virtual-row-content">
-              <div class="virtual-cell" style="width: 40px">
-                <a-checkbox :checked="isItemSelected(data[virtualItem.index].address)"
-                  @change="toggleRowSelection(data[virtualItem.index].address)"></a-checkbox>
-              </div>
-              <div class="virtual-cell" style="width: 60px; justify-content: center;">{{ virtualItem.index + 1 }}</div>
-              <div class="virtual-cell" style="flex: 2; justify-content: center; overflow: hidden; text-overflow: ellipsis">
-                {{
-                  data[virtualItem.index].address }}</div>
-              <div class="virtual-cell" style="width: 80px; justify-content: center;">{{ data[virtualItem.index].nonce }}
-              </div>
-              <div class="virtual-cell" style="width: 120px; justify-content: center;">{{ data[virtualItem.index].plat_balance
-              }}
-              </div>
-              <div class="virtual-cell" style="width: 120px; justify-content: center;">{{ data[virtualItem.index].coin_balance
-              }}
-              </div>
-              <div class="virtual-cell" style="width: 100px; justify-content: center;">
-                <a-tag v-if="data[virtualItem.index].exec_status === '0'" color="gray">等待执行</a-tag>
-                <a-tag v-if="data[virtualItem.index].exec_status === '1'" color="orange">执行中</a-tag>
-                <a-tag v-if="data[virtualItem.index].exec_status === '2'" color="green">执行成功</a-tag>
-                <a-tag v-if="data[virtualItem.index].exec_status === '3'" color="red">执行失败</a-tag>
-              </div>
-              <div class="virtual-cell" style="flex: 1; justify-content: center; overflow: hidden; text-overflow: ellipsis">
-                {{
-                  data[virtualItem.index].error_msg }}</div>
-              <div class="virtual-cell" style="width: 60px; justify-content: center;">
-                <icon-delete style="font-size: 16px; cursor: pointer;"
-                  @click.stop="deleteItem(data[virtualItem.index])" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 空状态 -->
-        <div v-if="data.length === 0" class="virtual-table-empty">
-          <a-empty description="暂无数据" />
-        </div>
-      </div>
+      <a-table v-if="tableBool" row-key="address" :columns="columns" :column-resizable="true" :data="data"
+        :row-selection="rowSelection" :scrollbar="scrollbar" :scroll="{ y: '100%' }" @row-click="rowClick"
+        v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
+        <template #index="{ rowIndex }">
+          {{ rowIndex + 1 }}
+        </template>
+        <template #exec_status="{ rowIndex }">
+          <a-tag v-if="data[rowIndex].exec_status === '0'" color="#86909c">等待执行
+          </a-tag>
+          <a-tag v-if="data[rowIndex].exec_status === '1'" color="#ff7d00">执行中
+          </a-tag>
+          <a-tag v-if="data[rowIndex].exec_status === '2'" color="#00b42a">执行成功
+          </a-tag>
+          <a-tag v-if="data[rowIndex].exec_status === '3'" color="#f53f3f">执行失败
+          </a-tag>
+        </template>
+        <template #optional="{ record }">
+          <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger">
+            <template #icon>
+              <icon-delete />
+            </template>
+          </a-button>
+        </template>
+      </a-table>
     </div>
-    <a-progress v-if="balanceLoading" style="margin-top: 15px; flex-shrink: 0;" :percent="progress"
-      :style="{ width: '100%' }" stroke-width="5" :animation="true" :color="{
+
+    <!-- 余额查询进度条 -->
+    <div v-if="showProgress" style="margin-top: 10px; padding: 0 10px; flex-shrink: 0;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-size: 14px; color: #1d2129; font-weight: 500;">查询进度</span>
+        <span style="font-size: 12px; color: #86909c;">{{ balanceCompleted }}/{{ balanceTotal }}</span>
+      </div>
+      <a-progress :percent="balanceProgress" :stroke-width="6" :animation="true" :color="{
         '0%': '#37ecba',
         '100%': '#009efd',
       }" />
-    <!-- 链选择器和代币选择器的容器 -->
+    </div>
+
+    <!-- 链管理按钮嵌入 -->
     <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
-      <!-- 链选择器 -->
-      <a-select v-model="rpcValue" :options="rpcOptions" @change="rpcChange" :field-names="rpcFieldNames" size="large"
-        :style="{ width: '65%' }">
+      <!-- 链管理按钮 -->
+      <a-button type="primary" @click="showChainManage" style="white-space: nowrap;">
+        <template #icon>
+          <Icon icon="mdi:settings" />
+        </template>
+        区块链管理
+      </a-button>
+      <a-button type="primary" @click="showRpcManage" :disabled="!chainValue" style="white-space: nowrap;">
+        <template #icon>
+          <Icon icon="mdi:link" />
+        </template>
+        RPC管理
+      </a-button>
+      <!-- 链 选择器 -->
+      <a-select v-model="chainValue" :options="chainOptions" @change="chainChange" :field-names="chainFieldNames"
+        size="large" :style="{ width: '65%' }">
         <template #label="{ data }">
           <div style="
             display: flex;
@@ -849,21 +1070,33 @@ async function closeWindow() {
             width: 100%;
           ">
             <span style="color: gray;">区块链：</span>
-            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.chain"
-              style="width: 18px; height: 18px;" />
-            <span style="margin-left: 10px">{{ data?.chain }}</span>
+            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
+              style="width: 20px; height: 20px;" />
+            <span style="margin-left: 10px">{{ data?.name }}</span>
             <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
           </div>
         </template>
         <template #option="{ data }">
           <div style="display: flex; flex-direction: row; align-items: center;height: 32px;">
-            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.chain"
-              style="width: 18px; height: 18px;" />
-            <span style="margin-left: 10px">{{ data?.chain }}</span>
+            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
+              style="width: 20px; height: 20px;" />
+            <span style="margin-left: 10px">{{ data?.name }}</span>
             <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
           </div>
         </template>
       </a-select>
+      <!-- 区块链浏览器跳转按钮 -->
+      <a-tooltip v-if="currentChain?.scan_url" content="在浏览器中打开区块链浏览器">
+        <a-button type="primary" @click="openBlockchainScan" shape="round" style="white-space: nowrap; padding: 0 8px;">
+          <Icon icon="mdi:open-in-new" />
+        </a-button>
+      </a-tooltip>
+      <a-button type="primary" @click="showTokenManage" :disabled="!chainValue" style="white-space: nowrap;">
+        <template #icon>
+          <Icon icon="mdi:cog" />
+        </template>
+        代币管理
+      </a-button>
       <!-- 代币 选择器 -->
       <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames" :style="{ width: '30%' }"
         @change="coinChange">
@@ -876,42 +1109,69 @@ async function closeWindow() {
         </template>
       </a-select>
     </div>
-    <!-- 管理代币按钮区域 -->
-    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
-      <a-button type="outline" @click="handleAddCoinClick" style="white-space: nowrap;">
-        添加代币
-      </a-button>
-      <a-button type="outline" @click="deleteToken" style="white-space: nowrap;">
-        删除代币
-      </a-button>
-      <a-checkbox v-model="onlyCoin" style="margin-left: auto;">仅查询目标代币</a-checkbox>
-    </div>
     <!-- 相关设置 -->
-    <div style="display: flex;padding-top: 5px;flex-direction: column; flex-shrink: 0;">
-      <div style="display: flex">
-        <!-- 细节配置 -->
-        <a-form ref="formRef" :model="form" layout="vertical">
-          <a-row style="height: 70px">
-            <a-form-item field="thread_count" label="线程数" style="width: 240px;padding: 5px 10px;"
-              tooltip="同时执行查询的钱包数量（1-10）之间">
-              <a-input-number :max="50" :min="1" mode="button" v-model="form.thread_count" />
-            </a-form-item>
-          </a-row>
-        </a-form>
-        <div style="width: 300px;display: flex;align-items: center;justify-content: center;">
-          <a-button type="outline" status="normal" style="margin-left: 10px;height: 40px;width: 180px;font-size: 14px;"
-            @click="queryBalance" :loading="balanceLoading">查询余额
-          </a-button>
+    <div style="display: flex; padding-top: 5px; align-items: center; flex-shrink: 0;">
+      <!-- 表单配置 -->
+      <a-form ref="formRef" :model="form" layout="vertical">
+        <div style="display: flex; align-items: end; gap: 20px;">
+          <!-- 仅查询目标代币开关 -->
+          <a-form-item label="仅查询目标代币" style="width: 140px;margin-bottom: 0;">
+            <a-switch v-model="onlyCoin" />
+          </a-form-item>
+          <!-- 线程数配置 -->
+          <a-form-item field="thread_count" label="线程数" style="width: 140px; margin-bottom: 0;"
+            tooltip="同时执行查询的钱包数量（1-99）之间">
+            <a-input-number :max="99" :min="1" mode="button" v-model="form.thread_count" style="width: 100%;" />
+          </a-form-item>
         </div>
-      </div>
+      </a-form>
+      <!-- 查询按钮 -->
+      <a-button type="primary" status="success" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="queryBalance"
+        :loading="balanceLoading">
+        <template #icon>
+          <Icon icon="mdi:play" />
+        </template>
+        查询余额
+      </a-button>
     </div>
   </div>
   <!-- 录入弹窗 -->
-  <a-modal v-model:visible="visible" :width="700" title="录入钱包地址" @cancel="handleCancel" :on-before-ok="handleBeforeOk">
-    <a-textarea v-model="importText" style="margin-top: 10px" placeholder="格式：一行一个" allow-clear :auto-size="{
-      minRows: 15,
-      maxRows: 20
-    }" />
+  <a-modal v-model:visible="visible" :width="700" title="录入钱包地址" @cancel="handleCancel" :on-before-ok="handleBeforeOk"
+    :confirm-loading="importLoading"
+    :cancel-button-props="{ disabled: importLoading }"
+    :mask-closable="!importLoading"
+    :closable="!importLoading">
+    <div style="margin-top: 10px; height: 400px; position: relative;">
+      <!-- Loading 遮罩层 -->
+      <div v-if="importLoading" class="loading-overlay">
+        <a-spin size="large" />
+        <div class="loading-text">正在导入数据，请稍候...</div>
+      </div>
+      
+      <CodeEditor 
+        v-model="importText" 
+        :error-lines="addressErrorLines"
+        :disabled="importLoading"
+        placeholder="格式：一行一个地址&#10;示例：0x742d35Cc6634C0532925a3b8D4..."
+        @input="validateImportData"
+        style="height: 100%;"
+      />
+    </div>
+    
+    <!-- 验证错误提示 -->
+    <div v-if="validationErrors.length > 0" style="margin-top: 15px;">
+      <a-alert style="padding: 5px 15px;" type="error" :title="`发现 ${validationErrors.length} 个问题`" :show-icon="true">
+        <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+          <li v-for="(error, index) in displayedErrors" :key="error"
+            style="margin-bottom: 4px; color: #f53f3f; font-size: 12px;">{{ error }}</li>
+        </ul>
+        <div v-if="validationErrors.length > 3" style="margin-top: 10px; text-align: center;">
+          <a-button type="text" size="small" @click="toggleErrorsExpanded" style="color: #165dff;font-size: 12px;">
+            {{ errorsExpanded ? '⬆️收起' : '⬇️展开全部' }}
+          </a-button>
+        </div>
+      </a-alert>
+    </div>
   </a-modal>
   <!-- 添加代币弹窗 -->
   <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"
@@ -939,9 +1199,39 @@ async function closeWindow() {
       </a-button>
     </template>
   </a-modal>
+
+  <!-- 链管理组件 -->
+  <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" />
+  <!-- RPC管理组件 -->
+  <RpcManagement ref="rpcManageRef" :chain-value="chainValue" @rpc-updated="handleRpcUpdated" />
+  <!-- 代币管理组件 -->
+  <TokenManagement ref="tokenManageRef" :chain-value="chainValue" @token-updated="handleTokenUpdated" />
 </template>
 
 <style scoped lang="less">
+/* Loading 遮罩层样式 */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  border-radius: 6px;
+}
+
+.loading-text {
+  margin-top: 16px;
+  color: #4e5969;
+  font-size: 14px;
+  font-weight: 500;
+}
+
 /* 自定义标题栏 */
 .title-bar {
   display: flex;
@@ -1053,10 +1343,6 @@ async function closeWindow() {
   z-index: 0;
 }
 
-.toolBar {
-  margin-top: 35px;
-}
-
 .goHome {
   float: right;
   background-color: white;
@@ -1102,92 +1388,13 @@ async function closeWindow() {
   background-color: #165dff;
 }
 
-/* Arco Design风格的表格样式 */
-.virtual-table-header {
-  display: flex;
-  align-items: center;
-  background-color: var(--color-fill-2);
-  border: 1px solid var(--color-neutral-3);
-  border-bottom: 2px solid var(--color-neutral-4);
-  height: 45px;
-  padding: 0 10px;
-  font-weight: 500;
-  color: var(--color-text-2);
-}
-
-.virtual-header-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
-  white-space: nowrap;
-  border-right: 1px solid var(--color-neutral-3);
-  font-size: 14px;
-}
-
-.virtual-header-cell:last-child {
-  border-right: none;
-}
-
-.virtual-table-container {
-  border: 1px solid var(--color-neutral-3);
-  border-top: none;
-  overflow: auto;
-  position: relative;
-  background: var(--color-bg-2);
-}
-
-.virtual-table-viewport {
-  position: relative;
-  width: 100%;
-}
-
-.virtual-table-row {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  transform: translateY(0);
-  border-bottom: 1px solid var(--color-neutral-3);
-}
-
-.virtual-table-row:last-child {
-  border-bottom: none;
-}
-
-.virtual-table-row:hover {
-  background-color: var(--color-fill-1);
-}
-
-.virtual-row-content {
-  display: flex;
-  align-items: center;
-  height: 100%;
-  padding: 8px 10px;
-  font-size: 14px;
-  color: var(--color-text-1);
-}
-
-.virtual-cell {
-  display: flex;
-  align-items: center;
-  padding: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-right: 1px solid var(--color-neutral-3);
-}
-
-.virtual-cell:last-child {
-  border-right: none;
-}
-
-.virtual-table-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 300px;
-  color: var(--color-text-3);
+.execute-btn {
+  width: 150px;
+  height: 50px;
+  font-size: 16px;
+  color: #ffffff;
+  background-color: #0fa962;
+  border: none;
 }
 
 /* 响应式设计 */
@@ -1195,22 +1402,22 @@ async function closeWindow() {
   .container {
     padding: 40px 10px 10px;
   }
-  
+
   .toolBar {
     flex-wrap: wrap;
     gap: 10px;
   }
-  
-  .toolBar > * {
+
+  .toolBar>* {
     margin: 5px;
   }
-  
+
   .virtual-header-cell,
   .virtual-cell {
     padding: 4px 6px;
     font-size: 12px;
   }
-  
+
   .virtual-row-content {
     padding: 4px 6px;
   }

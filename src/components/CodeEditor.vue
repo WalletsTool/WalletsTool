@@ -29,6 +29,7 @@
           ref="textareaRef"
           :value="modelValue"
           :placeholder="placeholder"
+          :disabled="disabled"
           class="content-textarea"
           @input="handleInput"
           @scroll="handleTextareaScroll"
@@ -74,6 +75,10 @@ const props = defineProps({
   errorLines: {
     type: Array,
     default: () => []
+  },
+  disabled: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -256,6 +261,24 @@ onMounted(() => {
   background: #fff;
 }
 
+.code-editor:has(.content-textarea:disabled) {
+  opacity: 0.6;
+}
+
+.code-editor:has(.content-textarea:disabled) .line-numbers {
+  background: #f0f0f0;
+  color: #bfbfbf;
+}
+
+.code-editor:has(.content-textarea:disabled) .line-number {
+  color: #bfbfbf;
+  cursor: not-allowed;
+}
+
+.code-editor:has(.content-textarea:disabled) .line-number:hover {
+  background: transparent;
+}
+
 :root[data-theme="dark"] .code-editor {
   border-color: #424242;
   background: #1e1e1e;
@@ -340,6 +363,12 @@ onMounted(() => {
   position: relative;
   z-index: 2;
   white-space: pre-wrap;
+}
+
+.content-textarea:disabled {
+  background: #f5f5f5;
+  color: #bfbfbf;
+  cursor: not-allowed;
 }
 
 :root[data-theme="dark"] .content-textarea {

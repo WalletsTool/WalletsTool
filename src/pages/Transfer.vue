@@ -1,7 +1,8 @@
 <script setup name="transfer">
 import { Icon } from '@iconify/vue';
 import { useRouter, useRoute } from "vue-router";
-import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, computed } from "vue";
+import { IconDelete } from '@arco-design/web-vue/es/icon';
+import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -3102,7 +3103,11 @@ async function handleBeforeClose() {
           </a-tag>
         </template>
         <template #optional="{ record }">
-          <Icon icon="mdi:delete" style="font-size: 16px;color: #ff4d4f;" @click.prevent="deleteItem(record)" />
+        <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger">
+            <template #icon>
+              <icon-delete />
+            </template>
+          </a-button>
         </template>
       </a-table>
     </div>
@@ -3146,7 +3151,7 @@ async function handleBeforeClose() {
           ">
             <span style="color: gray;">区块链：</span>
             <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
-              style="width: 18px; height: 18px;" />
+              style="width: 20px; height: 20px;" />
             <span style="margin-left: 10px">{{ data?.name }}</span>
             <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
             <span v-show="chainValue !== 'sol'" style="flex: 1; text-align: end; color: #00b42a">Gas Price: {{
@@ -3156,7 +3161,7 @@ async function handleBeforeClose() {
         <template #option="{ data }">
           <div style="display: flex; flex-direction: row; align-items: center;height: 32px;">
             <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
-              style="width: 18px; height: 18px;" />
+              style="width: 20px; height: 20px;" />
             <span style="margin-left: 10px">{{ data?.name }}</span>
             <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
           </div>

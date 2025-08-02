@@ -95,23 +95,23 @@ onMounted(() => {
 
 <style scoped>
 .chain-icon-container {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .chain-icon {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   object-fit: cover;
 }
 
 .chain-icon-loading {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   background: #f0f0f0;
   border-radius: 50%;
   animation: pulse 1.5s ease-in-out infinite;

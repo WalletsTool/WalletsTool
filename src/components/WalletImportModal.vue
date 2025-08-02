@@ -206,6 +206,9 @@ const handleBeforeOk = async () => {
     const privateKeys = privateKeyText.value.split('\n').filter(line => line.trim() !== '');
     const addresses = addressText.value.split('\n').filter(line => line.trim() !== '');
     
+    // 添加一个短暂的延迟，让用户看到loading效果
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
     // 发送确认事件，传递数据
     emit('confirm', {
       privateKeys: privateKeys.map(key => key.trim()),
@@ -226,7 +229,7 @@ const handleBeforeOk = async () => {
     console.error('处理导入数据失败:', error);
     return false;
   } finally {
-    importLoading.value = false;
+      importLoading.value = false;
   }
 };
 
@@ -258,9 +261,22 @@ defineExpose({
     @cancel="handleCancel"
     :on-before-ok="handleBeforeOk" 
     :confirm-loading="importLoading"
+    :ok-text="importLoading ? '正在处理中...' : '确认导入'"
+    :cancel-button-props="{ disabled: importLoading }"
+    :mask-closable="!importLoading"
+    :closable="!importLoading"
   >
     <div
-      :style="{ display: 'flex', gap: '10px', marginTop: '10px', width: '1100px', height: showUsageInstructions ? '400px' : '500px' }">
+      :style="{ display: 'flex', gap: '10px', marginTop: '10px', width: '1100px', height: showUsageInstructions ? '400px' : '500px', position: 'relative' }">
+      <!-- Loading遮罩层 -->
+      <div v-if="importLoading" class="loading-overlay">
+        <a-spin size="large">
+          <template #tip>
+            <div class="loading-text">正在处理钱包信息，请稍候...</div>
+          </template>
+        </a-spin>
+      </div>
+      
       <!-- 左侧：私钥输入 -->
       <div style="width: 660px; height: 100%; display: flex; flex-direction: column;">
         <div class="input-label" style="margin-bottom: 8px; font-weight: 500;">发送方私钥</div>
@@ -268,6 +284,7 @@ defineExpose({
           ref="privateKeyEditorRef"
           v-model="privateKeyText" 
           :error-lines="privateKeyErrorLines"
+          :disabled="importLoading"
           placeholder="请输入私钥，一行一个&#10;格式：0x开头的64位十六进制字符串&#10;示例：0x1234567890abcdef..." 
           @input="validateImportData"
           @scroll="handlePrivateKeyScroll"
@@ -282,6 +299,7 @@ defineExpose({
           ref="addressEditorRef"
           v-model="addressText" 
           :error-lines="addressErrorLines"
+          :disabled="importLoading"
           placeholder="请输入接收地址，一行一个&#10;格式：0x开头的40位十六进制地址&#10;示例：0x742d35Cc6634C0532925a3b8D4..." 
           @input="validateImportData"
           @scroll="handleAddressScroll"
@@ -345,6 +363,28 @@ defineExpose({
   font-weight: 500;
   color: var(--text-color, #1d2129);
   margin-bottom: 8px;
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  border-radius: 6px;
+  backdrop-filter: blur(2px);
+}
+
+.loading-text {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--text-color, #1d2129);
+  font-weight: 500;
 }
 
 .usage-instructions {

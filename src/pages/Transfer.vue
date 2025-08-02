@@ -1,10 +1,11 @@
 <script setup name="transfer">
-import { IconDelete, IconDoubleLeft, IconPlus, IconUpload, IconShareExternal } from "@arco-design/web-vue/es/icon";
-import { useRouter } from "vue-router";
+import { Icon } from '@iconify/vue';
+import { useRouter, useRoute } from "vue-router";
 import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Notification, Modal } from "@arco-design/web-vue";
 import { ethers } from "ethers";
 import { debounce } from "throttle-debounce";
@@ -15,11 +16,9 @@ import ChainManagement from '../components/ChainManagement.vue'
 import RpcManagement from '../components/RpcManagement.vue'
 import TokenManagement from '../components/TokenManagement.vue'
 import WalletImportModal from '../components/WalletImportModal.vue'
-
 const router = useRouter();
 // 窗口标题
 const windowTitle = ref('Web3 Tools - 批量转账');
-
 // table列名
 const columns = [
   {
@@ -182,6 +181,8 @@ let stopFlag = ref(false);
 let stopStatus = ref(true);
 // 线程数设置，默认为1
 let threadCount = ref(1);
+// 多窗口数量设置，默认为1
+let multiWindowCount = ref(1);
 
 // 监听线程数变化，自动调整间隔时间
 watch(threadCount, (newValue) => {
@@ -201,6 +202,159 @@ const transferProgress = ref(0); // 转账进度百分比
 const transferTotal = ref(0); // 总转账数量
 const transferCompleted = ref(0); // 已完成转账数量
 const showProgress = ref(false); // 是否显示进度条
+
+// Gas价格监控相关变量
+const gasPriceMonitoring = ref(false); // 是否正在监控gas价格
+const gasPriceCountdown = ref(0); // gas价格查询倒计时
+const currentGasPrice = ref(0); // 当前gas价格
+const gasPriceTimer = ref(null); // gas价格监控定时器
+const transferPaused = ref(false); // 转账是否因gas价格过高而暂停
+const pausedTransferData = ref(null); // 暂停时的转账数据
+const pausedTransferIndex = ref(0); // 暂停时的转账索引
+
+// 窗口多开相关函数
+function openMultipleWindow() {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (!isTauri) {
+    Notification.warning('此功能仅在桌面应用中可用');
+    return;
+  }
+
+  try {
+    // 获取要打开的窗口数量
+    const windowCount = multiWindowCount.value;
+    if (windowCount < 1 || windowCount > 9) {
+      Notification.warning('窗口数量必须在1-9之间');
+      return;
+    }
+
+    // 收集当前窗口的配置数据
+    const currentConfig = {
+      chainValue: chainValue.value,
+      coinValue: coinValue.value,
+      form: { ...form },
+      threadCount: threadCount.value,
+      data: data.value.map(item => ({ ...item })) // 深拷贝数据
+    };
+
+    // 创建多个窗口
+    const baseTimestamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 17); // 格式化为年月日时分秒毫秒
+    const configKeys = [];
+
+    // 为每个窗口创建唯一的configKey
+    for (let i = 0; i < windowCount; i++) {
+      const windowId = baseTimestamp + i;
+      const configKey = `transfer_config_${windowId}`;
+      configKeys.push({
+        configKey,
+        windowId,
+        windowLabel: `${getCurrentWindow().label}_multi_${windowId}`
+      });
+
+      // 将配置存储到localStorage中，使用唯一key
+      localStorage.setItem(configKey, JSON.stringify(currentConfig));
+    }
+
+    // 打开所有窗口
+    let openedCount = 0;
+    let errorCount = 0;
+
+    for (const { configKey, windowId, windowLabel } of configKeys) {
+      const windowUrl = `/#/transfer?configKey=${configKey}`; // 通过URL参数传递配置key
+
+      // 打开新窗口
+      const webview = new WebviewWindow(windowLabel, {
+        url: windowUrl,
+        title: `（多开窗口）批量转账 ${windowId}`,
+        width: 1275,
+        height: 850,
+        // center: true,
+        resizable: true,
+        decorations: false,  // 移除Windows原生窗口边框
+        backgroundColor: '#1a1a2e',  // 设置窗口背景色
+        skipTaskbar: false
+      });
+
+      webview.once('tauri://created', () => {
+        openedCount++;
+        Notification.success(`已打开新窗口: 批量转账 ${windowId} (${openedCount}/${windowCount})`);
+
+        // 所有窗口都已打开，清理不需要的configKey
+        if (openedCount + errorCount === windowCount) {
+          // 所有窗口都已处理完毕，不需要清理localStorage
+          // localStorage中的数据会在各窗口读取后自动清理
+        }
+      });
+
+      webview.once('tauri://error', (e) => {
+        errorCount++;
+        console.error(`打开窗口 ${windowId} 失败:`, e);
+        Notification.error(`打开窗口 ${windowId} 失败`);
+
+        // 清理对应的localStorage数据
+        localStorage.removeItem(configKey);
+
+        // 所有窗口都已处理完毕
+        if (openedCount + errorCount === windowCount) {
+          // 所有窗口都已处理完毕
+        }
+      });
+    }
+  } catch (error) {
+    console.error('窗口多开失败:', error);
+    Notification.error('窗口多开失败');
+  }
+}
+
+// 应用共享配置
+function applySharedConfig(config) {
+  if (!config) return;
+
+  try {
+    // 应用链选择
+    if (config.chainValue) {
+      chainValue.value = config.chainValue;
+      // 找到对应的链对象
+      const chain = chainOptions.value.find(c => c.key === config.chainValue);
+      if (chain) {
+        currentChain.value = chain;
+      }
+    }
+
+    // 应用币种选择
+    if (config.coinValue) {
+      coinValue.value = config.coinValue;
+      // 找到对应的币种对象
+      const coin = coinOptions.value.find(c => c.key === config.coinValue);
+      if (coin) {
+        currentCoin.value = coin;
+      }
+    }
+
+    // 应用表单配置
+    if (config.form) {
+      Object.assign(form, config.form);
+    }
+
+    // 应用线程数
+    if (config.threadCount) {
+      threadCount.value = config.threadCount;
+    }
+
+    // 应用数据
+    if (config.data && Array.isArray(config.data)) {
+      data.value = config.data.map((item, index) => ({
+        ...item,
+        key: index + 1 // 重新生成key
+      }));
+    }
+
+    Notification.success('已应用共享配置');
+  } catch (error) {
+    console.error('应用共享配置失败:', error);
+    Notification.error('应用共享配置失败');
+  }
+}
 
 // 更新转账进度
 function updateTransferProgress() {
@@ -249,6 +403,320 @@ const tokenForm = reactive({
 // 获取gas
 const timer = setInterval(fetchGas, 5000);
 
+// Gas价格监控函数
+async function startGasPriceMonitoring() {
+  if (gasPriceMonitoring.value) return;
+
+  gasPriceMonitoring.value = true;
+  gasPriceCountdown.value = 10;
+
+  // 立即检查一次gas价格
+  await checkGasPriceForTransfer();
+
+  // 启动定时器，每10秒检查一次
+  gasPriceTimer.value = setInterval(async () => {
+    gasPriceCountdown.value = 10;
+    await checkGasPriceForTransfer();
+
+    // 倒计时
+    const countdownInterval = setInterval(() => {
+      gasPriceCountdown.value--;
+      if (gasPriceCountdown.value <= 0) {
+        clearInterval(countdownInterval);
+      }
+    }, 1000);
+  }, 10000);
+}
+
+// 停止gas价格监控
+function stopGasPriceMonitoring() {
+  gasPriceMonitoring.value = false;
+  gasPriceCountdown.value = 0;
+  if (gasPriceTimer.value) {
+    clearInterval(gasPriceTimer.value);
+    gasPriceTimer.value = null;
+  }
+}
+
+// 检查gas价格是否超过限制
+async function checkGasPriceForTransfer() {
+  if (!form.max_gas_price || !form.max_gas_price.trim()) {
+    return true; // 没有设置最大gas价格限制
+  }
+
+  const maxGasPrice = Number(form.max_gas_price);
+  if (maxGasPrice <= 0) {
+    return true; // 无效的最大gas价格设置
+  }
+
+  try {
+    // 获取当前gas价格
+    const res = await invoke("get_chain_gas_price", { chain: chainValue.value });
+    const gasPrice = res?.gas_price_gwei || 0;
+    currentGasPrice.value = gasPrice;
+
+    if (gasPrice > maxGasPrice) {
+      // Gas价格超过限制
+      if (!transferPaused.value && !stopFlag.value && startLoading.value) {
+        // 暂停转账
+        transferPaused.value = true;
+        Notification.warning(`Gas价格 ${gasPrice.toFixed(3)} Gwei 超过设定上限 ${maxGasPrice} Gwei，转账已暂停`);
+      }
+      return false;
+    } else {
+      // Gas价格在限制范围内
+      if (transferPaused.value) {
+        // 恢复转账
+        transferPaused.value = false;
+        stopGasPriceMonitoring();
+        Notification.success(`Gas价格 ${gasPrice.toFixed(3)} Gwei 已降至设定范围内，转账将自动恢复`);
+
+        // 恢复转账
+        if (pausedTransferData.value) {
+          await resumeTransfer();
+        }
+      }
+      return true;
+    }
+  } catch (error) {
+    console.error('获取gas价格失败:', error);
+    currentGasPrice.value = 0;
+    return true; // 获取失败时不阻止转账
+  }
+}
+
+// 恢复转账
+async function resumeTransfer() {
+  if (!pausedTransferData.value) return;
+
+  const { accountData, index } = pausedTransferData.value;
+  pausedTransferData.value = null;
+
+  // 从暂停的位置继续执行转账
+  await continueTransferFromIndex(accountData, index);
+}
+
+// 从指定索引继续转账
+async function continueTransferFromIndex(accountData, startIndex) {
+  // 判断是主币转账还是代币转账
+  let contract;
+  if (currentCoin.value.coin_type === "token") {
+    contract = new ethers.Contract(
+      currentCoin.value.contract_address,
+      currentCoin.value.abi
+    );
+  }
+
+  // 从指定索引开始继续执行转账
+  for (let index = startIndex; index < accountData.length; index++) {
+    if (stopFlag.value) {
+      stopStatus.value = true;
+      return;
+    }
+
+    const item = accountData[index];
+
+    // 跳过已完成或失败的记录，只处理等待执行的记录
+    if (item.exec_status !== '0') {
+      continue;
+    }
+
+    // 检查gas价格是否超过限制
+    if (form.max_gas_price && form.max_gas_price.trim()) {
+      const gasPriceOk = await checkGasPriceForTransfer();
+      if (!gasPriceOk) {
+        // Gas价格超过限制，暂停转账并启动监控
+        pausedTransferData.value = { accountData, index };
+        await startGasPriceMonitoring();
+
+        // 等待gas价格降低
+        while (transferPaused.value && !stopFlag.value) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        // 如果用户手动停止了转账，退出
+        if (stopFlag.value) {
+          stopStatus.value = true;
+          return;
+        }
+      }
+    }
+
+    // 找到该item在原始data.value数组中的真实索引
+    const realIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+    if (realIndex === -1) {
+      console.error('无法找到对应的数据项');
+      continue;
+    }
+    const config = {
+      error_count_limit: 3, //  错误次数限制
+      error_retry: form.error_retry, // 是否自动失败重试
+      chain: chainValue.value,
+      chainLayer: currentChain.value.layer,
+      l1: currentChain.value.l1,
+      scalar: currentChain.value.scalar,
+      delay: [form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) : 1, form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) : 3], // 延迟时间
+      transfer_type: form.send_type, // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
+      transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
+      transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
+      left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
+      amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
+      limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
+      limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000, // limit_count 指定数量 (limit_type 为 2 时生效)
+      limit_count_list: [form.limit_min_count && form.limit_min_count.trim() !== '' ? Number(form.limit_min_count) : 21000, form.limit_max_count && form.limit_max_count.trim() !== '' ? Number(form.limit_max_count) : 30000],
+      gas_price_type: form.gas_price_type, // gas price类型 1: 自动 2：固定gas price 3：gas price溢价率
+      gas_price_rate: form.gas_price_rate && form.gas_price_rate.trim() !== '' ? Number(form.gas_price_rate) / 100 : 0.05, // gas price溢价率，0.05代表gas price是当前gas price的105%
+      gas_price: form.gas_price && form.gas_price.trim() !== '' ? Number(form.gas_price) : 30, // 设置最大的gas price，单位gwei
+      max_gas_price: form.max_gas_price && form.max_gas_price.trim() !== '' ? Number(form.max_gas_price) : 0, // 设置最大的gas price，单位gwei
+    };
+
+    try {
+      if (currentCoin.value.coin_type === "base") {
+        // 设置状态 为执行中
+        data.value[realIndex].exec_status = "1";
+        try {
+          const res = await invoke("base_coin_transfer", {
+            index: realIndex + 1,
+            item: item,
+            config: config
+          });
+          data.value[realIndex].exec_status = "2";
+          // 转账成功时只显示tx_hash
+          if (typeof res === 'object' && res !== null) {
+            if (res.success && res.tx_hash) {
+              data.value[realIndex].error_msg = res.tx_hash;
+            } else {
+              data.value[realIndex].error_msg = res.error || '转账失败';
+            }
+          } else {
+            data.value[realIndex].error_msg = String(res || '转账成功');
+          }
+          // 更新进度条
+          updateTransferProgress();
+        } catch (err) {
+          if (err === "base gas price 超出最大值限制") {
+            Notification.error("base gas price 超出最大值限制");
+            // 停止
+            stopTransfer();
+            data.value[realIndex].exec_status = "0";
+            data.value[realIndex].error_msg = "";
+            return;
+          } else {
+            data.value[realIndex].exec_status = "3";
+            data.value[realIndex].error_msg = err;
+            // 更新进度条
+            updateTransferProgress();
+          }
+        }
+      } else if (currentCoin.value.coin_type === "token") {
+        // 设置状态 为执行中
+        data.value[realIndex].exec_status = "1";
+        try {
+          const res = await invoke("token_transfer", {
+            index: realIndex + 1,
+            item: item,
+            config: {
+              ...config,
+              contract_address: contract.address,
+              abi: contract.abi
+            }
+          });
+          data.value[realIndex].exec_status = "2";
+          // 转账成功时只显示tx_hash
+          if (typeof res === 'object' && res !== null) {
+            if (res.success && res.tx_hash) {
+              data.value[realIndex].error_msg = res.tx_hash;
+            } else {
+              data.value[realIndex].error_msg = res.error || '转账失败';
+            }
+          } else {
+            data.value[realIndex].error_msg = String(res || '转账成功');
+          }
+          // 更新进度条
+          updateTransferProgress();
+        } catch (err) {
+          if (err === "base gas price 超出最大值限制") {
+            Notification.error("base gas price 超出最大值限制");
+            // 停止
+            stopTransfer();
+            data.value[realIndex].exec_status = "0";
+            data.value[realIndex].error_msg = "";
+            return;
+          } else {
+            data.value[realIndex].exec_status = "3";
+            data.value[realIndex].error_msg = err;
+            // 更新进度条
+            updateTransferProgress();
+          }
+        }
+      } else {
+        Notification.error("未知币种类型");
+        return;
+      }
+    } catch (e) {
+      // 交易失败
+      data.value[realIndex].exec_status = "3";
+      data.value[realIndex].error_msg = e.message || '转账异常';
+      updateTransferProgress();
+    }
+
+    // 添加延迟等待（只在实际执行了转账后才延迟，跳过的记录不延迟）
+    if (index < accountData.length - 1 && !stopFlag.value) {
+      const minDelay = form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) * 1000 : 1000;
+      const maxDelay = form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) * 1000 : 3000;
+      const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+
+      // 找到下一条待执行的数据
+      let nextPendingIndex = -1;
+      for (let i = index + 1; i < accountData.length; i++) {
+        if (accountData[i].exec_status === '0') {
+          nextPendingIndex = data.value.findIndex(dataItem => dataItem.key === accountData[i].key);
+          break;
+        }
+      }
+
+      // 如果找到下一条待执行的数据，在其error_msg字段显示倒计时
+      if (nextPendingIndex !== -1) {
+        const originalErrorMsg = data.value[nextPendingIndex].error_msg;
+        let remainingTime = Math.ceil(randomDelay / 1000);
+
+        // 每秒更新倒计时
+        const countdownInterval = setInterval(() => {
+          if (stopFlag.value) {
+            clearInterval(countdownInterval);
+            // 恢复原始错误信息
+            data.value[nextPendingIndex].error_msg = originalErrorMsg;
+            return;
+          }
+
+          data.value[nextPendingIndex].error_msg = `等待中...${remainingTime}秒`;
+          remainingTime--;
+
+          if (remainingTime < 0) {
+            clearInterval(countdownInterval);
+            // 恢复原始错误信息
+            data.value[nextPendingIndex].error_msg = originalErrorMsg;
+          }
+        }, 1000);
+
+        await new Promise(resolve => {
+          setTimeout(() => {
+            clearInterval(countdownInterval);
+            resolve();
+          }, randomDelay);
+        });
+      } else {
+        // 没有找到下一条待执行的数据，直接延迟
+        await new Promise(resolve => setTimeout(resolve, randomDelay));
+      }
+    }
+  }
+
+  // 转账完成
+  startLoading.value = false;
+  stopStatus.value = true;
+}
+
 watch(stopStatus, (newValue, oldValue) => {
   // 停止状态变化监听
 });
@@ -259,12 +727,30 @@ watch(stopStatus, (newValue, oldValue) => {
 onBeforeMount(async () => {
   // 检查是否在Tauri环境中
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+
+  // 从URL参数获取配置key并读取共享配置
+  let sharedConfig = null;
+  const route = useRoute();
+  const configKey = route.query.configKey;
+  if (configKey) {
+    try {
+      const configData = localStorage.getItem(configKey);
+      if (configData) {
+        sharedConfig = JSON.parse(configData);
+        // 读取后立即清除localStorage中的数据
+        localStorage.removeItem(configKey);
+        console.log('从localStorage读取到共享配置:', sharedConfig);
+      }
+    } catch (error) {
+      console.error('读取共享配置失败:', error);
+    }
+  }
   if (isTauri) {
     // 初始化加载链列表
     try {
       const result = await invoke('get_chain_list');
       chainOptions.value = result || [];
-      
+
       // 按照name字段排序
       chainOptions.value.sort((a, b) => {
         const nameA = a.name || '';
@@ -272,12 +758,54 @@ onBeforeMount(async () => {
         return nameA.localeCompare(nameB);
       });
 
-      // 设置默认选中第一个链
-      if (chainOptions.value.length > 0) {
-        chainValue.value = chainOptions.value[0].key;
-        currentChain.value = chainOptions.value[0];
+      // 如果有共享配置，优先使用共享配置
+      if (sharedConfig) {
+        // 应用链选择
+        if (sharedConfig.chainValue) {
+          chainValue.value = sharedConfig.chainValue;
+          const chain = chainOptions.value.find(c => c.key === sharedConfig.chainValue);
+          if (chain) {
+            currentChain.value = chain;
+          }
+        }
+
+        // 应用表单配置
+        if (sharedConfig.form) {
+          Object.assign(form, sharedConfig.form);
+        }
+
+        // 应用线程数
+        if (sharedConfig.threadCount) {
+          threadCount.value = sharedConfig.threadCount;
+        }
+
         // 获取对应的代币列表
         await chainChange();
+
+        // 应用币种选择（需要在chainChange之后）
+        if (sharedConfig.coinValue) {
+          coinValue.value = sharedConfig.coinValue;
+          const coin = coinOptions.value.find(c => c.key === sharedConfig.coinValue);
+          if (coin) {
+            currentCoin.value = coin;
+          }
+        }
+
+        // 应用数据
+        if (sharedConfig.data && Array.isArray(sharedConfig.data)) {
+          data.value = sharedConfig.data.map((item, index) => ({
+            ...item,
+            key: index + 1 // 重新生成key
+          }));
+        }
+      } else {
+        // 没有共享配置时设置默认值
+        if (chainOptions.value.length > 0) {
+          chainValue.value = chainOptions.value[0].key;
+          currentChain.value = chainOptions.value[0];
+          // 获取对应的代币列表
+          await chainChange();
+        }
       }
     } catch (error) {
       console.error('初始化链列表失败:', error);
@@ -288,23 +816,66 @@ onBeforeMount(async () => {
       { key: 'eth', name: 'Ethereum', scan_url: 'etherscan.io', pic_url: 'eth.png' },
       { key: 'bnb', name: 'BNB Chain', scan_url: 'bscscan.com', pic_url: 'bnb.png' }
     ];
-    
+
     // 按照name字段排序
     chainOptions.value.sort((a, b) => {
       const nameA = a.name || '';
       const nameB = b.name || '';
       return nameA.localeCompare(nameB);
     });
-    
-    chainValue.value = chainOptions.value[0].key;
-    currentChain.value = chainOptions.value[0];
-    // 获取rpc对应的代币列表
-    await chainChange();
+
+    // 如果有共享配置，优先使用共享配置
+    if (sharedConfig) {
+      // 应用链选择
+      if (sharedConfig.chainValue) {
+        chainValue.value = sharedConfig.chainValue;
+        const chain = chainOptions.value.find(c => c.key === sharedConfig.chainValue);
+        if (chain) {
+          currentChain.value = chain;
+        }
+      }
+
+      // 应用表单配置
+      if (sharedConfig.form) {
+        Object.assign(form, sharedConfig.form);
+      }
+
+      // 应用线程数
+      if (sharedConfig.threadCount) {
+        threadCount.value = sharedConfig.threadCount;
+      }
+
+      // 获取对应的代币列表
+      await chainChange();
+
+      // 应用币种选择（需要在chainChange之后）
+      if (sharedConfig.coinValue) {
+        coinValue.value = sharedConfig.coinValue;
+        const coin = coinOptions.value.find(c => c.key === sharedConfig.coinValue);
+        if (coin) {
+          currentCoin.value = coin;
+        }
+      }
+
+      // 应用数据
+      if (sharedConfig.data && Array.isArray(sharedConfig.data)) {
+        data.value = sharedConfig.data.map((item, index) => ({
+          ...item,
+          key: index + 1 // 重新生成key
+        }));
+      }
+    } else {
+      // 没有共享配置时设置默认值
+      chainValue.value = chainOptions.value[0].key;
+      currentChain.value = chainOptions.value[0];
+      // 获取rpc对应的代币列表
+      await chainChange();
+    }
   }
 });
 
 onMounted(async () => {
-  // 获取窗口标题
+  // 获取窗口标题和ID
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (isTauri) {
     try {
@@ -313,13 +884,58 @@ onMounted(async () => {
       if (title) {
         windowTitle.value = title;
       }
+      
+      // 获取当前窗口ID
+      currentWindowId.value = currentWindow.label;
+      console.log('当前窗口ID:', currentWindowId.value);
+
+      // 添加Tauri窗口关闭事件监听器
+      await currentWindow.onCloseRequested(async (event) => {
+        console.log('窗口关闭事件触发，正在停止后台操作...');
+        
+        // 停止转账操作
+        if (startLoading.value) {
+          stopFlag.value = true;
+          startLoading.value = false;
+          stopStatus.value = true;
+          console.log('已停止转账操作');
+        }
+
+        // 停止gas价格监控
+        stopGasPriceMonitoring();
+        console.log('已停止gas价格监控');
+
+        // 清理所有定时器
+        if (timer) {
+          clearInterval(timer);
+          console.log('已清理gas价格定时器');
+        }
+        if (gasPriceTimer.value) {
+          clearInterval(gasPriceTimer.value);
+          gasPriceTimer.value = null;
+          console.log('已清理gas价格监控定时器');
+        }
+
+        // 重置相关状态
+        transferPaused.value = false;
+        pausedTransferData.value = null;
+        gasPriceMonitoring.value = false;
+        gasPriceCountdown.value = 0;
+        currentGasPrice.value = 0;
+
+        console.log('窗口关闭清理完成，所有后台操作已停止');
+      });
+      
     } catch (error) {
-      console.error('Error getting window title:', error);
+      console.error('Error getting window title or setting close listener:', error);
     }
   } else {
-    // 浏览器环境下设置默认标题
+    // 浏览器环境下设置默认标题和ID
     windowTitle.value = 'Transfer - Web3 Tools';
+    currentWindowId.value = 'browser_window';
   }
+
+  // 配置应用已经在onBeforeMount中完成，这里不再需要重复应用
 
   // 页面高度现在通过 CSS 自动调整，无需监听器
 
@@ -329,8 +945,11 @@ onMounted(async () => {
     await listen('balance_item_update', (event) => {
       const { index, item } = event.payload;
       if (data.value[index]) {
-        // 更新对应索引的数据
-        Object.assign(data.value[index], item);
+        // 更新对应索引的数据（只更新指定字段）
+        data.value[index].plat_balance = item.plat_balance;
+        data.value[index].coin_balance = item.coin_balance;
+        data.value[index].exec_status = item.exec_status;
+        data.value[index].error_msg = item.error_msg;
       }
     });
 
@@ -360,10 +979,35 @@ onMounted(async () => {
   });
 });
 
-onBeforeUnmount(() => {
+onBeforeUnmount(async () => {
+  // 停止转账操作
+  if (startLoading.value) {
+    stopFlag.value = true;
+    startLoading.value = false;
+    stopStatus.value = true;
+    Notification.warning('窗口关闭，已自动停止转账操作');
+  }
+
+  // 停止gas价格监控
+  stopGasPriceMonitoring();
+
+  // 清理所有定时器
   if (timer) {
     clearInterval(timer);
   }
+  if (gasPriceTimer.value) {
+    clearInterval(gasPriceTimer.value);
+    gasPriceTimer.value = null;
+  }
+
+  // 重置相关状态
+  transferPaused.value = false;
+  pausedTransferData.value = null;
+  gasPriceMonitoring.value = false;
+  gasPriceCountdown.value = 0;
+  currentGasPrice.value = 0;
+
+  console.log('Transfer页面清理完成，所有后台操作已停止');
 });
 
 // 读取上传的文件
@@ -437,7 +1081,7 @@ function exportInvalidData(invalidData) {
 
   // 创建工作簿
   const wb = xlUtils.book_new();
-  
+
   // 创建工作表数据
   const wsData = [
     ['私钥', '地址', '转账数量', '错误原因'], // 表头
@@ -448,17 +1092,17 @@ function exportInvalidData(invalidData) {
       item.错误原因 || ''
     ])
   ];
-  
+
   // 创建工作表
   const ws = xlUtils.aoa_to_sheet(wsData);
-  
+
   // 添加工作表到工作簿
   xlUtils.book_append_sheet(wb, ws, '不合规数据');
-  
+
   // 生成文件名（包含时间戳）
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const fileName = `不合规数据_${timestamp}.xlsx`;
-  
+
   // 导出文件
   writeFile(wb, fileName);
 }
@@ -490,25 +1134,25 @@ function UploadFile() {
     const invalidData = [];
     let validCount = 0;
     let invalidCount = 0;
-    
+
     // 这里for循环将excel表格数据转化成json数据
     outdata.forEach((i, index) => {
       const rowNumber = index + 2; // Excel行号（从第2行开始，第1行是表头）
       const privateKey = String(i.私钥 || '').trim();
       const toAddress = String(i.地址 || '').trim();
       const amount = i.转账数量;
-      
+
       // 验证私钥和地址
       const isPrivateKeyValid = privateKey && validatePrivateKey(privateKey);
       const isAddressValid = toAddress && validateAddress(toAddress);
-      
+
       if (isPrivateKeyValid && isAddressValid) {
         // 数据合规，添加到表格
         try {
           // 从私钥生成地址
           const wallet = new ethers.Wallet(privateKey);
           const address = wallet.address;
-          
+
           data.value.push({
             key: `transfer_${validCount}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             private_key: privateKey,
@@ -525,7 +1169,7 @@ function UploadFile() {
           // 私钥无效，添加到不合规数据
           const errorReasons = [];
           errorReasons.push('私钥无效');
-          
+
           invalidData.push({
             私钥: privateKey,
             地址: toAddress,
@@ -552,7 +1196,7 @@ function UploadFile() {
             errorReasons.push('地址格式错误');
           }
         }
-        
+
         invalidData.push({
           私钥: privateKey,
           地址: toAddress,
@@ -563,11 +1207,11 @@ function UploadFile() {
         invalidCount++;
       }
     });
-    
+
     // 如果有不合规数据，导出到本地
     if (invalidData.length > 0) {
       exportInvalidData(invalidData);
-      
+
       // 显示导入结果通知
       if (validCount > 0) {
         Notification.warning({
@@ -675,7 +1319,7 @@ async function chainChange() {
           { key: 'eth', label: 'ETH', symbol: 'ETH', coin_type: 'base', decimals: 18 },
           { key: 'usdt', label: 'USDT', symbol: 'USDT', coin_type: 'token', contract_address: '0x...', decimals: 6 }
         ];
-        
+
         // 对代币列表进行排序：base coin排在第一位，其他代币按label字母顺序排序
         coinOptions.value.sort((a, b) => {
           // base coin (coin_type为'base') 排在第一位
@@ -688,7 +1332,7 @@ async function chainChange() {
           // 如果都是base coin或都不是base coin，按label字母顺序排序
           return a.label.localeCompare(b.label);
         });
-        
+
         coinValue.value = coinOptions.value[0].key;
         currentCoin.value = coinOptions.value[0];
       }
@@ -879,7 +1523,7 @@ function handleCancel() {
 // 处理钱包导入确认事件
 function handleWalletImportConfirm(importData) {
   const { privateKeys, addresses } = importData;
-  
+
   const newData = [];
   let successCount = 0;
   let failCount = 0;
@@ -943,7 +1587,7 @@ function handleWalletImportConfirm(importData) {
       content: notificationContent,
     });
   }
-  
+
   // 弹窗关闭现在由组件内部管理
 }
 
@@ -987,6 +1631,9 @@ function deleteTokenCancel() {
   deleteTokenVisible.value = false;
 }
 
+// 当前窗口ID
+let currentWindowId = ref('');
+
 // 查询余额
 async function queryBalance() {
   if (!stopStatus.value) {
@@ -1008,10 +1655,8 @@ async function queryBalance() {
       item.exec_status = "0";
     });
 
-    // 开始查询地址余额
-
     try {
-      // 使用Rust后端进行查询 - 支持实时更新
+      // 使用窗口感知的余额查询
       const params = {
         chain: chainValue.value,
         coin_config: {
@@ -1029,13 +1674,16 @@ async function queryBalance() {
           error_msg: null
         })),
         only_coin_config: false,
-        thread_count: threadCount.value
+        thread_count: Number(threadCount.value)
       };
 
       let result;
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
       if (isTauri) {
-        result = await invoke('query_balances_with_updates', { params });
+        result = await invoke('query_balances_with_window_stop', {
+          params,
+          windowId: currentWindowId.value
+        });
       } else {
         // 浏览器环境下的模拟数据
         result = {
@@ -1055,7 +1703,11 @@ async function queryBalance() {
         // 更新数据 - 无论总体是否成功，都要更新单条记录的状态
         result.items.forEach((resultItem, index) => {
           if (data.value[index]) {
+            // 保存原始私钥，避免被覆盖
+            const originalPrivateKey = data.value[index].private_key;
             Object.assign(data.value[index], resultItem);
+            // 恢复私钥字段
+            data.value[index].private_key = originalPrivateKey;
           }
         });
 
@@ -1076,6 +1728,7 @@ async function queryBalance() {
       } else {
         // 只有在没有返回任何结果时才设置所有项目为失败状态
         data.value.forEach(item => {
+          // 保护私钥字段，只更新状态相关字段
           item.exec_status = '3';
           item.error_msg = result.error_msg || '查询失败！';
         });
@@ -1085,13 +1738,128 @@ async function queryBalance() {
     } catch (error) {
       console.error('查询失败:', error);
 
-      // 设置所有项目为失败状态
+      // 设置所有项目为失败状态，保护私钥字段
       data.value.forEach(item => {
         item.exec_status = '3';
         item.error_msg = '查询失败！';
       });
 
       Notification.error('查询失败：' + error.message);
+    }
+
+    balanceLoading.value = false;
+  } else {
+    Notification.warning("查询 coin 类型错误！");
+  }
+}
+
+// 查询到账地址余额
+async function queryToAddressBalance() {
+  if (!stopStatus.value) {
+    Notification.warning("请停止或等待执行完成后再查询余额！");
+    return;
+  }
+  if (data.value.length === 0) {
+    Notification.warning("请先导入地址！");
+    return;
+  }
+
+  // 检查是否有到账地址
+  const itemsWithToAddr = JSON.parse(JSON.stringify(data.value.filter(item => item.to_addr)));
+  if (itemsWithToAddr.length === 0) {
+    Notification.warning("请先设置到账地址！");
+    return;
+  }
+
+  if (currentCoin.value.coin_type === "base" || currentCoin.value.coin_type === "token") {
+    balanceLoading.value = true;
+
+    try {
+      // 创建独立的查询数据，避免影响原始数据
+      const queryItems = JSON.parse(JSON.stringify(data.value.map(item => ({
+        address: item.to_addr, // 使用到账地址而不是发送地址
+        private_key: null, // 到账地址不需要私钥
+        plat_balance: null,
+        coin_balance: null,
+        nonce: null,
+        exec_status: '0',
+        error_msg: null
+      }))));
+      
+      // 使用Rust后端进行查询 - 查询到账地址的余额
+      const params = {
+        chain: chainValue.value,
+        coin_config: {
+          coin_type: currentCoin.value.coin_type,
+          contract_address: currentCoin.value.contract_address || null,
+          abi: currentCoin.value.abi || null
+        },
+        items: queryItems, // 使用独立的查询数据
+        only_coin_config: false,
+        thread_count: Number(threadCount.value) // 确保类型转换为数字
+      };
+      let result;
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        result = await invoke('query_balances_with_window_stop', {
+          params,
+          windowId: currentWindowId.value
+        });
+      } else {
+        // 浏览器环境下的模拟数据
+        result = {
+          success: true,
+          items: queryItems.map(item => ({
+            address: item.address,
+            plat_balance: '2.5',
+            coin_balance: '250.0',
+            nonce: 1,
+            exec_status: '2',
+            error_msg: null
+          }))
+        };
+      }
+
+      if (result.success || result.items) {
+        // 统计成功和失败的数量
+        const successCount = result.items.filter(item => item.exec_status === '2').length;
+        const failCount = result.items.filter(item => item.exec_status === '3').length;
+        const totalCount = result.items.length;
+
+        // 显示查询结果
+        let message = '到账地址余额查询结果：\n';
+        result.items.forEach((resultItem, index) => {
+          if (resultItem.exec_status === '2') {
+            message += `地址: ${resultItem.address}\n`;
+            message += `平台币余额: ${resultItem.plat_balance}\n`;
+            message += `代币余额: ${resultItem.coin_balance}\n\n`;
+          } else {
+            message += `地址: ${resultItem.address} - 查询失败: ${resultItem.error_msg}\n\n`;
+          }
+        });
+
+        // 使用Modal显示详细结果
+        Modal.info({
+          title: '到账地址余额查询结果',
+          content: message,
+          width: 600
+        });
+
+        // 查询完成统计
+        if (successCount === totalCount) {
+          Notification.success(`到账地址余额查询成功！共查询 ${totalCount} 个地址`);
+        } else if (successCount > 0) {
+          Notification.warning(`到账地址余额查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+        } else {
+          Notification.error('到账地址余额查询失败：所有地址都查询失败');
+        }
+      } else {
+        Notification.error('到账地址余额查询失败：' + (result.error_msg || '未知错误'));
+      }
+
+    } catch (error) {
+      console.error('到账地址余额查询失败:', error);
+      Notification.error('到账地址余额查询失败：' + error.message);
     }
 
     balanceLoading.value = false;
@@ -1174,7 +1942,7 @@ function startTransfer() {
   }
 
   // 检查是否有未完成的转账记录（转账曾经停止过）
-  const hasIncompleteTransfers = data.value.some(item => 
+  const hasIncompleteTransfers = data.value.some(item =>
     item.exec_status === "1" || item.exec_status === "2" || item.exec_status === "3"
   );
 
@@ -1187,7 +1955,7 @@ function startTransfer() {
       cancelText: '重新开始转账',
       onOk: () => {
         // 继续上次转账 - 只处理等待执行的项目
-        const incompleteData = data.value.filter(item => 
+        const incompleteData = data.value.filter(item =>
           item.exec_status === "0"
         );
         if (incompleteData.length === 0) {
@@ -1222,7 +1990,7 @@ function executeTransfer(transferData, resetStatus = true) {
         transferTotal.value = data.value.length;
         transferCompleted.value = 0;
         transferProgress.value = 0;
-        
+
         // 重新开始时重置所有状态
         data.value.forEach((item) => {
           item.exec_status = "0";
@@ -1235,12 +2003,12 @@ function executeTransfer(transferData, resetStatus = true) {
         transferTotal.value = transferData.length;
         transferCompleted.value = 0;
         transferProgress.value = 0;
-        
+
         // 继续转账时不需要重置状态，因为只处理等待执行的项目
       }
-      
+
       showProgress.value = true;
-      
+
       await transferFnc(transferData);
     })
     .catch(() => {
@@ -1269,12 +2037,33 @@ async function iterTransfer(accountData) {
       }
 
       const item = accountData[index];
-      
+
       // 跳过已完成或失败的记录，只处理等待执行的记录
       if (item.exec_status !== '0') {
         continue;
       }
-      
+
+      // 检查gas价格是否超过限制
+      if (form.max_gas_price && form.max_gas_price.trim()) {
+        const gasPriceOk = await checkGasPriceForTransfer();
+        if (!gasPriceOk) {
+          // Gas价格超过限制，暂停转账并启动监控
+          pausedTransferData.value = { accountData, index };
+          await startGasPriceMonitoring();
+
+          // 等待gas价格降低
+          while (transferPaused.value && !stopFlag.value) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          // 如果用户手动停止了转账，退出
+          if (stopFlag.value) {
+            stopStatus.value = true;
+            return;
+          }
+        }
+      }
+
       // 找到该item在原始data.value数组中的真实索引
       const realIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
       if (realIndex === -1) {
@@ -1395,13 +2184,13 @@ async function iterTransfer(accountData) {
         data.value[realIndex].error_msg = e.message || '转账异常';
         updateTransferProgress();
       }
-      
+
       // 添加延迟等待（只在实际执行了转账后才延迟，跳过的记录不延迟）
       if (index < accountData.length - 1 && !stopFlag.value) {
         const minDelay = form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) * 1000 : 1000;
         const maxDelay = form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) * 1000 : 3000;
         const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-        
+
         // 找到下一条待执行的数据
         let nextPendingIndex = -1;
         for (let i = index + 1; i < accountData.length; i++) {
@@ -1410,12 +2199,12 @@ async function iterTransfer(accountData) {
             break;
           }
         }
-        
+
         // 如果找到下一条待执行的数据，在其error_msg字段显示倒计时
         if (nextPendingIndex !== -1) {
           const originalErrorMsg = data.value[nextPendingIndex].error_msg;
           let remainingTime = Math.ceil(randomDelay / 1000);
-          
+
           // 每秒更新倒计时
           const countdownInterval = setInterval(() => {
             if (stopFlag.value) {
@@ -1424,17 +2213,17 @@ async function iterTransfer(accountData) {
               data.value[nextPendingIndex].error_msg = originalErrorMsg;
               return;
             }
-            
+
             data.value[nextPendingIndex].error_msg = `等待中...${remainingTime}秒`;
             remainingTime--;
-            
+
             if (remainingTime < 0) {
               clearInterval(countdownInterval);
               // 恢复原始错误信息
               data.value[nextPendingIndex].error_msg = originalErrorMsg;
             }
           }, 1000);
-          
+
           await new Promise(resolve => {
             setTimeout(() => {
               clearInterval(countdownInterval);
@@ -1468,7 +2257,7 @@ async function iterTransfer(accountData) {
 
   // 将钱包组转换为数组，便于并发处理
   const walletGroupsArray = Array.from(walletGroups.values());
-  
+
   // 并发处理不同钱包的转账，但同一钱包内的交易串行执行
   const processWalletGroup = async (walletTransactions) => {
     // 同一钱包的交易必须串行执行，避免nonce冲突
@@ -1477,7 +2266,7 @@ async function iterTransfer(accountData) {
         stopStatus.value = true;
         return;
       }
-      
+
       // 跳过已完成或失败的记录，只处理等待执行的记录
       if (item.exec_status !== '0') {
         continue;
@@ -1485,7 +2274,7 @@ async function iterTransfer(accountData) {
 
       const originalIndex = item.originalIndex;
       const realIndex = item.realIndex;
-      
+
       if (realIndex === -1) {
         console.error('无法找到对应的数据项');
         continue;
@@ -1610,7 +2399,7 @@ async function iterTransfer(accountData) {
   // 使用Promise.all并发处理不同钱包组，但限制并发数量
   const maxConcurrency = Math.min(threadCount.value, walletGroupsArray.length);
   const chunks = [];
-  
+
   // 将钱包组分批处理，每批最多threadCount个
   for (let i = 0; i < walletGroupsArray.length; i += maxConcurrency) {
     chunks.push(walletGroupsArray.slice(i, i + maxConcurrency));
@@ -1622,7 +2411,7 @@ async function iterTransfer(accountData) {
       stopStatus.value = true;
       return;
     }
-    
+
     // 并发处理当前批次的钱包组
     await Promise.all(chunk.map(processWalletGroup));
   }
@@ -1632,10 +2421,6 @@ async function iterTransfer(accountData) {
 function stopTransfer() {
   startLoading.value = false;
   stopFlag.value = true;
-  // 隐藏进度条
-  setTimeout(() => {
-    showProgress.value = false;
-  }, 1000);
 }
 
 // 校验数据是否合规
@@ -2178,31 +2963,63 @@ function showChainManage() {
     <!-- <span class="pageTitle">批量转账</span> -->
     <!-- 工具栏 -->
     <div class="toolBar" style="flex-shrink: 0;">
-      <a-button type="primary" @click="handleClick()">钱包信息录入
+      <a-button type="primary" @click="handleClick()">
+        <template #icon>
+          <Icon icon="mdi:wallet" />
+        </template>
+        钱包录入
       </a-button>
       <a-divider direction="vertical" />
-      <a-button type="outline" status="normal" @click="downloadFile">下载模板
+      <a-button type="outline" status="normal" @click="downloadFile">
+        <template #icon>
+          <Icon icon="mdi:download" />
+        </template>
+        下载模板
       </a-button>
-      <a-button type="primary" status="success" style="margin-left: 10px" @click="upload">导入文件
+      <a-button type="primary" status="success" style="margin-left: 10px" @click="upload">
+        <template #icon>
+          <Icon icon="mdi:upload" />
+        </template>
+        导入文件
       </a-button>
       <input type="file" ref="uploadInputRef" @change="UploadFile" id="btn_file" style="display: none" />
       <a-divider direction="vertical" />
       <!-- 选择操作区按钮 -->
-      <a-button type="outline" status="success" @click="selectSucceeded">选中成功
+      <a-button type="outline" status="success" @click="selectSucceeded">
+        <template #icon>
+          <Icon icon="mdi:check" />
+        </template>
+        选中成功
       </a-button>
-      <a-button type="outline" status="danger" style="margin-left: 10px" @click="selectFailed">选中失败
+      <a-button type="outline" status="danger" style="margin-left: 10px" @click="selectFailed">
+        <template #icon>
+          <Icon icon="mdi:close" />
+        </template>
+        选中失败
       </a-button>
-      <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">反选
+      <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">
+        <template #icon>
+          <Icon icon="mdi:swap-horizontal" />
+        </template>
+        反选
       </a-button>
-      <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">删除选中
+      <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">
+        <template #icon>
+          <Icon icon="mdi:delete" />
+        </template>
+        删除选中
       </a-button>
       <a-button v-show="false" class="goHome" type="outline" status="success" @click="goHome">
         <template #icon>
-          <icon-double-left />
+          <Icon icon="mdi:chevron-double-left" />
         </template>
         返回首页
       </a-button>
-      <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearData">清空列表
+      <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearData">
+        <template #icon>
+          <Icon icon="mdi:delete" />
+        </template>
+        清空列表
       </a-button>
       <!-- <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearPrivateKey">清空私钥
       </a-button>
@@ -2228,7 +3045,7 @@ function showChainManage() {
           </a-tag>
         </template>
         <template #optional="{ record }">
-          <icon-delete style="font-size: 16px" @click.prevent="deleteItem(record)" />
+          <Icon icon="mdi:delete" style="font-size: 16px;color: #ff4d4f;" @click.prevent="deleteItem(record)" />
         </template>
       </a-table>
     </div>
@@ -2249,9 +3066,15 @@ function showChainManage() {
     <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
       <!-- 链管理按钮 -->
       <a-button type="primary" @click="showChainManage" style="white-space: nowrap;">
+        <template #icon>
+          <Icon icon="mdi:settings" />
+        </template>
         区块链管理
       </a-button>
       <a-button type="primary" @click="showRpcManage" :disabled="!chainValue" style="white-space: nowrap;">
+        <template #icon>
+          <Icon icon="mdi:link" />
+        </template>
         RPC管理
       </a-button>
       <!-- 链 选择器 -->
@@ -2285,10 +3108,13 @@ function showChainManage() {
       <!-- 区块链浏览器跳转按钮 -->
       <a-tooltip v-if="currentChain?.scan_url" content="在浏览器中打开区块链浏览器">
         <a-button type="primary" @click="openBlockchainScan" shape="round" style="white-space: nowrap; padding: 0 8px;">
-          <icon-share-external />
+          <Icon icon="mdi:open-in-new" />
         </a-button>
       </a-tooltip>
       <a-button type="primary" @click="showTokenManage" :disabled="!chainValue" style="white-space: nowrap;">
+        <template #icon>
+          <Icon icon="mdi:coin" />
+        </template>
         代币管理
       </a-button>
       <!-- 代币 选择器 -->
@@ -2351,6 +3177,18 @@ function showChainManage() {
             tooltip="转账失败时是否自动重试">
             <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0" />
           </a-form-item>
+          <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
+          <a-form-item field="multi_window" label="窗口多开" style="width: 100px; padding: 5px 10px;" tooltip="窗口配置相同">
+            <a-input-group style="width: 100px;">
+              <a-input-number v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1"
+                placeholder="窗口数" style="width: 50px;" />
+              <a-button status="success" @click="openMultipleWindow">
+                <template #icon>
+                  <Icon icon="mdi:content-copy" />
+                </template>
+              </a-button>
+            </a-input-group>
+          </a-form-item>
         </a-row>
         <a-row v-show="chainValue !== 'sol'" style="height: 70px">
           <a-form-item field="limit_type" label="Gas Limit" style="width: 245px; padding: 5px 10px;">
@@ -2391,6 +3229,19 @@ function showChainManage() {
           <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price"
             style="width: 130px; padding: 5px 10px;" label="最大 Gas Price" tooltip="为空时则不设置上限（单位：Gwei）">
             <a-input v-model="form.max_gas_price" />
+            <!-- Gas监控状态显示 -->
+            <div v-if="gasPriceMonitoring" class="gas-monitoring-info"
+              style="position: absolute; left: 140px; top: 0; width: 300px; font-size: 12px; color: #666; background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #e8e9ea; z-index: 10;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span style="color: #ff4d4f;">⏸️ 转账已暂停</span>
+                <span>Gas监控中...</span>
+                <span style="color: #1890ff;">{{ gasPriceCountdown }}秒后查询</span>
+              </div>
+              <div>
+                <span>当前Gas: {{ currentGasPrice }} Gwei</span>
+                <span style="margin-left: 12px;">目标: ≤{{ form.max_gas_price }} Gwei</span>
+              </div>
+            </div>
           </a-form-item>
         </a-row>
       </a-form>
@@ -2405,10 +3256,21 @@ function showChainManage() {
         <!-- 查询余额 -->
         <a-dropdown>
           <a-button type="primary" :loading="balanceLoading"
-            :style="{ width: '130px', height: '40px', fontSize: '14px' }">查询余额</a-button>
+            :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+            <template #icon>
+              <Icon icon="mdi:magnify" />
+            </template>
+            查询余额
+          </a-button>
           <template #content>
-            <a-doption @click="queryBalance">⤴️ 查出账地址</a-doption>
-            <a-doption disabled>⤵️ 查到账地址</a-doption>
+            <a-doption @click="queryBalance">
+              <Icon icon="mdi:arrow-up-bold" style="margin-right: 8px;" />
+              查出账地址
+            </a-doption>
+            <a-doption @click="queryToAddressBalance">
+              <Icon icon="mdi:arrow-down-bold" style="margin-right: 8px;" />
+              查到账地址
+            </a-doption>
           </template>
         </a-dropdown>
       </div>
@@ -2417,24 +3279,35 @@ function showChainManage() {
       <div style="display: flex; align-items: center; gap: 20px;">
         <!-- 执行转账按钮 -->
         <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn"
-          @click="startTransfer(data.value)"
-          :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行转账</a-button>
+          @click="startTransfer(data.value)" :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+          <template #icon>
+            <Icon icon="mdi:play" />
+          </template>
+          执行转账
+        </a-button>
         <a-tooltip v-else content="点击可以提前停止执行">
           <div @click="stopTransfer">
             <a-button v-if="!stopFlag" class="execute-btn executing" loading
-              :style="{ width: '130px', height: '40px', fontSize: '14px' }">执行中...</a-button>
+              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+              <template #icon>
+                <Icon icon="mdi:stop" />
+              </template>
+              执行中...
+            </a-button>
             <a-button v-if="stopFlag && !stopStatus" class="execute-btn stopping" loading
-              :style="{ width: '130px', height: '40px', fontSize: '14px' }">正在停止...</a-button>
+              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+              <template #icon>
+                <icon-stop />
+              </template>
+              正在停止...
+            </a-button>
           </div>
         </a-tooltip>
       </div>
     </div>
   </div>
   <!-- 钱包信息录入弹窗 -->
-  <WalletImportModal 
-    ref="walletImportRef"
-    @confirm="handleWalletImportConfirm"
-    @cancel="handleWalletImportCancel" />
+  <WalletImportModal ref="walletImportRef" @confirm="handleWalletImportConfirm" @cancel="handleWalletImportCancel" />
   <!-- 添加代币弹窗 -->
   <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"
     :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
@@ -2838,8 +3711,6 @@ function showChainManage() {
 .rpc-urls {
   width: 100%;
 }
-
-
 </style>
 <style lang="less">
 .transfer {

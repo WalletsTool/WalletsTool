@@ -475,7 +475,7 @@ async function handleMainWindowCloseRequest() {
             // 先关闭所有子窗口
             if (childWindows && childWindows.length > 0) {
               // 正在关闭子窗口
-              const closedWindows = await invoke('close_all_child_windows', {
+              await invoke('close_all_child_windows', {
                 mainWindowLabel: 'wallet_manager'
               })
               // 已关闭子窗口

@@ -911,27 +911,39 @@ onMounted(async () => {
   const isTauriMounted = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (isTauriMounted) {
     await listen('balance_item_update', (event) => {
-      const { index, item, window_id } = event.payload;
+      const { item, window_id } = event.payload;
+      console.log('Received balance_item_update item:', item);
       // 检查是否是本窗口的事件
       if (window_id && window_id !== currentWindowId.value) {
         return; // 不是本窗口的事件，直接返回
       }
-      if (data.value[index]) {
-        // 更新对应索引的数据（只更新指定字段）
-        data.value[index].plat_balance = item.plat_balance;
-        data.value[index].coin_balance = item.coin_balance;
-        data.value[index].exec_status = item.exec_status;
-        data.value[index].error_msg = item.error_msg;
+      // 使用address查找对应的数据项，而不是使用index
+      const targetIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+      if (targetIndex !== -1) {
+        // 更新对应地址的数据（只更新指定字段）
+        data.value[targetIndex].plat_balance = item.plat_balance;
+        data.value[targetIndex].coin_balance = item.coin_balance;
+        data.value[targetIndex].exec_status = item.exec_status;
+        data.value[targetIndex].error_msg = item.error_msg;
       }
     });
 
     // 监听转账状态更新事件
     await listen('transfer_status_update', (event) => {
-      const { index, error_msg, exec_status } = event.payload;
-      if (data.value[index]) {
-        // 更新对应索引的状态和返回信息
-        data.value[index].error_msg = error_msg;
-        data.value[index].exec_status = exec_status;
+      const { index, error_msg, exec_status, item } = event.payload;
+      // 使用private_key查找对应的数据项，而不是使用index
+      let targetIndex = -1;
+      if (item && item.private_key) {
+        targetIndex = data.value.findIndex(dataItem => dataItem.private_key === item.private_key);
+      } else {
+        // 如果没有item信息，仍然使用index作为备用方案
+        targetIndex = index;
+      }
+      
+      if (targetIndex !== -1 && data.value[targetIndex]) {
+        // 更新对应数据项的状态和返回信息
+        data.value[targetIndex].error_msg = error_msg;
+        data.value[targetIndex].exec_status = exec_status;
 
         // 更新进度条
         updateTransferProgress();
@@ -1444,6 +1456,14 @@ const handleAddCoinBeforeOk = async () => {
 
 // 清空列表
 function clearData() {
+  if (startLoading.value) {
+    Notification.warning('请停止或等待转账完成后再清空列表！');
+    return;
+  }
+  if (balanceLoading.value) {
+    Notification.warning("请停止或等待查询完成后再清空列表！");
+    return;
+  }
   data.value = [];
   // 重置文件输入的value，确保再次选择相同文件时能触发change事件
   if (uploadInputRef.value) {
@@ -1454,42 +1474,12 @@ function clearData() {
   Notification.success("清空列表成功！");
 }
 
-// 清空私钥
-function clearPrivateKey() {
-  data.value.forEach((item) => {
-    item.private_key = "";
-  });
-  // 删除私钥和地址都为空的行
-  data.value = data.value.filter((item) => {
-    return item.private_key.trim() !== "" || item.to_addr.trim() !== "";
-  });
-  Notification.success("清空私钥成功！");
-}
-
-// 清空地址
-function clearAddress() {
-  data.value.forEach((item) => {
-    item.to_addr = "";
-  });
-  // 删除私钥和地址都为空的行
-  data.value = data.value.filter((item) => {
-    return item.private_key.trim() !== "" || item.to_addr.trim() !== "";
-  });
-  Notification.success("清空地址成功！");
-}
-
 // 导入事件触发
 function handleClick() {
   if (walletImportRef.value) {
     walletImportRef.value.show();
   }
 }
-
-// 导入弹窗关闭事件
-function handleCancel() {
-  handleWalletImportCancel();
-}
-
 
 
 // 处理钱包导入确认事件
@@ -1563,10 +1553,6 @@ function handleWalletImportConfirm(importData) {
   // 弹窗关闭现在由组件内部管理
 }
 
-// 处理钱包导入取消事件
-function handleWalletImportCancel() {
-  // 弹窗关闭现在由组件内部管理
-}
 
 // 删除数据
 function deleteItem(item) {
@@ -1643,6 +1629,7 @@ async function queryBalance() {
           abi: currentCoin.value.abi || null
         },
         items: data.value.map(item => ({
+          key: item.key,
           address: item.address || null,
           private_key: item.private_key || null,
           plat_balance: null,
@@ -1765,10 +1752,19 @@ async function queryToAddressBalance() {
     balanceLoading.value = true;
     balanceStopFlag.value = false;
     balanceStopStatus.value = false;
+    
+    // 重置所有项目状态
+    data.value.forEach((item) => {
+      item.plat_balance = "";
+      item.coin_balance = "";
+      item.error_msg = "";
+      item.exec_status = "0";
+    });
 
     try {
       // 创建独立的查询数据，避免影响原始数据
-      const queryItems = JSON.parse(JSON.stringify(data.value.map(item => ({
+      const queryItems = data.value.map(item => ({
+        key: item.key,
         address: item.to_addr, // 使用到账地址而不是发送地址
         private_key: null, // 到账地址不需要私钥
         plat_balance: null,
@@ -1776,7 +1772,7 @@ async function queryToAddressBalance() {
         nonce: null,
         exec_status: '0',
         error_msg: null
-      }))));
+      }));
       
       // 使用Rust后端进行查询 - 查询到账地址的余额
       const params = {

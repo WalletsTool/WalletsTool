@@ -6,7 +6,7 @@ import { computed, nextTick, onBeforeMount, onMounted, reactive, ref } from "vue
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ethers } from "ethers";
-import { Notification } from "@arco-design/web-vue";
+import { Notification, Modal } from "@arco-design/web-vue";
 import { utils as xlUtils, writeFile } from "xlsx";
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import ChainIcon from '@/components/ChainIcon.vue';
@@ -119,6 +119,8 @@ const coinFieldNames = { value: 'key', label: 'name' }
 const coinOptions = ref([]);
 // 查询余额按钮loading
 let balanceLoading = ref(false)
+// 余额查询停止标志
+let balanceStopFlag = ref(false)
 // 详细配置
 const form = reactive({
   thread_count: 3
@@ -219,9 +221,11 @@ onMounted(async () => {
     if (window_id && window_id !== currentWindowId.value) {
       return; // 不是本窗口的事件，直接返回
     }
-    if (data.value[index]) {
-      // 更新对应索引的数据
-      Object.assign(data.value[index], item)
+    // 使用address查找对应的数据项，而不是使用index
+    const targetIndex = data.value.findIndex(dataItem => dataItem.address === item.address)
+    if (targetIndex !== -1) {
+      // 更新对应地址的数据
+      Object.assign(data.value[targetIndex], item)
 
       // 更新进度
       updateBalanceProgress()
@@ -407,6 +411,10 @@ const handleAddCoinBeforeOk = async () => {
 
 // 清空列表
 function clearData() {
+  if (balanceLoading.value) {
+    Notification.warning('请停止或等待查询完成后再清空列表！');
+    return;
+  }
   data.value = []
   Notification.success('清空列表成功！');
 }
@@ -536,7 +544,7 @@ const handleBeforeOk = async () => {
     if (fail_count > 0) {
       Notification.warning({
         title: '导入完成！',
-        content: `执行${total_count}条，成功${success_count}条，失败${fail_count}条！`,
+        content: `查询${total_count}条，成功${success_count}条，失败${fail_count}条！`,
       })
     } else {
       Notification.success({
@@ -565,7 +573,7 @@ const handleBeforeOk = async () => {
 // 删除数据
 function deleteItem(item) {
   if (balanceLoading.value) {
-    Notification.warning('请停止或等待执行完成后再删除数据！');
+    Notification.warning('请停止或等待查询完成后再删除数据！');
     return
   }
   // 删除确认
@@ -612,14 +620,21 @@ async function queryBalance() {
     Notification.warning('请先选择代币！');
     return
   }
+
+  // 每次查询都重新开始，重置所有状态
+  executeBalanceQuery(data.value, true);
+}
+
+// 查询余额的通用方法
+async function executeBalanceQuery(queryData) {
   if (currentCoin.value.coin_type === 'base' || currentCoin.value.coin_type === 'token') {
     balanceLoading.value = true
+    balanceStopFlag.value = false
 
     // 初始化进度条
     balanceTotal.value = data.value.length
     balanceCompleted.value = 0
     balanceProgress.value = 0
-    showProgress.value = true
 
     // 重置所有项目状态和进度
     data.value.forEach(item => {
@@ -630,6 +645,8 @@ async function queryBalance() {
       item.exec_status = '0'
     })
 
+    showProgress.value = true
+
     try {
       // 使用Rust后端进行查询
       const params = {
@@ -639,7 +656,7 @@ async function queryBalance() {
           contract_address: currentCoin.value.contract_address || null,
           abi: currentCoin.value.abi || null
         },
-        items: data.value.map(item => ({
+        items: queryData.map(item => ({
           address: item.address,
           private_key: item.private_key || null,
           plat_balance: null,
@@ -650,6 +667,13 @@ async function queryBalance() {
         })),
         only_coin_config: onlyCoin.value,
         thread_count: form.thread_count
+      }
+
+      // 检查是否需要停止查询
+      if (balanceStopFlag.value) {
+        console.log('查询已被停止');
+        balanceLoading.value = false;
+        return;
       }
 
       const result = await invoke('query_balances_with_updates', {
@@ -717,6 +741,7 @@ async function queryBalance() {
 
 // 停止余额查询
 async function stopBalanceQuery() {
+  console.log('停止查询按钮被点击');
   try {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) {
@@ -730,6 +755,8 @@ async function stopBalanceQuery() {
   }
 
   balanceLoading.value = false;
+  balanceStopFlag.value = true;
+  console.log('停止查询成功');
 }
 
 // 选中成功
@@ -749,7 +776,7 @@ function InvertSelection() {
 
 function deleteSelected() {
   if (balanceLoading.value) {
-    Notification.warning('请停止或等待执行完成后再删除数据！');
+    Notification.warning('请停止或等待查询完成后再删除数据！');
     return
   }
   data.value = data.value.filter(item => !selectedKeys.value.includes(item.address))
@@ -770,7 +797,7 @@ function exportExcel(target_data) {
     Notification.warning('无法导出空列表！');
     return
   }
-  let export_data = [['地址', 'Nonce', '平台余额', '代币余额', '执行状态', '错误信息']]
+  let export_data = [['地址', 'Nonce', '平台余额', '代币余额', '查询状态', '错误信息']]
   target_data.forEach(item => {
     export_data.push([item.address, item.nonce, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg])
   })
@@ -1013,13 +1040,13 @@ async function handleBeforeClose() {
           {{ rowIndex + 1 }}
         </template>
         <template #exec_status="{ rowIndex }">
-          <a-tag v-if="data[rowIndex].exec_status === '0'" color="#86909c">等待执行
+          <a-tag v-if="data[rowIndex].exec_status === '0'" color="#86909c">等待查询
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '1'" color="#ff7d00">执行中
+          <a-tag v-if="data[rowIndex].exec_status === '1'" color="#ff7d00">查询中
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '2'" color="#00b42a">执行成功
+          <a-tag v-if="data[rowIndex].exec_status === '2'" color="#00b42a">查询成功
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '3'" color="#f53f3f">执行失败
+          <a-tag v-if="data[rowIndex].exec_status === '3'" color="#f53f3f">查询失败
           </a-tag>
         </template>
         <template #optional="{ record }">
@@ -1120,14 +1147,21 @@ async function handleBeforeClose() {
           </a-form-item>
           <!-- 线程数配置 -->
           <a-form-item field="thread_count" label="线程数" style="width: 140px; margin-bottom: 0;"
-            tooltip="同时执行查询的钱包数量（1-99）之间">
+            tooltip="同时查询的钱包数量（1-99）之间">
             <a-input-number :max="99" :min="1" mode="button" v-model="form.thread_count" style="width: 100%;" />
           </a-form-item>
         </div>
       </a-form>
       <!-- 查询按钮 -->
-      <a-button type="primary" status="success" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="queryBalance"
-        :loading="balanceLoading">
+      <a-tooltip v-if="balanceLoading" content="点击可以提前停止查询">
+        <a-button type="primary" status="danger" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="stopBalanceQuery">
+          <template #icon>
+            <Icon icon="mdi:stop" />
+          </template>
+          查询中...
+        </a-button>
+      </a-tooltip>
+      <a-button v-else type="primary" status="success" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="queryBalance">
         <template #icon>
           <Icon icon="mdi:play" />
         </template>

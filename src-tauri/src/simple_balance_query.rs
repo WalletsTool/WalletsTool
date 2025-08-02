@@ -43,6 +43,7 @@ fn reset_stop_flag(window_id: &str) {
 // 查询项目结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryItem {
+    pub key: String,
     pub address: String,
     pub private_key: Option<String>,
     pub plat_balance: Option<String>,
@@ -395,20 +396,14 @@ impl SimpleBalanceQueryService {
             async move {
                 // 在获取信号量前检查停止标志
                 if get_stop_flag(&window_id) {
-                    let mut stopped_item = item.clone();
-                    stopped_item.exec_status = "3".to_string();
-                    stopped_item.error_msg = Some("查询已被用户停止".to_string());
-                    return stopped_item;
+                    return item.clone();
                 }
                 
                 let _permit = semaphore.acquire().await.unwrap();
                 
                 // 获取信号量后再次检查停止标志
                 if get_stop_flag(&window_id) {
-                    let mut stopped_item = item.clone();
-                    stopped_item.exec_status = "3".to_string();
-                    stopped_item.error_msg = Some("查询已被用户停止".to_string());
-                    return stopped_item;
+                    return item.clone();
                 }
                 
                 // 添加随机延迟，避免过快请求

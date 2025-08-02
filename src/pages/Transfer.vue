@@ -198,6 +198,11 @@ let threadCount = ref(1);
 // 多窗口数量设置，默认为1
 let multiWindowCount = ref(1);
 
+// 智能重试相关变量
+const transferStartTime = ref(null); // 转账开始时间戳
+const retryInProgress = ref(false); // 是否正在进行重试检查
+const retryResults = ref([]); // 重试检查结果
+
 // 监听线程数变化，自动调整间隔时间
 watch(threadCount, (newValue) => {
   if (newValue > 1) {
@@ -398,6 +403,104 @@ function updateTransferProgress() {
 // 代币管理相关变量
 const tokenTableLoading = ref(false);
 const tokenManageData = ref([]);
+
+// 智能重试核心函数
+async function performIntelligentRetry(failedData) {
+  if (!transferStartTime.value) {
+    console.warn('未找到转账开始时间，使用传统重试方式');
+    transferFnc(failedData);
+    return;
+  }
+
+  retryInProgress.value = true;
+  retryResults.value = [];
+  
+  Notification.info(`开始智能重试检查，共 ${failedData.length} 笔失败交易`);
+  
+  try {
+    // 对每个失败的交易进行检查
+    const retryList = [];
+    
+    for (const item of failedData) {
+      try {
+        // 查询该私钥钱包在转账开始时间之后的交易历史
+        const hasRecentTransfer = await checkRecentTransfer(item.private_key, item.to_addr, transferStartTime.value);
+        
+        if (hasRecentTransfer) {
+          // 发现在开始时间之后有包含目标接收地址的交易，不重试
+          const realIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+          if (realIndex !== -1) {
+            data.value[realIndex].error_msg = '检测到链上已有相关交易，跳过重试';
+            data.value[realIndex].exec_status = '2'; // 标记为成功
+          }
+          retryResults.value.push({
+            key: item.key,
+            address: item.to_addr,
+            action: '跳过重试',
+            reason: '检测到链上已有相关交易'
+          });
+        } else {
+          // 没有发现相关交易，加入重试列表
+          retryList.push(item);
+          retryResults.value.push({
+            key: item.key,
+            address: item.to_addr,
+            action: '加入重试',
+            reason: '未检测到相关链上交易'
+          });
+        }
+      } catch (error) {
+        console.error(`检查交易失败 ${item.to_addr}:`, error);
+        // 检查失败时，保守起见加入重试列表
+        retryList.push(item);
+        retryResults.value.push({
+          key: item.key,
+          address: item.to_addr,
+          action: '加入重试',
+          reason: '检查失败，保守重试'
+        });
+      }
+    }
+    
+    retryInProgress.value = false;
+    
+    if (retryList.length > 0) {
+      Notification.info(`智能重试检查完成，将重试 ${retryList.length} 笔交易，跳过 ${failedData.length - retryList.length} 笔交易`);
+      // 执行重试
+      transferFnc(retryList);
+    } else {
+      Notification.success('智能重试检查完成，所有失败交易均检测到链上已有相关交易，无需重试');
+      stopStatus.value = true;
+    }
+    
+  } catch (error) {
+    console.error('智能重试检查失败:', error);
+    retryInProgress.value = false;
+    Notification.error('智能重试检查失败，使用传统重试方式');
+    transferFnc(failedData);
+  }
+}
+
+// 检查指定私钥钱包在指定时间之后是否有包含目标地址的转账交易
+async function checkRecentTransfer(privateKey, targetAddress, startTime) {
+  try {
+    // 调用后端接口查询链上交易历史
+    const result = await invoke('check_wallet_recent_transfers', {
+      chain: chainValue.value,
+      private_key: privateKey,
+      target_address: targetAddress.toLowerCase(),
+      start_timestamp: startTime,
+      coin_type: currentCoin.value.coin_type,
+      contract_address: currentCoin.value.coin_type === 'token' ? currentCoin.value.contract_address : null
+    });
+    
+    return result.has_recent_transfer || false;
+  } catch (error) {
+    console.error('查询链上交易失败:', error);
+    // 查询失败时返回false，让重试逻辑决定
+    throw error;
+  }
+}
 const tokenFormVisible = ref(false);
 const isTokenEditMode = ref(false);
 const currentEditToken = ref(null);
@@ -921,7 +1024,6 @@ onMounted(async () => {
   if (isTauriMounted) {
     await listen('balance_item_update', (event) => {
       const { item, window_id } = event.payload;
-      console.log('Received balance_item_update item:', item);
       // 检查是否是本窗口的事件
       if (window_id && window_id !== currentWindowId.value) {
         return; // 不是本窗口的事件，直接返回
@@ -1903,14 +2005,14 @@ async function deleteTokenConfirm() {
 async function transferFnc(inputData) {
   // 执行转账
   await iterTransfer(inputData)
-    .then(() => {
+    .then(async () => {
       if (stopFlag.value) {
         Notification.warning("已停止执行！");
       } else {
         const retryData = inputData.filter((item) => item.retry_flag === true);
         if (form.error_retry === "1" && retryData.length > 0) {
-          //  存在重试数据
-          transferFnc(retryData);
+          //  存在重试数据，使用智能重试逻辑
+          await performIntelligentRetry(retryData);
         } else {
           Notification.success("执行完成！");
           stopStatus.value = true;
@@ -1989,6 +2091,12 @@ function executeTransfer(transferData, resetStatus = true) {
       startLoading.value = true;
       stopFlag.value = false;
       stopStatus.value = false;
+
+      // 记录转账开始时间（仅在重新开始时记录）
+      if (resetStatus) {
+        transferStartTime.value = Date.now();
+        console.log('转账开始时间:', new Date(transferStartTime.value).toLocaleString());
+      }
 
       // 初始化进度条
       if (resetStatus) {
@@ -3197,6 +3305,33 @@ async function handleBeforeClose() {
         '0%': '#00b42a',
         '100%': '#00b42a'
       }" style="width: 100%;" />
+    </div>
+
+    <!-- 智能重试状态显示 -->
+    <div v-if="retryInProgress" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #1890ff; flex-shrink: 0;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <a-spin size="small" />
+        <span style="font-size: 14px; color: #1d2129; font-weight: 500;">智能重试检查中...</span>
+      </div>
+      <div style="font-size: 12px; color: #86909c;">
+        正在检查失败交易的链上状态，判断是否需要重试
+      </div>
+    </div>
+
+    <!-- 智能重试结果显示 -->
+    <div v-if="retryResults.length > 0 && !retryInProgress" style="margin-top: 10px; padding: 10px; background: #f6ffed; border-radius: 6px; border-left: 4px solid #52c41a; flex-shrink: 0;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-size: 14px; color: #1d2129; font-weight: 500;">智能重试检查完成</span>
+        <a-button size="mini" type="text" @click="retryResults = []">
+          <template #icon>
+            <Icon icon="mdi:close" />
+          </template>
+        </a-button>
+      </div>
+      <div style="font-size: 12px; color: #52c41a; margin-bottom: 4px;">
+        跳过重试: {{ retryResults.filter(r => r.action === '跳过重试').length }} 笔 | 
+        加入重试: {{ retryResults.filter(r => r.action === '加入重试').length }} 笔
+      </div>
     </div>
 
     <!-- 管理代币按钮嵌入 -->

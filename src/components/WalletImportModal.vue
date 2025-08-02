@@ -417,7 +417,7 @@ defineExpose({
   margin: 0;
   padding-left: 16px;
   color: var(--text-color, #4e5969);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .usage-column li {

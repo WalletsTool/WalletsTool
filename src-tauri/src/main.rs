@@ -121,6 +121,7 @@ async fn main() {
             // transfer functions
             wallet_manager::transfer::base_coin_transfer,
             wallet_manager::transfer::query_balance,
+            wallet_manager::transfer::check_wallet_recent_transfers,
             // token transfer functions
             wallet_manager::token_transfer::token_transfer,
             wallet_manager::token_transfer::query_token_balance,

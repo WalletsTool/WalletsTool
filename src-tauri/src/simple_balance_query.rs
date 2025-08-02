@@ -49,6 +49,7 @@ pub struct QueryItem {
     pub plat_balance: Option<String>,
     pub coin_balance: Option<String>,
     pub nonce: Option<u64>,
+    pub retry_flag: bool,
     pub exec_status: String, // "0"=未执行, "1"=执行中, "2"=成功, "3"=失败
     pub error_msg: Option<String>,
 }
@@ -315,11 +316,13 @@ impl SimpleBalanceQueryService {
             }
             Ok(Err(e)) => {
                 item.exec_status = "3".to_string(); // 失败
+                item.retry_flag = true;
                 item.error_msg = Some(format!("查询失败: {}", e));
                 println!("查询失败: {}", e);
             }
             Err(_) => {
                 item.exec_status = "3".to_string(); // 超时
+                item.retry_flag = true;
                 item.error_msg = Some(format!("查询超时（15秒），RPC地址: {}", rpc_url));
                 println!("查询超时: {}, RPC地址: {}", item.address, rpc_url);
             }

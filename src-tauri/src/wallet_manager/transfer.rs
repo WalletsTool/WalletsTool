@@ -515,3 +515,157 @@ async fn query_balance_internal(
     let balance = provider.get_balance(address, None).await?;
     Ok(format_ether(balance).to_string())
 }
+
+// 检查钱包最近转账记录的结果结构
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RecentTransferResult {
+    pub has_recent_transfer: bool,
+    pub transaction_count: u32,
+    pub latest_transaction_hash: Option<String>,
+}
+
+// Tauri命令：检查钱包最近转账记录
+#[tauri::command]
+pub async fn check_wallet_recent_transfers(
+    chain: String,
+    private_key: String,
+    target_address: String,
+    start_timestamp: u64,
+    coin_type: String,
+    contract_address: Option<String>,
+) -> Result<RecentTransferResult, String> {
+    match check_wallet_recent_transfers_internal(
+        chain,
+        private_key,
+        target_address,
+        start_timestamp,
+        coin_type,
+        contract_address,
+    ).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+// 内部检查钱包最近转账记录实现
+async fn check_wallet_recent_transfers_internal(
+    chain: String,
+    private_key: String,
+    target_address: String,
+    start_timestamp: u64,
+    coin_type: String,
+    contract_address: Option<String>,
+) -> Result<RecentTransferResult, Box<dyn std::error::Error>> {
+    // 创建Provider
+    let provider = create_provider(&chain).await?;
+    
+    // 处理私钥格式
+    let private_key = if private_key.starts_with("0x") || private_key.starts_with("0X") {
+        private_key[2..].to_string()
+    } else {
+        private_key.clone()
+    };
+    
+    // 创建钱包
+    let wallet = private_key.parse::<LocalWallet>().map_err(|e| {
+        format!("私钥格式错误: {}", e)
+    })?;
+    let wallet_address = wallet.address();
+    
+    // 解析目标地址
+    let target_addr: Address = target_address.parse().map_err(|e| {
+        format!("目标地址格式错误: {}", e)
+    })?;
+    
+    // 获取当前区块号
+    let current_block = provider.get_block_number().await?;
+    
+    // 计算开始查询的区块号（简化实现：从最近1000个区块开始查询）
+    let start_block = if current_block.as_u64() > 1000 {
+        current_block - 1000
+    } else {
+        U64::from(0)
+    };
+    
+    let mut transaction_count = 0u32;
+    let mut latest_transaction_hash: Option<String> = None;
+    let mut has_recent_transfer = false;
+    
+    // 查询指定区块范围内的交易
+    for block_num in start_block.as_u64()..=current_block.as_u64() {
+        if let Ok(Some(block)) = provider.get_block_with_txs(U64::from(block_num)).await {
+            // 检查区块时间戳是否在指定时间之后
+            if block.timestamp.as_u64() < start_timestamp {
+                continue;
+            }
+            
+            // 遍历区块中的所有交易
+            for tx in block.transactions {
+                // 检查交易是否来自指定钱包地址
+                if tx.from == wallet_address {
+                    transaction_count += 1;
+                    
+                    // 根据币种类型检查交易
+                    match coin_type.as_str() {
+                        "base" => {
+                            // 基础币转账：检查to地址
+                            if let Some(to_addr) = tx.to {
+                                if to_addr == target_addr {
+                                    has_recent_transfer = true;
+                                    latest_transaction_hash = Some(format!("{:?}", tx.hash));
+                                }
+                            }
+                        }
+                        "token" => {
+                            // 代币转账：检查合约调用和事件日志
+                            if let Some(contract_addr) = &contract_address {
+                                let contract_address: Address = contract_addr.parse().map_err(|e| {
+                                    format!("合约地址格式错误: {}", e)
+                                })?;
+                                
+                                // 检查是否是对指定合约的调用
+                                if let Some(to_addr) = tx.to {
+                                    if to_addr == contract_address {
+                                        // 获取交易回执以检查事件日志
+                                        if let Ok(Some(receipt)) = provider.get_transaction_receipt(tx.hash).await {
+                                            // 检查Transfer事件日志
+                                            for log in receipt.logs {
+                                                // Transfer事件的topic0是keccak256("Transfer(address,address,uint256)")
+                                                let transfer_topic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+                                                
+                                                if !log.topics.is_empty() && 
+                                                   format!("{:?}", log.topics[0]) == transfer_topic &&
+                                                   log.topics.len() >= 3 {
+                                                    // topics[1]是from地址，topics[2]是to地址
+                                                    let to_topic = log.topics[2];
+                                                    // 将topic转换为地址（去掉前12个字节的0）
+                                                    let to_bytes = &to_topic.as_bytes()[12..];
+                                                    let to_address = Address::from_slice(to_bytes);
+                                                    
+                                                    if to_address == target_addr {
+                                                        has_recent_transfer = true;
+                                                        latest_transaction_hash = Some(format!("{:?}", tx.hash));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            // 未知币种类型，跳过
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(RecentTransferResult {
+        has_recent_transfer,
+        transaction_count,
+        latest_transaction_hash,
+    })
+}

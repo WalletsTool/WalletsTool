@@ -20,23 +20,26 @@
         </svg>
       </div>
       <button class="title-bar-control" @click="minimizeWindow" title="最小化">
-        <span class="minimize-icon">―</span>
+        <Icon icon="mdi:window-minimize" width="14" height="14" />
       </button>
-      <button class="title-bar-control" @click="maximizeWindow" title="最大化">
-        <span class="maximize-icon">▢</span>
+      <button class="title-bar-control" @click="maximizeWindow" :title="isMaximized ? '还原' : '最大化'">
+        <Icon :icon="isMaximized ? 'mdi:window-restore' : 'mdi:window-maximize'" width="14" height="14" />
       </button>
       <button class="title-bar-control close" @click="closeWindow" title="关闭">
-        <span class="close-icon">✕</span>
+        <Icon icon="mdi:window-close" width="14" height="14" />
       </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useThemeStore } from '@/stores'
 import { Icon } from '@iconify/vue'
+
+// 窗口状态管理
+const isMaximized = ref(false)
 
 // Props
 const props = defineProps({
@@ -64,9 +67,20 @@ function toggleTheme() {
   themeStore.toggleTheme()
 }
 
-// 初始化主题
-onMounted(() => {
+// 初始化主题和窗口状态
+onMounted(async () => {
   themeStore.initTheme()
+  
+  // 初始化窗口最大化状态
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow()
+      isMaximized.value = await currentWindow.isMaximized()
+    } catch (error) {
+      console.error('Error getting window state:', error)
+    }
+  }
 })
 
 // 窗口控制方法
@@ -87,11 +101,13 @@ async function maximizeWindow() {
   if (isTauri) {
     try {
       const currentWindow = getCurrentWindow()
-      const isMaximized = await currentWindow.isMaximized()
-      if (isMaximized) {
+      const currentMaximized = await currentWindow.isMaximized()
+      if (currentMaximized) {
         await currentWindow.unmaximize()
+        isMaximized.value = false
       } else {
         await currentWindow.maximize()
+        isMaximized.value = true
       }
     } catch (error) {
       console.error('Error toggling maximize window:', error)
@@ -232,17 +248,14 @@ async function closeWindow() {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.minimize-icon {
-  font-size: 14px;
-  font-weight: bold;
+/* 图标样式统一处理 */
+.title-bar-control .iconify {
+  opacity: 0.9;
+  transition: opacity 0.2s ease;
 }
 
-.maximize-icon {
-  font-size: 12px;
-}
-
-.close-icon {
-  font-size: 14px;
+.title-bar-control:hover .iconify {
+  opacity: 1;
 }
 
 /* 明亮主题样式 */

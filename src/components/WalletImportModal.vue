@@ -223,7 +223,7 @@ const handleBeforeOk = async () => {
     addressText.value = '';
     validationErrors.value = [];
     errorsExpanded.value = false;
-    
+
     return true;
   } catch (error) {
     console.error('处理导入数据失败:', error);
@@ -355,10 +355,6 @@ defineExpose({
 </template>
 
 <style scoped>
-.import-modal {
-  /* 弹窗样式可以根据需要添加 */
-}
-
 .input-label {
   font-weight: 500;
   color: var(--text-color, #1d2129);

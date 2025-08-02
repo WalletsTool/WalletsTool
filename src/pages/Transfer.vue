@@ -3321,11 +3321,11 @@ async function handleBeforeClose() {
           </a-button>
           <template #content>
             <a-doption @click="queryBalance">
-              <Icon icon="mdi:arrow-up-bold" style="margin-right: 8px;" />
+              <Icon icon="mdi:export" style="margin-right: 8px;margin-bottom: -2px;" />
               查出账地址
             </a-doption>
             <a-doption @click="queryToAddressBalance">
-              <Icon icon="mdi:arrow-down-bold" style="margin-right: 8px;" />
+              <Icon icon="mdi:import" style="margin-right: 8px;margin-bottom: -2px;" />
               查到账地址
             </a-doption>
           </template>

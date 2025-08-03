@@ -1279,7 +1279,7 @@ async function handleBeforeClose() {
         </div>
       </a-form>
       <!-- 查询按钮 -->
-      <a-tooltip v-if="balanceLoading" content="点击可以提前停止查询">
+      <a-tooltip v-if="balanceLoading" content="点击停止查询">
         <a-button type="primary" status="danger" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="stopBalanceQuery">
           <template #icon>
             <Icon icon="mdi:stop" />

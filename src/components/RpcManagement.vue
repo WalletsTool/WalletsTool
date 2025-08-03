@@ -268,7 +268,7 @@ async function testRpcConnection(record) {
     }
     
     console.log('开始测试RPC连接:', record.rpc_url)
-    const result = await invoke('test_rpc_connection', { rpc_url: record.rpc_url })
+    const result = await invoke('test_rpc_connection', { rpcUrl: record.rpc_url })
     console.log('RPC测试结果:', result)
     
     if (result.success) {
@@ -314,7 +314,7 @@ async function batchTestAllRpc() {
       try {
         rpcManageData.value[index].testing = true
         console.log('测试RPC:', record.rpc_url)
-        const result = await invoke('test_rpc_connection', { rpc_url: record.rpc_url })
+        const result = await invoke('test_rpc_connection', { rpcUrl: record.rpc_url })
         console.log('RPC测试结果:', record.rpc_url, result)
         
         if (result.success) {

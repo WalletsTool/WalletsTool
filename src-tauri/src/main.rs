@@ -73,7 +73,7 @@ async fn main() {
                 WindowEvent::CloseRequested { api, .. } => {
                     let window_label = window.label().to_string();
                     
-                    if window_label == "main" {
+                    if window_label == "wallet_manager" {
                         // 阻止默认的关闭行为
                         api.prevent_close();
                         

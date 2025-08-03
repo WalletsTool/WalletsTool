@@ -528,11 +528,29 @@ const handleBeforeOk = async () => {
     // 模拟处理延迟，特别是对于大量数据
     await new Promise(resolve => setTimeout(resolve, 100));
     
+    // 第一步：获取所有非空地址
     let importList = importText.value.split('\n').filter(item => item.trim() !== '')
-    const total_count = importList.length
+    const original_count = importList.length
+    
+    // 第二步：去除导入文本中的重复地址（保持原始顺序，去除后面的重复项）
+    const uniqueAddresses = new Set()
+    importList = importList.filter(item => {
+      const trimmedAddr = item.trim()
+      if (uniqueAddresses.has(trimmedAddr)) {
+        return false // 重复地址，过滤掉
+      }
+      uniqueAddresses.add(trimmedAddr)
+      return true
+    })
+    const after_dedup_count = importList.length
+    const internal_dup_count = original_count - after_dedup_count
+    
+    // 第三步：过滤与现有数据重复的地址
+    const beforeFilterCount = importList.length
     importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.address === item.trim()))
     const success_count = importList.length
-    const fail_count = total_count - success_count
+    const existing_dup_count = beforeFilterCount - success_count
+    const total_filtered_count = original_count - success_count
     
     // 批量处理数据，避免UI阻塞
     const batchSize = 100;
@@ -552,15 +570,30 @@ const handleBeforeOk = async () => {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     
-    if (fail_count > 0) {
+    // 显示详细的导入统计信息
+    if (total_filtered_count > 0) {
+      let message = `原始地址${original_count}条，成功导入${success_count}条`
+      const details = []
+      
+      if (internal_dup_count > 0) {
+        details.push(`内部重复${internal_dup_count}条`)
+      }
+      if (existing_dup_count > 0) {
+        details.push(`与现有数据重复${existing_dup_count}条`)
+      }
+      
+      if (details.length > 0) {
+        message += `，已过滤：${details.join('、')}`
+      }
+      
       Notification.warning({
         title: '导入完成！',
-        content: `查询${total_count}条，成功${success_count}条，失败${fail_count}条！`,
+        content: message,
       })
     } else {
       Notification.success({
         title: '导入成功！',
-        content: `成功导入${total_count}条`,
+        content: `成功导入${success_count}条地址`,
       })
     }
     
@@ -668,13 +701,15 @@ async function executeBalanceQuery(queryData) {
           abi: currentCoin.value.abi || null
         },
         items: queryData.map(item => ({
+          key: item.address,
           address: item.address,
           private_key: item.private_key || null,
           plat_balance: null,
           coin_balance: null,
           nonce: null,
           exec_status: '0',
-          error_msg: null
+          error_msg: null,
+          retry_flag: false
         })),
         only_coin_config: onlyCoin.value,
         thread_count: form.thread_count

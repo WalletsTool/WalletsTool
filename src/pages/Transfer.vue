@@ -290,7 +290,7 @@ function openMultipleWindow() {
         // center: true,
         resizable: true,
         decorations: false,  // 移除Windows原生窗口边框
-        backgroundColor: localStorage.getItem('theme') === 'light' ? '#FFFFFF' : '#2A2A2B',  // 根据当前主题动态设置窗口背景色
+        backgroundColor: document.documentElement.getAttribute('data-theme') === 'light' ? '#FFFFFF' : '#2A2A2B',  // 根据当前主题动态设置窗口背景色
         skipTaskbar: false
       });
 

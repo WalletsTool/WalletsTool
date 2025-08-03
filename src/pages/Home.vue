@@ -17,9 +17,13 @@ let windowListObj = ref({})
 
 // 事件监听器引用，用于清理
 let unlistenCloseEvent = null
+let unlistenTrayQuitEvent = null
 
 // 关闭确认标记位
 let closeConfirmed = ref(false)
+
+// 确认弹窗状态跟踪
+let isConfirmModalVisible = ref(false)
 
 // 调试模式相关状态
 let debugMode = ref(false)
@@ -60,6 +64,11 @@ onMounted(async () => {
       unlistenCloseEvent = await listen('main-window-close-requested', async () => {
         await handleMainWindowCloseRequest()
       })
+      
+      // 监听托盘退出请求事件
+      unlistenTrayQuitEvent = await listen('tray-quit-requested', async () => {
+        await handleMainWindowCloseRequest()
+      })
     }
   } catch (error) {
     console.error('Failed to listen for close event:', error)
@@ -85,6 +94,9 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (unlistenCloseEvent) {
     unlistenCloseEvent()
+  }
+  if (unlistenTrayQuitEvent) {
+    unlistenTrayQuitEvent()
   }
 })
 
@@ -152,7 +164,7 @@ function goPage(pageName) {
       resizable: true,
       center: true,
       decorations: false,  // 移除Windows原生窗口边框
-      backgroundColor: localStorage.getItem('theme') === 'dark' ? '#2A2A2B' : '#FFFFFF',  // 设置窗口背景色
+      backgroundColor:  localStorage.getItem('theme') === 'light' ? '#FFFFFF' : '#2A2A2B',  // 设置窗口背景色
       visible: false,  // 初始隐藏窗口
       skipTaskbar: false
     })
@@ -411,6 +423,19 @@ async function minimizeWindow() {
   }
 }
 
+// 最小化到托盘
+async function minimizeToTray() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      const currentWindow = getCurrentWindow()
+      await currentWindow.hide()
+    }
+  } catch (error) {
+    console.error('Error minimizing to tray:', error)
+  }
+}
+
 async function closeWindow() {
   try {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
@@ -430,6 +455,11 @@ async function handleMainWindowCloseRequest() {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (!isTauri) {
       return true
+    }
+
+    // 检查是否已有确认弹窗显示，避免重复弹窗
+    if (isConfirmModalVisible.value) {
+      return false
     }
 
     // 检查关闭确认标记位
@@ -453,6 +483,9 @@ async function handleMainWindowCloseRequest() {
     }
 
 
+
+    // 设置弹窗状态为显示中
+    isConfirmModalVisible.value = true
 
     // 显示确认对话框
     Modal.confirm({
@@ -493,11 +526,15 @@ async function handleMainWindowCloseRequest() {
             console.error('关闭窗口时发生错误:', error)
             // 发生错误时重置标记位
             closeConfirmed.value = false
+            isConfirmModalVisible.value = false
             Notification.error({
               title: '错误',
               content: '关闭窗口时发生错误，请重试'
             })
             reject(false) // 操作失败
+          } finally {
+            // 无论成功还是失败，都重置弹窗状态
+            isConfirmModalVisible.value = false
           }
         })
       },
@@ -505,11 +542,16 @@ async function handleMainWindowCloseRequest() {
         // 用户取消关闭操作
         // 取消时重置标记位
         closeConfirmed.value = false
+        isConfirmModalVisible.value = false
       }
     })
 
   } catch (error) {
     console.error('处理窗口关闭请求时发生错误:', error)
+    
+    // 设置弹窗状态为显示中
+    isConfirmModalVisible.value = true
+    
     // 如果出现错误，显示简单的确认对话框
     Modal.confirm({
       title: '确认关闭',
@@ -534,8 +576,15 @@ async function handleMainWindowCloseRequest() {
               content: '强制关闭窗口时发生错误，请重试'
             })
             reject(false) // 操作失败
+          } finally {
+            // 无论成功还是失败，都重置弹窗状态
+            isConfirmModalVisible.value = false
           }
         })
+      },
+      onCancel: () => {
+        // 用户取消关闭操作时重置弹窗状态
+        isConfirmModalVisible.value = false
       }
     })
   }
@@ -552,22 +601,35 @@ async function handleMainWindowCloseRequest() {
           <!-- <span class="app-title">钱包管理工具</span> -->
         </div>
         <div class="titlebar-drag-area" data-tauri-drag-region></div>
+        
+        <!-- 偏左侧的主题切换区域 -->
+        <div class="titlebar-center">
+          <div class="theme-toggle-container">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="theme-icon">
+              <circle cx="12" cy="12" r="5" />
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+            <a-switch v-model="isDarkTheme" @change="toggleTheme" size="small" class="theme-switch" />
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="theme-icon">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+          </div>
+        </div>
+        
         <div class="titlebar-right">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5" />
-            <path
-              d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-          </svg>
-          <a-switch v-model="isDarkTheme" @change="toggleTheme" size="small" class="theme-switch" />
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
-          <button class="titlebar-btn minimize-btn" @click="minimizeWindow">
+          <button class="titlebar-btn minimize-tray-btn" @click="minimizeToTray" title="最小化到托盘">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="18" width="20" height="3" rx="1" />
+              <path d="M8 14l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M12 3v11" stroke-linecap="round" />
+            </svg>
+          </button>
+          <button class="titlebar-btn minimize-btn" @click="minimizeWindow" title="最小化">
             <svg width="12" height="12" viewBox="0 0 12 12">
               <path d="M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
           </button>
-          <button class="titlebar-btn close-btn" @click="closeWindow">
+          <button class="titlebar-btn close-btn" @click="closeWindow" title="关闭">
             <svg width="12" height="12" viewBox="0 0 12 12">
               <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
@@ -694,6 +756,7 @@ async function handleMainWindowCloseRequest() {
   justify-content: space-between;
   height: 100%;
   padding: 0 16px;
+  position: relative;
 }
 
 .titlebar-left {
@@ -726,6 +789,47 @@ async function handleMainWindowCloseRequest() {
   flex: 1;
   height: 100%;
   min-width: 100px;
+}
+
+.titlebar-center {
+  position: absolute;
+  left: 46%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1002;
+}
+
+.theme-toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 6px 12px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theme-icon {
+  color: rgba(255, 255, 255, 0.7);
+  transition: color 0.2s ease;
+}
+
+.theme-toggle-container:hover .theme-icon {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.theme-switch {
+  margin: 0 4px;
+}
+
+.minimize-tray-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.minimize-tray-btn:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .titlebar-right {
@@ -772,6 +876,11 @@ async function handleMainWindowCloseRequest() {
 .minimize-btn:hover {
   background: rgba(255, 206, 84, 0.8);
   color: white;
+}
+
+.minimize-tray-btn:hover {
+  background: rgba(34, 197, 94, 0.8) !important;
+  color: white !important;
 }
 
 /* 主容器 */
@@ -1252,9 +1361,46 @@ async function handleMainWindowCloseRequest() {
   color: rgba(0, 0, 0, 0.7) !important;
 }
 
+.light-theme .theme-toggle-container {
+  background: rgba(0, 0, 0, 0.05) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+.light-theme .theme-icon {
+  color: rgba(0, 0, 0, 0.7) !important;
+}
+
+.light-theme .theme-toggle-container:hover .theme-icon {
+  color: rgba(0, 0, 0, 0.9) !important;
+}
+
+.light-theme .minimize-tray-btn {
+  background: rgba(0, 0, 0, 0.08) !important;
+}
+
+.light-theme .minimize-tray-btn:hover {
+  background: rgba(0, 0, 0, 0.15) !important;
+  color: rgba(0, 0, 0, 0.9) !important;
+}
+
 .light-theme .titlebar-btn:hover {
   background: rgba(0, 0, 0, 0.1) !important;
   color: rgba(0, 0, 0, 0.9) !important;
+}
+
+.light-theme .close-btn:hover {
+  background: rgba(255, 96, 96, 0.8) !important;
+  color: white !important;
+}
+
+.light-theme .minimize-btn:hover {
+  background: rgba(255, 206, 84, 0.8) !important;
+  color: white !important;
+}
+
+.light-theme .minimize-tray-btn:hover {
+  background: rgba(34, 197, 94, 0.8) !important;
+  color: white !important;
 }
 
 .light-theme .bg-circle {

@@ -32,9 +32,6 @@
     "security": {
       "csp": null,
       "capabilities": ["default"]
-    },
-    "trayIcon": {
-      "iconPath": "icons/32x32.png"
     }
   },
   "bundle": {

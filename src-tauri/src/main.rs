@@ -139,7 +139,6 @@ async fn main() {
             
             // 创建托盘图标
             let _tray = TrayIconBuilder::new()
-                .menu(&menu)
                 .icon(app.default_window_icon().unwrap().clone())
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
@@ -186,18 +185,32 @@ async fn main() {
                         _ => {}
                     }
                 })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        button_state: tauri::tray::MouseButtonState::Up,
-                        ..  
-                    } = event {
-                        let app_handle = tray.app_handle().clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(e) = show_main_window(app_handle).await {
-                                eprintln!("左键点击托盘显示主窗口失败: {}", e);
+                .on_tray_icon_event(move |tray, event| {
+                    match event {
+                        tauri::tray::TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            button_state: tauri::tray::MouseButtonState::Up,
+                            ..  
+                        } => {
+                            // 左键点击显示主窗口
+                            let app_handle = tray.app_handle().clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(e) = show_main_window(app_handle).await {
+                                    eprintln!("左键点击托盘显示主窗口失败: {}", e);
+                                }
+                            });
+                        }
+                        tauri::tray::TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Right,
+                            button_state: tauri::tray::MouseButtonState::Up,
+                            ..  
+                        } => {
+                            // 右键点击显示菜单
+                            if let Err(e) = tray.set_menu(Some(menu.clone())) {
+                                eprintln!("设置托盘菜单失败: {}", e);
                             }
-                        });
+                        }
+                        _ => {}
                     }
                 })
                 .build(app)?;

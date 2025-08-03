@@ -931,50 +931,11 @@ function exportExcel(target_data) {
   writeFile(workbook, 'balance_data.xlsx');
 }
 
-const formRef = ref(null)
 
-// 返回首页
-function goHome() {
-  router.push({
-    name: 'home'
-  })
-}
 
-// 标题栏控制方法
-async function minimizeWindow() {
-  try {
-    const currentWindow = getCurrentWindow()
-    await currentWindow.minimize()
-  } catch (error) {
-    console.error('Error minimizing window:', error)
-  }
-}
 
-async function maximizeWindow() {
-  try {
-    const currentWindow = getCurrentWindow()
-    await currentWindow.toggleMaximize()
-  } catch (error) {
-    console.error('Error maximizing window:', error)
-  }
-}
 
-async function closeWindow() {
-  try {
-    console.log('窗口关闭事件触发，正在停止后台操作...');
 
-    // 停止余额查询操作
-    if (balanceLoading.value) {
-      await stopBalanceQuery();
-      console.log('已停止余额查询操作');
-    }
-
-    const currentWindow = getCurrentWindow()
-    await currentWindow.destroy()
-  } catch (error) {
-    console.error('Error closing window:', error)
-  }
-}
 
 // 链管理相关方法
 // 显示链管理弹窗
@@ -1145,12 +1106,6 @@ async function handleBeforeClose() {
         </template>
         导出选中
       </a-button>
-      <a-button v-show="false" class="goHome" type="outline" status="success" @click="goHome">
-        <template #icon>
-          <icon-double-left />
-        </template>
-        返回首页
-      </a-button>
       <a-button type="outline" status="normal" style="float: right;margin-right: 10px" @click="clearData">
         <template #icon>
           <Icon icon="mdi:delete" />
@@ -1266,7 +1221,7 @@ async function handleBeforeClose() {
     <!-- 相关设置 -->
     <div style="display: flex; padding-top: 5px; align-items: center; flex-shrink: 0;">
       <!-- 表单配置 -->
-      <a-form ref="formRef" :model="form" layout="vertical">
+      <a-form :model="form" layout="vertical">
         <div style="display: flex; align-items: end; gap: 20px;">
           <!-- 仅查询目标代币开关 -->
           <a-form-item label="仅查询目标代币" style="width: 140px;margin-bottom: 0;">
@@ -1511,15 +1466,6 @@ async function handleBeforeClose() {
   color: transparent;
   top: 15px;
   z-index: 0;
-}
-
-.goHome {
-  float: right;
-  background-color: white;
-}
-
-.goHome:hover { 
-  background-color: #ffffffa6;
 }
 
 .mainTable {

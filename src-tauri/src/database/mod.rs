@@ -462,7 +462,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     let mut sql_content = String::new();
     
     // 添加文件头注释
-    sql_content.push_str("-- Web3 Tools 数据库初始化脚本\n");
+    sql_content.push_str("-- Wallet Manager 数据库初始化脚本\n");
     sql_content.push_str("-- 此文件由系统自动生成，包含当前数据库的所有数据\n\n");
     
     // 获取所有表名

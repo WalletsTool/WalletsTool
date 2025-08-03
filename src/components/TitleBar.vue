@@ -51,7 +51,7 @@ const isMaximized = ref(false)
 const props = defineProps({
   title: {
     type: String,
-    default: 'Web3 Tools'
+    default: 'Wallet Manager'
   }
 })
 

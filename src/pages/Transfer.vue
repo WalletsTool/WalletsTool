@@ -19,7 +19,7 @@ import TokenManagement from '../components/TokenManagement.vue'
 import WalletImportModal from '../components/WalletImportModal.vue'
 const router = useRouter();
 // 窗口标题
-const windowTitle = ref('Web3 Tools - 批量转账');
+const windowTitle = ref('Wallet Manager - 批量转账');
 // table列名
 const columns = [
   {
@@ -1011,7 +1011,7 @@ onMounted(async () => {
     }
   } else {
     // 浏览器环境下设置默认标题和ID
-    windowTitle.value = 'Transfer - Web3 Tools';
+    windowTitle.value = 'Wallet Manager - 批量转账';
     currentWindowId.value = 'browser_window';
   }
 
@@ -3268,7 +3268,7 @@ async function handleBeforeClose() {
       </a-button> -->
     </div>
     <!-- 操作账号表格 -->
-    <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;">
+    <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
       <a-table v-if="tableBool" row-key="key" :columns="columns" :column-resizable="true" :data="data"
         :row-selection="rowSelection" :loading="tableLoading" :scrollbar="scrollbar" :scroll="{ y: '100%' }"
         @row-click="rowClick" v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
@@ -3741,8 +3741,27 @@ async function handleBeforeClose() {
   height: 100%;
 }
 
+.mainTable {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--table-bg, #ffffff);
+}
+
+.mainTable .arco-table {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 .mainTable .arco-table-content {
   height: 100%;
+  flex: 1;
+}
+
+.mainTable .arco-table-body {
+  height: 100%;
+  flex: 1;
 }
 
 .mainTable .arco-empty {
@@ -3973,15 +3992,65 @@ async function handleBeforeClose() {
 </style>
 <style lang="less">
 .transfer {
-  .arco-table-body {
-    min-height: 150px;
+  .mainTable {
+    .arco-table {
+      height: 100% !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+    
+    .arco-table-container {
+      height: 100% !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+    
+    .arco-table-content {
+      flex: 1 !important;
+      height: 100% !important;
+    }
+    
+    .arco-table-body {
+      min-height: 400px;
+      overflow-y: auto !important;
 
-    .arco-table-element .arco-empty {
-      min-height: 130px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      .arco-table-element {
+        .arco-empty {
+          min-height: 400px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+      }
+      
+      .arco-table-tbody {
+        .arco-table-tr {
+          height: 48px !important;
+          min-height: 48px !important;
+          max-height: 48px !important;
+        }
+      }
+    }
+    
+    // 固定表格行高，避免数据少时行被拉伸
+    .arco-table-tr {
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
+    }
+    
+    .arco-table-td {
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
+      vertical-align: middle !important;
+    }
+    
+    .arco-table-th {
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
     }
   }
 }

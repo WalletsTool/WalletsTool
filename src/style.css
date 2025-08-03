@@ -55,6 +55,7 @@
     --card-bg: #ffffff;
     --border-color: #e5e5e5;
     --shadow-color: rgba(0, 0, 0, 0.1);
+    --table-bg: #ffffff;
 }
 
 /* 暗黑主题变量 */
@@ -66,6 +67,7 @@
     --card-bg: rgb(53 56 61);
     --border-color: #3a3a4e;
     --shadow-color: rgba(0, 0, 0, 0.3);
+    --table-bg: rgb(35, 35, 36)
 }
 
 /* 应用主题变量 */

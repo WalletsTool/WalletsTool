@@ -103,7 +103,7 @@ const showProgress = ref(false); // 是否显示进度条
 const pagination = ref(false);
 const scrollbar = ref(true);
 // 窗口标题
-const windowTitle = ref('Web3 Tools - 余额查询');
+const windowTitle = ref('Wallet Manager - 余额查询');
 // chain默认值
 const chainValue = ref('');
 // 当前chain
@@ -1518,12 +1518,32 @@ async function handleBeforeClose() {
   background-color: white;
 }
 
-.goHome:hover {
+.goHome:hover { 
   background-color: #ffffffa6;
 }
 
 .mainTable {
   margin-top: 15px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--table-bg, #ffffff);
+}
+
+.mainTable .arco-table {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.mainTable .arco-table-content {
+  height: 100%;
+  flex: 1;
+}
+
+.mainTable .arco-table-body {
+  height: 100%;
+  flex: 1;
 }
 
 .subTitle {
@@ -1573,15 +1593,65 @@ async function handleBeforeClose() {
 </style>
 <style lang="less">
 .balance {
-  .arco-table-body {
-    min-height: 150px;
+  .mainTable {
+    .arco-table {
+      height: 100% !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+    
+    .arco-table-container {
+      height: 100% !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+    
+    .arco-table-content {
+      flex: 1 !important;
+      height: 100% !important;
+    }
+    
+    .arco-table-body {
+      min-height: 400px;
+      overflow-y: auto !important;
 
-    .arco-table-element .arco-empty {
-      min-height: 130px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      .arco-table-element {
+        .arco-empty {
+          min-height: 400px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+      }
+      
+      .arco-table-tbody {
+        .arco-table-tr {
+          height: 48px !important;
+          min-height: 48px !important;
+          max-height: 48px !important;
+        }
+      }
+    }
+    
+    // 固定表格行高，避免数据少时行被拉伸
+    .arco-table-tr {
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
+    }
+    
+    .arco-table-td {
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
+      vertical-align: middle !important;
+    }
+    
+    .arco-table-th {
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
     }
   }
 }

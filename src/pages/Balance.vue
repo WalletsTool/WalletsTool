@@ -1452,10 +1452,23 @@ async function handleBeforeClose() {
   font-size: 14px;
 }
 
+/* 调整容器以适应自定义标题栏 */
 .container {
-  padding: 40px 20px 20px;
-  height: 100vh;
-  box-sizing: border-box;
+  padding: 10px;
+  height: calc(100vh - 30px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 隐藏滚动条但保持滚动功能 */
+.container::-webkit-scrollbar {
+  display: none;
+}
+
+.container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .pageTitle {
@@ -1510,7 +1523,7 @@ async function handleBeforeClose() {
 }
 
 .mainTable {
-  margin-top: 20px;
+  margin-top: 15px;
 }
 
 .subTitle {
@@ -1520,7 +1533,7 @@ async function handleBeforeClose() {
 }
 
 .arco-form-item {
-  padding: 20px 10px 0 10px;
+  padding: 5px 10px;
   margin-bottom: 10px;
 }
 
@@ -1554,30 +1567,8 @@ async function handleBeforeClose() {
   border: none;
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .container {
-    padding: 40px 10px 10px;
-  }
-
-  .toolBar {
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .toolBar>* {
-    margin: 5px;
-  }
-
-  .virtual-header-cell,
-  .virtual-cell {
-    padding: 4px 6px;
-    font-size: 12px;
-  }
-
-  .virtual-row-content {
-    padding: 4px 6px;
-  }
+.toolBar {
+  margin-top: 45px;
 }
 </style>
 <style lang="less">

@@ -3407,7 +3407,7 @@ async function handleBeforeClose() {
       <!-- 细节配置 -->
       <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="vertical">
         <a-row style="height: 70px">
-          <a-form-item field="send_type" label="发送方式" style="width: 330px; padding: 5px 10px;">
+          <a-form-item field="send_type" label="发送方式" style="width: 330px;">
             <a-radio-group v-model="form.send_type" type="button">
               <a-radio value="1">全部</a-radio>
               <a-radio value="2">指定数量</a-radio>
@@ -3416,41 +3416,41 @@ async function handleBeforeClose() {
             </a-radio-group>
           </a-form-item>
           <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" tooltip="如果选择表格数据则应导入带有转账数量的表格数据"
-            style="width: 190px; padding: 5px 10px;">
+            style="width: 190px;">
             <a-radio-group v-model="form.amount_from" type="button">
               <a-radio value="1">表格数据</a-radio>
               <a-radio value="2">当前指定</a-radio>
             </a-radio-group>
           </a-form-item>
           <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量"
-            style="width: 150px; padding: 5px 10px;">
+            style="width: 150px;">
             <a-input v-model="form.send_count" />
           </a-form-item>
           <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope"
-            :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 180px; padding: 5px 10px;">
+            :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 180px;">
             <a-input v-model="form.send_min_count" />
             <span style="padding: 0 5px">至</span>
             <a-input v-model="form.send_max_count" />
           </a-form-item>
           <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度"
-            style="width: 110px; padding: 5px 10px;" tooltip="金额小数点位数">
+            style="width: 110px;" tooltip="金额小数点位数">
             <a-input v-model="form.amount_precision" />
           </a-form-item>
           <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
-          <a-form-item field="interval_scope" label="发送间隔（秒）" style="width: 215px; padding: 5px 10px;">
+          <a-form-item field="interval_scope" label="发送间隔（秒）" style="width: 215px;">
             <a-input v-model="form.min_interval" :disabled="threadCount > 1" />
             <span style="padding: 0 5px">至</span>
             <a-input v-model="form.max_interval" :disabled="threadCount > 1" />
           </a-form-item>
-          <a-form-item field="thread_count" label="线程数" style="width: 130px; padding: 5px 10px;" tooltip="同时执行的钱包数量">
+          <a-form-item field="thread_count" label="线程数" style="width: 130px;" tooltip="同时执行的钱包数量">
             <a-input-number v-model="threadCount" :min="1" :max="99" :step="1" :default-value="1" mode="button" />
           </a-form-item>
-          <a-form-item field="error_retry" label="失败自动重试" style="width: 125px; padding: 5px 10px;"
+          <a-form-item field="error_retry" label="失败自动重试" style="width: 125px;"
             tooltip="转账失败时是否自动重试">
             <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0" />
           </a-form-item>
           <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
-          <a-form-item field="multi_window" label="窗口多开" style="width: 100px; padding: 5px 10px;" tooltip="窗口配置相同">
+          <a-form-item field="multi_window" label="窗口多开" style="width: 100px;" tooltip="窗口配置相同">
             <a-input-group style="width: 100px;">
               <a-input-number v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1"
                 placeholder="窗口数" style="width: 50px;" />
@@ -3463,43 +3463,43 @@ async function handleBeforeClose() {
           </a-form-item>
         </a-row>
         <a-row v-show="chainValue !== 'sol'" style="height: 70px">
-          <a-form-item field="limit_type" label="Gas Limit" style="width: 245px; padding: 5px 10px;">
+          <a-form-item field="limit_type" label="Gas Limit" style="width: 245px;">
             <a-radio-group v-model="form.limit_type" type="button">
               <a-radio value="1">自动</a-radio>
               <a-radio value="2">指定数量</a-radio>
               <a-radio value="3">范围随机</a-radio>
             </a-radio-group>
           </a-form-item>
-          <a-form-item v-if="form.limit_type === '2'" style="width: 150px; padding: 5px 10px;" field="limit_count"
+          <a-form-item v-if="form.limit_type === '2'" style="width: 150px;" field="limit_count"
             label="Gas Limit">
             <a-input v-model="form.limit_count" />
           </a-form-item>
-          <a-form-item v-if="form.limit_type === '3'" style="width: 265px; padding: 5px 10px;" field="limit_count_scope"
+          <a-form-item v-if="form.limit_type === '3'" style="width: 265px;" field="limit_count_scope"
             label="Gas Limit 范围">
             <a-input v-model="form.limit_min_count" />
             <span style="padding: 0 5px">至</span>
             <a-input v-model="form.limit_max_count" />
           </a-form-item>
           <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
-          <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 230px; padding: 5px 10px;">
+          <a-form-item field="gas_price_type" label="Gas Price 方式" style="width: 230px;">
             <a-radio-group v-model="form.gas_price_type" type="button">
               <a-radio value="1">自动</a-radio>
               <a-radio value="2">固定值</a-radio>
               <a-radio value="3">指定比例</a-radio>
             </a-radio-group>
           </a-form-item>
-          <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" style="width: 120px; padding: 5px 10px;"
+          <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" style="width: 120px;"
             label="Gas Price">
             <a-input v-model="form.gas_price" />
           </a-form-item>
           <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate"
-            style="width: 100px; padding: 5px 10px;" label="提高比例">
+            style="width: 100px;" label="提高比例">
             <a-input v-model="form.gas_price_rate">
               <template #append> %</template>
             </a-input>
           </a-form-item>
           <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price"
-            style="width: 130px; padding: 5px 10px;" label="最大 Gas Price" tooltip="为空时则不设置上限（单位：Gwei）">
+            style="width: 130px;" label="最大 Gas Price" tooltip="为空时则不设置上限（单位：Gwei）">
             <a-input v-model="form.max_gas_price" />
             <!-- Gas监控状态显示 -->
             <div v-if="gasPriceMonitoring" class="gas-monitoring-info"
@@ -3800,7 +3800,7 @@ async function handleBeforeClose() {
 }
 
 .arco-form-item {
-  padding: 20px 10px 0 10px;
+  padding: 5px 10px;
   margin-bottom: 10px;
 }
 

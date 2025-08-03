@@ -266,12 +266,12 @@ onMounted(() => {
 }
 
 .code-editor:has(.content-textarea:disabled) .line-numbers {
-  background: #f0f0f0;
+  background-color: var(--loading-bg, #f7f8fa);
   color: #bfbfbf;
 }
 
 .code-editor:has(.content-textarea:disabled) .line-number {
-  color: #bfbfbf;
+  background-color: var(--loading-bg, #f7f8fa);
   cursor: not-allowed;
 }
 
@@ -366,7 +366,7 @@ onMounted(() => {
 }
 
 .content-textarea:disabled {
-  background: #f5f5f5;
+  background-color: var(--loading-bg, #f7f8fa);
   color: #bfbfbf;
   cursor: not-allowed;
 }

@@ -36,10 +36,20 @@ let databaseLoading = ref(false)
 const isDarkTheme = computed(() => themeStore.currentTheme === 'dark')
 
 onMounted(async () => {
+  console.log('[DEBUG] Home.vue - onMounted 开始')
+  console.log('[DEBUG] Home.vue - 当前环境检测:', {
+    isTauri: typeof window !== 'undefined' && window.__TAURI_INTERNALS__,
+    windowObject: typeof window,
+    tauriInternals: window.__TAURI_INTERNALS__
+  })
+  
   // 初始化主题状态
+  console.log('[DEBUG] Home.vue - 初始化主题状态')
   themeStore.initTheme()
 
+  console.log('[DEBUG] Home.vue - 检查功能列表:', funcList)
   const newFlag = funcList.filter(item => item.isNew).length > 0
+  console.log('[DEBUG] Home.vue - 新功能标记:', newFlag, '动画状态:', store.status)
   if (newFlag && store.status) {
     // 动画效果
     party.confetti(document.getElementById('app'), {
@@ -75,19 +85,34 @@ onMounted(async () => {
   }
 
   // 页面加载完成后显示主窗口
+  console.log('[DEBUG] Home.vue - 准备显示主窗口')
   nextTick(() => {
+    console.log('[DEBUG] Home.vue - nextTick 执行')
     // 延迟显示主窗口，确保所有组件都已渲染
     setTimeout(() => {
+      console.log('[DEBUG] Home.vue - setTimeout 执行')
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      console.log('[DEBUG] Home.vue - Tauri环境检测结果:', isTauri)
       if (isTauri) {
-        const currentWindow = getCurrentWindow();
-        // 显示主窗口
-        currentWindow.show();
-        // 发送页面加载完成事件
-        currentWindow.emit('page-loaded');
+        try {
+          const currentWindow = getCurrentWindow();
+          console.log('[DEBUG] Home.vue - 获取当前窗口成功:', currentWindow)
+          // 显示主窗口
+          currentWindow.show();
+          console.log('[DEBUG] Home.vue - 窗口显示命令已发送')
+          // 发送页面加载完成事件
+          currentWindow.emit('page-loaded');
+          console.log('[DEBUG] Home.vue - 页面加载完成事件已发送')
+        } catch (error) {
+          console.error('[DEBUG] Home.vue - 窗口操作错误:', error)
+        }
+      } else {
+        console.log('[DEBUG] Home.vue - 非Tauri环境，跳过窗口操作')
       }
     }, 100);
   });
+  
+  console.log('[DEBUG] Home.vue - onMounted 完成')
 })
 
 // 组件卸载时清理事件监听器
@@ -593,6 +618,14 @@ async function handleMainWindowCloseRequest() {
 
 <template>
   <div class="container home" :class="{ 'light-theme': !isDarkTheme }">
+    <!-- 调试信息 -->
+    <div v-if="debugMode" class="debug-info" style="position: fixed; top: 0; left: 0; background: rgba(0,0,0,0.8); color: white; padding: 10px; z-index: 9999; font-size: 12px;">
+      <div>Vue应用已加载: {{ true }}</div>
+      <div>当前路由: {{ $route.path }}</div>
+      <div>Tauri环境: {{ typeof window !== 'undefined' && window.__TAURI_INTERNALS__ }}</div>
+      <div>功能列表长度: {{ funcList.length }}</div>
+    </div>
+    
     <!-- 自定义标题栏 -->
     <div class="custom-titlebar">
       <div class="titlebar-content">
@@ -655,8 +688,16 @@ async function handleMainWindowCloseRequest() {
       <div class="subtitle">探索强大的Web3工具集合</div>
     </div>
 
+    <!-- 加载状态显示 -->
+    <div v-if="!funcList || funcList.length === 0" class="loading-state">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <p>正在加载功能列表...</p>
+      </div>
+    </div>
+
     <!-- 功能卡片网格 -->
-    <div class="func-grid">
+    <div v-else class="func-grid">
       <div class="func-card" :class="{
         'func-card--disabled': item.isBuilding,
         'func-card--new': item.isNew

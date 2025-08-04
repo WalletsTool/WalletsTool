@@ -47,12 +47,7 @@ const preloadResources = () => {
   fontLink.crossOrigin = 'anonymous';
   document.head.appendChild(fontLink);
   
-  // 预加载关键CSS
-  const cssLink = document.createElement('link');
-  cssLink.rel = 'preload';
-  cssLink.as = 'style';
-  cssLink.href = '/src/style.css';
-  document.head.appendChild(cssLink);
+  // CSS已通过import语句正确导入，无需预加载
 };
 
 // 优化字体加载
@@ -62,10 +57,37 @@ const optimizeFonts = () => {
   });
 };
 
+// 添加全局错误处理
+window.addEventListener('error', (event) => {
+  console.error('[DEBUG] 全局JavaScript错误:', {
+    message: event.message,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+    error: event.error
+  })
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[DEBUG] 未处理的Promise拒绝:', event.reason)
+})
+
+console.log('[DEBUG] 开始创建Vue应用实例')
 const pinia = createPinia()
 const app = createApp(App)
+console.log('[DEBUG] Vue应用实例创建成功')
+
+// 添加Vue错误处理
+app.config.errorHandler = (err, vm, info) => {
+  console.error('[DEBUG] Vue错误处理器:', {
+    error: err,
+    component: vm,
+    info: info
+  })
+}
 
 // 注册Arco Design组件
+console.log('[DEBUG] 开始注册Arco Design组件')
 app.use(Button)
 app.use(Table)
 app.use(TableColumn)
@@ -94,11 +116,17 @@ app.use(Dropdown)
 app.use(Doption)
 app.use(InputGroup)
 
+console.log('[DEBUG] 开始注册路由和状态管理')
 app.use(router)
 app.use(pinia)
+console.log('[DEBUG] 路由和状态管理注册完成')
 
 // 执行预加载和优化
+console.log('[DEBUG] 开始预加载资源')
 preloadResources();
 optimizeFonts();
+console.log('[DEBUG] 资源预加载完成')
 
+console.log('[DEBUG] 开始挂载Vue应用到#app')
 app.mount("#app");
+console.log('[DEBUG] Vue应用挂载完成')

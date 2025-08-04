@@ -23,4 +23,18 @@ const router = createRouter({
     routes,
 })
 
+// 添加路由守卫进行调试
+router.beforeEach((to, from, next) => {
+    console.log('[DEBUG] 路由跳转 - 从:', from.path, '到:', to.path)
+    next()
+})
+
+router.afterEach((to, from) => {
+    console.log('[DEBUG] 路由跳转完成 - 当前路由:', to.path)
+})
+
+router.onError((error) => {
+    console.error('[DEBUG] 路由错误:', error)
+})
+
 export {router}

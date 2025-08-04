@@ -9,6 +9,8 @@ import rollupNodePolyFill from 'rollup-plugin-polyfill-node'
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [vue(), VueSetupExtend],
+    // 设置base路径，Tauri应用需要相对路径
+    base: process.env.TAURI_ENV_PLATFORM || process.env.TAURI_FAMILY ? './' : '/',
     // 设置路径别名
     resolve: {
         alias: [
@@ -52,64 +54,32 @@ export default defineConfig({
                 rollupNodePolyFill()
             ],
             output: {
+                // 重新启用手动分块，使用更安全的分块策略
                 manualChunks: (id) => {
-                    // 第三方库分离
+                    // 第三方库分块
                     if (id.includes('node_modules')) {
-                        // 加密相关库
-                        if (id.includes('ethers')) {
-                            return 'vendor-crypto';
-                        }
-                        // Vue生态系统
+                        // Vue 相关库单独分块
                         if (id.includes('vue') || id.includes('@vue')) {
-                            return 'vendor-vue';
+                            return 'vue-vendor';
                         }
-                        // Arco Design组件库
+                        // Arco Design 组件库单独分块
                         if (id.includes('@arco-design')) {
-                            return 'vendor-arco';
+                            return 'arco-vendor';
                         }
-                        // 图标库
-                        if (id.includes('@iconify') || id.includes('iconify')) {
-                            return 'vendor-icons';
-                        }
-                        // 工具库
-                        if (id.includes('xlsx') || id.includes('pinia')) {
-                            return 'vendor-utils';
-                        }
-                        // Tauri相关
-                        if (id.includes('@tauri-apps')) {
-                            return 'vendor-tauri';
-                        }
-                        // 其他第三方库
-                        return 'vendor-misc';
+                        // ethers和其他第三方库合并到vendor包中避免循环依赖
+                        return 'vendor';
                     }
-                    
-                    // 组件分离
-                    if (id.includes('/components/')) {
-                        // 管理类组件（较大的模态框组件）
-                        if (id.includes('Management') || id.includes('Modal')) {
-                            return 'components-management';
-                        }
-                        // 基础组件
-                        return 'components-base';
+                    // 页面组件分块
+                    if (id.includes('/src/pages/') || id.includes('/src/views/')) {
+                        return 'pages';
                     }
-                    
-                    // 页面分离
-                    if (id.includes('/pages/')) {
-                        if (id.includes('Balance')) {
-                            return 'page-balance';
-                        }
-                        if (id.includes('Transfer')) {
-                            return 'page-transfer';
-                        }
-                        if (id.includes('Home')) {
-                            return 'page-home';
-                        }
-                        return 'pages-misc';
+                    // 工具函数分块
+                    if (id.includes('/src/utils/') || id.includes('/src/composables/')) {
+                        return 'utils';
                     }
-                    
-                    // 工具函数和存储
-                    if (id.includes('/stores/') || id.includes('/utils/')) {
-                        return 'app-core';
+                    // 组件分块
+                    if (id.includes('/src/components/')) {
+                        return 'components';
                     }
                 },
                 // 优化chunk命名

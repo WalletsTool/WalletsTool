@@ -30,7 +30,6 @@
     "party-js": "^2.2.0",
     "pinia": "^3.0.3",
     "rollup-plugin-polyfill-node": "^0.13.0",
-    "throttle-debounce": "^5.0.2",
     "vue": "^3.5.17",
     "vue-router": "^4.5.1",
     "xlsx": "^0.18.5"
@@ -41,6 +40,7 @@
     "@tauri-apps/cli": "^2.0.0",
     "@vitejs/plugin-vue": "^5.1.4",
     "chalk": "^5.4.1",
+    "sharp": "^0.34.3",
     "terser": "^5.43.1",
     "vite": "^5.4.10",
     "vite-plugin-vue-setup-extend": "^0.4.0"

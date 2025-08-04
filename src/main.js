@@ -1,7 +1,38 @@
 import {createApp} from "vue";
 import App from "./App.vue";
 import {router} from "./router";
-import ArcoVue from '@arco-design/web-vue';
+// 按需导入Arco Design组件
+import {
+  Button,
+  Table,
+  TableColumn,
+  Modal,
+  Form,
+  FormItem,
+  Input,
+  InputNumber,
+  Select,
+  Option,
+  Switch,
+  Tag,
+  Progress,
+  Spin,
+  Alert,
+  Tooltip,
+  Popconfirm,
+  Divider,
+  Row,
+  Col,
+  Radio,
+  RadioGroup,
+  Upload,
+  Textarea,
+  Dropdown,
+  Doption,
+  InputGroup,
+  Notification,
+  Message
+} from '@arco-design/web-vue';
 import '@arco-design/web-vue/dist/arco.css';
 import "./style.css";
 import {createPinia} from 'pinia'
@@ -34,8 +65,36 @@ const optimizeFonts = () => {
 const pinia = createPinia()
 const app = createApp(App)
 
+// 注册Arco Design组件
+app.use(Button)
+app.use(Table)
+app.use(TableColumn)
+app.use(Modal)
+app.use(Form)
+app.use(FormItem)
+app.use(Input)
+app.use(InputNumber)
+app.use(Select)
+app.use(Option)
+app.use(Switch)
+app.use(Tag)
+app.use(Progress)
+app.use(Spin)
+app.use(Alert)
+app.use(Tooltip)
+app.use(Popconfirm)
+app.use(Divider)
+app.use(Row)
+app.use(Col)
+app.use(Radio)
+app.use(RadioGroup)
+app.use(Upload)
+app.use(Textarea)
+app.use(Dropdown)
+app.use(Doption)
+app.use(InputGroup)
+
 app.use(router)
-app.use(ArcoVue)
 app.use(pinia)
 
 // 执行预加载和优化

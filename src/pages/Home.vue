@@ -1518,9 +1518,4 @@ body {
   overflow: hidden !important;
 }
 
-/* 全局覆盖 */
-.arco-notification {
-  max-width: 320px !important;
-  width: 320px !important;
-}
 </style>

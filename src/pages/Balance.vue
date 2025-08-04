@@ -1,22 +1,24 @@
 <script setup name="balance">
 import { Icon } from '@iconify/vue';
-import { IconDelete, IconDoubleLeft } from '@arco-design/web-vue/es/icon';
-import { useRouter } from "vue-router";
-import { computed, nextTick, onBeforeMount, onMounted, reactive, ref } from "vue";
+import { IconDelete } from '@arco-design/web-vue/es/icon';
+import { computed, defineAsyncComponent, nextTick, onBeforeMount, onMounted, reactive, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ethers } from "ethers";
-import { Notification, Modal } from "@arco-design/web-vue";
+import { Notification } from "@arco-design/web-vue";
 import { utils as xlUtils, writeFile } from "xlsx";
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import ChainIcon from '@/components/ChainIcon.vue';
 import TitleBar from '@/components/TitleBar.vue'
-import ChainManagement from '@/components/ChainManagement.vue'
-import RpcManagement from '@/components/RpcManagement.vue'
-import TokenManagement from '@/components/TokenManagement.vue'
-import CodeEditor from '@/components/CodeEditor.vue'
+import TableSkeleton from '@/components/TableSkeleton.vue'
+import { debounce } from '@/utils/debounce.js'
 
-const router = useRouter()
+// 懒加载非关键组件
+const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
+const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagement.vue'))
+const TokenManagement = defineAsyncComponent(() => import('@/components/TokenManagement.vue'))
+const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vue'))
+
 // table列名
 const columns = [
   {
@@ -165,6 +167,84 @@ const filterForm = reactive({
   nonceValue: '',
   errorMsg: ''
 });
+
+// 计算属性：缓存筛选后的数据
+const filteredData = computed(() => {
+  if (!filterForm.platBalanceValue && !filterForm.coinBalanceValue && 
+      !filterForm.nonceValue && !filterForm.errorMsg) {
+    return data.value;
+  }
+  
+  return data.value.filter(item => {
+    // 平台币余额筛选
+    if (filterForm.platBalanceValue && filterForm.platBalanceValue.trim() !== '') {
+      const platBalanceValue = parseFloat(filterForm.platBalanceValue);
+      const itemPlatBalance = parseFloat(item.plat_balance || 0);
+      
+      if (filterForm.platBalanceOperator === 'gt' && itemPlatBalance <= platBalanceValue) {
+        return false;
+      } else if (filterForm.platBalanceOperator === 'eq' && itemPlatBalance !== platBalanceValue) {
+        return false;
+      } else if (filterForm.platBalanceOperator === 'lt' && itemPlatBalance >= platBalanceValue) {
+        return false;
+      }
+    }
+    
+    // 代币余额筛选
+    if (filterForm.coinBalanceValue && filterForm.coinBalanceValue.trim() !== '') {
+      const coinBalanceValue = parseFloat(filterForm.coinBalanceValue);
+      const itemCoinBalance = parseFloat(item.coin_balance || 0);
+      
+      if (filterForm.coinBalanceOperator === 'gt' && itemCoinBalance <= coinBalanceValue) {
+        return false;
+      } else if (filterForm.coinBalanceOperator === 'eq' && itemCoinBalance !== coinBalanceValue) {
+        return false;
+      } else if (filterForm.coinBalanceOperator === 'lt' && itemCoinBalance >= coinBalanceValue) {
+        return false;
+      }
+    }
+    
+    // Nonce值筛选
+    if (filterForm.nonceValue && filterForm.nonceValue.trim() !== '') {
+      const nonceValue = parseInt(filterForm.nonceValue);
+      const itemNonce = parseInt(item.nonce || 0);
+      
+      if (filterForm.nonceOperator === 'gt' && itemNonce <= nonceValue) {
+        return false;
+      } else if (filterForm.nonceOperator === 'eq' && itemNonce !== nonceValue) {
+        return false;
+      } else if (filterForm.nonceOperator === 'lt' && itemNonce >= nonceValue) {
+        return false;
+      }
+    }
+    
+    // 错误信息模糊匹配
+    if (filterForm.errorMsg && filterForm.errorMsg.trim() !== '') {
+      const errorMsg = item.error_msg || '';
+      if (!errorMsg.toLowerCase().includes(filterForm.errorMsg.toLowerCase())) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+});
+
+// 计算属性：缓存统计数据
+const statisticsData = computed(() => {
+  const total = data.value.length;
+  const succeeded = data.value.filter(item => item.exec_status === '2').length;
+  const failed = data.value.filter(item => item.exec_status === '3').length;
+  const pending = data.value.filter(item => item.exec_status === '0' || item.exec_status === '1').length;
+  
+  return { total, succeeded, failed, pending };
+});
+
+// 防抖的筛选更新函数
+const debouncedFilterUpdate = debounce(() => {
+  // 触发筛选数据的重新计算
+  // filteredData computed属性会自动响应filterForm的变化
+}, 300);
 
 // a-table行选择配置
 const rowSelection = reactive({
@@ -777,6 +857,8 @@ async function executeBalanceQuery(queryData) {
         item.error_msg = '查询失败！'
       })
 
+      // 隐藏进度条
+      showProgress.value = false;
       Notification.error('查询失败：' + error.message)
     }
 
@@ -803,6 +885,8 @@ async function stopBalanceQuery() {
 
   balanceLoading.value = false;
   balanceStopFlag.value = true;
+  // 隐藏进度条
+  showProgress.value = false;
   console.log('停止查询成功');
 }
 
@@ -828,66 +912,7 @@ function showAdvancedFilter() {
 
 // 应用高级筛选
 function applyAdvancedFilter() {
-  const filteredItems = [];
-  
-  data.value.forEach(item => {
-    let shouldSelect = true;
-    
-    // 平台币余额筛选
-    if (filterForm.platBalanceValue && filterForm.platBalanceValue.trim() !== '') {
-      const platBalanceValue = parseFloat(filterForm.platBalanceValue);
-      const itemPlatBalance = parseFloat(item.plat_balance || 0);
-      
-      if (filterForm.platBalanceOperator === 'gt' && itemPlatBalance <= platBalanceValue) {
-        shouldSelect = false;
-      } else if (filterForm.platBalanceOperator === 'eq' && itemPlatBalance !== platBalanceValue) {
-        shouldSelect = false;
-      } else if (filterForm.platBalanceOperator === 'lt' && itemPlatBalance >= platBalanceValue) {
-        shouldSelect = false;
-      }
-    }
-    
-    // 代币余额筛选
-    if (shouldSelect && filterForm.coinBalanceValue && filterForm.coinBalanceValue.trim() !== '') {
-      const coinBalanceValue = parseFloat(filterForm.coinBalanceValue);
-      const itemCoinBalance = parseFloat(item.coin_balance || 0);
-      
-      if (filterForm.coinBalanceOperator === 'gt' && itemCoinBalance <= coinBalanceValue) {
-        shouldSelect = false;
-      } else if (filterForm.coinBalanceOperator === 'eq' && itemCoinBalance !== coinBalanceValue) {
-        shouldSelect = false;
-      } else if (filterForm.coinBalanceOperator === 'lt' && itemCoinBalance >= coinBalanceValue) {
-        shouldSelect = false;
-      }
-    }
-    
-    // Nonce值筛选
-    if (shouldSelect && filterForm.nonceValue && filterForm.nonceValue.trim() !== '') {
-      const nonceValue = parseInt(filterForm.nonceValue);
-      const itemNonce = parseInt(item.nonce || 0);
-      
-      if (filterForm.nonceOperator === 'gt' && itemNonce <= nonceValue) {
-        shouldSelect = false;
-      } else if (filterForm.nonceOperator === 'eq' && itemNonce !== nonceValue) {
-        shouldSelect = false;
-      } else if (filterForm.nonceOperator === 'lt' && itemNonce >= nonceValue) {
-        shouldSelect = false;
-      }
-    }
-    
-    // 错误信息模糊匹配
-    if (shouldSelect && filterForm.errorMsg && filterForm.errorMsg.trim() !== '') {
-      const errorMsg = item.error_msg || '';
-      if (!errorMsg.toLowerCase().includes(filterForm.errorMsg.toLowerCase())) {
-        shouldSelect = false;
-      }
-    }
-    
-    if (shouldSelect) {
-      filteredItems.push(item.address);
-    }
-  });
-  
+  const filteredItems = filteredData.value.map(item => item.address);
   selectedKeys.value = filteredItems;
   advancedFilterVisible.value = false;
   
@@ -930,12 +955,6 @@ function exportExcel(target_data) {
   // 导出文件
   writeFile(workbook, 'balance_data.xlsx');
 }
-
-
-
-
-
-
 
 // 链管理相关方法
 // 显示链管理弹窗
@@ -1115,7 +1134,11 @@ async function handleBeforeClose() {
     </div>
     <!-- 操作账号表格 -->
     <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;">
-      <a-table v-if="tableBool" row-key="address" :columns="columns" :column-resizable="true" :data="data"
+      <!-- 骨架屏 -->
+      <TableSkeleton v-if="balanceLoading && data.length === 0" :rows="8" />
+      
+      <!-- 正常表格 -->
+      <a-table v-else-if="tableBool" row-key="address" :columns="columns" :column-resizable="true" :data="data"
         :row-selection="rowSelection" :scrollbar="scrollbar" :scroll="{ y: '100%' }" @row-click="rowClick"
         v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
         <template #index="{ rowIndex }">
@@ -1141,17 +1164,27 @@ async function handleBeforeClose() {
       </a-table>
     </div>
 
-    <!-- 余额查询进度条 -->
-    <div v-if="showProgress" style="margin-top: 10px; padding: 0 10px; flex-shrink: 0;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <span style="font-size: 14px; color: #1d2129; font-weight: 500;">查询进度</span>
-        <span style="font-size: 12px; color: #86909c;">{{ balanceCompleted }}/{{ balanceTotal }}</span>
+    <!-- 余额查询进度条 - 悬浮在页面顶部 -->
+    <Transition name="progress-slide" appear>
+      <div v-if="showProgress" class="floating-progress-bar">
+        <div class="progress-content">
+          <div class="progress-header">
+            <span class="progress-title">查询进度</span>
+            <span class="progress-count">{{ balanceCompleted }}/{{ balanceTotal }}</span>
+          </div>
+          <a-progress 
+            :percent="balanceProgress" 
+            :stroke-width="6" 
+            :animation="true" 
+            :color="{
+              '0%': '#37ecba',
+              '100%': '#009efd',
+            }" 
+            class="progress-bar"
+          />
+        </div>
       </div>
-      <a-progress :percent="balanceProgress" :stroke-width="6" :animation="true" :color="{
-        '0%': '#37ecba',
-        '100%': '#009efd',
-      }" />
-    </div>
+    </Transition>
 
     <!-- 链管理按钮嵌入 -->
     <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
@@ -1221,21 +1254,23 @@ async function handleBeforeClose() {
     <!-- 相关设置 -->
     <div style="display: flex; padding-top: 5px; align-items: center; flex-shrink: 0;">
       <!-- 表单配置 -->
-      <a-form :model="form" layout="vertical">
+      <a-form :model="form" auto-label-width="true">
         <div style="display: flex; align-items: end; gap: 20px;">
           <!-- 仅查询目标代币开关 -->
-          <a-form-item label="仅查询目标代币" style="width: 140px;margin-bottom: 0;">
+          <a-form-item label="仅查询目标代币" style="width: 145px;margin-bottom: 0;">
             <a-switch v-model="onlyCoin" />
           </a-form-item>
           <!-- 线程数配置 -->
-          <a-form-item field="thread_count" label="线程数" style="width: 140px; margin-bottom: 0;"
+          <a-form-item field="thread_count" label="线程数" style="width: 240px; margin-bottom: 0;"
             tooltip="同时查询的钱包数量（1-99）之间">
             <a-input-number :max="99" :min="1" mode="button" v-model="form.thread_count" style="width: 100%;" />
           </a-form-item>
         </div>
       </a-form>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 5px; flex-shrink: 0;">
       <!-- 查询按钮 -->
-      <a-tooltip v-if="balanceLoading" content="点击停止查询">
+      <a-tooltip v-if="balanceLoading" content="点击可以提前停止查询">
         <a-button type="primary" status="danger" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="stopBalanceQuery">
           <template #icon>
             <Icon icon="mdi:stop" />
@@ -1327,7 +1362,7 @@ async function handleBeforeClose() {
             <a-option value="eq">等于</a-option>
             <a-option value="lt">小于</a-option>
           </a-select>
-          <a-input v-model="filterForm.platBalanceValue" placeholder="请输入平台币余额值" style="flex: 1;" />
+          <a-input v-model="filterForm.platBalanceValue" placeholder="请输入平台币余额值" style="flex: 1;" @input="debouncedFilterUpdate" />
         </div>
       </a-form-item>
       
@@ -1339,7 +1374,7 @@ async function handleBeforeClose() {
             <a-option value="eq">等于</a-option>
             <a-option value="lt">小于</a-option>
           </a-select>
-          <a-input v-model="filterForm.coinBalanceValue" placeholder="请输入代币余额值" style="flex: 1;" />
+          <a-input v-model="filterForm.coinBalanceValue" placeholder="请输入代币余额值" style="flex: 1;" @input="debouncedFilterUpdate" />
         </div>
       </a-form-item>
       
@@ -1351,13 +1386,13 @@ async function handleBeforeClose() {
             <a-option value="eq">等于</a-option>
             <a-option value="lt">小于</a-option>
           </a-select>
-          <a-input v-model="filterForm.nonceValue" placeholder="请输入数值" style="flex: 1;" />
+          <a-input v-model="filterForm.nonceValue" placeholder="请输入数值" style="flex: 1;" @input="debouncedFilterUpdate" />
         </div>
       </a-form-item>
       
       <!-- 错误信息模糊匹配 -->
       <a-form-item label="错误信息模糊匹配">
-        <a-input v-model="filterForm.errorMsg" placeholder="请输入要匹配的错误信息" />
+        <a-input v-model="filterForm.errorMsg" placeholder="请输入要匹配的错误信息" @input="debouncedFilterUpdate" />
       </a-form-item>
     </a-form>
     
@@ -1535,6 +1570,73 @@ async function handleBeforeClose() {
 
 .toolBar {
   margin-top: 45px;
+}
+
+/* 悬浮进度条样式 */
+.floating-progress-bar {
+  position: fixed;
+  top: 45px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: 90%;
+  max-width: 600px;
+  background: var(--card-bg, #ffffff);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--border-color, #e5e6eb);
+  backdrop-filter: blur(8px);
+}
+
+.progress-content {
+  padding: 5px 20px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.progress-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color, #1d2129);
+}
+
+.progress-count {
+  font-size: 13px;
+  color: var(--text-color-secondary, #86909c);
+  font-weight: 500;
+}
+
+.progress-bar {
+  width: 100%;
+}
+
+/* 进度条动画 */
+.progress-slide-enter-active {
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.progress-slide-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.progress-slide-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-100%);
+}
+
+.progress-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-100%);
+}
+
+.progress-slide-enter-to,
+.progress-slide-leave-from {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 </style>
 <style lang="less">

@@ -2,21 +2,25 @@
 import { Icon } from '@iconify/vue';
 import { useRouter, useRoute } from "vue-router";
 import { IconDelete } from '@arco-design/web-vue/es/icon';
-import { onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from "vue";
+import { computed, defineAsyncComponent, onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Notification, Modal } from "@arco-design/web-vue";
 import { ethers } from "ethers";
-import { debounce } from "throttle-debounce";
+
 import { read, utils as xlUtils, writeFile } from "xlsx";
+import { debounce as customDebounce } from '@/utils/debounce.js'
 import ChainIcon from '../components/ChainIcon.vue'
 import TitleBar from '../components/TitleBar.vue'
-import ChainManagement from '../components/ChainManagement.vue'
-import RpcManagement from '../components/RpcManagement.vue'
-import TokenManagement from '../components/TokenManagement.vue'
-import WalletImportModal from '../components/WalletImportModal.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
+
+// 懒加载非关键组件
+const ChainManagement = defineAsyncComponent(() => import('../components/ChainManagement.vue'))
+const RpcManagement = defineAsyncComponent(() => import('../components/RpcManagement.vue'))
+const TokenManagement = defineAsyncComponent(() => import('../components/TokenManagement.vue'))
+const WalletImportModal = defineAsyncComponent(() => import('../components/WalletImportModal.vue'))
 const router = useRouter();
 // 窗口标题
 const windowTitle = ref('Wallet Manager - 批量转账');
@@ -221,6 +225,106 @@ const transferProgress = ref(0); // 转账进度百分比
 const transferTotal = ref(0); // 总转账数量
 const transferCompleted = ref(0); // 已完成转账数量
 const showProgress = ref(false); // 是否显示进度条
+
+// 计算属性：缓存转账配置
+const transferConfig = computed(() => {
+  return {
+    error_count_limit: 3,
+    error_retry: form.error_retry,
+    chain: chainValue.value,
+    chainLayer: currentChain.value.layer,
+    l1: currentChain.value.l1,
+    scalar: currentChain.value.scalar,
+    delay: [
+      form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) : 1,
+      form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) : 3
+    ],
+    transfer_type: form.send_type,
+    transfer_amount_list: [
+      form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0,
+      form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0
+    ],
+    left_amount_list: [
+      form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0,
+      form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0
+    ],
+    amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6,
+    limit_type: form.limit_type,
+    limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000,
+    limit_count_list: [
+      form.limit_min_count && form.limit_min_count.trim() !== '' ? Number(form.limit_min_count) : 21000,
+      form.limit_max_count && form.limit_max_count.trim() !== '' ? Number(form.limit_max_count) : 30000
+    ],
+    gas_price_type: form.gas_price_type,
+    gas_price_rate: form.gas_price_rate && form.gas_price_rate.trim() !== '' ? Number(form.gas_price_rate) / 100 : 0.05,
+    gas_price: form.gas_price && form.gas_price.trim() !== '' ? Number(form.gas_price) : 30,
+    max_gas_price: form.max_gas_price && form.max_gas_price.trim() !== '' ? Number(form.max_gas_price) : 0
+  };
+});
+
+// 计算属性：缓存统计数据
+const transferStatistics = computed(() => {
+  const total = data.value.length;
+  const pending = data.value.filter(item => item.exec_status === '0').length;
+  const processing = data.value.filter(item => item.exec_status === '1').length;
+  const succeeded = data.value.filter(item => item.exec_status === '2').length;
+  const failed = data.value.filter(item => item.exec_status === '3').length;
+  
+  return { total, pending, processing, succeeded, failed };
+});
+
+// 计算属性：缓存筛选后的数据
+const filteredTransferData = computed(() => {
+  if (!filterForm.platBalanceValue && !filterForm.coinBalanceValue && !filterForm.errorMsg) {
+    return data.value;
+  }
+  
+  return data.value.filter(item => {
+    // 平台币余额筛选
+    if (filterForm.platBalanceValue && filterForm.platBalanceValue.trim() !== '') {
+      const platBalanceValue = parseFloat(filterForm.platBalanceValue);
+      const itemPlatBalance = parseFloat(item.plat_balance || 0);
+      
+      if (filterForm.platBalanceOperator === 'gt' && itemPlatBalance <= platBalanceValue) {
+        return false;
+      } else if (filterForm.platBalanceOperator === 'eq' && itemPlatBalance !== platBalanceValue) {
+        return false;
+      } else if (filterForm.platBalanceOperator === 'lt' && itemPlatBalance >= platBalanceValue) {
+        return false;
+      }
+    }
+    
+    // 代币余额筛选
+    if (filterForm.coinBalanceValue && filterForm.coinBalanceValue.trim() !== '') {
+      const coinBalanceValue = parseFloat(filterForm.coinBalanceValue);
+      const itemCoinBalance = parseFloat(item.coin_balance || 0);
+      
+      if (filterForm.coinBalanceOperator === 'gt' && itemCoinBalance <= coinBalanceValue) {
+        return false;
+      } else if (filterForm.coinBalanceOperator === 'eq' && itemCoinBalance !== coinBalanceValue) {
+        return false;
+      } else if (filterForm.coinBalanceOperator === 'lt' && itemCoinBalance >= coinBalanceValue) {
+        return false;
+      }
+    }
+    
+    // 错误信息模糊匹配
+    if (filterForm.errorMsg && filterForm.errorMsg.trim() !== '') {
+      const errorMsg = item.error_msg || '';
+      if (!errorMsg.toLowerCase().includes(filterForm.errorMsg.toLowerCase())) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+});
+
+// 防抖的筛选更新函数
+const debouncedFilterUpdate = customDebounce(() => {
+  // 触发筛选数据的重新计算
+  // filteredTransferData computed属性会自动响应filterForm的变化
+}, 300);
 
 // Gas价格监控相关变量
 const gasPriceMonitoring = ref(false); // 是否正在监控gas价格
@@ -1349,12 +1453,12 @@ function upload() {
 }
 
 // 下载模板文件
-const downloadFile = debounce(1000, () => {
+const downloadFile = customDebounce(() => {
   let a = document.createElement("a");
   a.href = `/template/import_model.xlsx`;
   a.download = "导入模板.xlsx";
   a.click();
-});
+}, 1000);
 
 // RPC变化事件
 async function chainChange() {
@@ -2020,11 +2124,15 @@ async function transferFnc(inputData) {
       }
       startLoading.value = false;
       stopFlag.value = false;
+      // 隐藏进度条
+      showProgress.value = false;
     })
     .catch(() => {
       Notification.error("执行失败！");
       startLoading.value = false;
       stopStatus.value = true;
+      // 隐藏进度条
+      showProgress.value = false;
     });
 }
 
@@ -2185,25 +2293,8 @@ async function iterTransfer(accountData) {
         continue;
       }
       const config = {
-        error_count_limit: 3, //  错误次数限制
-        error_retry: form.error_retry, // 是否自动失败重试
-        chain: chainValue.value,
-        chainLayer: currentChain.value.layer,
-        l1: currentChain.value.l1,
-        scalar: currentChain.value.scalar,
-        delay: [form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) : 1, form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) : 3], // 延迟时间
-        transfer_type: form.send_type, // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
+        ...transferConfig.value,
         transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
-        transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
-        left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
-        amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
-        limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
-        limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000, // limit_count 指定数量 (limit_type 为 2 时生效)
-        limit_count_list: [form.limit_min_count && form.limit_min_count.trim() !== '' ? Number(form.limit_min_count) : 21000, form.limit_max_count && form.limit_max_count.trim() !== '' ? Number(form.limit_max_count) : 30000],
-        gas_price_type: form.gas_price_type, // gas price类型 1: 自动 2：固定gas price 3：gas price溢价率
-        gas_price_rate: form.gas_price_rate && form.gas_price_rate.trim() !== '' ? Number(form.gas_price_rate) / 100 : 0.05, // gas price溢价率，0.05代表gas price是当前gas price的105%
-        gas_price: form.gas_price && form.gas_price.trim() !== '' ? Number(form.gas_price) : 30, // 设置最大的gas price，单位gwei
-        max_gas_price: form.max_gas_price && form.max_gas_price.trim() !== '' ? Number(form.max_gas_price) : 0, // 设置最大的gas price，单位gwei
       };
 
       try {
@@ -2535,6 +2626,8 @@ async function iterTransfer(accountData) {
 function stopTransfer() {
   startLoading.value = false;
   stopFlag.value = true;
+  // 隐藏进度条
+  showProgress.value = false;
 }
 
 // 停止查询余额
@@ -3262,14 +3355,14 @@ async function handleBeforeClose() {
         </template>
         清空列表
       </a-button>
-      <!-- <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearPrivateKey">清空私钥
-      </a-button>
-      <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearAddress">清空地址
-      </a-button> -->
     </div>
     <!-- 操作账号表格 -->
     <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
-      <a-table v-if="tableBool" row-key="key" :columns="columns" :column-resizable="true" :data="data"
+      <!-- 骨架屏 -->
+      <TableSkeleton v-if="(tableLoading || balanceLoading) && data.length === 0" :rows="8" />
+      
+      <!-- 正常表格 -->
+      <a-table v-else-if="tableBool" row-key="key" :columns="columns" :column-resizable="true" :data="data"
         :row-selection="rowSelection" :loading="tableLoading" :scrollbar="scrollbar" :scroll="{ y: '100%' }"
         @row-click="rowClick" v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
         <template #index="{ rowIndex }">
@@ -3295,17 +3388,27 @@ async function handleBeforeClose() {
       </a-table>
     </div>
 
-    <!-- 转账进度条 -->
-    <div v-if="showProgress" style="margin-top: 10px; padding: 0 10px; flex-shrink: 0;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <span style="font-size: 14px; color: #1d2129; font-weight: 500;">转账进度</span>
-        <span style="font-size: 14px; color: #86909c;">{{ transferCompleted }} / {{ transferTotal }}</span>
+    <!-- 转账进度条 - 悬浮在页面顶部 -->
+    <Transition name="progress-slide" appear>
+      <div v-if="showProgress" class="floating-progress-bar">
+        <div class="progress-content">
+          <div class="progress-header">
+            <span class="progress-title">转账进度</span>
+            <span class="progress-count">{{ transferCompleted }} / {{ transferTotal }}</span>
+          </div>
+          <a-progress 
+            :percent="transferProgress" 
+            :show-text="true" 
+            :stroke-width="6" 
+            :color="{
+              '0%': '#00b42a',
+              '100%': '#00b42a'
+            }" 
+            class="progress-bar" 
+          />
+        </div>
       </div>
-      <a-progress :percent="transferProgress" :show-text="true" :stroke-width="8" :color="{
-        '0%': '#00b42a',
-        '100%': '#00b42a'
-      }" style="width: 100%;" />
-    </div>
+    </Transition>
 
     <!-- 智能重试状态显示 -->
     <div v-if="retryInProgress" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #1890ff; flex-shrink: 0;">
@@ -3406,7 +3509,7 @@ async function handleBeforeClose() {
     <div style="display: flex; padding-top: 5px; flex-shrink: 0;">
       <!-- 细节配置 -->
       <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="vertical">
-        <a-row style="height: 70px">
+        <a-row style="height: 70px; display: flex;">
           <a-form-item field="send_type" label="发送方式" style="width: 330px;">
             <a-radio-group v-model="form.send_type" type="button">
               <a-radio value="1">全部</a-radio>
@@ -3462,7 +3565,7 @@ async function handleBeforeClose() {
             </a-input-group>
           </a-form-item>
         </a-row>
-        <a-row v-show="chainValue !== 'sol'" style="height: 70px">
+        <a-row v-show="chainValue !== 'sol'" style="height: 70px; display: flex;">
           <a-form-item field="limit_type" label="Gas Limit" style="width: 245px;">
             <a-radio-group v-model="form.limit_type" type="button">
               <a-radio value="1">自动</a-radio>
@@ -3637,7 +3740,7 @@ async function handleBeforeClose() {
             <a-option value="eq">等于</a-option>
             <a-option value="lt">小于</a-option>
           </a-select>
-          <a-input v-model="filterForm.platBalanceValue" placeholder="请输入平台币余额值" style="flex: 1;" />
+          <a-input v-model="filterForm.platBalanceValue" placeholder="请输入平台币余额值" style="flex: 1;" @input="debouncedFilterUpdate" />
         </div>
       </a-form-item>
       
@@ -3649,13 +3752,13 @@ async function handleBeforeClose() {
             <a-option value="eq">等于</a-option>
             <a-option value="lt">小于</a-option>
           </a-select>
-          <a-input v-model="filterForm.coinBalanceValue" placeholder="请输入代币余额值" style="flex: 1;" />
+          <a-input v-model="filterForm.coinBalanceValue" placeholder="请输入代币余额值" style="flex: 1;" @input="debouncedFilterUpdate" />
         </div>
       </a-form-item>
       
       <!-- 错误信息模糊匹配 -->
-      <a-form-item label="错误信息模糊匹配">
-        <a-input v-model="filterForm.errorMsg" placeholder="请输入要匹配的错误信息" />
+      <a-form-item label="错误信息">
+          <a-input v-model="filterForm.errorMsg" placeholder="请输入要匹配的错误信息" @input="debouncedFilterUpdate" />
       </a-form-item>
     </a-form>
     
@@ -3989,6 +4092,77 @@ async function handleBeforeClose() {
 .rpc-urls {
   width: 100%;
 }
+
+.progressBar {
+  color: var(--text-color, #1d2129);
+}
+
+/* 悬浮进度条样式 */
+.floating-progress-bar {
+  position: fixed;
+  top: 45px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: 90%;
+  max-width: 600px;
+  background: var(--card-bg, #ffffff);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--border-color, #e5e6eb);
+  backdrop-filter: blur(8px);
+}
+
+.progress-content {
+  padding: 5px 20px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.progress-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color, #1d2129);
+}
+
+.progress-count {
+  font-size: 13px;
+  color: var(--text-color-secondary, #86909c);
+  font-weight: 500;
+}
+
+.progress-bar {
+  width: 100%;
+}
+
+/* 进度条动画 */
+.progress-slide-enter-active {
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.progress-slide-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.progress-slide-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-100%);
+}
+
+.progress-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-100%);
+}
+
+.progress-slide-enter-to,
+.progress-slide-leave-from {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
 </style>
 <style lang="less">
 .transfer {
@@ -4007,16 +4181,12 @@ async function handleBeforeClose() {
     
     .arco-table-content {
       flex: 1 !important;
-      height: 100% !important;
+      // height: 100% !important;
     }
     
     .arco-table-body {
-      min-height: 400px;
-      overflow-y: auto !important;
-
       .arco-table-element {
         .arco-empty {
-          min-height: 400px;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -4032,7 +4202,9 @@ async function handleBeforeClose() {
         }
       }
     }
-    
+    .arco-scrollbar-track {
+      display: none;
+    }
     // 固定表格行高，避免数据少时行被拉伸
     .arco-table-tr {
       height: 48px !important;

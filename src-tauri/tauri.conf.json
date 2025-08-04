@@ -1,7 +1,7 @@
 {
   "productName": "wallet_manager",
   "version": "0.2.0",
-  "identifier": "com.ezban.wallet-manager",
+  "identifier": "com.ezban.walletmanager",
   "build": {
     "beforeDevCommand": "yarn dev",
     "beforeBuildCommand": "yarn build",

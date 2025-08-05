@@ -1515,26 +1515,6 @@ async function handleBeforeClose() {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--table-bg, #ffffff);
-}
-
-.mainTable .arco-table {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--table-bg, #ffffff);
-}
-
-.mainTable .arco-table-content {
-  height: 100%;
-  flex: 1;
-  background-color: var(--table-bg, #ffffff);
-}
-
-.mainTable .arco-table-body {
-  height: 100%;
-  flex: 1;
-  background-color: var(--table-bg, #ffffff);
 }
 
 .subTitle {
@@ -1647,98 +1627,5 @@ async function handleBeforeClose() {
 .progress-slide-leave-from {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
-}
-</style>
-<style lang="less">
-.balance {
-  .mainTable {
-    .arco-table {
-      height: 100% !important;
-      display: flex !important;
-      flex-direction: column !important;
-      background-color: var(--table-bg, #ffffff) !important;
-    }
-    
-    .arco-table-container {
-      height: 100% !important;
-      display: flex !important;
-      flex-direction: column !important;
-      background-color: var(--table-bg, #ffffff) !important;
-    }
-    
-    .arco-table-content {
-      flex: 1 !important;
-      height: 100% !important;
-      background-color: var(--table-bg, #ffffff) !important;
-    }
-    
-    .arco-table-header {
-      background-color: var(--table-header-bg, #f7f8fa) !important;
-    }
-    
-    .arco-table-th {
-      background-color: var(--table-header-bg, #f7f8fa) !important;
-      color: var(--table-header-text-color, #1d2129) !important;
-      border-bottom: 1px solid var(--table-border-color, #e5e6eb) !important;
-    }
-    
-    .arco-table-td {
-      background-color: var(--table-bg, #ffffff) !important;
-      color: var(--table-text-color, #1d2129) !important;
-      border-bottom: 1px solid var(--table-border-color, #e5e6eb) !important;
-    }
-    
-    .arco-table-tr:hover .arco-table-td {
-      background-color: var(--table-hover-bg, #f7f8fa) !important;
-    }
-    
-    .arco-table-body {
-      min-height: 400px;
-      overflow-y: auto !important;
-      background-color: var(--table-bg, #ffffff) !important;
-
-      .arco-table-element {
-        .arco-empty {
-          min-height: 400px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          background-color: var(--table-bg, #ffffff) !important;
-          color: var(--table-text-color, #1d2129) !important;
-        }
-      }
-      
-      .arco-table-tbody {
-        .arco-table-tr {
-          height: 48px !important;
-          min-height: 48px !important;
-          max-height: 48px !important;
-          background-color: var(--table-bg, #ffffff) !important;
-        }
-      }
-    }
-    
-    // 固定表格行高，避免数据少时行被拉伸
-    .arco-table-tr {
-      height: 48px !important;
-      min-height: 48px !important;
-      max-height: 48px !important;
-      background-color: var(--table-bg, #ffffff) !important;
-    }
-    
-    .arco-table-td {
-      height: 48px !important;
-      min-height: 48px !important;
-      max-height: 48px !important;
-      vertical-align: middle !important;
-    }
-    
-    .arco-table-th {
-      height: 48px !important;
-      min-height: 48px !important;
-      max-height: 48px !important;
-    }
-  }
 }
 </style>

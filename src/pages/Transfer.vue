@@ -1311,14 +1311,14 @@ function exportInvalidData(invalidData) {
 }
 
 function UploadFile() {
+  // 开启全页面loading
+  pageLoading.value = true;
+  tableLoading.value = true;
   let file = uploadInputRef.value.files[0];
   let reader = new FileReader();
   //提取excel中文件内容
   reader.readAsArrayBuffer(file);
   data.value = [];
-  // 开启全页面loading
-  pageLoading.value = true;
-  tableLoading.value = true;
   reader.onload = function () {
     const buffer = reader.result;
     const bytes = new Uint8Array(buffer);
@@ -1436,6 +1436,17 @@ function UploadFile() {
         duration: 3000
       });
     }
+  };
+  reader.onerror = function () {
+    tableLoading.value = false;
+    // 关闭全页面loading
+    pageLoading.value = false;
+    // 显示错误通知
+    Notification.error({
+      title: '文件读取失败',
+      content: '文件读取过程中发生错误，请检查文件格式是否正确',
+      duration: 5000
+    });
   };
   reader.onloadend = function () {
     tableLoading.value = false;
@@ -3646,7 +3657,7 @@ async function handleBeforeClose() {
         </a-dropdown>
         <a-tooltip v-else content="点击可以提前停止查询">
           <div @click="stopBalanceQuery">
-            <a-button v-if="!balanceStopFlag" class="execute-btn executing" loading 
+            <a-button v-if="!balanceStopFlag" class="execute-btn executing" loading
               :style="{ width: '130px', height: '40px', fontSize: '14px' }">
               <template #icon>
                 <Icon icon="mdi:stop" />

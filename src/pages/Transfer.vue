@@ -15,6 +15,7 @@ import { debounce as customDebounce } from '@/utils/debounce.js'
 import ChainIcon from '../components/ChainIcon.vue'
 import TitleBar from '../components/TitleBar.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
+import VirtualScrollerTable from '../components/VirtualScrollerTable.vue'
 
 // 懒加载非关键组件
 const ChainManagement = defineAsyncComponent(() => import('../components/ChainManagement.vue'))
@@ -29,7 +30,7 @@ const columns = [
   {
     title: "序号",
     align: "center",
-    width: 60,
+    width: 55,
     slotName: "index",
   },
   {
@@ -43,6 +44,7 @@ const columns = [
   {
     title: "接收地址",
     align: "center",
+    width: 250,
     dataIndex: "to_addr",
     ellipsis: true,
     tooltip: true,
@@ -51,7 +53,7 @@ const columns = [
     title: "转账数量",
     align: "center",
     dataIndex: "amount",
-    width: 120,
+    width: 95,
     ellipsis: true,
     tooltip: true,
   },
@@ -59,7 +61,7 @@ const columns = [
     title: "平台币余额",
     align: "center",
     dataIndex: "plat_balance",
-    width: 120,
+    width: 95,
     ellipsis: true,
     tooltip: true,
   },
@@ -67,7 +69,7 @@ const columns = [
     title: "代币余额",
     align: "center",
     dataIndex: "coin_balance",
-    width: 120,
+    width: 85,
     ellipsis: true,
     tooltip: true,
   },
@@ -75,7 +77,7 @@ const columns = [
     title: "状态",
     align: "center",
     slotName: "exec_status",
-    width: 100,
+    width: 90,
     ellipsis: true,
     tooltip: true,
   },
@@ -84,13 +86,13 @@ const columns = [
     align: "center",
     dataIndex: "error_msg",
     ellipsis: true,
-    tooltip: { position: 'left' },
+    tooltip: true,
   },
   {
     title: "操作",
     align: "center",
     slotName: "optional",
-    width: 60,
+    width: 55,
     ellipsis: true,
     tooltip: true,
   },
@@ -191,6 +193,8 @@ let deleteItemVisible = ref(false);
 let currentCoin = ref({});
 // 当前数据的key
 let currentItemKey = ref("");
+// 当前要删除项目的私钥
+let currentItemPrivateKey = ref("");
 // 开始执行按钮loading
 let startLoading = ref(false);
 // 转账中途停止
@@ -269,7 +273,7 @@ const transferStatistics = computed(() => {
   const processing = data.value.filter(item => item.exec_status === '1').length;
   const succeeded = data.value.filter(item => item.exec_status === '2').length;
   const failed = data.value.filter(item => item.exec_status === '3').length;
-  
+
   return { total, pending, processing, succeeded, failed };
 });
 
@@ -278,13 +282,13 @@ const filteredTransferData = computed(() => {
   if (!filterForm.platBalanceValue && !filterForm.coinBalanceValue && !filterForm.errorMsg) {
     return data.value;
   }
-  
+
   return data.value.filter(item => {
     // 平台币余额筛选
     if (filterForm.platBalanceValue && filterForm.platBalanceValue.trim() !== '') {
       const platBalanceValue = parseFloat(filterForm.platBalanceValue);
       const itemPlatBalance = parseFloat(item.plat_balance || 0);
-      
+
       if (filterForm.platBalanceOperator === 'gt' && itemPlatBalance <= platBalanceValue) {
         return false;
       } else if (filterForm.platBalanceOperator === 'eq' && itemPlatBalance !== platBalanceValue) {
@@ -293,12 +297,12 @@ const filteredTransferData = computed(() => {
         return false;
       }
     }
-    
+
     // 代币余额筛选
     if (filterForm.coinBalanceValue && filterForm.coinBalanceValue.trim() !== '') {
       const coinBalanceValue = parseFloat(filterForm.coinBalanceValue);
       const itemCoinBalance = parseFloat(item.coin_balance || 0);
-      
+
       if (filterForm.coinBalanceOperator === 'gt' && itemCoinBalance <= coinBalanceValue) {
         return false;
       } else if (filterForm.coinBalanceOperator === 'eq' && itemCoinBalance !== coinBalanceValue) {
@@ -307,7 +311,7 @@ const filteredTransferData = computed(() => {
         return false;
       }
     }
-    
+
     // 错误信息模糊匹配
     if (filterForm.errorMsg && filterForm.errorMsg.trim() !== '') {
       const errorMsg = item.error_msg || '';
@@ -315,7 +319,7 @@ const filteredTransferData = computed(() => {
         return false;
       }
     }
-    
+
     return true;
   });
 });
@@ -518,18 +522,18 @@ async function performIntelligentRetry(failedData) {
 
   retryInProgress.value = true;
   retryResults.value = [];
-  
+
   Notification.info(`开始智能重试检查，共 ${failedData.length} 笔失败交易`);
-  
+
   try {
     // 对每个失败的交易进行检查
     const retryList = [];
-    
+
     for (const item of failedData) {
       try {
         // 查询该私钥钱包在转账开始时间之后的交易历史
         const hasRecentTransfer = await checkRecentTransfer(item.private_key, item.to_addr, transferStartTime.value);
-        
+
         if (hasRecentTransfer) {
           // 发现在开始时间之后有包含目标接收地址的交易，不重试
           const realIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
@@ -565,9 +569,9 @@ async function performIntelligentRetry(failedData) {
         });
       }
     }
-    
+
     retryInProgress.value = false;
-    
+
     if (retryList.length > 0) {
       Notification.info(`智能重试检查完成，将重试 ${retryList.length} 笔交易，跳过 ${failedData.length - retryList.length} 笔交易`);
       // 执行重试
@@ -576,7 +580,7 @@ async function performIntelligentRetry(failedData) {
       Notification.success('智能重试检查完成，所有失败交易均检测到链上已有相关交易，无需重试');
       stopStatus.value = true;
     }
-    
+
   } catch (error) {
     console.error('智能重试检查失败:', error);
     retryInProgress.value = false;
@@ -597,7 +601,7 @@ async function checkRecentTransfer(privateKey, targetAddress, startTime) {
       coin_type: currentCoin.value.coin_type,
       contract_address: currentCoin.value.coin_type === 'token' ? currentCoin.value.contract_address : null
     });
-    
+
     return result.has_recent_transfer || false;
   } catch (error) {
     console.error('查询链上交易失败:', error);
@@ -1105,11 +1109,11 @@ onMounted(async () => {
       if (title) {
         windowTitle.value = title;
       }
-      
+
       // 获取当前窗口ID
       currentWindowId.value = currentWindow.label;
 
-      
+
     } catch (error) {
       console.error('Error getting window title or setting close listener:', error);
     }
@@ -1154,7 +1158,7 @@ onMounted(async () => {
         // 如果没有item信息，仍然使用index作为备用方案
         targetIndex = index;
       }
-      
+
       if (targetIndex !== -1 && data.value[targetIndex]) {
         // 更新对应数据项的状态和返回信息
         data.value[targetIndex].error_msg = error_msg;
@@ -1328,7 +1332,6 @@ function UploadFile() {
       type: "binary",
     });
     const outdata = xlUtils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    console.log(outdata);
     // 用于存储不合规数据
     const invalidData = [];
     let validCount = 0;
@@ -1776,13 +1779,14 @@ function deleteItem(item) {
     return;
   }
   // 删除确认
-  deleteItemModalShow(item.key);
+  deleteItemModalShow(item);
 }
 
 // 删除数据弹窗显示
-function deleteItemModalShow(key) {
+function deleteItemModalShow(item) {
   deleteItemVisible.value = true;
-  currentItemKey.value = key;
+  currentItemKey.value = item.key;
+  currentItemPrivateKey.value = item.private_key || "";
 }
 
 // 删除item取消
@@ -1851,7 +1855,8 @@ async function queryBalance() {
           coin_balance: null,
           nonce: null,
           exec_status: '0',
-          error_msg: null
+          error_msg: null,
+          retry_flag: false
         })),
         only_coin_config: false,
         thread_count: Number(threadCount.value)
@@ -1967,7 +1972,7 @@ async function queryToAddressBalance() {
     balanceLoading.value = true;
     balanceStopFlag.value = false;
     balanceStopStatus.value = false;
-    
+
     // 重置所有项目状态
     data.value.forEach((item) => {
       item.plat_balance = "";
@@ -1986,9 +1991,10 @@ async function queryToAddressBalance() {
         coin_balance: null,
         nonce: null,
         exec_status: '0',
-        error_msg: null
+        error_msg: null,
+        retry_flag: false
       }));
-      
+
       // 使用Rust后端进行查询 - 查询到账地址的余额
       const params = {
         chain: chainValue.value,
@@ -2001,14 +2007,14 @@ async function queryToAddressBalance() {
         only_coin_config: false,
         thread_count: Number(threadCount.value) // 确保类型转换为数字
       };
-      
+
       // 检查是否需要停止查询
       if (balanceStopFlag.value) {
         balanceLoading.value = false;
         balanceStopStatus.value = true;
         return;
       }
-      
+
       let result;
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
       if (isTauri) {
@@ -2632,6 +2638,7 @@ function stopTransfer() {
 
 // 停止查询余额
 async function stopBalanceQuery() {
+  console.log('stopBalanceQuery方法被调用');
   try {
     // 调用后端停止接口
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
@@ -2644,7 +2651,7 @@ async function stopBalanceQuery() {
   } catch (error) {
     console.error('停止查询请求失败:', error);
   }
-  
+
   balanceLoading.value = false;
   balanceStopFlag.value = true;
   balanceStopStatus.value = true;
@@ -2909,15 +2916,15 @@ function showAdvancedFilter() {
 // 应用高级筛选
 function applyAdvancedFilter() {
   let filteredItems = [];
-  
+
   data.value.forEach(item => {
     let shouldSelect = true;
-    
+
     // 平台币余额筛选
     if (filterForm.platBalanceValue && filterForm.platBalanceValue.trim() !== '') {
       const platBalanceValue = parseFloat(filterForm.platBalanceValue);
       const itemPlatBalance = parseFloat(item.plat_balance || 0);
-      
+
       if (filterForm.platBalanceOperator === 'gt' && itemPlatBalance <= platBalanceValue) {
         shouldSelect = false;
       } else if (filterForm.platBalanceOperator === 'eq' && itemPlatBalance !== platBalanceValue) {
@@ -2926,12 +2933,12 @@ function applyAdvancedFilter() {
         shouldSelect = false;
       }
     }
-    
+
     // 代币余额筛选
     if (shouldSelect && filterForm.coinBalanceValue && filterForm.coinBalanceValue.trim() !== '') {
       const coinBalanceValue = parseFloat(filterForm.coinBalanceValue);
       const itemCoinBalance = parseFloat(item.coin_balance || 0);
-      
+
       if (filterForm.coinBalanceOperator === 'gt' && itemCoinBalance <= coinBalanceValue) {
         shouldSelect = false;
       } else if (filterForm.coinBalanceOperator === 'eq' && itemCoinBalance !== coinBalanceValue) {
@@ -2940,7 +2947,7 @@ function applyAdvancedFilter() {
         shouldSelect = false;
       }
     }
-    
+
     // 错误信息模糊匹配筛选
     if (shouldSelect && filterForm.errorMsg && filterForm.errorMsg.trim()) {
       const errorMsg = item.error_msg || '';
@@ -2948,18 +2955,18 @@ function applyAdvancedFilter() {
         shouldSelect = false;
       }
     }
-    
+
     if (shouldSelect) {
       filteredItems.push(item.key);
     }
   });
-  
+
   // 更新选中的项
   selectedKeys.value = filteredItems;
-  
+
   // 关闭弹窗
   advancedFilterVisible.value = false;
-  
+
   // 显示筛选结果
   Notification.success(`筛选完成，共选中 ${filteredItems.length} 条数据`);
 }
@@ -3248,19 +3255,19 @@ function showChainManage() {
 async function handleBeforeClose() {
   try {
     console.log('TitleBar触发关闭事件，正在停止后台操作...');
-    
+
     // 停止余额查询操作
     if (balanceLoading.value) {
       await stopBalanceQuery();
       console.log('已停止余额查询操作');
     }
-    
+
     // 停止转账操作
     if (startLoading.value) {
       await stopTransfer();
       console.log('已停止转账操作');
     }
-    
+
     // 停止gas价格监控
     if (gasPriceMonitoring.value && gasPriceTimer.value) {
       clearInterval(gasPriceTimer.value);
@@ -3268,13 +3275,13 @@ async function handleBeforeClose() {
       gasPriceMonitoring.value = false;
       console.log('已清理gas价格监控定时器');
     }
-    
+
     // 重置相关状态
     transferPaused.value = false;
     pausedTransferData.value = null;
     gasPriceCountdown.value = 0;
     currentGasPrice.value = 0;
-    
+
     console.log('TitleBar窗口关闭清理完成，所有后台操作已停止');
   } catch (error) {
     console.error('处理窗口关闭事件时发生错误:', error);
@@ -3360,32 +3367,30 @@ async function handleBeforeClose() {
     <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
       <!-- 骨架屏 -->
       <TableSkeleton v-if="(tableLoading || balanceLoading) && data.length === 0" :rows="8" />
-      
+
       <!-- 正常表格 -->
-      <a-table v-else-if="tableBool" row-key="key" :columns="columns" :column-resizable="true" :data="data"
-        :row-selection="rowSelection" :loading="tableLoading" :scrollbar="scrollbar" :scroll="{ y: '100%' }"
-        @row-click="rowClick" v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
-        <template #index="{ rowIndex }">
-          {{ rowIndex + 1 }}
-        </template>
-        <template #exec_status="{ rowIndex }">
-          <a-tag v-if="data[rowIndex].exec_status === '0'" color="#86909c">等待执行
+      <VirtualScrollerTable v-else-if="tableBool" :columns="columns" :data="data" :row-selection="rowSelection"
+        :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick"
+        @update:selected-keys="selectedKeys = $event" row-key="key" height="100%">
+
+        <template #exec_status="{ record }">
+          <a-tag v-if="record.exec_status === '0'" color="#86909c">等待执行
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '1'" color="#ff7d00">执行中
+          <a-tag v-if="record.exec_status === '1'" color="#ff7d00">执行中
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '2'" color="#00b42a">转账成功
+          <a-tag v-if="record.exec_status === '2'" color="#00b42a">转账成功
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '3'" color="#f53f3f">转账失败
+          <a-tag v-if="record.exec_status === '3'" color="#f53f3f">转账失败
           </a-tag>
         </template>
         <template #optional="{ record }">
-        <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger">
+          <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger">
             <template #icon>
               <icon-delete />
             </template>
           </a-button>
         </template>
-      </a-table>
+      </VirtualScrollerTable>
     </div>
 
     <!-- 转账进度条 - 悬浮在页面顶部 -->
@@ -3396,22 +3401,17 @@ async function handleBeforeClose() {
             <span class="progress-title">转账进度</span>
             <span class="progress-count">{{ transferCompleted }} / {{ transferTotal }}</span>
           </div>
-          <a-progress 
-            :percent="transferProgress" 
-            :show-text="true" 
-            :stroke-width="6" 
-            :color="{
-              '0%': '#00b42a',
-              '100%': '#00b42a'
-            }" 
-            class="progress-bar" 
-          />
+          <a-progress :percent="transferProgress" :show-text="true" :stroke-width="6" :color="{
+            '0%': '#00b42a',
+            '100%': '#00b42a'
+          }" class="progress-bar" />
         </div>
       </div>
     </Transition>
 
     <!-- 智能重试状态显示 -->
-    <div v-if="retryInProgress" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #1890ff; flex-shrink: 0;">
+    <div v-if="retryInProgress"
+      style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #1890ff; flex-shrink: 0;">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
         <a-spin size="small" />
         <span style="font-size: 14px; color: #1d2129; font-weight: 500;">智能重试检查中...</span>
@@ -3422,7 +3422,8 @@ async function handleBeforeClose() {
     </div>
 
     <!-- 智能重试结果显示 -->
-    <div v-if="retryResults.length > 0 && !retryInProgress" style="margin-top: 10px; padding: 10px; background: #f6ffed; border-radius: 6px; border-left: 4px solid #52c41a; flex-shrink: 0;">
+    <div v-if="retryResults.length > 0 && !retryInProgress"
+      style="margin-top: 10px; padding: 10px; background: #f6ffed; border-radius: 6px; border-left: 4px solid #52c41a; flex-shrink: 0;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <span style="font-size: 14px; color: #1d2129; font-weight: 500;">智能重试检查完成</span>
         <a-button size="mini" type="text" @click="retryResults = []">
@@ -3432,8 +3433,8 @@ async function handleBeforeClose() {
         </a-button>
       </div>
       <div style="font-size: 12px; color: #52c41a; margin-bottom: 4px;">
-        跳过重试: {{ retryResults.filter(r => r.action === '跳过重试').length }} 笔 | 
-        加入重试: {{ retryResults.filter(r => r.action === '加入重试').length }} 笔
+        跳过重试: {{retryResults.filter(r => r.action === '跳过重试').length}} 笔 |
+        加入重试: {{retryResults.filter(r => r.action === '加入重试').length}} 笔
       </div>
     </div>
 
@@ -3548,8 +3549,7 @@ async function handleBeforeClose() {
           <a-form-item field="thread_count" label="线程数" style="width: 130px;" tooltip="同时执行的钱包数量">
             <a-input-number v-model="threadCount" :min="1" :max="99" :step="1" :default-value="1" mode="button" />
           </a-form-item>
-          <a-form-item field="error_retry" label="失败自动重试" style="width: 125px;"
-            tooltip="转账失败时是否自动重试">
+          <a-form-item field="error_retry" label="失败自动重试" style="width: 125px;" tooltip="转账失败时是否自动重试">
             <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0" />
           </a-form-item>
           <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
@@ -3573,8 +3573,7 @@ async function handleBeforeClose() {
               <a-radio value="3">范围随机</a-radio>
             </a-radio-group>
           </a-form-item>
-          <a-form-item v-if="form.limit_type === '2'" style="width: 150px;" field="limit_count"
-            label="Gas Limit">
+          <a-form-item v-if="form.limit_type === '2'" style="width: 150px;" field="limit_count" label="Gas Limit">
             <a-input v-model="form.limit_count" />
           </a-form-item>
           <a-form-item v-if="form.limit_type === '3'" style="width: 265px;" field="limit_count_scope"
@@ -3591,12 +3590,10 @@ async function handleBeforeClose() {
               <a-radio value="3">指定比例</a-radio>
             </a-radio-group>
           </a-form-item>
-          <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" style="width: 120px;"
-            label="Gas Price">
+          <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" style="width: 120px;" label="Gas Price">
             <a-input v-model="form.gas_price" />
           </a-form-item>
-          <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate"
-            style="width: 100px;" label="提高比例">
+          <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate" style="width: 100px;" label="提高比例">
             <a-input v-model="form.gas_price_rate">
               <template #append> %</template>
             </a-input>
@@ -3630,8 +3627,7 @@ async function handleBeforeClose() {
 
         <!-- 查询余额 -->
         <a-dropdown v-if="!balanceLoading && balanceStopStatus">
-          <a-button type="primary"
-            :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+          <a-button type="primary" :style="{ width: '130px', height: '40px', fontSize: '14px' }">
             <template #icon>
               <Icon icon="mdi:magnify" />
             </template>
@@ -3650,22 +3646,22 @@ async function handleBeforeClose() {
         </a-dropdown>
         <a-tooltip v-else content="点击可以提前停止查询">
           <div @click="stopBalanceQuery">
-            <a-button v-if="!balanceStopFlag" class="execute-btn executing" loading
+            <a-button v-if="!balanceStopFlag" class="execute-btn executing" loading 
               :style="{ width: '130px', height: '40px', fontSize: '14px' }">
               <template #icon>
                 <Icon icon="mdi:stop" />
               </template>
               查询中...
             </a-button>
-            <a-button v-if="balanceStopFlag && !balanceStopStatus" class="execute-btn stopping" loading
-              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
-              <template #icon>
-                <Icon icon="mdi:stop" />
-              </template>
-              正在停止...
-            </a-button>
           </div>
         </a-tooltip>
+        <a-button v-if="balanceStopFlag && !balanceStopStatus" class="execute-btn stopping" loading
+          :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+          <template #icon>
+            <Icon icon="mdi:stop" />
+          </template>
+          正在停止...
+        </a-button>
       </div>
 
       <!-- 右侧区域 -->
@@ -3719,7 +3715,7 @@ async function handleBeforeClose() {
   <a-modal v-model:visible="deleteItemVisible" title="删除确认">
     <div>
       确认删除私钥为【
-      {{ currentItemKey.substring(0, 15) + "......" }}
+      {{ currentItemPrivateKey.substring(0, 15) + "......" }}
       】的数据？
     </div>
     <template #footer>
@@ -3740,10 +3736,11 @@ async function handleBeforeClose() {
             <a-option value="eq">等于</a-option>
             <a-option value="lt">小于</a-option>
           </a-select>
-          <a-input v-model="filterForm.platBalanceValue" placeholder="请输入平台币余额值" style="flex: 1;" @input="debouncedFilterUpdate" />
+          <a-input v-model="filterForm.platBalanceValue" placeholder="请输入平台币余额值" style="flex: 1;"
+            @input="debouncedFilterUpdate" />
         </div>
       </a-form-item>
-      
+
       <!-- 代币余额筛选 -->
       <a-form-item label="代币余额筛选">
         <div style="display: flex; gap: 10px; align-items: center;">
@@ -3752,16 +3749,17 @@ async function handleBeforeClose() {
             <a-option value="eq">等于</a-option>
             <a-option value="lt">小于</a-option>
           </a-select>
-          <a-input v-model="filterForm.coinBalanceValue" placeholder="请输入代币余额值" style="flex: 1;" @input="debouncedFilterUpdate" />
+          <a-input v-model="filterForm.coinBalanceValue" placeholder="请输入代币余额值" style="flex: 1;"
+            @input="debouncedFilterUpdate" />
         </div>
       </a-form-item>
-      
+
       <!-- 错误信息模糊匹配 -->
       <a-form-item label="错误信息">
-          <a-input v-model="filterForm.errorMsg" placeholder="请输入要匹配的错误信息" @input="debouncedFilterUpdate" />
+        <a-input v-model="filterForm.errorMsg" placeholder="请输入要匹配的错误信息" @input="debouncedFilterUpdate" />
       </a-form-item>
     </a-form>
-    
+
     <template #footer>
       <a-button @click="advancedFilterVisible = false">取消</a-button>
       <a-button type="primary" @click="applyAdvancedFilter" style="margin-left: 10px;">应用筛选</a-button>
@@ -4165,64 +4163,137 @@ async function handleBeforeClose() {
 }
 </style>
 <style lang="less">
+.transfer .mainTable {
+  .arco-table {
+    background-color: var(--table-bg, #ffffff) !important;
+  }
+
+  .arco-table-container {
+    background-color: var(--table-bg, #ffffff) !important;
+  }
+
+  .arco-table-content {
+    background-color: var(--table-bg, #ffffff) !important;
+  }
+
+  .arco-table-header {
+    background-color: var(--table-header-bg, #f7f8fa) !important;
+  }
+
+  .arco-table-th {
+    background-color: var(--table-header-bg, #f7f8fa) !important;
+    color: var(--table-text-color, #1d2129) !important;
+    border-bottom: 1px solid var(--table-border-color, #e5e6eb) !important;
+  }
+
+  .arco-table-td {
+    background-color: var(--table-bg, #ffffff) !important;
+    color: var(--table-text-color, #1d2129) !important;
+    border-bottom: 1px solid var(--table-border-color, #e5e6eb) !important;
+  }
+
+  .arco-table-tr:hover .arco-table-td {
+    background-color: var(--table-hover-bg, #f7f8fa) !important;
+  }
+
+  .arco-table-body {
+    background-color: var(--table-bg, #ffffff) !important;
+  }
+
+  .arco-empty {
+    background-color: var(--table-bg, #ffffff) !important;
+    color: var(--table-text-color, #1d2129) !important;
+  }
+
+  .arco-table-cell {
+    color: var(--table-text-color, #1d2129) !important;
+  }
+}
+</style>
+<style lang="less">
 .transfer {
   .mainTable {
     .arco-table {
       height: 100% !important;
       display: flex !important;
       flex-direction: column !important;
+      background-color: var(--table-bg, #ffffff) !important;
     }
-    
+
     .arco-table-container {
       height: 100% !important;
       display: flex !important;
       flex-direction: column !important;
+      background-color: var(--table-bg, #ffffff) !important;
     }
-    
+
     .arco-table-content {
       flex: 1 !important;
       // height: 100% !important;
+      background-color: var(--table-bg, #ffffff) !important;
     }
-    
+
+    .arco-table-header {
+      background-color: var(--table-header-bg, #f7f8fa) !important;
+    }
+
+    .arco-table-th {
+      background-color: var(--table-header-bg, #f7f8fa) !important;
+      color: var(--table-header-text-color, #1d2129) !important;
+      border-bottom: 1px solid var(--table-border-color, #e5e6eb) !important;
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
+    }
+
+    .arco-table-td {
+      background-color: var(--table-bg, #ffffff) !important;
+      color: var(--table-text-color, #1d2129) !important;
+      border-bottom: 1px solid var(--table-border-color, #e5e6eb) !important;
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
+      vertical-align: middle !important;
+    }
+
+    .arco-table-tr:hover .arco-table-td {
+      background-color: var(--table-hover-bg, #f7f8fa) !important;
+    }
+
     .arco-table-body {
+      background-color: var(--table-bg, #ffffff) !important;
+
       .arco-table-element {
         .arco-empty {
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
+          background-color: var(--table-bg, #ffffff) !important;
+          color: var(--table-text-color, #1d2129) !important;
         }
       }
-      
+
       .arco-table-tbody {
         .arco-table-tr {
           height: 48px !important;
           min-height: 48px !important;
           max-height: 48px !important;
+          background-color: var(--table-bg, #ffffff) !important;
         }
       }
     }
+
     .arco-scrollbar-track {
       display: none;
     }
+
     // 固定表格行高，避免数据少时行被拉伸
     .arco-table-tr {
       height: 48px !important;
       min-height: 48px !important;
       max-height: 48px !important;
-    }
-    
-    .arco-table-td {
-      height: 48px !important;
-      min-height: 48px !important;
-      max-height: 48px !important;
-      vertical-align: middle !important;
-    }
-    
-    .arco-table-th {
-      height: 48px !important;
-      min-height: 48px !important;
-      max-height: 48px !important;
+      background-color: var(--table-bg, #ffffff) !important;
     }
   }
 }

@@ -11,6 +11,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import ChainIcon from '@/components/ChainIcon.vue';
 import TitleBar from '@/components/TitleBar.vue'
 import TableSkeleton from '@/components/TableSkeleton.vue'
+import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import { debounce } from '@/utils/debounce.js'
 
 // 懒加载非关键组件
@@ -24,63 +25,63 @@ const columns = [
   {
     title: '序号',
     align: 'center',
-    width: '60',
+    width: 55,
     slotName: 'index'
   },
   {
     title: '钱包地址',
     align: 'center',
-    width: '390',
+    width: 390,
     dataIndex: 'address',
-    ellipsis: "true",
-    tooltip: 'true'
+    ellipsis: true,
+    tooltip: true
   },
   {
     title: 'Nonce',
     align: 'center',
-    width: '75',
+    width: 65,
     dataIndex: 'nonce',
-    ellipsis: "true",
-    tooltip: 'true'
+    ellipsis: true,
+    tooltip: true
   },
   {
     title: '平台币余额',
     align: 'center',
     dataIndex: 'plat_balance',
-    width: '105',
-    ellipsis: "true",
-    tooltip: 'true'
+    width: 95,
+    ellipsis: true,
+    tooltip: true
   },
   {
     title: '代币余额',
     align: 'center',
     dataIndex: 'coin_balance',
-    width: '90',
-    ellipsis: "true",
-    tooltip: 'true'
+    width: 85,
+    ellipsis: true,
+    tooltip: true
   },
   {
     title: '状态',
     align: 'center',
     slotName: 'exec_status',
-    width: '100',
-    ellipsis: "true",
-    tooltip: 'true'
+    width: 90,
+    ellipsis: true,
+    tooltip: true
   },
   {
     title: '错误信息',
     align: 'center',
     dataIndex: 'error_msg',
-    ellipsis: "true",
-    tooltip: 'true'
+    ellipsis: true,
+    tooltip: true,
   },
   {
     title: '操作',
     align: 'center',
     slotName: 'optional',
-    width: '60',
-    ellipsis: "true",
-    tooltip: 'true'
+    width: 55,
+    ellipsis: true,
+    tooltip: true
   }
 ]
 const tableBool = ref(true)
@@ -1138,20 +1139,26 @@ async function handleBeforeClose() {
       <TableSkeleton v-if="balanceLoading && data.length === 0" :rows="8" />
       
       <!-- 正常表格 -->
-      <a-table v-else-if="tableBool" row-key="address" :columns="columns" :column-resizable="true" :data="data"
-        :row-selection="rowSelection" :scrollbar="scrollbar" :scroll="{ y: '100%' }" @row-click="rowClick"
-        v-model:selectedKeys="selectedKeys" :pagination="pagination" style="height: 100%;">
-        <template #index="{ rowIndex }">
-          {{ rowIndex + 1 }}
-        </template>
-        <template #exec_status="{ rowIndex }">
-          <a-tag v-if="data[rowIndex].exec_status === '0'" color="#86909c">等待查询
+      <VirtualScrollerTable 
+        v-else-if="tableBool" 
+        :columns="columns" 
+        :data="filteredData"
+        :row-selection="rowSelection" 
+        :selected-keys="selectedKeys"
+        @row-click="rowClick"
+        @update:selected-keys="selectedKeys = $event"
+        row-key="address"
+        height="100%"
+      >
+
+        <template #exec_status="{ record }">
+          <a-tag v-if="record.exec_status === '0'" color="#86909c">等待查询
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '1'" color="#ff7d00">查询中
+          <a-tag v-if="record.exec_status === '1'" color="#ff7d00">查询中
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '2'" color="#00b42a">查询成功
+          <a-tag v-if="record.exec_status === '2'" color="#00b42a">查询成功
           </a-tag>
-          <a-tag v-if="data[rowIndex].exec_status === '3'" color="#f53f3f">查询失败
+          <a-tag v-if="record.exec_status === '3'" color="#f53f3f">查询失败
           </a-tag>
         </template>
         <template #optional="{ record }">
@@ -1161,7 +1168,7 @@ async function handleBeforeClose() {
             </template>
           </a-button>
         </template>
-      </a-table>
+      </VirtualScrollerTable>
     </div>
 
     <!-- 余额查询进度条 - 悬浮在页面顶部 -->
@@ -1515,16 +1522,19 @@ async function handleBeforeClose() {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background-color: var(--table-bg, #ffffff);
 }
 
 .mainTable .arco-table-content {
   height: 100%;
   flex: 1;
+  background-color: var(--table-bg, #ffffff);
 }
 
 .mainTable .arco-table-body {
   height: 100%;
   flex: 1;
+  background-color: var(--table-bg, #ffffff);
 }
 
 .subTitle {
@@ -1646,22 +1656,46 @@ async function handleBeforeClose() {
       height: 100% !important;
       display: flex !important;
       flex-direction: column !important;
+      background-color: var(--table-bg, #ffffff) !important;
     }
     
     .arco-table-container {
       height: 100% !important;
       display: flex !important;
       flex-direction: column !important;
+      background-color: var(--table-bg, #ffffff) !important;
     }
     
     .arco-table-content {
       flex: 1 !important;
       height: 100% !important;
+      background-color: var(--table-bg, #ffffff) !important;
+    }
+    
+    .arco-table-header {
+      background-color: var(--table-header-bg, #f7f8fa) !important;
+    }
+    
+    .arco-table-th {
+      background-color: var(--table-header-bg, #f7f8fa) !important;
+      color: var(--table-header-text-color, #1d2129) !important;
+      border-bottom: 1px solid var(--table-border-color, #e5e6eb) !important;
+    }
+    
+    .arco-table-td {
+      background-color: var(--table-bg, #ffffff) !important;
+      color: var(--table-text-color, #1d2129) !important;
+      border-bottom: 1px solid var(--table-border-color, #e5e6eb) !important;
+    }
+    
+    .arco-table-tr:hover .arco-table-td {
+      background-color: var(--table-hover-bg, #f7f8fa) !important;
     }
     
     .arco-table-body {
       min-height: 400px;
       overflow-y: auto !important;
+      background-color: var(--table-bg, #ffffff) !important;
 
       .arco-table-element {
         .arco-empty {
@@ -1670,6 +1704,8 @@ async function handleBeforeClose() {
           flex-direction: column;
           align-items: center;
           justify-content: center;
+          background-color: var(--table-bg, #ffffff) !important;
+          color: var(--table-text-color, #1d2129) !important;
         }
       }
       
@@ -1678,6 +1714,7 @@ async function handleBeforeClose() {
           height: 48px !important;
           min-height: 48px !important;
           max-height: 48px !important;
+          background-color: var(--table-bg, #ffffff) !important;
         }
       }
     }
@@ -1687,6 +1724,7 @@ async function handleBeforeClose() {
       height: 48px !important;
       min-height: 48px !important;
       max-height: 48px !important;
+      background-color: var(--table-bg, #ffffff) !important;
     }
     
     .arco-table-td {

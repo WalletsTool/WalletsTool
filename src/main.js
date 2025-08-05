@@ -1,6 +1,10 @@
 import {createApp} from "vue";
 import App from "./App.vue";
 import {router} from "./router";
+// PrimeVue imports
+import PrimeVue from 'primevue/config';
+import VirtualScroller from 'primevue/virtualscroller';
+import 'primeicons/primeicons.css';
 // 按需导入Arco Design组件
 import {
   Button,
@@ -115,6 +119,11 @@ app.use(Textarea)
 app.use(Dropdown)
 app.use(Doption)
 app.use(InputGroup)
+
+console.log('[DEBUG] 开始注册PrimeVue')
+app.use(PrimeVue);
+app.component('VirtualScroller', VirtualScroller)
+console.log('[DEBUG] PrimeVue注册完成')
 
 console.log('[DEBUG] 开始注册路由和状态管理')
 app.use(router)

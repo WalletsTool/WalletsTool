@@ -1319,11 +1319,14 @@ function UploadFile() {
   // 开启全页面loading
   pageLoading.value = true;
   tableLoading.value = true;
-  let file = uploadInputRef.value.files[0];
-  let reader = new FileReader();
-  //提取excel中文件内容
-  reader.readAsArrayBuffer(file);
-  data.value = [];
+  
+  // 添加500毫秒延迟，确保loading窗口显示
+  setTimeout(() => {
+    let file = uploadInputRef.value.files[0];
+    let reader = new FileReader();
+    //提取excel中文件内容
+    reader.readAsArrayBuffer(file);
+    data.value = [];
   reader.onload = function () {
     const buffer = reader.result;
     const bytes = new Uint8Array(buffer);
@@ -1453,15 +1456,16 @@ function UploadFile() {
       duration: 5000
     });
   };
-  reader.onloadend = function () {
-    tableLoading.value = false;
-    // 关闭全页面loading
-    pageLoading.value = false;
-    // 文件读取完成
-  };
-  if (uploadInputRef.value) {
-    uploadInputRef.value.value = '';
-  }
+    reader.onloadend = function () {
+      tableLoading.value = false;
+      // 关闭全页面loading
+      pageLoading.value = false;
+      // 文件读取完成
+    };
+    if (uploadInputRef.value) {
+      uploadInputRef.value.value = '';
+    }
+  }, 100);
 }
 
 const uploadInputRef = ref(null);

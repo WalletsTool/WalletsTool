@@ -149,4 +149,5 @@ body.fonts-loaded {
 .arco-notification {
   max-width: 300px !important;
   width: 300px !important;
+  top: 20px !important; /* 向下移动20px避免遮挡窗口栏 */
 }

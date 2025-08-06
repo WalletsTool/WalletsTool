@@ -1311,6 +1311,11 @@ function exportInvalidData(invalidData) {
 }
 
 function UploadFile() {
+  // 检查是否有文件被选择
+  if (!uploadInputRef.value.files || !uploadInputRef.value.files[0]) {
+    return; // 没有文件被选择，直接返回
+  }
+  
   // 开启全页面loading
   pageLoading.value = true;
   tableLoading.value = true;

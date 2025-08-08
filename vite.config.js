@@ -54,6 +54,8 @@ export default defineConfig({
                 rollupNodePolyFill()
             ],
             output: {
+                // 合并小chunk以减少HTTP请求数量
+                experimentalMinChunkSize: 20000,
                 // 重新启用手动分块，使用更安全的分块策略
                 manualChunks: (id) => {
                     // 第三方库分块
@@ -118,6 +120,8 @@ export default defineConfig({
         sourcemap: !!process.env.TAURI_DEBUG,
         // 设置chunk大小警告限制
         chunkSizeWarningLimit: 1000,
+        // 小于4KB的资源将被内联为base64
+        assetsInlineLimit: 4096,
         // 启用CSS代码分割
         cssCodeSplit: true
     }

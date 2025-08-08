@@ -140,6 +140,7 @@ async fn main() {
             // 创建托盘图标
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
                         "show_main" => {
@@ -205,10 +206,7 @@ async fn main() {
                             button_state: tauri::tray::MouseButtonState::Up,
                             ..  
                         } => {
-                            // 右键点击显示菜单
-                            if let Err(e) = tray.set_menu(Some(menu.clone())) {
-                                eprintln!("设置托盘菜单失败: {}", e);
-                            }
+                            // 右键点击事件（菜单已在创建时设置）
                         }
                         _ => {}
                     }

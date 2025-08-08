@@ -1,4 +1,4 @@
-import {defineConfig} from "vite";
+import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import * as path from "path";
 import VueSetupExtend from 'vite-plugin-vue-setup-extend'
@@ -112,8 +112,67 @@ export default defineConfig({
         minify: !process.env.TAURI_DEBUG ? "terser" : false,
         terserOptions: {
             compress: {
+                // 移除console和debugger语句
                 drop_console: true,
-                drop_debugger: true
+                drop_debugger: true,
+                // 死代码消除
+                dead_code: true,
+                // 移除未使用的变量和函数
+                unused: true,
+                // 函数内联优化
+                inline: true,
+                // 条件表达式优化
+                conditionals: true,
+                // 比较运算符优化
+                comparisons: true,
+                // 序列优化
+                sequences: true,
+                // 属性访问优化
+                properties: true,
+                // 循环优化
+                loops: true,
+                // 合并变量声明
+                join_vars: true,
+                // 移除无用代码
+                side_effects: false,
+                // 纯函数调用优化
+                pure_funcs: ['console.log', 'console.info', 'console.debug', 'console.warn'],
+                // 移除纯函数调用
+                pure_getters: true,
+                // 常量折叠
+                evaluate: true,
+                // 布尔值优化
+                booleans: true,
+                // 类型推断
+                typeofs: true,
+                // if语句优化
+                if_return: true,
+                // 表达式优化
+                reduce_vars: true,
+                // 移除重复代码
+                collapse_vars: true
+            },
+            mangle: {
+                // 启用变量名混淆
+                toplevel: true,
+                // 保留必要的函数名
+                reserved: ['$', 'exports', 'require'],
+                // 混淆属性名
+                properties: {
+                    regex: /^_/
+                }
+            },
+            format: {
+                // 移除注释
+                comments: false,
+                // 压缩空白字符
+                beautify: false,
+                // 移除无用分号
+                semicolons: false,
+                // 保留引号风格
+                quote_style: 1,
+                // 压缩换行符
+                max_line_len: false
             }
         },
         // produce sourcemaps for debug builds

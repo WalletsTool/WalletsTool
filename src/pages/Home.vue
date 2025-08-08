@@ -106,7 +106,7 @@ onBeforeUnmount(() => {
 
 // 功能菜单列表
 const funcList = [
-   {
+  {
     title: "多对多转账",
     desc: "多对多转账功能，交易行为模拟正常用户操作，降低风控风险",
     picture: "avatar/optimized/transfer.webp",
@@ -118,7 +118,7 @@ const funcList = [
     picture: "avatar/optimized/balance.webp",
     pageName: "balance"
   },
-   {
+  {
     title: "极速分发",
     desc: "专注单钱包分发，追求极致的分发速度与极低的gas消耗",
     isBuilding: true,
@@ -813,12 +813,19 @@ async function handleMainWindowCloseRequest() {
           </div>
         </div>
       </a-tab-pane>
-       <!-- Ton 生态 -->
+      <!-- Ton 生态 -->
       <a-tab-pane key="ton" disabled>
         <template #title>
           <a-tooltip content="🚧规划中...">
             <span style="display: flex; align-items: center; gap: 4px;">
-              <svg width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg" class="ToncoinWidget__logo"><path d="M8 16C12.4183 16 16 12.4183 16 8C16 3.58172 12.4183 0 8 0C3.58172 0 0 3.58172 0 8C0 12.4183 3.58172 16 8 16Z" fill="#0098EA"></path><path d="M10.7315 4.46505H5.26818C4.26366 4.46505 3.62697 5.54863 4.13234 6.42461L7.50412 12.2688C7.72414 12.6504 8.27555 12.6504 8.49557 12.2688L11.8681 6.42461C12.3727 5.54863 11.736 4.46505 10.7315 4.46505ZM7.50137 10.5162L6.76706 9.09505L4.99523 5.92611C4.87834 5.72329 5.02271 5.46337 5.26761 5.46337H7.50137V10.5169L7.50137 10.5162ZM11.0031 5.92611L9.23183 9.09505L8.49762 10.5162V5.46337H10.7314C10.977 5.46337 11.1214 5.72329 11.0031 5.92611Z" fill="white"></path></svg>
+              <svg width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg" class="ToncoinWidget__logo">
+                <path
+                  d="M8 16C12.4183 16 16 12.4183 16 8C16 3.58172 12.4183 0 8 0C3.58172 0 0 3.58172 0 8C0 12.4183 3.58172 16 8 16Z"
+                  fill="#0098EA"></path>
+                <path
+                  d="M10.7315 4.46505H5.26818C4.26366 4.46505 3.62697 5.54863 4.13234 6.42461L7.50412 12.2688C7.72414 12.6504 8.27555 12.6504 8.49557 12.2688L11.8681 6.42461C12.3727 5.54863 11.736 4.46505 10.7315 4.46505ZM7.50137 10.5162L6.76706 9.09505L4.99523 5.92611C4.87834 5.72329 5.02271 5.46337 5.26761 5.46337H7.50137V10.5169L7.50137 10.5162ZM11.0031 5.92611L9.23183 9.09505L8.49762 10.5162V5.46337H10.7314C10.977 5.46337 11.1214 5.72329 11.0031 5.92611Z"
+                  fill="white"></path>
+              </svg>
               Ton
             </span>
           </a-tooltip>
@@ -1101,7 +1108,7 @@ async function handleMainWindowCloseRequest() {
   position: relative;
   z-index: 1;
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 10px;
   animation: slideInDown 0.8s ease-out;
 }
 
@@ -1135,7 +1142,7 @@ async function handleMainWindowCloseRequest() {
   font-size: 16px;
   color: rgba(255, 255, 255, 0.9);
   font-weight: 400;
-  margin-top: 8px;
+  margin-top: 5px;
 }
 
 /* 功能网格 */
@@ -1706,8 +1713,10 @@ async function handleMainWindowCloseRequest() {
   overflow-y: auto;
   min-height: 0;
   /* 隐藏滚动条但保持滚动功能 */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE/Edge */
 }
 
 /* 隐藏 Webkit 浏览器的滚动条 */

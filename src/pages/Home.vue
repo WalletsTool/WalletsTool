@@ -108,13 +108,13 @@ onBeforeUnmount(() => {
 const funcList = [
    {
     title: "多对多转账",
-    desc: "多对多转账，模仿正常代币发送模式",
+    desc: "多对多转账功能，支持一次性向多个地址批量转账代币，交易行为模拟正常用户操作，降低风控风险",
     picture: "avatar/optimized/transfer.webp",
     pageName: "transfer"
   },
   {
     title: "余额查询",
-    desc: "支持多条链上的余额查询",
+    desc: "支持多条链上的余额查询，包括代币余额和原生代币余额，支持批量查询多个地址，支持导出Excel报表",
     picture: "avatar/optimized/balance.webp",
     pageName: "balance"
   },
@@ -128,7 +128,7 @@ const funcList = [
   {
     title: "链上地址监控",
     isBuilding: true,
-    desc: "支持多条链上的地址监测（建设中）",
+    desc: "支持多条链上的地址监控，实时追踪交易、代币转移、合约交互等活动，支持自定义告警规则和多渠道通知（建设中）",
     picture: "avatar/optimized/monitor.webp",
     pageName: "monitor"
   },

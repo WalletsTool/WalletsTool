@@ -1126,7 +1126,7 @@ async function handleMainWindowCloseRequest() {
   transform: translateX(-50%);
   width: 60px;
   height: 4px;
-  background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
+  background: linear-gradient(90deg, #586cc7, #764ba2, #f093fb);
   border-radius: 2px;
   animation: expandWidth 0.8s ease-out 0.3s both;
 }
@@ -1173,7 +1173,7 @@ async function handleMainWindowCloseRequest() {
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
+  background: linear-gradient(90deg, #586cc7, #764ba2, #f093fb);
   transform: scaleX(0);
   transition: transform 0.3s ease;
 }
@@ -1226,14 +1226,14 @@ async function handleMainWindowCloseRequest() {
 /* 卡片内容 */
 .card-content {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
 }
 
 .card-icon {
-  width: 60px;
-  height: 60px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  width: 50px;
+  height: 50px;
+  background: linear-gradient(135deg, #586cc7 0%, #764ba2 100%);
   border-radius: 12px;
   display: flex;
   align-items: center;
@@ -1247,8 +1247,8 @@ async function handleMainWindowCloseRequest() {
 }
 
 .card-icon img {
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
   filter: brightness(0) invert(1);
 }
@@ -1258,7 +1258,7 @@ async function handleMainWindowCloseRequest() {
 }
 
 .card-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
   margin: 0 0 8px 0;
@@ -1270,7 +1270,7 @@ async function handleMainWindowCloseRequest() {
 }
 
 .card-desc {
-  font-size: 14px;
+  font-size: 13px;
   color: rgba(255, 255, 255, 0.7);
   line-height: 1.5;
   margin: 0;
@@ -1288,9 +1288,9 @@ async function handleMainWindowCloseRequest() {
 }
 
 .card-arrow {
-  width: 24px;
-  height: 24px;
-  color: #667eea;
+  width: 20px;
+  height: 20px;
+  color: #586cc7;
   transition: transform 0.3s ease;
 }
 
@@ -1587,11 +1587,11 @@ async function handleMainWindowCloseRequest() {
 }
 
 .light-theme .card-title {
-  color: #2c3e50 !important;
+  color: #586cc7 !important;
 }
 
 .light-theme .card-desc {
-  color: rgba(0, 0, 0, 0.6) !important;
+  color: rgb(115 116 119) !important;
 }
 
 .light-theme .func-card--disabled .card-title {
@@ -1603,7 +1603,7 @@ async function handleMainWindowCloseRequest() {
 }
 
 .light-theme .card-arrow {
-  color: #667eea !important;
+  color: #586cc7 !important;
 }
 
 .light-theme .func-card--disabled .card-arrow {
@@ -1649,7 +1649,7 @@ async function handleMainWindowCloseRequest() {
   background: rgba(255, 255, 255, 0.03);
   border-radius: 12px;
   padding: 4px;
-  margin-bottom: 16px;
+  margin-bottom: 5px;
 }
 
 .custom-tabs :deep(.arco-tabs-tab) {
@@ -1743,7 +1743,7 @@ async function handleMainWindowCloseRequest() {
 
 .light-theme .custom-tabs :deep(.arco-tabs-tab-active) {
   background: linear-gradient(135deg, rgba(103, 126, 234, 0.15), rgba(118, 75, 162, 0.15)) !important;
-  color: rgba(0, 0, 0, 1) !important;
+  color: #586cc7 !important;
   box-shadow: 0 4px 20px rgba(103, 126, 234, 0.2) !important;
 }
 
@@ -1769,7 +1769,7 @@ async function handleMainWindowCloseRequest() {
 
   .custom-tabs :deep(.arco-tabs-tab) {
     padding: 5px 15px;
-    font-size: 14px;
+    font-size: 15px;
   }
 }
 

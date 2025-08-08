@@ -106,39 +106,32 @@ onBeforeUnmount(() => {
 
 // 功能菜单列表
 const funcList = [
-  {
+   {
     title: "多对多转账",
-    desc: "多对多转账，支持多条链上的钱包转账（持续更新中）",
-    picture: "avatar/transfer.png",
+    desc: "多对多转账，模仿正常代币发送模式",
+    picture: "avatar/optimized/transfer.webp",
     pageName: "transfer"
   },
   {
     title: "余额查询",
     desc: "支持多条链上的余额查询",
-    picture: "avatar/balance.png",
+    picture: "avatar/optimized/balance.webp",
     pageName: "balance"
   },
    {
     title: "极速分发",
-    desc: "专注单钱包分发，支持多条链上的钱包转账（持续更新中）",
+    desc: "专注单钱包分发，追求极致的分发速度与极低的gas消耗",
     isBuilding: true,
-    picture: "avatar/transfer.png",
+    picture: "avatar/optimized/distribution.webp",
     pageName: "distribution"
   },
   {
     title: "链上地址监控",
     isBuilding: true,
     desc: "支持多条链上的地址监测（建设中）",
-    picture: "avatar/monitor.png",
+    picture: "avatar/optimized/monitor.webp",
     pageName: "monitor"
   },
-  // {
-  //   title: "Uniswap批量交易",
-  //   isBuilding: true,
-  //   desc: "支持 Uniswap  V3 交易（建设中）",
-  //   picture: "avatar/uniswap.png",
-  //   pageName: "uniswap"
-  // }
 ]
 
 // 跳转到批量转账
@@ -736,9 +729,9 @@ async function handleMainWindowCloseRequest() {
         </div>
       </a-tab-pane>
       <!-- Solana 生态 -->
-      <a-tab-pane key="solana">
+      <a-tab-pane key="solana" disabled>
         <template #title>
-          <a-tooltip content="🚧施工中...">
+          <a-tooltip content="🚧施工中...Q3见">
             <span style="display: flex; align-items: center; gap: 4px;">
               <svg width="16" height="16" viewBox="0 0 397.7 311.7" xmlns="http://www.w3.org/2000/svg">
                 <linearGradient id="a" gradientUnits="userSpaceOnUse" x1="360.879" y1="351.455" x2="141.213"
@@ -786,7 +779,7 @@ async function handleMainWindowCloseRequest() {
         </div>
       </a-tab-pane>
       <!-- Cosmos 生态 -->
-      <a-tab-pane key="cosmos">
+      <a-tab-pane key="cosmos" disabled>
         <template #title>
           <a-tooltip content="🚧规划中...">
             <span style="display: flex; align-items: center; gap: 4px;">
@@ -814,14 +807,14 @@ async function handleMainWindowCloseRequest() {
               <div class="progress-bar">
                 <div class="progress-fill"></div>
               </div>
-              <span class="progress-text">开发进度 30%</span>
+              <span class="progress-text">开发进度 0%</span>
             </div>
-            <p class="coming-soon-eta">预计上线时间：2025年Q3</p>
+            <p class="coming-soon-eta">预计上线时间：2025年Q4</p>
           </div>
         </div>
       </a-tab-pane>
        <!-- Ton 生态 -->
-      <a-tab-pane key="ton">
+      <a-tab-pane key="ton" disabled>
         <template #title>
           <a-tooltip content="🚧规划中...">
             <span style="display: flex; align-items: center; gap: 4px;">
@@ -839,9 +832,9 @@ async function handleMainWindowCloseRequest() {
               <div class="progress-bar">
                 <div class="progress-fill"></div>
               </div>
-              <span class="progress-text">开发进度 30%</span>
+              <span class="progress-text">开发进度 0%</span>
             </div>
-            <p class="coming-soon-eta">预计上线时间：2025年Q3</p>
+            <p class="coming-soon-eta">预计上线时间：2025年Q4</p>
           </div>
         </div>
       </a-tab-pane>

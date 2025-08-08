@@ -27,7 +27,14 @@
 
     <!-- 虚拟滚动内容 -->
     <div class="table-body" :style="{ height: `calc(${height} - 40px)` }">
+      <!-- 空数据提示 -->
+      <div v-if="!loading && data.length === 0" class="empty-data">
+        <div class="empty-icon">📋</div>
+        <div class="empty-text">暂无数据</div>
+      </div>
+      
       <VirtualScroller
+        v-else
         :items="data"
         :itemSize="35"
         class="virtual-scroller"
@@ -89,11 +96,7 @@
       <div class="loading-text">加载中...</div>
     </div>
 
-    <!-- 空数据提示 -->
-    <div v-if="!loading && data.length === 0" class="empty-data">
-      <div class="empty-icon">📋</div>
-      <div class="empty-text">暂无数据</div>
-    </div>
+
   </div>
 </template>
 

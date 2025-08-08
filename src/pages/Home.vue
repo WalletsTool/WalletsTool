@@ -183,9 +183,9 @@ function goPage(pageName) {
 
     const webview = new WebviewWindow(windowLabel, {
       url: windowUrl,
-      width: 1275,
-      height: 850,
-      title: `▶ 窗口 ${windowCount.value[pageName]} 🧡 ${title}`,
+      width: 1350,
+      height: 900,
+      title: `${title}-${windowCount.value[pageName]}`,
       resizable: true,
       center: true,
       decorations: false,  // 移除Windows原生窗口边框
@@ -630,7 +630,7 @@ async function handleMainWindowCloseRequest() {
     <div class="custom-titlebar">
       <div class="titlebar-content">
         <div class="titlebar-left" data-tauri-drag-region>
-          <div class="app-icon"></div>
+          <img src="/app-icon.png" alt="App Logo" class="app-icon" />
           <!-- <span class="app-title">钱包管理工具</span> -->
         </div>
         <div class="titlebar-drag-area" data-tauri-drag-region></div>
@@ -685,7 +685,7 @@ async function handleMainWindowCloseRequest() {
         <span class="title-text">功能列表</span>
         <div class="title-underline"></div>
       </div>
-      <div class="subtitle">探索强大的Web3工具集合</div>
+      <div class="subtitle">探索最强大的web3转账工具</div>
     </div>
 
     <!-- 加载状态显示 -->
@@ -807,16 +807,11 @@ async function handleMainWindowCloseRequest() {
 }
 
 .app-icon {
-  width: 20px;
-  height: 20px;
-  background-image: url('/src-tauri/icons/32x32.png');
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  border-radius: 4px;
+  object-fit: contain;
 }
 
 .app-title {

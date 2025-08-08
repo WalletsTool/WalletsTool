@@ -24,7 +24,7 @@ const TokenManagement = defineAsyncComponent(() => import('../components/TokenMa
 const WalletImportModal = defineAsyncComponent(() => import('../components/WalletImportModal.vue'))
 const router = useRouter();
 // 窗口标题
-const windowTitle = ref('Wallet Manager - 批量转账');
+const windowTitle = ref('批量转账');
 // table列名
 const columns = [
   {
@@ -393,8 +393,8 @@ function openMultipleWindow() {
       const webview = new WebviewWindow(windowLabel, {
         url: windowUrl,
         title: `（多开窗口）批量转账 ${windowId}`,
-        width: 1275,
-        height: 850,
+        width: 1350,
+        height: 900,
         // center: true,
         resizable: true,
         decorations: false,  // 移除Windows原生窗口边框
@@ -1119,8 +1119,8 @@ onMounted(async () => {
     }
   } else {
     // 浏览器环境下设置默认标题和ID
-    windowTitle.value = 'Wallet Manager - 批量转账';
-    currentWindowId.value = 'browser_window';
+    windowTitle.value = '批量转账';
+    currentWindowId.value = 'browser_transfer_window';
   }
 
   // 配置应用已经在onBeforeMount中完成，这里不再需要重复应用
@@ -1702,14 +1702,25 @@ function clearData() {
     Notification.warning("请停止或等待查询完成后再清空列表！");
     return;
   }
-  data.value = [];
-  // 重置文件输入的value，确保再次选择相同文件时能触发change事件
-  if (uploadInputRef.value) {
-    uploadInputRef.value.value = '';
+  if(data.value.length === 0){
+    Notification.warning('当前列表无数据！');
+    return;
   }
-  // 重置页面loading状态
-  pageLoading.value = false;
-  Notification.success("清空列表成功！");
+  
+  Modal.confirm({
+    title: '确认清空',
+    content: '确定要清空所有列表数据吗？此操作不可撤销。',
+    onOk: () => {
+      data.value = [];
+      // 重置文件输入的value，确保再次选择相同文件时能触发change事件
+      if (uploadInputRef.value) {
+        uploadInputRef.value.value = '';
+      }
+      // 重置页面loading状态
+      pageLoading.value = false;
+      Notification.success("清空列表成功！");
+    }
+  });
 }
 
 // 导入事件触发
@@ -3323,19 +3334,14 @@ async function handleBeforeClose() {
         </template>
         钱包录入
       </a-button>
-      <a-divider direction="vertical" />
-      <a-button type="outline" status="normal" @click="downloadFile">
-        <template #icon>
-          <Icon icon="mdi:download" />
-        </template>
-        下载模板
-      </a-button>
-      <a-button type="primary" status="success" style="margin-left: 10px" @click="upload">
-        <template #icon>
-          <Icon icon="mdi:upload" />
-        </template>
-        导入文件
-      </a-button>
+      <a-tooltip content="导入按照“模板文件”填写的文件" position="bottom">
+        <a-button type="primary" status="success" style="margin-left: 10px" @click="upload">
+          <template #icon>
+            <Icon icon="mdi:upload" />
+          </template>
+          导入文件（推荐）
+        </a-button>
+      </a-tooltip>
       <input type="file" ref="uploadInputRef" @change="UploadFile" id="btn_file" style="display: none" />
       <a-divider direction="vertical" />
       <!-- 选择操作区按钮 -->
@@ -3351,18 +3357,18 @@ async function handleBeforeClose() {
         </template>
         选中失败
       </a-button>
-      <!-- 高级筛选按钮 -->
-      <a-button type="outline" status="normal" style="margin-left: 10px" @click="showAdvancedFilter">
-        <template #icon>
-          <Icon icon="mdi:filter" />
-        </template>
-        高级筛选
-      </a-button>
       <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">
         <template #icon>
           <Icon icon="mdi:swap-horizontal" />
         </template>
         反选
+      </a-button>
+       <!-- 高级筛选按钮 -->
+      <a-button type="primary" status="normal" style="margin-left: 10px" @click="showAdvancedFilter">
+        <template #icon>
+          <Icon icon="mdi:filter" />
+        </template>
+        高级筛选
       </a-button>
       <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">
         <template #icon>
@@ -3370,17 +3376,17 @@ async function handleBeforeClose() {
         </template>
         删除选中
       </a-button>
-      <a-button v-show="false" class="goHome" type="outline" status="success" @click="goHome">
-        <template #icon>
-          <Icon icon="mdi:chevron-double-left" />
-        </template>
-        返回首页
-      </a-button>
-      <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearData">
+      <a-button type="primary" status="danger" style="float: right; margin-right: 10px" @click="clearData">
         <template #icon>
           <Icon icon="mdi:delete" />
         </template>
         清空列表
+      </a-button>
+       <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="downloadFile">
+        <template #icon>
+          <Icon icon="mdi:download" />
+        </template>
+        下载模板
       </a-button>
     </div>
     <!-- 操作账号表格 -->

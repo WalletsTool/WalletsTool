@@ -5,7 +5,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeMount, onMounted, rea
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ethers } from "ethers";
-import { Notification } from "@arco-design/web-vue";
+import { Notification, Modal } from "@arco-design/web-vue";
 import { utils as xlUtils, writeFile } from "xlsx";
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import ChainIcon from '@/components/ChainIcon.vue';
@@ -106,7 +106,7 @@ const showProgress = ref(false); // 是否显示进度条
 const pagination = ref(false);
 const scrollbar = ref(true);
 // 窗口标题
-const windowTitle = ref('Wallet Manager - 余额查询');
+const windowTitle = ref('余额查询');
 // chain默认值
 const chainValue = ref('');
 // 当前chain
@@ -281,6 +281,13 @@ onMounted(async () => {
   if (isTauri) {
     try {
       const currentWindow = getCurrentWindow();
+      
+      // 获取窗口标题
+      const title = await currentWindow.title();
+      if (title) {
+        windowTitle.value = title;
+      }
+      
       // 获取当前窗口ID
       currentWindowId.value = currentWindow.label;
       console.log('当前窗口ID:', currentWindowId.value);
@@ -301,7 +308,8 @@ onMounted(async () => {
       console.error('Error getting window info:', error);
     }
   } else {
-    // 浏览器环境下设置默认ID
+    // 浏览器环境下设置默认标题和ID
+    windowTitle.value = '余额查询';
     currentWindowId.value = 'browser_window';
   }
 
@@ -508,8 +516,18 @@ function clearData() {
     Notification.warning('请停止或等待查询完成后再清空列表！');
     return;
   }
-  data.value = []
-  Notification.success('清空列表成功！');
+   if(data.value.length === 0){
+    Notification.warning('当前列表无数据！');
+    return;
+  }
+  Modal.confirm({
+    title: '确认清空',
+    content: '确定要清空所有列表数据吗？此操作不可撤销。',
+    onOk: () => {
+      data.value = [];
+      Notification.success('清空列表成功！');
+    }
+  });
 }
 
 // 导入事件触发
@@ -1126,7 +1144,7 @@ async function handleBeforeClose() {
         </template>
         导出选中
       </a-button>
-      <a-button type="outline" status="normal" style="float: right;margin-right: 10px" @click="clearData">
+      <a-button type="primary" status="danger" style="float: right;margin-right: 10px" @click="clearData">
         <template #icon>
           <Icon icon="mdi:delete" />
         </template>

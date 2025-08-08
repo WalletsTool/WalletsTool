@@ -29,7 +29,9 @@
     <div class="table-body" :style="{ height: `calc(${height} - 40px)` }">
       <!-- 空数据提示 -->
       <div v-if="!loading && data.length === 0" class="empty-data">
-        <div class="empty-icon">📋</div>
+        <div class="empty-icon">
+          <Icon icon="icon-park-outline:table-file" :size="32" />
+        </div>
         <div class="empty-text">暂无数据</div>
       </div>
       
@@ -103,6 +105,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import VirtualScroller from 'primevue/virtualscroller'
+import { Icon } from '@iconify/vue'
 
 // Props
 const props = defineProps({
@@ -414,7 +417,7 @@ const getTooltipText = (column, item) => {
   justify-content: center;
   align-items: center;
   height: 200px;
-  color: #86909c;
+  color: #c3c3c3;
 }
 
 .empty-icon {

@@ -129,4 +129,18 @@ app.use(pinia)
 preloadResources();
 optimizeFonts();
 
+// 禁用右键菜单
+document.addEventListener('contextmenu', function(e) {
+  e.preventDefault();
+  return false;
+});
+
+// 禁用F12开发者工具（可选）
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I')) {
+    e.preventDefault();
+    return false;
+  }
+});
+
 app.mount("#app");

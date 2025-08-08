@@ -15,7 +15,7 @@
         "label": "wallet_manager",
         "title": "钱包管理工具",
         "width": 350,
-        "height": 800,
+        "height": 720,
         "resizable": false,
         "fullscreen": false,
         "decorations": false,

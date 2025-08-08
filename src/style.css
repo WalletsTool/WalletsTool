@@ -128,6 +128,20 @@ html,
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  user-select: none; /* 禁止文本选中 */
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* IE10+/Edge */
+}
+
+/* 禁用右键菜单 */
+body {
+  -webkit-touch-callout: none; /* iOS Safari */
+  -webkit-user-select: none; /* Safari */
+  -khtml-user-select: none; /* Konqueror HTML */
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* Internet Explorer/Edge */
+  user-select: none; /* Non-prefixed version, currently supported by Chrome and Opera */
 }
 
 /* 字体加载优化 */
@@ -150,4 +164,44 @@ body.fonts-loaded {
   max-width: 300px !important;
   width: 300px !important;
   top: 20px !important; /* 向下移动20px避免遮挡窗口栏 */
+}
+
+/* 虚拟滚动容器滚动条样式 */
+.p-virtualscroller {
+  scrollbar-color: #c9cdd4 #f7f8fa;
+}
+
+.p-virtualscroller::-webkit-scrollbar {
+  width: 8px !important;
+}
+
+.p-virtualscroller::-webkit-scrollbar-track {
+  background: #f7f8fa !important;
+}
+
+.p-virtualscroller::-webkit-scrollbar-thumb {
+  background: #c9cdd4 !important;
+  border-radius: 4px !important;
+}
+
+.p-virtualscroller::-webkit-scrollbar-thumb:hover {
+  background: #a9aeb8 !important;
+}
+
+/* 暗黑主题下的虚拟滚动容器滚动条样式 */
+:root[data-theme="dark"] .p-virtualscroller {
+  scrollbar-color: #4a4a4a #2a2a2a !important;
+}
+
+:root[data-theme="dark"] .p-virtualscroller::-webkit-scrollbar-track {
+  background: #2a2a2a !important;
+}
+
+:root[data-theme="dark"] .p-virtualscroller::-webkit-scrollbar-thumb {
+  background: #4a4a4a !important;
+  border-radius: 4px !important;
+}
+
+:root[data-theme="dark"] .p-virtualscroller::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a !important;
 }

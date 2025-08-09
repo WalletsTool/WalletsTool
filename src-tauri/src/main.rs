@@ -75,24 +75,33 @@ async fn open_function_window<R: Runtime>(app: AppHandle<R>, page_name: String) 
         _ => "未知功能"
     };
     
-    // 检查是否已有同类型窗口打开
-    let existing_windows: Vec<String> = app.webview_windows().keys().cloned().collect();
+    // 获取当前所有窗口的标签
+    let existing_windows = app.webview_windows();
     let mut window_count = 1;
     
-    // 计算当前页面类型的窗口数量
-    for label in &existing_windows {
-        if label.starts_with(&page_name) {
-            window_count += 1;
+    // 循环查找可用的窗口标签，确保不与现有窗口冲突
+    let window_label = loop {
+        let candidate_label = format!("{}{}", page_name, window_count);
+        
+        // 检查这个标签是否已经存在
+        if !existing_windows.contains_key(&candidate_label) {
+            break candidate_label;
         }
-    }
-    
-    let window_label = format!("{}{}", page_name, window_count);
+        
+        // 如果存在，递增计数器继续尝试
+        window_count += 1;
+        
+        // 防止无限循环，设置一个合理的上限
+        if window_count > 100 {
+            return Err("无法找到可用的窗口标签，已达到最大窗口数量限制".to_string());
+        }
+    };
     let window_url = format!("/#/{}", page_name);
     
     // 创建新窗口
-    let _webview = WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(window_url.into()))
-        .title(&format!("{}-{}", title, window_count))
-        .inner_size(1275.0, 850.0)
+    let webview = WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(window_url.into()))
+        .title(&format!("【托盘】{}-{}", title, window_count))
+        .inner_size(1350.0, 900.0)
         .resizable(true)
         .center()
         .decorations(false)
@@ -100,6 +109,9 @@ async fn open_function_window<R: Runtime>(app: AppHandle<R>, page_name: String) 
         .skip_taskbar(false)
         .build()
         .map_err(|e| e.to_string())?;
+    
+    // 显示窗口
+    webview.show().map_err(|e| e.to_string())?;
     
     Ok(())
 }

@@ -297,8 +297,8 @@ impl TransferUtils {
 
 // Tauri命令：基础币转账
 #[tauri::command]
-pub async fn base_coin_transfer(
-    app_handle: tauri::AppHandle,
+pub async fn base_coin_transfer<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     index: usize,
     item: TransferItem,
     config: TransferConfig,
@@ -318,8 +318,8 @@ pub async fn base_coin_transfer(
 }
 
 // 内部基础币转账实现
-async fn base_coin_transfer_internal(
-    app_handle: tauri::AppHandle,
+async fn base_coin_transfer_internal<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     index: usize,
     mut item: TransferItem,
     config: TransferConfig,

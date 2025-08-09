@@ -62,6 +62,7 @@
     --table-text-color: #1d2129;
     --table-border-color: #e5e6eb;
     --table-hover-bg: #f7f8fa;
+    --table-zebra-bg: #fafafa;
     --table-selected-bg: #e8f4ff;
     --loading-bg: rgba(255, 255, 255, 0.8);
     --overlay-bg: rgba(0, 0, 0, 0.5);
@@ -83,6 +84,7 @@
     --table-text-color: #ffffff;
     --table-border-color: #3a3a4e;
     --table-hover-bg: rgb(45, 45, 46);
+    --table-zebra-bg: #4b4b4b;
     --table-selected-bg: rgba(51, 112, 255, 0.2);
     --loading-bg: rgba(42, 42, 43, 0.8);
     --overlay-bg: rgba(0, 0, 0, 0.7);

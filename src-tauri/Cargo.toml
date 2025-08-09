@@ -15,13 +15,13 @@ tauri-build = { version = "2.0.0", features = [] }
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-tauri = { version = "2.0.0", features = ["tray-icon"] }
+tauri = { version = "2.1", features = ["tray-icon", "wry"], default-features = false }
 tauri-plugin-shell = "2.0.0"
 anyhow = "1.0.65"
 thiserror = "1.0.37"
-tokio = { version = "1.22.0", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "fs", "net", "time"] }
 # HTTP 客户端
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
 # 异步流处理
 futures = "0.3"
 # 随机数
@@ -29,7 +29,7 @@ rand = "0.8"
 # 序列化
 hex = "0.4"
 # 数据库
-sqlx = { version = "0.6", features = ["runtime-tokio-rustls", "sqlite", "chrono", "uuid"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "chrono", "macros"], default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 # 以太坊相关
@@ -39,6 +39,19 @@ base64ct = "1.6"
 base64 = "0.21"
 # 正则表达式
 regex = "1.0"
+
+# Release模式优化配置
+[profile.release]
+# 启用最高级别的优化
+opt-level = 3
+# 启用fat LTO以获得最佳优化
+lto = "fat"
+# 设置代码生成单元为1以获得更好的优化
+codegen-units = 1
+# 移除调试符号以减小文件大小
+strip = true
+# 优化panic处理，使用abort而不是unwind
+panic = "abort"
 
 [features]
 # by default Tauri runs in production mode

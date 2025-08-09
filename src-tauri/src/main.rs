@@ -8,12 +8,12 @@ mod plugins;
 mod simple_balance_query;
 mod database;
 
-use tauri::{WindowEvent, Manager, AppHandle, Emitter, tray::TrayIconBuilder, menu::{MenuBuilder, MenuItemBuilder}};
+use tauri::{WindowEvent, Manager, AppHandle, Runtime, Emitter, tray::TrayIconBuilder, menu::{MenuBuilder, MenuItemBuilder}};
 
 
 // Tauri 命令：关闭所有子窗口
 #[tauri::command]
-async fn close_all_child_windows(app: AppHandle, main_window_label: String) -> Result<Vec<String>, String> {
+async fn close_all_child_windows<R: Runtime>(app: AppHandle<R>, main_window_label: String) -> Result<Vec<String>, String> {
     let mut closed_windows = Vec::new();
     
     let windows = app.webview_windows();
@@ -36,7 +36,7 @@ async fn close_all_child_windows(app: AppHandle, main_window_label: String) -> R
 
 // Tauri 命令：获取所有子窗口
 #[tauri::command]
-async fn get_all_child_windows(app: AppHandle, main_window_label: String) -> Result<Vec<String>, String> {
+async fn get_all_child_windows<R: Runtime>(app: AppHandle<R>, main_window_label: String) -> Result<Vec<String>, String> {
     let windows = app.webview_windows();
     let child_windows: Vec<String> = windows.keys()
         .filter(|&label| label != &main_window_label)
@@ -48,14 +48,14 @@ async fn get_all_child_windows(app: AppHandle, main_window_label: String) -> Res
 
 // Tauri 命令：强制关闭主窗口（跳过事件处理）
 #[tauri::command]
-async fn force_close_main_window(_app: AppHandle) -> Result<(), String> {
+async fn force_close_main_window<R: Runtime>(_app: AppHandle<R>) -> Result<(), String> {
     // 直接退出应用程序，跳过窗口关闭事件处理
     std::process::exit(0);
 }
 
 // Tauri 命令：显示主窗口
 #[tauri::command]
-async fn show_main_window(app: AppHandle) -> Result<(), String> {
+async fn show_main_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("wallet_manager") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
@@ -65,7 +65,7 @@ async fn show_main_window(app: AppHandle) -> Result<(), String> {
 
 // Tauri 命令：从托盘打开功能窗口
 #[tauri::command]
-async fn open_function_window(app: AppHandle, page_name: String) -> Result<(), String> {
+async fn open_function_window<R: Runtime>(app: AppHandle<R>, page_name: String) -> Result<(), String> {
     use tauri::WebviewWindowBuilder;
     
     let title = match page_name.as_str() {

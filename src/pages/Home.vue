@@ -1108,7 +1108,7 @@ async function handleMainWindowCloseRequest() {
   position: relative;
   z-index: 1;
   text-align: center;
-  margin-bottom: 10px;
+  margin-bottom: 20px;
   animation: slideInDown 0.8s ease-out;
 }
 
@@ -1500,7 +1500,7 @@ async function handleMainWindowCloseRequest() {
 }
 
 .light-theme .custom-titlebar {
-  background: rgba(255, 255, 255, 0.9) !important;
+  background: rgba(255, 255, 255, 0.7) !important;
   border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
 }
 
@@ -1784,7 +1784,7 @@ async function handleMainWindowCloseRequest() {
 
 @media (max-width: 768px) {
   .container {
-    padding: 60px 0 0 0;
+    padding: 65px 0 0 0;
   }
 
   .title-text {

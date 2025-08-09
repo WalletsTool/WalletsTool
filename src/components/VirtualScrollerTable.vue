@@ -45,7 +45,11 @@
         <template #item="{ item, options }">
           <div
             class="table-row"
-            :class="{ 'selected': isRowSelected(item), 'clickable': true }"
+            :class="{ 
+              'selected': isRowSelected(item), 
+              'clickable': true,
+              'zebra-stripe': getItemIndex(item) % 2 === 1
+            }"
             @click="handleRowClick(item, getItemIndex(item))"
           >
             <!-- 选择列 -->
@@ -397,12 +401,16 @@ const handleCellDoubleClick = async (event, column, item) => {
   background: var(--table-bg, #ffffff);
 }
 
+.table-row.zebra-stripe {
+  background-color: var(--table-zebra-bg, #fafafa);
+}
+
 .table-row:hover {
-  background-color: var(--table-hover-bg, #f7f8fa);
+  background-color: var(--table-hover-bg, #f7f8fa) !important;
 }
 
 .table-row.selected {
-  background-color: var(--table-selected-bg, #e8f4ff);
+  background-color: var(--table-selected-bg, #e8f4ff) !important;
 }
 
 .table-row.clickable {

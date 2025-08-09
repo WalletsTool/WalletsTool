@@ -65,14 +65,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
-          releaseName: '钱包管理器 ${{ github.ref_name || github.event.inputs.version }}'
+          releaseName: 'wallet_manager ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
             ## 🎉 新版本发布
             
             ### 📦 安装包下载
             - **Windows**: 下载 `.msi` 或 `.exe` 文件
             - **macOS**: 下载 `.dmg` 文件
-            - **Linux**: 下载 `.deb` 或 `.AppImage` 文件
+            - **Linux**: 下载 `.deb` 或 `.rpm` 或 `.AppImage` 文件
             
             ### 🔄 更新说明
             请查看下方的变更日志了解本版本的新功能和修复。

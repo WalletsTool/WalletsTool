@@ -151,28 +151,6 @@ export default defineConfig({
                 reduce_vars: true,
                 // 移除重复代码
                 collapse_vars: true
-            },
-            mangle: {
-                // 启用变量名混淆
-                toplevel: true,
-                // 保留必要的函数名
-                reserved: ['$', 'exports', 'require'],
-                // 混淆属性名
-                properties: {
-                    regex: /^_/
-                }
-            },
-            format: {
-                // 移除注释
-                comments: false,
-                // 压缩空白字符
-                beautify: false,
-                // 移除无用分号
-                semicolons: false,
-                // 保留引号风格
-                quote_style: 1,
-                // 压缩换行符
-                max_line_len: false
             }
         },
         // produce sourcemaps for debug builds

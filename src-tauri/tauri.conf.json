@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "钱包管理器",
+        "label": "wallet_manager",
         "width": 350,
         "height": 750,
         "resizable": false,

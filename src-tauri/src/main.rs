@@ -91,7 +91,7 @@ async fn open_function_window<R: Runtime>(app: AppHandle<R>, page_name: String) 
     
     // 创建新窗口
     let _webview = WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(window_url.into()))
-        .title(&format!("▶ 窗口 {} 🧡 {}", window_count, title))
+        .title(&format!("{}-{}", title, window_count))
         .inner_size(1275.0, 850.0)
         .resizable(true)
         .center()

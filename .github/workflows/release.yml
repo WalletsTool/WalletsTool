@@ -54,9 +54,10 @@ jobs:
         with:
           node-version: 'lts/*'
           cache: 'yarn'
+          cache-dependency-path: 'yarn.lock'
 
       - name: Install frontend dependencies
-        run: yarn install
+        run: yarn install --frozen-lockfile
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0

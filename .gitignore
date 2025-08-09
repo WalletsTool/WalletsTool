@@ -27,4 +27,3 @@ dist-ssr
 # Tauri generated files
 src-tauri/gen/
 package-lock.json
-yarn.lock

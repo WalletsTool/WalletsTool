@@ -1315,162 +1315,254 @@ function exportInvalidData(invalidData) {
   writeFile(wb, fileName);
 }
 
+// 导入进度相关变量
+const importProgress = ref(0);
+const importProgressVisible = ref(false);
+const importProgressText = ref('');
+
+// 私钥验证缓存
+const privateKeyCache = new Map();
+const addressCache = new Map();
+
+// 优化的私钥验证函数
+function validatePrivateKeyOptimized(privateKey) {
+  if (privateKeyCache.has(privateKey)) {
+    return privateKeyCache.get(privateKey);
+  }
+
+  const isValid = validatePrivateKey(privateKey);
+  privateKeyCache.set(privateKey, isValid);
+  return isValid;
+}
+
+// 优化的地址生成函数
+function generateAddressOptimized(privateKey) {
+  if (addressCache.has(privateKey)) {
+    return addressCache.get(privateKey);
+  }
+
+  try {
+    const wallet = new ethers.Wallet(privateKey);
+    const address = wallet.address;
+    addressCache.set(privateKey, address);
+    return address;
+  } catch (error) {
+    addressCache.set(privateKey, null);
+    return null;
+  }
+}
+
+// 清理缓存函数
+function clearValidationCache() {
+  privateKeyCache.clear();
+  addressCache.clear();
+}
+
 function UploadFile() {
   // 检查是否有文件被选择
   if (!uploadInputRef.value.files || !uploadInputRef.value.files[0]) {
     return; // 没有文件被选择，直接返回
   }
-  
-  // 开启全页面loading
-  pageLoading.value = true;
+
+  // 开启导入进度弹窗
   tableLoading.value = true;
-  
-  // 添加500毫秒延迟，确保loading窗口显示
+  importProgressVisible.value = true;
+  importProgress.value = 0;
+  importProgressText.value = '正在读取文件...';
+
+  // 清理验证缓存
+  clearValidationCache();
+
+  // 添加延迟，确保loading窗口显示
   setTimeout(() => {
     let file = uploadInputRef.value.files[0];
     let reader = new FileReader();
-    //提取excel中文件内容
+
+    // 使用更高效的文件读取方式
     reader.readAsArrayBuffer(file);
     data.value = [];
-  reader.onload = function () {
-    const buffer = reader.result;
-    const bytes = new Uint8Array(buffer);
-    const length = bytes.byteLength;
-    let binary = "";
-    for (let i = 0; i < length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    //转换二进制
-    const wb = read(binary, {
-      type: "binary",
-    });
-    const outdata = xlUtils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    // 用于存储不合规数据
-    const invalidData = [];
-    let validCount = 0;
-    let invalidCount = 0;
 
-    // 这里for循环将excel表格数据转化成json数据
-    outdata.forEach((i, index) => {
-      const rowNumber = index + 2; // Excel行号（从第2行开始，第1行是表头）
-      const privateKey = String(i.私钥 || '').trim();
-      const toAddress = String(i.地址 || '').trim();
-      const amount = i.转账数量;
+    reader.onload = async function () {
+      try {
+        importProgressText.value = '正在解析Excel文件...';
+        importProgress.value = 10;
 
-      // 验证私钥和地址
-      const isPrivateKeyValid = privateKey && validatePrivateKey(privateKey);
-      const isAddressValid = toAddress && validateAddress(toAddress);
-
-      if (isPrivateKeyValid && isAddressValid) {
-        // 数据合规，添加到表格
-        try {
-          // 从私钥生成地址
-          const wallet = new ethers.Wallet(privateKey);
-          const address = wallet.address;
-
-          data.value.push({
-            key: `transfer_${validCount}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            private_key: privateKey,
-            address: address,
-            to_addr: toAddress,
-            amount: amount ? String(amount) : "0", // 转账数量为空时显示为0
-            plat_balance: "",
-            coin_balance: "",
-            exec_status: "0",
-            error_msg: "",
-          });
-          validCount++;
-        } catch (error) {
-          // 私钥无效，添加到不合规数据
-          const errorReasons = [];
-          errorReasons.push('私钥无效');
-
-          invalidData.push({
-            私钥: privateKey,
-            地址: toAddress,
-            转账数量: amount || '',
-            错误原因: errorReasons.join('; '),
-            行号: rowNumber
-          });
-          invalidCount++;
-        }
-      } else {
-        // 数据不合规，记录错误原因
-        const errorReasons = [];
-        if (!isPrivateKeyValid) {
-          if (!privateKey) {
-            errorReasons.push('私钥为空');
-          } else {
-            errorReasons.push('私钥格式错误');
-          }
-        }
-        if (!isAddressValid) {
-          if (!toAddress) {
-            errorReasons.push('地址为空');
-          } else {
-            errorReasons.push('地址格式错误');
-          }
-        }
-
-        invalidData.push({
-          私钥: privateKey,
-          地址: toAddress,
-          转账数量: amount || '',
-          错误原因: errorReasons.join('; '),
-          行号: rowNumber
+        // 直接使用ArrayBuffer，避免逐字节转换
+        const wb = read(reader.result, {
+          type: "array",
         });
-        invalidCount++;
-      }
-    });
 
-    // 如果有不合规数据，导出到本地
-    if (invalidData.length > 0) {
-      exportInvalidData(invalidData);
+        const outdata = xlUtils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
 
-      // 显示导入结果通知
-      if (validCount > 0) {
-        Notification.warning({
-          title: '导入完成',
-          content: `成功导入 ${validCount} 条数据，${invalidCount} 条不合规数据已导出到本地文件`,
-          duration: 5000
-        });
-      } else {
+        importProgressText.value = '正在处理数据...';
+        importProgress.value = 20;
+
+        // 批量处理数据
+        await processBatchData(outdata);
+
+      } catch (error) {
+        console.error('文件处理错误:', error);
+        tableLoading.value = false;
+        importProgressVisible.value = false;
+
         Notification.error({
-          title: '导入失败',
-          content: `所有数据都不合规，共 ${invalidCount} 条数据已导出到本地文件`,
+          title: '文件处理失败',
+          content: '文件处理过程中发生错误，请检查文件格式是否正确',
           duration: 5000
         });
       }
-    } else {
-      // 全部数据合规
-      Notification.success({
-        title: '导入成功',
-        content: `成功导入 ${validCount} 条数据`,
-        duration: 3000
-      });
-    }
-  };
-  reader.onerror = function () {
-    tableLoading.value = false;
-    // 关闭全页面loading
-    pageLoading.value = false;
-    // 显示错误通知
-    Notification.error({
-      title: '文件读取失败',
-      content: '文件读取过程中发生错误，请检查文件格式是否正确',
-      duration: 5000
-    });
-  };
-    reader.onloadend = function () {
-      tableLoading.value = false;
-      // 关闭全页面loading
-      pageLoading.value = false;
-      // 文件读取完成
     };
+
+    reader.onerror = function () {
+      tableLoading.value = false;
+      importProgressVisible.value = false;
+
+      Notification.error({
+        title: '文件读取失败',
+        content: '文件读取过程中发生错误，请检查文件格式是否正确',
+        duration: 5000
+      });
+    };
+
     if (uploadInputRef.value) {
       uploadInputRef.value.value = '';
     }
   }, 100);
+}
+
+// 批量处理数据函数
+async function processBatchData(outdata) {
+  const BATCH_SIZE = 100; // 每批处理100条数据
+  const invalidData = [];
+  const counters = { validCount: 0, invalidCount: 0 }; // 使用对象来传递引用
+  const totalRows = outdata.length;
+
+  // 预处理：快速验证数据格式
+  const preprocessedData = outdata.map((item, index) => {
+    const rowNumber = index + 2;
+    const privateKey = String(item.私钥 || '').trim();
+    const toAddress = String(item.地址 || '').trim();
+    const amount = item.转账数量;
+
+    return {
+      rowNumber,
+      privateKey,
+      toAddress,
+      amount,
+      isPrivateKeyValid: privateKey && validatePrivateKeyOptimized(privateKey),
+      isAddressValid: toAddress && validateAddress(toAddress)
+    };
+  });
+
+  // 分批处理数据
+  for (let i = 0; i < preprocessedData.length; i += BATCH_SIZE) {
+    const batch = preprocessedData.slice(i, i + BATCH_SIZE);
+
+    // 更新进度
+    const progress = 20 + Math.floor((i / totalRows) * 70);
+    importProgress.value = Number((progress / 100).toFixed(2));
+    importProgressText.value = `正在处理数据 ${i + 1}-${Math.min(i + BATCH_SIZE, totalRows)}/${totalRows}`;
+
+    // 处理当前批次
+    await processBatch(batch, invalidData, counters);
+
+    // 让出控制权，避免阻塞UI
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+
+  // 完成处理
+  importProgress.value = 1;
+  importProgressText.value = '处理完成';
+
+  // 延迟关闭进度条
+  setTimeout(() => {
+    importProgressVisible.value = false;
+    tableLoading.value = false;
+  }, 500);
+
+  // 显示结果通知
+  showImportResult(counters.validCount, counters.invalidCount, invalidData);
+}
+
+// 处理单个批次的数据
+async function processBatch(batch, invalidData, counters) {
+  for (const item of batch) {
+    const { rowNumber, privateKey, toAddress, amount, isPrivateKeyValid, isAddressValid } = item;
+
+    if (isPrivateKeyValid && isAddressValid) {
+      // 使用优化的地址生成函数
+      const address = generateAddressOptimized(privateKey);
+
+      if (address) {
+        data.value.push({
+          key: `transfer_${counters.validCount}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          private_key: privateKey,
+          address: address,
+          to_addr: toAddress,
+          amount: amount ? String(amount) : "0",
+          plat_balance: "",
+          coin_balance: "",
+          exec_status: "0",
+          error_msg: "",
+        });
+        counters.validCount++;
+      } else {
+        invalidData.push({
+          私钥: privateKey,
+          地址: toAddress,
+          转账数量: amount || '',
+          错误原因: '私钥无效',
+          行号: rowNumber
+        });
+        counters.invalidCount++;
+      }
+    } else {
+      // 数据不合规，记录错误原因
+      const errorReasons = [];
+      if (!isPrivateKeyValid) {
+        errorReasons.push(privateKey ? '私钥格式错误' : '私钥为空');
+      }
+      if (!isAddressValid) {
+        errorReasons.push(toAddress ? '地址格式错误' : '地址为空');
+      }
+
+      invalidData.push({
+        私钥: privateKey,
+        地址: toAddress,
+        转账数量: amount || '',
+        错误原因: errorReasons.join('; '),
+        行号: rowNumber
+      });
+      counters.invalidCount++;
+    }
+  }
+}
+
+// 显示导入结果
+function showImportResult(validCount, invalidCount, invalidData) {
+  if (invalidData.length > 0) {
+    exportInvalidData(invalidData);
+
+    if (validCount > 0) {
+      Notification.warning({
+        title: '导入完成',
+        content: `成功导入 ${validCount} 条数据，${invalidCount} 条不合规数据已导出到本地文件`,
+        duration: 5000
+      });
+    } else {
+      Notification.error({
+        title: '导入失败',
+        content: `所有数据都不合规，共 ${invalidCount} 条数据已导出到本地文件`,
+        duration: 5000
+      });
+    }
+  } else {
+    Notification.success({
+      title: '导入成功',
+      content: `成功导入 ${validCount} 条数据`,
+      duration: 3000
+    });
+  }
 }
 
 const uploadInputRef = ref(null);
@@ -1707,11 +1799,11 @@ function clearData() {
     Notification.warning("请停止或等待查询完成后再清空列表！");
     return;
   }
-  if(data.value.length === 0){
+  if (data.value.length === 0) {
     Notification.warning('当前列表无数据！');
     return;
   }
-  
+
   Modal.confirm({
     title: '确认清空',
     content: '确定要清空所有列表数据吗？此操作不可撤销。',
@@ -1899,9 +1991,9 @@ async function queryBalanceInBatches() {
   const BATCH_SIZE = 50; // 每批处理50个地址
   const totalItems = data.value.length;
   const totalBatches = Math.ceil(totalItems / BATCH_SIZE);
-  
+
   console.log(`开始分批查询余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
-  
+
   try {
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       // 检查是否需要停止查询
@@ -1910,26 +2002,26 @@ async function queryBalanceInBatches() {
         balanceStopStatus.value = true;
         return;
       }
-      
+
       const startIndex = batchIndex * BATCH_SIZE;
       const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
       const batchData = data.value.slice(startIndex, endIndex);
-      
+
       console.log(`处理第 ${batchIndex + 1}/${totalBatches} 批，索引 ${startIndex}-${endIndex - 1}`);
-      
+
       await queryBalanceBatch(batchData, startIndex);
-      
+
       // 批次间添加短暂延迟，避免过于频繁的请求
       if (batchIndex < totalBatches - 1) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
-    
+
     // 所有批次完成后的统计
     const successCount = data.value.filter(item => item.exec_status === '2').length;
     const failCount = data.value.filter(item => item.exec_status === '3').length;
     const totalCount = data.value.length;
-    
+
     if (successCount === totalCount) {
       Notification.success('查询成功！');
     } else if (successCount > 0) {
@@ -1937,7 +2029,7 @@ async function queryBalanceInBatches() {
     } else {
       Notification.error('查询失败：所有记录都查询失败');
     }
-    
+
   } catch (error) {
     console.error('分批查询失败:', error);
     Notification.error('查询失败：' + error.message);
@@ -2026,7 +2118,7 @@ async function queryBalanceBatch(batchData, startIndex) {
 
   } catch (error) {
     console.error('批次查询失败:', error);
-    
+
     // 设置批次项目为失败状态，保护私钥字段
     batchData.forEach((item, index) => {
       const dataIndex = startIndex + index;
@@ -2088,9 +2180,9 @@ async function queryToAddressBalanceInBatches() {
   const itemsWithToAddr = data.value.filter(item => item.to_addr);
   const totalItems = itemsWithToAddr.length;
   const totalBatches = Math.ceil(totalItems / BATCH_SIZE);
-  
+
   console.log(`开始分批查询到账地址余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
-  
+
   try {
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       // 检查是否需要停止查询
@@ -2099,26 +2191,26 @@ async function queryToAddressBalanceInBatches() {
         balanceStopStatus.value = true;
         return;
       }
-      
+
       const startIndex = batchIndex * BATCH_SIZE;
       const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
       const batchData = itemsWithToAddr.slice(startIndex, endIndex);
-      
+
       console.log(`处理第 ${batchIndex + 1}/${totalBatches} 批到账地址，索引 ${startIndex}-${endIndex - 1}`);
-      
+
       await queryToAddressBalanceBatch(batchData, startIndex);
-      
+
       // 批次间添加短暂延迟，避免过于频繁的请求
       if (batchIndex < totalBatches - 1) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
-    
+
     // 所有批次完成后的统计
     const successCount = data.value.filter(item => item.exec_status === '2').length;
     const failCount = data.value.filter(item => item.exec_status === '3').length;
     const totalCount = itemsWithToAddr.length;
-    
+
     if (successCount === totalCount) {
       Notification.success(`到账地址余额查询成功！共查询 ${totalCount} 个地址`);
     } else if (successCount > 0) {
@@ -2126,7 +2218,7 @@ async function queryToAddressBalanceInBatches() {
     } else {
       Notification.error('到账地址余额查询失败：所有地址都查询失败');
     }
-    
+
   } catch (error) {
     console.error('分批查询到账地址失败:', error);
     Notification.error('到账地址余额查询失败：' + error.message);
@@ -2221,7 +2313,7 @@ async function queryToAddressBalanceBatch(batchData, startIndex) {
 
   } catch (error) {
     console.error('批次查询到账地址失败:', error);
-    
+
     // 设置批次项目为失败状态，保护私钥字段
     batchData.forEach((item, index) => {
       const dataIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
@@ -2293,7 +2385,7 @@ async function transferFnc(inputData) {
 function startTransfer() {
   // 立即设置loading状态，提供即时反馈
   startLoading.value = true;
-  
+
   // 基础验证检查
   if (balanceLoading.value) {
     startLoading.value = false;
@@ -2326,7 +2418,7 @@ function startTransfer() {
   if (hasIncompleteTransfers && stopStatus.value) {
     // 暂时重置loading状态，等待用户选择
     startLoading.value = false;
-    
+
     // 显示转账确认弹窗
     transferConfirmVisible.value = true;
   } else {
@@ -2338,7 +2430,7 @@ function startTransfer() {
 // 处理转账确认弹窗的函数
 function handleTransferConfirmOk() {
   transferConfirmLoading.value = true;
-  
+
   // 继续上次转账 - 只处理等待执行的项目
   const incompleteData = data.value.filter(item =>
     item.exec_status === "0"
@@ -2350,7 +2442,7 @@ function handleTransferConfirmOk() {
     Notification.info("所有转账已完成！");
     return;
   }
-  
+
   transferConfirmVisible.value = false;
   transferConfirmLoading.value = false;
   startLoading.value = true;
@@ -2359,11 +2451,11 @@ function handleTransferConfirmOk() {
 
 function handleTransferConfirmCancel() {
   transferConfirmLoading.value = true;
-  
+
   transferConfirmVisible.value = false;
   transferConfirmLoading.value = false;
   startLoading.value = true;
-  
+
   // 重新开始转账 - 重置所有状态
   executeTransfer(data.value, true);
 }
@@ -2381,7 +2473,7 @@ function executeTransfer(transferData, resetStatus = true) {
       // 验证通过，loading状态已在startTransfer中设置
       stopFlag.value = false;
       stopStatus.value = false;
-      
+
       // 标记已执行过转账操作（用于区分余额查询和转账）
       hasExecutedTransfer.value = true;
 
@@ -3511,7 +3603,7 @@ async function handleBeforeClose() {
         </template>
         反选
       </a-button>
-       <!-- 高级筛选按钮 -->
+      <!-- 高级筛选按钮 -->
       <a-button type="primary" status="normal" style="margin-left: 10px" @click="showAdvancedFilter">
         <template #icon>
           <Icon icon="mdi:filter" />
@@ -3530,7 +3622,7 @@ async function handleBeforeClose() {
         </template>
         清空列表
       </a-button>
-       <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="downloadFile">
+      <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="downloadFile">
         <template #icon>
           <Icon icon="mdi:download" />
         </template>
@@ -3841,8 +3933,8 @@ async function handleBeforeClose() {
       <!-- 右侧区域 -->
       <div style="display: flex; align-items: center; gap: 20px;">
         <!-- 执行转账按钮 -->
-        <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn"
-          @click="debouncedStartTransfer" :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+        <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn" @click="debouncedStartTransfer"
+          :style="{ width: '130px', height: '40px', fontSize: '14px' }">
           <template #icon>
             <Icon icon="mdi:play" />
           </template>
@@ -3900,35 +3992,52 @@ async function handleBeforeClose() {
   </a-modal>
 
   <!-- 转账确认弹窗 -->
-  <a-modal 
-    v-model:visible="transferConfirmVisible" 
-    title="转账确认" 
-    :mask-closable="false"
-    :closable="true"
-    @close="handleTransferConfirmClose"
-    @cancel="handleTransferConfirmClose"
-  >
+  <a-modal v-model:visible="transferConfirmVisible" title="转账确认" :mask-closable="false" :closable="true"
+    @close="handleTransferConfirmClose" @cancel="handleTransferConfirmClose">
     <div>检测到上次转账未完成，请选择操作方式：</div>
     <template #footer>
       <a-button @click="handleTransferConfirmClose">关闭</a-button>
-      <a-button 
-        type="primary" 
-        @click="handleTransferConfirmCancel" 
-        :loading="transferConfirmLoading"
-        style="margin-left: 10px"
-      >
+      <a-button type="primary" @click="handleTransferConfirmCancel" :loading="transferConfirmLoading"
+        style="margin-left: 10px">
         重新开始转账
       </a-button>
-      <a-button 
-        type="primary" 
-        status="success" 
-        @click="handleTransferConfirmOk" 
-        :loading="transferConfirmLoading"
-        style="margin-left: 10px"
-      >
+      <a-button type="primary" status="success" @click="handleTransferConfirmOk" :loading="transferConfirmLoading"
+        style="margin-left: 10px">
         继续上次转账
       </a-button>
     </template>
+  </a-modal>
+
+  <!-- 导入进度弹窗 -->
+  <a-modal v-model:visible="importProgressVisible" title="" :mask-closable="false" :closable="false" :footer="null"
+    :width="480" class="import-progress-modal">
+    <div class="import-progress-container">
+      <!-- 头部区域 -->
+      <div class="progress-header-section">
+        <div class="progress-icon">
+          <Icon icon="mdi:file-upload" class="upload-icon" />
+        </div>
+        <div class="progress-title-section">
+          <h3 class="progress-main-title">文件导入进度</h3>
+          <p class="progress-subtitle">正在处理您的文件，请稍候...</p>
+        </div>
+      </div>
+
+      <!-- 进度区域 -->
+      <div class="progress-section">
+        <div class="progress-text-wrapper">
+          <span class="progress-status-text">{{ importProgressText }}</span>
+          <span class="progress-percentage">{{ Number((importProgress*100).toFixed(2)) }}%</span>
+        </div>
+
+        <div class="progress-bar-wrapper">
+          <a-progress :percent="importProgress" :show-text="false" :stroke-width="12" status="active" :color="{
+            '0%': '#0fa962',
+            '100%': '#11c06f'
+          }" class="enhanced-progress" />
+        </div>
+      </div>
+    </div>
   </a-modal>
 
   <!-- 高级筛选弹窗 -->
@@ -4268,6 +4377,242 @@ async function handleBeforeClose() {
   transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
+/* 导入进度弹窗样式 */
+.import-progress-modal {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.import-progress-modal .arco-modal-content {
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 8px 16px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(20px);
+}
+
+.import-progress-container {
+  padding: 15px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.import-progress-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #0fa962, #11c06f, #0fa962);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* 头部区域样式 */
+.progress-header-section {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 16px;
+}
+
+.progress-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0fa962 0%, #11c06f 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(15, 169, 98, 0.3);
+  position: relative;
+}
+
+.progress-icon::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #06b6d4);
+  z-index: -1;
+  opacity: 0.6;
+  filter: blur(8px);
+}
+
+.upload-icon {
+  font-size: 28px;
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.progress-title-section {
+  flex: 1;
+}
+
+.progress-main-title {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.025em;
+}
+
+.progress-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* 进度区域样式 */
+.progress-section {
+  background: white;
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.progress-text-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.progress-status-text {
+  font-size: 14px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.progress-percentage {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0fa962;
+  background: linear-gradient(135deg, #0fa962, #11c06f);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.progress-bar-wrapper {
+  margin-bottom: 5px;
+  position: relative;
+}
+
+.enhanced-progress {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.enhanced-progress .arco-progress-line-inner {
+  background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #06b6d4 100%);
+  background-size: 200% 100%;
+  animation: progressFlow 3s ease-in-out infinite;
+  border-radius: 8px;
+  position: relative;
+}
+
+.enhanced-progress .arco-progress-line-inner::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
+  animation: progressShine 2s ease-in-out infinite;
+}
+
+@keyframes progressFlow {
+
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes progressShine {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.enhanced-progress .arco-progress-line-outer {
+  background: #e2e8f0;
+  border-radius: 8px;
+}
+
+/* 装饰性元素样式 */
+.progress-decoration {
+  display: flex;
+  justify-content: center;
+}
+
+.progress-dots {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.dot.active {
+  background: linear-gradient(135deg, #0fa962, #11c06f);
+  transform: scale(1.2);
+  box-shadow: 0 2px 8px rgba(15, 169, 98, 0.4);
+}
+
+.dot.active::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  z-index: -1;
+  opacity: 0.3;
+  filter: blur(4px);
+}
+
 .progress-slide-leave-active {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.6, 1);
 }
@@ -4286,5 +4631,15 @@ async function handleBeforeClose() {
 .progress-slide-leave-from {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+</style>
+
+<style>
+.import-progress-modal .arco-modal-body {
+  padding: 0;
+  border-radius: 20px;
+}
+.import-progress-modal .arco-modal {
+  border-radius: 20px;
 }
 </style>

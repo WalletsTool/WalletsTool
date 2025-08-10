@@ -71,8 +71,12 @@ export default defineConfig({
                         // ethers和其他第三方库合并到vendor包中避免循环依赖
                         return 'vendor';
                     }
-                    // 页面组件分块
-                    if (id.includes('/src/pages/') || id.includes('/src/views/')) {
+                    // 页面组件分块（兼容新结构）
+                    if (
+                        id.includes('/src/pages/') ||
+                        id.includes('/src/views/') ||
+                        id.includes('/src/features/')
+                    ) {
                         return 'pages';
                     }
                     // 工具函数分块

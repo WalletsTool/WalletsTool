@@ -12,16 +12,16 @@ import { ethers } from "ethers";
 
 import { read, utils as xlUtils, writeFile } from "xlsx";
 import { debounce as customDebounce } from '@/utils/debounce.js'
-import ChainIcon from '../components/ChainIcon.vue'
-import TitleBar from '../components/TitleBar.vue'
-import TableSkeleton from '../components/TableSkeleton.vue'
-import VirtualScrollerTable from '../components/VirtualScrollerTable.vue'
+import ChainIcon from '@/components/ChainIcon.vue'
+import TitleBar from '@/components/TitleBar.vue'
+import TableSkeleton from '@/components/TableSkeleton.vue'
+import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 
 // 懒加载非关键组件
-const ChainManagement = defineAsyncComponent(() => import('../components/ChainManagement.vue'))
-const RpcManagement = defineAsyncComponent(() => import('../components/RpcManagement.vue'))
-const TokenManagement = defineAsyncComponent(() => import('../components/TokenManagement.vue'))
-const WalletImportModal = defineAsyncComponent(() => import('../components/WalletImportModal.vue'))
+const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
+const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagement.vue'))
+const TokenManagement = defineAsyncComponent(() => import('@/components/TokenManagement.vue'))
+const WalletImportModal = defineAsyncComponent(() => import('@/components/WalletImportModal.vue'))
 const router = useRouter();
 // 窗口标题
 const windowTitle = ref('批量转账');

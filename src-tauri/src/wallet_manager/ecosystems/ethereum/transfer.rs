@@ -11,6 +11,7 @@ use ethers::{
 use std::sync::Arc;
 use rand::Rng;
 use crate::database::get_database_manager;
+use super::provider::ProviderUtils;
 use sqlx::Row;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -344,7 +345,11 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     let wallet = private_key.parse::<LocalWallet>().map_err(|e| {
         format!("私钥格式错误: {}，请检查私钥格式是否正确（应为64位十六进制字符串，可带或不带0x前缀）", e)
     })?;
-    let wallet = wallet.with_chain_id(get_rpc_config(&config.chain).await.unwrap().chain_id);
+    // 优先通过统一ProviderUtils获取链ID，避免重复查询逻辑
+    let chain_id = ProviderUtils::get_chain_id(&config.chain).await.unwrap_or(
+        get_rpc_config(&config.chain).await.map(|c| c.chain_id).unwrap_or(1)
+    );
+    let wallet = wallet.with_chain_id(chain_id);
     let wallet_address = wallet.address();
     
     // 获取余额

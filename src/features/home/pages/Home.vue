@@ -1,5 +1,6 @@
 <script setup name="home">
 import { useRouter } from 'vue-router'
+import { useEcosystemStore } from '@/features/common/stores/ecosystem'
 import { Notification, Modal } from "@arco-design/web-vue";
 import { onMounted, onBeforeUnmount, ref, h, computed, nextTick } from "vue";
 import party from "party-js";
@@ -10,6 +11,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
 const router = useRouter()
+const ecoStore = useEcosystemStore()
 const store = confettiStore()
 const themeStore = useThemeStore()
 let windowCount = ref({})
@@ -144,8 +146,8 @@ function goPage(pageName) {
   // 检查是否在Tauri环境中
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (!isTauri) {
-    // 在浏览器环境中，使用路由跳转
-    router.push(`/${pageName}`)
+    // 浏览器环境：默认使用 ETH 前缀
+    router.push(`/eth/${pageName}`)
     return
   }
 
@@ -158,7 +160,7 @@ function goPage(pageName) {
     }
     const title = funcList.filter(item => item.pageName === pageName)[0].title
     const windowLabel = pageName + windowCount.value[pageName]
-    const windowUrl = `/#/${pageName}`
+    const windowUrl = `/#/${ecoStore.currentEco}/${pageName}`
 
     const webview = new WebviewWindow(windowLabel, {
       url: windowUrl,

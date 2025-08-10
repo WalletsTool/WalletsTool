@@ -46,6 +46,22 @@ pub async fn get_all_chain_configs() -> Result<HashMap<String, ChainRpcConfig>, 
 pub struct ProviderUtils;
 
 impl ProviderUtils {
+    // 获取单个链配置
+    pub async fn get_chain_config(chain: &str) -> Result<ChainRpcConfig, String> {
+        let configs = get_all_chain_configs()
+            .await
+            .map_err(|e| e.to_string())?;
+        configs
+            .get(chain)
+            .cloned()
+            .ok_or_else(|| format!("不支持的链: {}", chain))
+    }
+
+    // 获取链ID
+    pub async fn get_chain_id(chain: &str) -> Result<u64, String> {
+        let cfg = Self::get_chain_config(chain).await?;
+        Ok(cfg.chain_id)
+    }
     // 获取指定链的Provider
     pub async fn get_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn std::error::Error>> {
         let configs = get_all_chain_configs().await?;

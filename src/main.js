@@ -1,6 +1,6 @@
 import {createApp} from "vue";
 import App from "./App.vue";
-import {router} from "./router";
+import { router } from "./router";
 // PrimeVue imports
 import PrimeVue from 'primevue/config';
 import VirtualScroller from 'primevue/virtualscroller';

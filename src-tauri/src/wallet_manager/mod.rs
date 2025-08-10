@@ -1,9 +1,14 @@
-pub mod chain_config;
 pub mod utils;
-pub mod rpc_management;
 
 pub mod ecosystems {
-    pub mod ethereum;
+    pub mod ethereum {
+        pub mod chain_config;
+        pub mod rpc_management;
+        pub mod simple_balance_query;
+        pub mod provider;
+        pub mod token_transfer;
+        pub mod transfer;
+    }
     pub mod solana;
 }
 

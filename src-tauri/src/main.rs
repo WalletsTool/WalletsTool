@@ -5,7 +5,6 @@
 mod utils;
 mod wallet_manager;
 mod plugins;
-mod simple_balance_query;
 mod database;
 
 use tauri::{WindowEvent, Manager, AppHandle, Runtime, Emitter, tray::TrayIconBuilder, menu::{MenuBuilder, MenuItemBuilder}};
@@ -270,18 +269,18 @@ async fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            wallet_manager::chain_config::get_chain_list,
-            wallet_manager::chain_config::get_coin_list,
-            wallet_manager::chain_config::add_coin,
-            wallet_manager::chain_config::remove_coin,
-            wallet_manager::chain_config::update_coin,
-            wallet_manager::chain_config::update_chain_pic_urls,
-            wallet_manager::chain_config::update_token_abi,
+            wallet_manager::ecosystems::ethereum::chain_config::get_chain_list,
+            wallet_manager::ecosystems::ethereum::chain_config::get_coin_list,
+            wallet_manager::ecosystems::ethereum::chain_config::add_coin,
+            wallet_manager::ecosystems::ethereum::chain_config::remove_coin,
+            wallet_manager::ecosystems::ethereum::chain_config::update_coin,
+            wallet_manager::ecosystems::ethereum::chain_config::update_chain_pic_urls,
+            wallet_manager::ecosystems::ethereum::chain_config::update_token_abi,
             // chain management commands
-            wallet_manager::chain_config::add_chain,
-            wallet_manager::chain_config::update_chain,
-            wallet_manager::chain_config::remove_chain,
-            wallet_manager::chain_config::get_chain_detail,
+            wallet_manager::ecosystems::ethereum::chain_config::add_chain,
+            wallet_manager::ecosystems::ethereum::chain_config::update_chain,
+            wallet_manager::ecosystems::ethereum::chain_config::remove_chain,
+            wallet_manager::ecosystems::ethereum::chain_config::get_chain_detail,
             wallet_manager::utils::download_file,
             wallet_manager::utils::save_chain_icon,
             wallet_manager::utils::get_chain_icon,
@@ -289,10 +288,10 @@ async fn main() {
             plugins::fs_extra::exists,
             plugins::fs_extra::open_file,
             // balance query functions
-            simple_balance_query::query_balances_simple,
-            simple_balance_query::query_balances_with_updates,
-            simple_balance_query::stop_balance_query,
-            simple_balance_query::reset_balance_query_stop,
+            wallet_manager::ecosystems::ethereum::simple_balance_query::query_balances_simple,
+            wallet_manager::ecosystems::ethereum::simple_balance_query::query_balances_with_updates,
+            wallet_manager::ecosystems::ethereum::simple_balance_query::stop_balance_query,
+            wallet_manager::ecosystems::ethereum::simple_balance_query::reset_balance_query_stop,
             // window management functions
             close_all_child_windows,
             get_all_child_windows,
@@ -316,11 +315,11 @@ async fn main() {
             wallet_manager::provider::test_rpc_url,
             wallet_manager::provider::get_multiple_gas_prices,
             // rpc management functions
-            wallet_manager::rpc_management::get_rpc_providers,
-            wallet_manager::rpc_management::add_rpc_provider,
-            wallet_manager::rpc_management::update_rpc_provider,
-            wallet_manager::rpc_management::delete_rpc_provider,
-            wallet_manager::rpc_management::test_rpc_connection,
+            wallet_manager::ecosystems::ethereum::rpc_management::get_rpc_providers,
+            wallet_manager::ecosystems::ethereum::rpc_management::add_rpc_provider,
+            wallet_manager::ecosystems::ethereum::rpc_management::update_rpc_provider,
+            wallet_manager::ecosystems::ethereum::rpc_management::delete_rpc_provider,
+            wallet_manager::ecosystems::ethereum::rpc_management::test_rpc_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

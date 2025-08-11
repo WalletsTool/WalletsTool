@@ -118,9 +118,6 @@ function rowClick(record, event) {
     : selectedKeys.value.push(record.key);
 }
 
-// 分页
-const pagination = ref(false);
-const scrollbar = ref(true);
 // 滚动条设置
 // 滚动配置现在通过 CSS calc() 动态计算
 let tableBool = ref(true);
@@ -161,7 +158,7 @@ const form = reactive({
   limit_max_count: "30000",
   min_interval: "1",
   max_interval: "3",
-  amount_precision: "6",
+  amount_precision: "3",
   error_retry: "0",
 });
 
@@ -234,6 +231,18 @@ const transferProgress = ref(0); // 转账进度百分比
 const transferTotal = ref(0); // 总转账数量
 const transferCompleted = ref(0); // 已完成转账数量
 const showProgress = ref(false); // 是否显示进度条
+
+// 余额查询进度相关变量
+const balanceProgress = ref(0); // 余额查询进度百分比
+const balanceTotal = ref(0); // 总查询数量
+const balanceCompleted = ref(0); // 已完成查询数量
+const showBalanceProgress = ref(false); // 是否显示余额查询进度条
+
+// 查到账地址余额查询进度相关变量
+const toAddressBalanceProgress = ref(0); // 查到账地址余额查询进度百分比
+const toAddressBalanceTotal = ref(0); // 查到账地址总查询数量
+const toAddressBalanceCompleted = ref(0); // 查到账地址已完成查询数量
+const showToAddressBalanceProgress = ref(false); // 是否显示查到账地址余额查询进度条
 
 // 计算属性：缓存转账配置
 const transferConfig = computed(() => {
@@ -509,6 +518,61 @@ function updateTransferProgress() {
   if (completed === transferTotal.value && transferTotal.value > 0) {
     setTimeout(() => {
       showProgress.value = false;
+    }, 3000); // 3秒后隐藏进度条
+  }
+}
+
+// 更新余额查询进度
+function updateBalanceProgress() {
+  if (!showBalanceProgress.value) return;
+
+  // 计算已完成的查询数量（有余额数据或查询失败都算完成）
+  const completed = data.value.filter(item =>
+    (item.plat_balance !== '' && item.plat_balance !== null) ||
+    (item.coin_balance !== '' && item.coin_balance !== null) ||
+    item.exec_status === '3'
+  ).length;
+
+  balanceCompleted.value = completed;
+  // 计算进度百分比
+  if (balanceTotal.value > 0) {
+    balanceProgress.value = Number((completed / balanceTotal.value).toFixed(4));
+  } else {
+    balanceProgress.value = 0;
+  }
+
+  // 如果全部完成，延迟隐藏进度条
+  if (completed === balanceTotal.value && balanceTotal.value > 0) {
+    setTimeout(() => {
+      showBalanceProgress.value = false;
+    }, 3000); // 3秒后隐藏进度条
+  }
+}
+
+// 更新查到账地址余额查询进度
+function updateToAddressBalanceProgress() {
+  if (!showToAddressBalanceProgress.value) return;
+
+  // 只计算有到账地址的项目的完成情况
+  const itemsWithToAddr = data.value.filter(item => item.to_addr);
+  const completed = itemsWithToAddr.filter(item =>
+    (item.plat_balance !== '' && item.plat_balance !== null) ||
+    (item.coin_balance !== '' && item.coin_balance !== null) ||
+    item.exec_status === '3'
+  ).length;
+
+  toAddressBalanceCompleted.value = completed;
+  // 计算进度百分比
+  if (toAddressBalanceTotal.value > 0) {
+    toAddressBalanceProgress.value = Number((completed / toAddressBalanceTotal.value).toFixed(4));
+  } else {
+    toAddressBalanceProgress.value = 0;
+  }
+
+  // 如果全部完成，延迟隐藏进度条
+  if (completed === toAddressBalanceTotal.value && toAddressBalanceTotal.value > 0) {
+    setTimeout(() => {
+      showToAddressBalanceProgress.value = false;
     }, 3000); // 3秒后隐藏进度条
   }
 }
@@ -1149,6 +1213,10 @@ onMounted(async () => {
         data.value[targetIndex].coin_balance = item.coin_balance;
         data.value[targetIndex].exec_status = item.exec_status;
         data.value[targetIndex].error_msg = item.error_msg;
+        
+        // 实时更新余额查询进度
+        updateBalanceProgress();
+        updateToAddressBalanceProgress();
       }
     });
 
@@ -1874,10 +1942,21 @@ async function queryBalance() {
     Notification.warning("请先导入私钥！");
     return;
   }
+  hasExecutedTransfer.value = false;
+  transferTotal.value = data.value.length;
+  transferCompleted.value = 0;
+  transferProgress.value = 0;
   if (currentCoin.value.coin_type === "base" || currentCoin.value.coin_type === "token") {
     balanceLoading.value = true;
     balanceStopFlag.value = false;
     balanceStopStatus.value = false;
+
+    // 初始化余额查询进度
+    const totalItems = data.value.length;
+    balanceTotal.value = totalItems;
+    balanceCompleted.value = 0;
+    balanceProgress.value = 0;
+    showBalanceProgress.value = totalItems > 0;
 
     // 重置所有项目状态
     data.value.forEach((item) => {
@@ -1908,6 +1987,8 @@ async function queryBalanceInBatches() {
       if (balanceStopFlag.value) {
         balanceLoading.value = false;
         balanceStopStatus.value = true;
+        // 隐藏查出账地址进度条
+        showBalanceProgress.value = false;
         return;
       }
 
@@ -1944,6 +2025,8 @@ async function queryBalanceInBatches() {
   } finally {
     balanceLoading.value = false;
     balanceStopStatus.value = true;
+    // 隐藏查出账地址进度条
+    showBalanceProgress.value = false;
   }
 }
 
@@ -2024,6 +2107,9 @@ async function queryBalanceBatch(batchData, startIndex) {
       });
     }
 
+    // 更新余额查询进度
+    updateBalanceProgress();
+
   } catch (error) {
     console.error('批次查询失败:', error);
 
@@ -2035,6 +2121,9 @@ async function queryBalanceBatch(batchData, startIndex) {
         data.value[dataIndex].error_msg = '查询失败！';
       }
     });
+
+    // 更新余额查询进度
+    updateBalanceProgress();
   }
 }
 
@@ -2055,6 +2144,11 @@ async function queryToAddressBalance() {
     return;
   }
 
+  hasExecutedTransfer.value = false;
+  transferTotal.value = data.value.length;
+  transferCompleted.value = 0;
+  transferProgress.value = 0;
+
   // 检查是否有到账地址
   const itemsWithToAddr = JSON.parse(JSON.stringify(data.value.filter(item => item.to_addr)));
   if (itemsWithToAddr.length === 0) {
@@ -2066,6 +2160,13 @@ async function queryToAddressBalance() {
     balanceLoading.value = true;
     balanceStopFlag.value = false;
     balanceStopStatus.value = false;
+
+    // 初始化查到账地址余额查询进度
+    const totalItems = itemsWithToAddr.length;
+    toAddressBalanceTotal.value = totalItems;
+    toAddressBalanceCompleted.value = 0;
+    toAddressBalanceProgress.value = 0;
+    showToAddressBalanceProgress.value = totalItems > 0;
 
     // 重置所有项目状态
     data.value.forEach((item) => {
@@ -2097,6 +2198,8 @@ async function queryToAddressBalanceInBatches() {
       if (balanceStopFlag.value) {
         balanceLoading.value = false;
         balanceStopStatus.value = true;
+        // 隐藏查到账地址进度条
+        showToAddressBalanceProgress.value = false;
         return;
       }
 
@@ -2133,6 +2236,8 @@ async function queryToAddressBalanceInBatches() {
   } finally {
     balanceLoading.value = false;
     balanceStopStatus.value = true;
+    // 隐藏查到账地址进度条
+    showToAddressBalanceProgress.value = false;
   }
 }
 
@@ -2219,6 +2324,9 @@ async function queryToAddressBalanceBatch(batchData, startIndex) {
       });
     }
 
+    // 更新查到账地址余额查询进度
+    updateToAddressBalanceProgress();
+
   } catch (error) {
     console.error('批次查询到账地址失败:', error);
 
@@ -2230,6 +2338,9 @@ async function queryToAddressBalanceBatch(batchData, startIndex) {
         data.value[dataIndex].error_msg = '查询失败！';
       }
     });
+
+    // 更新查到账地址余额查询进度
+    updateToAddressBalanceProgress();
   }
 }
 
@@ -2405,10 +2516,10 @@ function executeTransfer(transferData, resetStatus = true) {
         // 重新开始时重置所有状态 - 使用异步批处理优化性能
         await resetDataStatusAsync();
       } else {
-        // 继续转账时，总数为实际要处理的数据量
-        transferTotal.value = transferData.length;
-        transferCompleted.value = 0;
-        transferProgress.value = 0;
+        // // 继续转账时，总数为实际要处理的数据量
+        // transferTotal.value = transferData.length;
+        // transferCompleted.value = 0;
+        // transferProgress.value = 0;
 
         // 继续转账时不需要重置状态，因为只处理等待执行的项目
       }
@@ -2686,7 +2797,7 @@ async function iterTransfer(accountData) {
         transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
         transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
         left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
-        amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
+        amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 3, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
         limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
         limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000, // limit_count 指定数量 (limit_type 为 2 时生效)
         limit_count_list: [form.limit_min_count && form.limit_min_count.trim() !== '' ? Number(form.limit_min_count) : 21000, form.limit_max_count && form.limit_max_count.trim() !== '' ? Number(form.limit_max_count) : 30000],
@@ -2866,6 +2977,9 @@ async function stopBalanceQuery() {
   balanceLoading.value = false;
   balanceStopFlag.value = true;
   balanceStopStatus.value = true;
+  // 隐藏两个进度条
+  showBalanceProgress.value = false;
+  showToAddressBalanceProgress.value = false;
 }
 
 // 校验数据是否合规
@@ -3187,13 +3301,13 @@ function deleteSelected() {
     Notification.warning("请停止或等待执行完成后再删除数据！");
     return;
   }
-  
+
   // 检查是否有选中的项目
   if (selectedKeys.value.length === 0) {
     Notification.warning("请先选择要删除的项目！");
     return;
   }
-  
+
   // 显示确认对话框
   Modal.confirm({
     title: '确认删除',
@@ -3631,6 +3745,38 @@ async function handleBeforeClose() {
           <a-progress :percent="transferProgress" :show-text="true" :stroke-width="6" :color="{
             '0%': '#00b42a',
             '100%': '#00b42a'
+          }" class="progress-bar" />
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 余额查询进度条 - 悬浮在页面顶部 -->
+    <Transition name="progress-slide" appear>
+      <div v-if="showBalanceProgress" class="floating-progress-bar" :style="{ top: showProgress ? '120px' : '20px' }">
+        <div class="progress-content">
+          <div class="progress-header">
+            <span class="progress-title">查出账地址进度</span>
+            <span class="progress-count">{{ balanceCompleted }} / {{ balanceTotal }}</span>
+          </div>
+          <a-progress :percent="balanceProgress" :show-text="true" :stroke-width="6" :color="{
+            '0%': '#1890ff',
+            '100%': '#1890ff'
+          }" class="progress-bar" />
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 查到账地址余额查询进度条 - 悬浮在页面顶部 -->
+    <Transition name="progress-slide" appear>
+      <div v-if="showToAddressBalanceProgress" class="floating-progress-bar" :style="{ top: (showProgress && showBalanceProgress) ? '220px' : (showProgress || showBalanceProgress) ? '120px' : '20px' }">
+        <div class="progress-content">
+          <div class="progress-header">
+            <span class="progress-title">查到账地址进度</span>
+            <span class="progress-count">{{ toAddressBalanceCompleted }} / {{ toAddressBalanceTotal }}</span>
+          </div>
+          <a-progress :percent="toAddressBalanceProgress" :show-text="true" :stroke-width="6" :color="{
+            '0%': '#52c41a',
+            '100%': '#52c41a'
           }" class="progress-bar" />
         </div>
       </div>

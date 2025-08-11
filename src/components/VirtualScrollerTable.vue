@@ -287,8 +287,8 @@ const getDisplayText = (column, item) => {
   if (!value) return ''
   
   // 特殊处理error_msg字段，只显示前20个字符
-  if (column.dataIndex === 'error_msg' && value.length > 20) {
-    return value.substring(0, 20) + '...'
+  if (column.dataIndex === 'error_msg' && value.length > 30) {
+    return value.substring(0, 30) + '...'
   }
   
   return value
@@ -314,7 +314,7 @@ const getTooltipText = (column, item) => {
 
 // 检查是否为可复制的列
 const isCopyableColumn = (column) => {
-  const copyableColumns = ['private_key', 'address', 'to_addr']
+  const copyableColumns = ['private_key', 'address', 'to_addr', 'error_msg']
   return copyableColumns.includes(column.dataIndex)
 }
 

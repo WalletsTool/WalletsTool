@@ -3187,10 +3187,31 @@ function deleteSelected() {
     Notification.warning("请停止或等待执行完成后再删除数据！");
     return;
   }
-  data.value = data.value.filter(
-    (item) => !selectedKeys.value.includes(item.key)
-  );
-  Notification.success("删除成功");
+  
+  // 检查是否有选中的项目
+  if (selectedKeys.value.length === 0) {
+    Notification.warning("请先选择要删除的项目！");
+    return;
+  }
+  
+  // 显示确认对话框
+  Modal.confirm({
+    title: '确认删除',
+    content: `确定要删除选中的 ${selectedKeys.value.length} 个项目吗？此操作不可撤销。`,
+    okText: '确认删除',
+    cancelText: '取消',
+    okButtonProps: {
+      status: 'danger'
+    },
+    onOk: () => {
+      // 执行删除操作
+      data.value = data.value.filter(
+        (item) => !selectedKeys.value.includes(item.key)
+      );
+      selectedKeys.value = []; // 清空选中状态
+      Notification.success("删除成功");
+    }
+  });
 }
 
 // 返回首页

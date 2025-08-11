@@ -1,14 +1,10 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 const routes = [
     // default redirects (keep backward compatibility for tray/open_function_window)
-    { path: "/", redirect: "/eth/home" },
-    { path: "/home", redirect: "/eth/home" },
+    { path: "/", redirect: "/home" },
+    { path: "/home", name: "home", component: () => import('@/features/home/pages/Home.vue') },
     { path: "/transfer", redirect: "/eth/transfer" },
     { path: "/balance", redirect: "/eth/balance" },
-
-    // Home shared
-    { path: "/eth/home", name: "home-eth", component: () => import('@/features/home/pages/Home.vue') },
-    { path: "/sol/home", name: "home-sol", component: () => import('@/features/home/pages/Home.vue') },
 
     // Ethereum
     { path: "/eth/transfer", name: "eth-transfer", component: () => import('@/features/ethereum/transfer/pages/Transfer.vue') },

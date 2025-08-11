@@ -114,8 +114,8 @@ const rowSelection = reactive({
 function rowClick(record, event) {
   const index = selectedKeys.value.indexOf(record.key);
   index >= 0
-      ? selectedKeys.value.splice(index, 1)
-      : selectedKeys.value.push(record.key);
+    ? selectedKeys.value.splice(index, 1)
+    : selectedKeys.value.push(record.key);
 }
 
 // 分页
@@ -494,7 +494,7 @@ function updateTransferProgress() {
 
   // 计算已完成的转账数量（成功或失败都算完成）
   const completed = data.value.filter(item =>
-      item.exec_status === '2' || item.exec_status === '3'
+    item.exec_status === '2' || item.exec_status === '3'
   ).length;
 
   transferCompleted.value = completed;
@@ -732,8 +732,8 @@ async function continueTransferFromIndex(accountData, startIndex) {
   let contract;
   if (currentCoin.value.coin_type === "token") {
     contract = new ethers.Contract(
-        currentCoin.value.contract_address,
-        currentCoin.value.abi
+      currentCoin.value.contract_address,
+      currentCoin.value.abi
     );
   }
 
@@ -1491,7 +1491,7 @@ const downloadFile = customDebounce(() => {
 // RPC变化事件
 async function chainChange() {
   const chainResult = chainOptions.value.filter(
-      (item) => item.key === chainValue.value
+    (item) => item.key === chainValue.value
   );
 
   if (chainResult.length > 0) {
@@ -1685,13 +1685,13 @@ const handleAddCoinBeforeOk = async () => {
   }
   let flag = false;
   await addCoinFunc()
-      .then(() => {
-        Notification.success("添加代币成功！");
-        flag = true;
-      })
-      .catch((err) => {
-        Notification.error(err);
-      });
+    .then(() => {
+      Notification.success("添加代币成功！");
+      flag = true;
+    })
+    .catch((err) => {
+      Notification.error(err);
+    });
   // 删除成功后重新获取代币列表
   chainChange();
   return flag;
@@ -1707,7 +1707,7 @@ function clearData() {
     Notification.warning("请停止或等待查询完成后再清空列表！");
     return;
   }
-  if(data.value.length === 0){
+  if (data.value.length === 0) {
     Notification.warning('当前列表无数据！');
     return;
   }
@@ -2243,14 +2243,14 @@ async function deleteTokenConfirm() {
       chain: chainValue.value,
       key: currentCoin.value.key,
     })
-        .then(() => {
-          Notification.success("删除成功！");
-          // 删除成功后重新获取代币列表
-          chainChange();
-        })
-        .catch(() => {
-          Notification.error("删除失败！");
-        });
+      .then(() => {
+        Notification.success("删除成功！");
+        // 删除成功后重新获取代币列表
+        chainChange();
+      })
+      .catch(() => {
+        Notification.error("删除失败！");
+      });
   } else {
     // 浏览器环境下模拟成功
     Notification.success("删除成功！");
@@ -2262,38 +2262,35 @@ async function deleteTokenConfirm() {
 async function transferFnc(inputData) {
   // 执行转账
   await iterTransfer(inputData)
-      .then(async () => {
-        if (stopFlag.value) {
-          Notification.warning("已停止执行！");
+    .then(async () => {
+      if (stopFlag.value) {
+        Notification.warning("已停止执行！");
+      } else {
+        const retryData = inputData.filter((item) => item.retry_flag === true);
+        if (form.error_retry === "1" && retryData.length > 0) {
+          //  存在重试数据，使用智能重试逻辑
+          await performIntelligentRetry(retryData);
         } else {
-          const retryData = inputData.filter((item) => item.retry_flag === true);
-          if (form.error_retry === "1" && retryData.length > 0) {
-            //  存在重试数据，使用智能重试逻辑
-            await performIntelligentRetry(retryData);
-          } else {
-            Notification.success("执行完成！");
-            stopStatus.value = true;
-          }
+          Notification.success("执行完成！");
+          stopStatus.value = true;
         }
-        startLoading.value = false;
-        stopFlag.value = false;
-        // 隐藏进度条
-        showProgress.value = false;
-      })
-      .catch(() => {
-        Notification.error("执行失败！");
-        startLoading.value = false;
-        stopStatus.value = true;
-        // 隐藏进度条
-        showProgress.value = false;
-      });
+      }
+      startLoading.value = false;
+      stopFlag.value = false;
+      // 隐藏进度条
+      showProgress.value = false;
+    })
+    .catch(() => {
+      Notification.error("执行失败！");
+      startLoading.value = false;
+      stopStatus.value = true;
+      // 隐藏进度条
+      showProgress.value = false;
+    });
 }
 
 // 执行
 function startTransfer() {
-  // 立即设置loading状态，提供即时反馈
-  startLoading.value = true;
-
   // 基础验证检查
   if (balanceLoading.value) {
     startLoading.value = false;
@@ -2312,49 +2309,55 @@ function startTransfer() {
   }
   // 如果转账类型为指定数量并且且为表格指定数量则进行数据校验
   if (form.send_type === '2' && form.amount_from === '1' &&
-      data.value.find((item) => !item.amount)) {
+    data.value.find((item) => !item.amount)) {
     startLoading.value = false;
     Notification.warning("包含转账金额为空的错误数据请核实！");
     return;
   }
+  // 立即设置loading状态，提供即时反馈
+  startLoading.value = true;
 
-  // 检查是否有未完成的转账记录（只有真正执行过转账操作时才检查）
-  const hasIncompleteTransfers = hasExecutedTransfer.value && data.value.some(item =>
+  setTimeout(() => {
+    // 检查是否有未完成的转账记录（只有真正执行过转账操作时才检查）
+    const hasIncompleteTransfers = hasExecutedTransfer.value && data.value.some(item =>
       item.exec_status === "1" || item.exec_status === "2" || item.exec_status === "3"
-  );
+    );
 
-  if (hasIncompleteTransfers && stopStatus.value) {
-    // 暂时重置loading状态，等待用户选择
-    startLoading.value = false;
+    if (hasIncompleteTransfers && stopStatus.value) {
+      // 暂时重置loading状态，等待用户选择
+      startLoading.value = false;
 
-    // 显示转账确认弹窗
-    transferConfirmVisible.value = true;
-  } else {
-    // 首次转账或正在进行中，直接开始
-    executeTransfer(data.value, true);
-  }
+      // 显示转账确认弹窗
+      transferConfirmVisible.value = true;
+    } else {
+      // 首次转账或正在进行中，直接开始
+      executeTransfer(data.value, true);
+    }
+  }, 100)
 }
 
 // 处理转账确认弹窗的函数
 function handleTransferConfirmOk() {
   transferConfirmLoading.value = true;
 
-  // 继续上次转账 - 只处理等待执行的项目
-  const incompleteData = data.value.filter(item =>
+  setTimeout(() => {
+    // 继续上次转账 - 只处理等待执行的项目
+    const incompleteData = data.value.filter(item =>
       item.exec_status === "0"
-  );
-  if (incompleteData.length === 0) {
+    );
+    if (incompleteData.length === 0) {
+      transferConfirmVisible.value = false;
+      transferConfirmLoading.value = false;
+      startLoading.value = false;
+      Notification.info("所有转账已完成！");
+      return;
+    }
+
     transferConfirmVisible.value = false;
     transferConfirmLoading.value = false;
-    startLoading.value = false;
-    Notification.info("所有转账已完成！");
-    return;
-  }
-
-  transferConfirmVisible.value = false;
-  transferConfirmLoading.value = false;
-  startLoading.value = true;
-  executeTransfer(incompleteData, false);
+    startLoading.value = true;
+    executeTransfer(incompleteData, false);
+  }, 100)
 }
 
 function handleTransferConfirmCancel() {
@@ -2363,9 +2366,10 @@ function handleTransferConfirmCancel() {
   transferConfirmVisible.value = false;
   transferConfirmLoading.value = false;
   startLoading.value = true;
-
-  // 重新开始转账 - 重置所有状态
-  executeTransfer(data.value, true);
+  setTimeout(() => {
+    // 重新开始转账 - 重置所有状态
+    executeTransfer(data.value, true);
+  }, 100)
 }
 
 function handleTransferConfirmClose() {
@@ -2377,51 +2381,46 @@ function handleTransferConfirmClose() {
 // 执行转账的通用方法
 function executeTransfer(transferData, resetStatus = true) {
   validateForm()
-      .then(async () => {
-        // 验证通过，loading状态已在startTransfer中设置
-        stopFlag.value = false;
-        stopStatus.value = false;
+    .then(async () => {
+      // 验证通过，loading状态已在startTransfer中设置
+      stopFlag.value = false;
+      stopStatus.value = false;
 
-        // 标记已执行过转账操作（用于区分余额查询和转账）
-        hasExecutedTransfer.value = true;
+      // 标记已执行过转账操作（用于区分余额查询和转账）
+      hasExecutedTransfer.value = true;
 
-        // 记录转账开始时间（仅在重新开始时记录）
-        if (resetStatus) {
-          transferStartTime.value = Date.now();
-          console.log('转账开始时间:', new Date(transferStartTime.value).toLocaleString());
-        }
+      // 记录转账开始时间（仅在重新开始时记录）
+      if (resetStatus) {
+        transferStartTime.value = Date.now();
+        console.log('转账开始时间:', new Date(transferStartTime.value).toLocaleString());
+      }
 
-        // 初始化进度条
-        if (resetStatus) {
-          // 重新开始时，总数为所有数据
-          transferTotal.value = data.value.length;
-          transferCompleted.value = 0;
-          transferProgress.value = 0;
+      // 初始化进度条
+      if (resetStatus) {
+        // 重新开始时，总数为所有数据
+        transferTotal.value = data.value.length;
+        transferCompleted.value = 0;
+        transferProgress.value = 0;
 
-          // 重新开始时重置所有状态
-          data.value.forEach((item) => {
-            item.exec_status = "0";
-            item.error_msg = "";
-            item.retry_flag = false;
-            item.error_count = 0;
-          });
-        } else {
-          // 继续转账时，总数为实际要处理的数据量
-          transferTotal.value = transferData.length;
-          transferCompleted.value = 0;
-          transferProgress.value = 0;
+        // 重新开始时重置所有状态 - 使用异步批处理优化性能
+        await resetDataStatusAsync();
+      } else {
+        // 继续转账时，总数为实际要处理的数据量
+        transferTotal.value = transferData.length;
+        transferCompleted.value = 0;
+        transferProgress.value = 0;
 
-          // 继续转账时不需要重置状态，因为只处理等待执行的项目
-        }
+        // 继续转账时不需要重置状态，因为只处理等待执行的项目
+      }
 
-        showProgress.value = true;
+      showProgress.value = true;
 
-        await transferFnc(transferData);
-      })
-      .catch(() => {
-        // 验证失败
-        startLoading.value = false;
-      });
+      await transferFnc(transferData);
+    })
+    .catch(() => {
+      // 验证失败
+      startLoading.value = false;
+    });
 }
 
 // 执行转账 - 基于钱包地址的队列管理系统
@@ -2430,8 +2429,8 @@ async function iterTransfer(accountData) {
   let contract;
   if (currentCoin.value.coin_type === "token") {
     contract = new ethers.Contract(
-        currentCoin.value.contract_address,
-        currentCoin.value.abi
+      currentCoin.value.contract_address,
+      currentCoin.value.abi
     );
   }
 
@@ -2634,14 +2633,20 @@ async function iterTransfer(accountData) {
   }
 
   // 多线程模式：按钱包地址分组数据，避免nonce冲突
+  // 性能优化：预先构建索引映射，避免重复的findIndex操作
+  const keyToIndexMap = new Map();
+  data.value.forEach((dataItem, index) => {
+    keyToIndexMap.set(dataItem.key, index);
+  });
+
   const walletGroups = new Map();
   accountData.forEach((item, index) => {
     const walletAddress = item.address || item.private_key; // 使用地址或私钥作为分组键
     if (!walletGroups.has(walletAddress)) {
       walletGroups.set(walletAddress, []);
     }
-    // 找到该item在原始data.value数组中的真实索引
-    const realIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+    // 使用预构建的索引映射快速查找真实索引
+    const realIndex = keyToIndexMap.get(item.key) ?? -1;
     walletGroups.get(walletAddress).push({ ...item, originalIndex: index, realIndex: realIndex });
   });
 
@@ -2815,6 +2820,33 @@ function stopTransfer() {
   showProgress.value = false;
 }
 
+// 异步批处理重置数据状态 - 性能优化
+async function resetDataStatusAsync() {
+  const batchSize = 100; // 每批处理100条数据
+  const totalItems = data.value.length;
+
+  for (let i = 0; i < totalItems; i += batchSize) {
+    const endIndex = Math.min(i + batchSize, totalItems);
+
+    // 批量重置当前批次的数据状态
+    for (let j = i; j < endIndex; j++) {
+      const item = data.value[j];
+      item.exec_status = "0";
+      item.error_msg = "";
+      item.retry_flag = false;
+      item.error_count = 0;
+    }
+
+    // 使用nextTick让出控制权，避免阻塞UI线程
+    await nextTick();
+
+    // 可选：显示进度（如果需要的话）
+    if (totalItems > 1000) {
+      console.log(`数据重置进度: ${Math.min(endIndex, totalItems)}/${totalItems}`);
+    }
+  }
+}
+
 // 停止查询余额
 async function stopBalanceQuery() {
   console.log('stopBalanceQuery方法被调用');
@@ -2840,11 +2872,11 @@ async function stopBalanceQuery() {
 function validateForm() {
   return new Promise((resolve, reject) => {
     if (
-        checkSendType() &&
-        checkPrecision() &&
-        checkDelay() &&
-        checkGasLimit() &&
-        checkGasPrice()
+      checkSendType() &&
+      checkPrecision() &&
+      checkDelay() &&
+      checkGasLimit() &&
+      checkGasPrice()
     ) {
       resolve();
     } else {
@@ -2875,15 +2907,15 @@ function checkSendType() {
     }
   } else if (form.send_type === "3" || form.send_type === "4") {
     const bool =
-        /^\d+(\.\d+)?$/.test(form.send_min_count) &&
-        /^\d+(\.\d+)?$/.test(form.send_max_count) &&
-        Number(form.send_min_count) > 0 &&
-        Number(form.send_max_count) > 0;
+      /^\d+(\.\d+)?$/.test(form.send_min_count) &&
+      /^\d+(\.\d+)?$/.test(form.send_max_count) &&
+      Number(form.send_min_count) > 0 &&
+      Number(form.send_max_count) > 0;
     if (!bool) {
       const msg =
-          form.send_type === "4"
-              ? "剩余数量必须为数字且大于0"
-              : "发送数量必须为数字且大于0";
+        form.send_type === "4"
+          ? "剩余数量必须为数字且大于0"
+          : "发送数量必须为数字且大于0";
       Notification.error(msg);
       formRef.value.setFields({
         send_count_scope: {
@@ -2895,9 +2927,9 @@ function checkSendType() {
     }
     if (Number(form.send_min_count) > Number(form.send_max_count)) {
       const msg =
-          form.send_type === "4"
-              ? "最大剩余数量应该大于等于最小剩余数量"
-              : "最大发送数量应该大于等于最小发送数量";
+        form.send_type === "4"
+          ? "最大剩余数量应该大于等于最小剩余数量"
+          : "最大发送数量应该大于等于最小发送数量";
       Notification.error(msg);
       formRef.value.setFields({
         send_count_scope: {
@@ -2917,9 +2949,9 @@ function checkSendType() {
 // 检验精度
 function checkPrecision() {
   const bool =
-      /^\d+(\.\d+)?$/.test(form.amount_precision) &&
-      Number(form.amount_precision) > 0 &&
-      Number(form.amount_precision) < 18;
+    /^\d+(\.\d+)?$/.test(form.amount_precision) &&
+    Number(form.amount_precision) > 0 &&
+    Number(form.amount_precision) < 18;
   if (!bool) {
     Notification.error("金额精度必须为数字且大于0小于18");
     formRef.value.setFields({
@@ -2967,7 +2999,7 @@ function checkGasPrice() {
     // 如果有最大Gas Price
     if (form.max_gas_price) {
       const bool1 =
-          /^\d+(\.\d+)?$/.test(form.max_gas_price) && Number(form.max_gas_price) > 0;
+        /^\d+(\.\d+)?$/.test(form.max_gas_price) && Number(form.max_gas_price) > 0;
       if (!bool1) {
         Notification.error("最大 Gas Price 设置必须为数字且大于0");
         formRef.value.setFields({
@@ -3009,8 +3041,8 @@ function checkGasLimit() {
     }
   } else if (form.limit_type === "3") {
     const bool =
-        /^\d+$/.test(form.limit_min_count) && Number(form.limit_min_count) > 0 &&
-        /^\d+$/.test(form.limit_max_count) && Number(form.limit_max_count) > 0;
+      /^\d+$/.test(form.limit_min_count) && Number(form.limit_min_count) > 0 &&
+      /^\d+$/.test(form.limit_max_count) && Number(form.limit_max_count) > 0;
     if (!bool) {
       Notification.error("Gas Limit 数量范围必须为正整数");
       formRef.value.setFields({
@@ -3041,10 +3073,10 @@ function checkGasLimit() {
 // 检验 间隔时间
 function checkDelay() {
   const bool =
-      (form.min_interval === "0" ||
-          /^\d+$/.test(form.min_interval) && Number(form.min_interval) >= 0) &&
-      (form.max_interval === "0" ||
-          /^\d+$/.test(form.max_interval) && Number(form.max_interval) >= 0);
+    (form.min_interval === "0" ||
+      /^\d+$/.test(form.min_interval) && Number(form.min_interval) >= 0) &&
+    (form.max_interval === "0" ||
+      /^\d+$/.test(form.max_interval) && Number(form.max_interval) >= 0);
   if (!bool) {
     Notification.error("发送间隔必须为正整数或者0");
     formRef.value.setFields({
@@ -3070,21 +3102,21 @@ function checkDelay() {
 
 function selectSucceeded() {
   selectedKeys.value = data.value
-      .filter((item) => item.exec_status === "2")
-      .map((item) => item.key);
+    .filter((item) => item.exec_status === "2")
+    .map((item) => item.key);
 }
 
 function selectFailed() {
   selectedKeys.value = data.value
-      .filter((item) => item.exec_status === "3")
-      .map((item) => item.key);
+    .filter((item) => item.exec_status === "3")
+    .map((item) => item.key);
 }
 
 // 反选
 function InvertSelection() {
   selectedKeys.value = data.value
-      .filter((item) => selectedKeys.value.indexOf(item.key) < 0)
-      .map((item) => item.key);
+    .filter((item) => selectedKeys.value.indexOf(item.key) < 0)
+    .map((item) => item.key);
 }
 
 // 显示高级筛选弹窗
@@ -3156,7 +3188,7 @@ function deleteSelected() {
     return;
   }
   data.value = data.value.filter(
-      (item) => !selectedKeys.value.includes(item.key)
+    (item) => !selectedKeys.value.includes(item.key)
   );
   Notification.success("删除成功");
 }
@@ -3544,8 +3576,8 @@ async function handleBeforeClose() {
 
       <!-- 正常表格 -->
       <VirtualScrollerTable v-else-if="tableBool" :columns="columns" :data="data" :row-selection="rowSelection"
-                            :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick"
-                            @update:selected-keys="selectedKeys = $event" row-key="key" height="100%">
+        :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick"
+        @update:selected-keys="selectedKeys = $event" row-key="key" height="100%">
 
         <template #exec_status="{ record }">
           <a-tag v-if="record.exec_status === '0'" color="#86909c">等待执行
@@ -3585,7 +3617,7 @@ async function handleBeforeClose() {
 
     <!-- 智能重试状态显示 -->
     <div v-if="retryInProgress"
-         style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #1890ff; flex-shrink: 0;">
+      style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #1890ff; flex-shrink: 0;">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
         <a-spin size="small" />
         <span style="font-size: 14px; color: #1d2129; font-weight: 500;">智能重试检查中...</span>
@@ -3597,7 +3629,7 @@ async function handleBeforeClose() {
 
     <!-- 智能重试结果显示 -->
     <div v-if="retryResults.length > 0 && !retryInProgress"
-         style="margin-top: 10px; padding: 10px; background: #f6ffed; border-radius: 6px; border-left: 4px solid #52c41a; flex-shrink: 0;">
+      style="margin-top: 10px; padding: 10px; background: #f6ffed; border-radius: 6px; border-left: 4px solid #52c41a; flex-shrink: 0;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <span style="font-size: 14px; color: #1d2129; font-weight: 500;">智能重试检查完成</span>
         <a-button size="mini" type="text" @click="retryResults = []">
@@ -3629,7 +3661,7 @@ async function handleBeforeClose() {
       </a-button>
       <!-- 链 选择器 -->
       <a-select v-model="chainValue" :options="chainOptions" @change="chainChange" :field-names="chainFieldNames"
-                size="large" :style="{ width: '65%' }">
+        size="large" :style="{ width: '65%' }">
         <template #label="{ data }">
           <div style="
             display: flex;
@@ -3639,17 +3671,17 @@ async function handleBeforeClose() {
           ">
             <span style="color: gray;">区块链：</span>
             <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
-                       style="width: 20px; height: 20px;" />
+              style="width: 20px; height: 20px;" />
             <span style="margin-left: 10px">{{ data?.name }}</span>
             <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
             <span v-show="chainValue !== 'sol'" style="flex: 1; text-align: end; color: #00b42a">Gas Price: {{
-                data?.gas_price ?? "未知" }}</span>
+              data?.gas_price ?? "未知" }}</span>
           </div>
         </template>
         <template #option="{ data }">
           <div style="display: flex; flex-direction: row; align-items: center;height: 32px;">
             <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
-                       style="width: 20px; height: 20px;" />
+              style="width: 20px; height: 20px;" />
             <span style="margin-left: 10px">{{ data?.name }}</span>
             <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
           </div>
@@ -3669,7 +3701,7 @@ async function handleBeforeClose() {
       </a-button>
       <!-- 代币 选择器 -->
       <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames" :style="{ width: '30%' }"
-                @change="coinChange">
+        @change="coinChange">
         <template #label="{ data }">
           <span style="color: gray;">代币：</span>
           <span style="margin-left: 10px">{{ data?.label }}</span>
@@ -3694,24 +3726,24 @@ async function handleBeforeClose() {
             </a-radio-group>
           </a-form-item>
           <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" tooltip="如果选择表格数据则应导入带有转账数量的表格数据"
-                       style="width: 190px;">
+            style="width: 190px;">
             <a-radio-group v-model="form.amount_from" type="button">
               <a-radio value="1">表格数据</a-radio>
               <a-radio value="2">当前指定</a-radio>
             </a-radio-group>
           </a-form-item>
           <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量"
-                       style="width: 150px;">
+            style="width: 150px;">
             <a-input v-model="form.send_count" />
           </a-form-item>
           <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope"
-                       :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 180px;">
+            :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 180px;">
             <a-input v-model="form.send_min_count" />
             <span style="padding: 0 5px">至</span>
             <a-input v-model="form.send_max_count" />
           </a-form-item>
           <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度"
-                       style="width: 110px;" tooltip="金额小数点位数">
+            style="width: 110px;" tooltip="金额小数点位数">
             <a-input v-model="form.amount_precision" />
           </a-form-item>
           <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />
@@ -3730,7 +3762,7 @@ async function handleBeforeClose() {
           <a-form-item field="multi_window" label="窗口多开" style="width: 100px;" tooltip="窗口配置相同">
             <a-input-group style="width: 100px;">
               <a-input-number v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1"
-                              placeholder="窗口数" style="width: 50px;" />
+                placeholder="窗口数" style="width: 50px;" />
               <a-button status="success" @click="debouncedOpenMultipleWindow">
                 <template #icon>
                   <Icon icon="mdi:content-copy" />
@@ -3751,7 +3783,7 @@ async function handleBeforeClose() {
             <a-input v-model="form.limit_count" />
           </a-form-item>
           <a-form-item v-if="form.limit_type === '3'" style="width: 265px;" field="limit_count_scope"
-                       label="Gas Limit 范围">
+            label="Gas Limit 范围">
             <a-input v-model="form.limit_min_count" />
             <span style="padding: 0 5px">至</span>
             <a-input v-model="form.limit_max_count" />
@@ -3773,11 +3805,11 @@ async function handleBeforeClose() {
             </a-input>
           </a-form-item>
           <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price"
-                       style="width: 130px;" label="最大 Gas Price" tooltip="为空时则不设置上限（单位：Gwei）">
+            style="width: 130px;" label="最大 Gas Price" tooltip="为空时则不设置上限（单位：Gwei）">
             <a-input v-model="form.max_gas_price" />
             <!-- Gas监控状态显示 -->
             <div v-if="gasPriceMonitoring" class="gas-monitoring-info"
-                 style="position: absolute; left: 140px; top: 0; width: 300px; font-size: 12px; color: #666; background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #e8e9ea; z-index: 10;">
+              style="position: absolute; left: 140px; top: 0; width: 300px; font-size: 12px; color: #666; background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #e8e9ea; z-index: 10;">
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
                 <span style="color: #ff4d4f;">⏸️ 转账已暂停</span>
                 <span>Gas监控中...</span>
@@ -3794,7 +3826,7 @@ async function handleBeforeClose() {
     </div>
     <!-- 核心操作区 -->
     <div
-        style="display: flex; align-items: center; padding: 10px 20px; margin-top: 5px; justify-content: center; gap: 30px; flex-shrink: 0;">
+      style="display: flex; align-items: center; padding: 10px 20px; margin-top: 5px; justify-content: center; gap: 30px; flex-shrink: 0;">
       <!-- 左侧区域 -->
       <div style="display: flex; align-items: center; gap: 20px;">
 
@@ -3821,7 +3853,7 @@ async function handleBeforeClose() {
         <a-tooltip v-else content="点击可以提前停止查询">
           <div @click="debouncedStopBalanceQuery">
             <a-button v-if="!balanceStopFlag" class="execute-btn executing" loading
-                      :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
               <template #icon>
                 <Icon icon="mdi:stop" />
               </template>
@@ -3830,7 +3862,7 @@ async function handleBeforeClose() {
           </div>
         </a-tooltip>
         <a-button v-if="balanceStopFlag && !balanceStopStatus" class="execute-btn stopping" loading
-                  :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+          :style="{ width: '130px', height: '40px', fontSize: '14px' }">
           <template #icon>
             <Icon icon="mdi:stop" />
           </template>
@@ -3841,8 +3873,8 @@ async function handleBeforeClose() {
       <!-- 右侧区域 -->
       <div style="display: flex; align-items: center; gap: 20px;">
         <!-- 执行转账按钮 -->
-        <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn"
-                  @click="debouncedStartTransfer" :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+        <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn" @click="debouncedStartTransfer"
+          :style="{ width: '130px', height: '40px', fontSize: '14px' }">
           <template #icon>
             <Icon icon="mdi:play" />
           </template>
@@ -3851,14 +3883,14 @@ async function handleBeforeClose() {
         <a-tooltip v-else content="点击可以提前停止执行">
           <div @click="debouncedStopTransfer">
             <a-button v-if="!stopFlag" class="execute-btn executing" loading
-                      :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
               <template #icon>
                 <Icon icon="mdi:stop" />
               </template>
               执行中...
             </a-button>
             <a-button v-if="stopFlag && !stopStatus" class="execute-btn stopping" loading
-                      :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
               <template #icon>
                 <icon-stop />
               </template>
@@ -3873,7 +3905,7 @@ async function handleBeforeClose() {
   <WalletImportModal ref="walletImportRef" @confirm="handleWalletImportConfirm" @cancel="handleWalletImportCancel" />
   <!-- 添加代币弹窗 -->
   <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"
-           :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
+    :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
     <a-input v-model="coinAddress" placeholder="请输入代币合约地址" allow-clear />
   </a-modal>
   <!-- 删除代币确认框 -->
@@ -3900,32 +3932,17 @@ async function handleBeforeClose() {
   </a-modal>
 
   <!-- 转账确认弹窗 -->
-  <a-modal
-      v-model:visible="transferConfirmVisible"
-      title="转账确认"
-      :mask-closable="false"
-      :closable="true"
-      @close="handleTransferConfirmClose"
-      @cancel="handleTransferConfirmClose"
-  >
+  <a-modal v-model:visible="transferConfirmVisible" title="转账确认" :mask-closable="false" :closable="true"
+    @close="handleTransferConfirmClose" @cancel="handleTransferConfirmClose">
     <div>检测到上次转账未完成，请选择操作方式：</div>
     <template #footer>
       <a-button @click="handleTransferConfirmClose">关闭</a-button>
-      <a-button
-          type="primary"
-          @click="handleTransferConfirmCancel"
-          :loading="transferConfirmLoading"
-          style="margin-left: 10px"
-      >
+      <a-button type="primary" @click="handleTransferConfirmCancel" :loading="transferConfirmLoading"
+        style="margin-left: 10px">
         重新开始转账
       </a-button>
-      <a-button
-          type="primary"
-          status="success"
-          @click="handleTransferConfirmOk"
-          :loading="transferConfirmLoading"
-          style="margin-left: 10px"
-      >
+      <a-button type="primary" status="success" @click="handleTransferConfirmOk" :loading="transferConfirmLoading"
+        style="margin-left: 10px">
         继续上次转账
       </a-button>
     </template>
@@ -3943,7 +3960,7 @@ async function handleBeforeClose() {
             <a-option value="lt">小于</a-option>
           </a-select>
           <a-input v-model="filterForm.platBalanceValue" placeholder="请输入平台币余额值" style="flex: 1;"
-                   @input="debouncedFilterUpdate" />
+            @input="debouncedFilterUpdate" />
         </div>
       </a-form-item>
 
@@ -3956,7 +3973,7 @@ async function handleBeforeClose() {
             <a-option value="lt">小于</a-option>
           </a-select>
           <a-input v-model="filterForm.coinBalanceValue" placeholder="请输入代币余额值" style="flex: 1;"
-                   @input="debouncedFilterUpdate" />
+            @input="debouncedFilterUpdate" />
         </div>
       </a-form-item>
 
@@ -3977,11 +3994,11 @@ async function handleBeforeClose() {
 
   <!-- 代币管理组件 -->
   <TokenManagement ref="tokenManageRef" :chain-value="chainValue" :chain-options="chainOptions"
-                   @token-updated="handleTokenUpdated" />
+    @token-updated="handleTokenUpdated" />
 
   <!-- RPC管理组件 -->
   <RpcManagement ref="rpcManageRef" :chain-value="chainValue" :chain-options="chainOptions"
-                 @rpc-updated="handleRpcUpdated" />
+    @rpc-updated="handleRpcUpdated" />
 
   <!-- 全页面Loading覆盖层 -->
   <div v-if="pageLoading" class="page-loading-overlay">

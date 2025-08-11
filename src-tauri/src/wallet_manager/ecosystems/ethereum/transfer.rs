@@ -356,7 +356,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     let balance = provider.get_balance(wallet_address, None).await?;
     let balance_ether = format_ether(balance);
     
-    println!("序号：{}, 当前余额为: {} ETH", index, balance_ether);
+    println!("序号：{}, 当前余额为: {} ", index, balance_ether);
     
     if balance.is_zero() {
         return Err("当前余额不足，不做转账操作！".into());

@@ -4143,7 +4143,7 @@ async function handleBeforeClose() {
 }
 
 .execute-btn.stopping {
-  background-color: #a1970b;
+  background-color: rgb(255, 125, 0);
 }
 
 /* 全页面Loading覆盖层样式 */

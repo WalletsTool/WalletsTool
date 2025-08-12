@@ -1,6 +1,6 @@
 {
   "productName": "wallet_manager",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "identifier": "com.ezban.walletmanager",
   "build": {
     "beforeDevCommand": "yarn dev",
@@ -12,63 +12,90 @@
     "withGlobalTauri": false,
     "windows": [
       {
+        "title": "钱包管理器",
         "label": "wallet_manager",
-        "title": "钱包管理工具",
         "width": 350,
-        "height": 720,
-        "resizable": true,
+        "height": 750,
+        "resizable": false,
         "fullscreen": false,
-        "decorations": false,
         "transparent": false,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "shadow": true,
-        "visible": true,
+        "decorations": false,
+        "alwaysOnTop": false,
         "skipTaskbar": false,
-        "alwaysOnTop": false
+        "center": true,
+        "minWidth": 330,
+        "minHeight": 730,
+        "maximized": false,
+        "visible": true,
+        "focus": true
       }
     ],
     "security": {
-      "csp": null,
-      "capabilities": ["default"]
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: wss:;",
+      "capabilities": ["default"],
+      "dangerousDisableAssetCspModification": false
     }
   },
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
-    "copyright": "",
+    "copyright": "Copyright © 2025 EzBan. All rights reserved.",
+    "publisher": "EzBan",
+    "homepage": "https://github.com/ezban/wallet_manager",
     "externalBin": [],
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
+      "icons/64x64.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "longDescription": "",
+    "longDescription": "一个功能强大的多链钱包管理工具，支持钱包导入、余额查询、代币转账等功能。提供直观的用户界面，帮助用户安全便捷地管理多个区块链网络上的数字资产。支持批量操作和实时余额监控，是数字资产管理的理想选择。适用于个人用户和开发者，提供安全可靠的区块链资产管理解决方案。",
     "macOS": {
-      "entitlements": null,
-      "exceptionDomain": "",
       "frameworks": [],
-      "providerShortName": null,
-      "signingIdentity": null
+      "minimumSystemVersion": "10.13",
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "providerShortName": "EzBan",
+      "entitlements": null
     },
     "resources": [
       "data/*"
     ],
-    "shortDescription": "",
+    "shortDescription": "多链钱包管理工具 - 安全便捷的数字资产管理解决方案",
     "targets": "all",
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": "",
+      "allowDowngrades": false,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
       "wix": {
         "language": "zh-CN"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["SimpChinese"]
       }
     },
     "linux": {
       "deb": {
-        "depends": []
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      },
+      "rpm": {
+        "epoch": 0,
+        "release": "1"
       }
     }
   },

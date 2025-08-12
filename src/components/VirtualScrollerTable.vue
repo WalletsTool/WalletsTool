@@ -27,7 +27,16 @@
 
     <!-- 虚拟滚动内容 -->
     <div class="table-body" :style="{ height: `calc(${height} - 40px)` }">
+      <!-- 空数据提示 -->
+      <div v-if="!loading && data.length === 0" class="empty-data">
+        <div class="empty-icon">
+          <Icon icon="icon-park-outline:table-file" :size="32" />
+        </div>
+        <div class="empty-text">暂无数据</div>
+      </div>
+      
       <VirtualScroller
+        v-else
         :items="data"
         :itemSize="35"
         class="virtual-scroller"
@@ -36,7 +45,11 @@
         <template #item="{ item, options }">
           <div
             class="table-row"
-            :class="{ 'selected': isRowSelected(item), 'clickable': true }"
+            :class="{ 
+              'selected': isRowSelected(item), 
+              'clickable': true,
+              'zebra-stripe': getItemIndex(item) % 2 === 1
+            }"
             @click="handleRowClick(item, getItemIndex(item))"
           >
             <!-- 选择列 -->
@@ -54,29 +67,57 @@
               v-for="column in sortedColumns"
               :key="column.dataIndex || column.slotName"
               class="table-cell"
+              :class="{ 'copyable-cell': isCopyableColumn(column) }"
               :style="{ ...getContentColumnStyle(column), textAlign: column.align || 'left' }"
               :title="getTooltipText(column, item)"
+              @dblclick="handleCellDoubleClick($event, column, item)"
             >
-              <!-- 插槽内容 -->
-              <template v-if="column.slotName">
-                <!-- 自动处理序号列 -->
-                <span v-if="column.slotName === 'index'">
-                  {{ getItemIndex(item) + 1 }}
+              <!-- 可复制列使用Tooltip包装 -->
+              <Tooltip v-if="isCopyableColumn(column)" content="双击可复制" position="top">
+                <!-- 插槽内容 -->
+                <template v-if="column.slotName">
+                  <!-- 自动处理序号列 -->
+                  <span v-if="column.slotName === 'index'">
+                    {{ getItemIndex(item) + 1 }}
+                  </span>
+                  <!-- 其他插槽内容 -->
+                  <slot
+                    v-else
+                    :name="column.slotName"
+                    :record="item"
+                    :rowIndex="getItemIndex(item)"
+                  >
+                    {{ item[column.dataIndex] }}
+                  </slot>
+                </template>
+                <!-- 普通内容 -->
+                <span v-else :class="{ 'ellipsis': column.ellipsis }">
+                  {{ getDisplayText(column, item) }}
                 </span>
-                <!-- 其他插槽内容 -->
-                <slot
-                  v-else
-                  :name="column.slotName"
-                  :record="item"
-                  :rowIndex="getItemIndex(item)"
-                >
-                  {{ item[column.dataIndex] }}
-                </slot>
+              </Tooltip>
+              <!-- 非可复制列正常显示 -->
+              <template v-else>
+                <!-- 插槽内容 -->
+                <template v-if="column.slotName">
+                  <!-- 自动处理序号列 -->
+                  <span v-if="column.slotName === 'index'">
+                    {{ getItemIndex(item) + 1 }}
+                  </span>
+                  <!-- 其他插槽内容 -->
+                  <slot
+                    v-else
+                    :name="column.slotName"
+                    :record="item"
+                    :rowIndex="getItemIndex(item)"
+                  >
+                    {{ item[column.dataIndex] }}
+                  </slot>
+                </template>
+                <!-- 普通内容 -->
+                <span v-else :class="{ 'ellipsis': column.ellipsis }">
+                  {{ getDisplayText(column, item) }}
+                </span>
               </template>
-              <!-- 普通内容 -->
-              <span v-else :class="{ 'ellipsis': column.ellipsis }">
-                {{ getDisplayText(column, item) }}
-              </span>
             </div>
           </div>
         </template>
@@ -89,17 +130,15 @@
       <div class="loading-text">加载中...</div>
     </div>
 
-    <!-- 空数据提示 -->
-    <div v-if="!loading && data.length === 0" class="empty-data">
-      <div class="empty-icon">📋</div>
-      <div class="empty-text">暂无数据</div>
-    </div>
+
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
 import VirtualScroller from 'primevue/virtualscroller'
+import { Icon } from '@iconify/vue'
+import { Message, Tooltip } from '@arco-design/web-vue'
 
 // Props
 const props = defineProps({
@@ -248,8 +287,8 @@ const getDisplayText = (column, item) => {
   if (!value) return ''
   
   // 特殊处理error_msg字段，只显示前20个字符
-  if (column.dataIndex === 'error_msg' && value.length > 20) {
-    return value.substring(0, 20) + '...'
+  if (column.dataIndex === 'error_msg' && value.length > 30) {
+    return value.substring(0, 30) + '...'
   }
   
   return value
@@ -271,6 +310,40 @@ const getTooltipText = (column, item) => {
   }
   
   return ''
+}
+
+// 检查是否为可复制的列
+const isCopyableColumn = (column) => {
+  const copyableColumns = ['private_key', 'address', 'to_addr', 'error_msg']
+  return copyableColumns.includes(column.dataIndex)
+}
+
+// 处理单元格双击事件
+const handleCellDoubleClick = async (event, column, item) => {
+  // 阻止事件冒泡和默认行为，避免触发行选择
+  event.stopPropagation()
+  event.preventDefault()
+  
+  if (!isCopyableColumn(column)) return
+  
+  const value = item[column.dataIndex]
+  if (!value) return
+  
+  try {
+    await navigator.clipboard.writeText(value)
+    Message.success({
+      content: '已复制',
+      position: 'top',
+      offset: 500
+    })
+  } catch (error) {
+    console.error('复制失败:', error)
+    Message.error({
+      content: '复制失败',
+      position: 'top',
+      offset: 500
+    })
+  }
 }
 </script>
 
@@ -328,12 +401,16 @@ const getTooltipText = (column, item) => {
   background: var(--table-bg, #ffffff);
 }
 
+.table-row.zebra-stripe {
+  background-color: var(--table-zebra-bg, #fafafa);
+}
+
 .table-row:hover {
-  background-color: var(--table-hover-bg, #f7f8fa);
+  background-color: var(--table-hover-bg, #f7f8fa) !important;
 }
 
 .table-row.selected {
-  background-color: var(--table-selected-bg, #e8f4ff);
+  background-color: var(--table-selected-bg, #e8f4ff) !important;
 }
 
 .table-row.clickable {
@@ -352,6 +429,12 @@ const getTooltipText = (column, item) => {
 .table-cell:last-child {
   border-right: none;
 }
+
+.copyable-cell {
+  cursor: copy;
+  position: relative;
+}
+
 
 .checkbox-cell {
   width: 50px;
@@ -411,7 +494,7 @@ const getTooltipText = (column, item) => {
   justify-content: center;
   align-items: center;
   height: 200px;
-  color: #86909c;
+  color: #c3c3c3;
 }
 
 .empty-icon {
@@ -424,26 +507,5 @@ const getTooltipText = (column, item) => {
   font-size: 14px;
 }
 
-/* 滚动条样式 */
-:deep(.p-virtualscroller-content) {
-  scrollbar-width: thin;
-  scrollbar-color: #c9cdd4 #f7f8fa;
-}
 
-:deep(.p-virtualscroller-content::-webkit-scrollbar) {
-  width: 8px;
-}
-
-:deep(.p-virtualscroller-content::-webkit-scrollbar-track) {
-  background: #f7f8fa;
-}
-
-:deep(.p-virtualscroller-content::-webkit-scrollbar-thumb) {
-  background: #c9cdd4;
-  border-radius: 4px;
-}
-
-:deep(.p-virtualscroller-content::-webkit-scrollbar-thumb:hover) {
-  background: #a9aeb8;
-}
 </style>

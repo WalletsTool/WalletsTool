@@ -374,10 +374,10 @@ impl SimpleBalanceQueryService {
     }
 
     // 批量查询余额（带实时更新）
-    pub async fn query_balances_with_updates(
+    pub async fn query_balances_with_updates<R: tauri::Runtime>(
         &self, 
         params: QueryParams, 
-        app_handle: tauri::AppHandle,
+        app_handle: tauri::AppHandle<R>,
         window_id: String
     ) -> QueryResult {
         // 重置停止标志
@@ -469,9 +469,9 @@ pub async fn query_balances_simple(params: QueryParams) -> Result<QueryResult, S
 
 // 带有实时更新的查询余额命令
 #[tauri::command]
-pub async fn query_balances_with_updates(
+pub async fn query_balances_with_updates<R: tauri::Runtime>(
     params: QueryParams,
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle<R>,
     window_id: String,
 ) -> Result<QueryResult, String> {
     let service = SimpleBalanceQueryService::new();

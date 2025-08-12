@@ -12,19 +12,19 @@ import { ethers } from "ethers";
 
 import { read, utils as xlUtils, writeFile } from "xlsx";
 import { debounce as customDebounce } from '@/utils/debounce.js'
-import ChainIcon from '../components/ChainIcon.vue'
-import TitleBar from '../components/TitleBar.vue'
-import TableSkeleton from '../components/TableSkeleton.vue'
-import VirtualScrollerTable from '../components/VirtualScrollerTable.vue'
+import ChainIcon from '@/components/ChainIcon.vue'
+import TitleBar from '@/components/TitleBar.vue'
+import TableSkeleton from '@/components/TableSkeleton.vue'
+import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 
 // 懒加载非关键组件
-const ChainManagement = defineAsyncComponent(() => import('../components/ChainManagement.vue'))
-const RpcManagement = defineAsyncComponent(() => import('../components/RpcManagement.vue'))
-const TokenManagement = defineAsyncComponent(() => import('../components/TokenManagement.vue'))
-const WalletImportModal = defineAsyncComponent(() => import('../components/WalletImportModal.vue'))
+const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
+const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagement.vue'))
+const TokenManagement = defineAsyncComponent(() => import('@/components/TokenManagement.vue'))
+const WalletImportModal = defineAsyncComponent(() => import('@/components/WalletImportModal.vue'))
 const router = useRouter();
 // 窗口标题
-const windowTitle = ref('Wallet Manager - 批量转账');
+const windowTitle = ref('批量转账');
 // table列名
 const columns = [
   {
@@ -118,9 +118,6 @@ function rowClick(record, event) {
     : selectedKeys.value.push(record.key);
 }
 
-// 分页
-const pagination = ref(false);
-const scrollbar = ref(true);
 // 滚动条设置
 // 滚动配置现在通过 CSS calc() 动态计算
 let tableBool = ref(true);
@@ -161,7 +158,7 @@ const form = reactive({
   limit_max_count: "30000",
   min_interval: "1",
   max_interval: "3",
-  amount_precision: "6",
+  amount_precision: "3",
   error_retry: "0",
 });
 
@@ -201,6 +198,11 @@ let startLoading = ref(false);
 let stopFlag = ref(false);
 // 转账是否已经停止
 let stopStatus = ref(true);
+// 是否执行过真正的转账操作（用于区分余额查询和转账）
+let hasExecutedTransfer = ref(false);
+// 转账确认弹窗相关变量
+const transferConfirmVisible = ref(false);
+const transferConfirmLoading = ref(false);
 // 线程数设置，默认为1
 let threadCount = ref(1);
 // 多窗口数量设置，默认为1
@@ -229,6 +231,18 @@ const transferProgress = ref(0); // 转账进度百分比
 const transferTotal = ref(0); // 总转账数量
 const transferCompleted = ref(0); // 已完成转账数量
 const showProgress = ref(false); // 是否显示进度条
+
+// 余额查询进度相关变量
+const balanceProgress = ref(0); // 余额查询进度百分比
+const balanceTotal = ref(0); // 总查询数量
+const balanceCompleted = ref(0); // 已完成查询数量
+const showBalanceProgress = ref(false); // 是否显示余额查询进度条
+
+// 查到账地址余额查询进度相关变量
+const toAddressBalanceProgress = ref(0); // 查到账地址余额查询进度百分比
+const toAddressBalanceTotal = ref(0); // 查到账地址总查询数量
+const toAddressBalanceCompleted = ref(0); // 查到账地址已完成查询数量
+const showToAddressBalanceProgress = ref(false); // 是否显示查到账地址余额查询进度条
 
 // 计算属性：缓存转账配置
 const transferConfig = computed(() => {
@@ -393,8 +407,8 @@ function openMultipleWindow() {
       const webview = new WebviewWindow(windowLabel, {
         url: windowUrl,
         title: `（多开窗口）批量转账 ${windowId}`,
-        width: 1275,
-        height: 850,
+        width: 1350,
+        height: 900,
         // center: true,
         resizable: true,
         decorations: false,  // 移除Windows原生窗口边框
@@ -504,6 +518,61 @@ function updateTransferProgress() {
   if (completed === transferTotal.value && transferTotal.value > 0) {
     setTimeout(() => {
       showProgress.value = false;
+    }, 3000); // 3秒后隐藏进度条
+  }
+}
+
+// 更新余额查询进度
+function updateBalanceProgress() {
+  if (!showBalanceProgress.value) return;
+
+  // 计算已完成的查询数量（有余额数据或查询失败都算完成）
+  const completed = data.value.filter(item =>
+    (item.plat_balance !== '' && item.plat_balance !== null) ||
+    (item.coin_balance !== '' && item.coin_balance !== null) ||
+    item.exec_status === '3'
+  ).length;
+
+  balanceCompleted.value = completed;
+  // 计算进度百分比
+  if (balanceTotal.value > 0) {
+    balanceProgress.value = Number((completed / balanceTotal.value).toFixed(4));
+  } else {
+    balanceProgress.value = 0;
+  }
+
+  // 如果全部完成，延迟隐藏进度条
+  if (completed === balanceTotal.value && balanceTotal.value > 0) {
+    setTimeout(() => {
+      showBalanceProgress.value = false;
+    }, 3000); // 3秒后隐藏进度条
+  }
+}
+
+// 更新查到账地址余额查询进度
+function updateToAddressBalanceProgress() {
+  if (!showToAddressBalanceProgress.value) return;
+
+  // 只计算有到账地址的项目的完成情况
+  const itemsWithToAddr = data.value.filter(item => item.to_addr);
+  const completed = itemsWithToAddr.filter(item =>
+    (item.plat_balance !== '' && item.plat_balance !== null) ||
+    (item.coin_balance !== '' && item.coin_balance !== null) ||
+    item.exec_status === '3'
+  ).length;
+
+  toAddressBalanceCompleted.value = completed;
+  // 计算进度百分比
+  if (toAddressBalanceTotal.value > 0) {
+    toAddressBalanceProgress.value = Number((completed / toAddressBalanceTotal.value).toFixed(4));
+  } else {
+    toAddressBalanceProgress.value = 0;
+  }
+
+  // 如果全部完成，延迟隐藏进度条
+  if (completed === toAddressBalanceTotal.value && toAddressBalanceTotal.value > 0) {
+    setTimeout(() => {
+      showToAddressBalanceProgress.value = false;
     }, 3000); // 3秒后隐藏进度条
   }
 }
@@ -1119,8 +1188,8 @@ onMounted(async () => {
     }
   } else {
     // 浏览器环境下设置默认标题和ID
-    windowTitle.value = 'Wallet Manager - 批量转账';
-    currentWindowId.value = 'browser_window';
+    windowTitle.value = '批量转账';
+    currentWindowId.value = 'browser_transfer_window';
   }
 
   // 配置应用已经在onBeforeMount中完成，这里不再需要重复应用
@@ -1144,6 +1213,10 @@ onMounted(async () => {
         data.value[targetIndex].coin_balance = item.coin_balance;
         data.value[targetIndex].exec_status = item.exec_status;
         data.value[targetIndex].error_msg = item.error_msg;
+        
+        // 实时更新余额查询进度
+        updateBalanceProgress();
+        updateToAddressBalanceProgress();
       }
     });
 
@@ -1315,11 +1388,11 @@ function UploadFile() {
   if (!uploadInputRef.value.files || !uploadInputRef.value.files[0]) {
     return; // 没有文件被选择，直接返回
   }
-  
+
   // 开启全页面loading
   pageLoading.value = true;
   tableLoading.value = true;
-  
+
   // 添加500毫秒延迟，确保loading窗口显示
   setTimeout(() => {
     let file = uploadInputRef.value.files[0];
@@ -1327,58 +1400,85 @@ function UploadFile() {
     //提取excel中文件内容
     reader.readAsArrayBuffer(file);
     data.value = [];
-  reader.onload = function () {
-    const buffer = reader.result;
-    const bytes = new Uint8Array(buffer);
-    const length = bytes.byteLength;
-    let binary = "";
-    for (let i = 0; i < length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    //转换二进制
-    const wb = read(binary, {
-      type: "binary",
-    });
-    const outdata = xlUtils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    // 用于存储不合规数据
-    const invalidData = [];
-    let validCount = 0;
-    let invalidCount = 0;
+    reader.onload = function () {
+      const buffer = reader.result;
+      const bytes = new Uint8Array(buffer);
+      const length = bytes.byteLength;
+      let binary = "";
+      for (let i = 0; i < length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      //转换二进制
+      const wb = read(binary, {
+        type: "binary",
+      });
+      const outdata = xlUtils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      // 用于存储不合规数据
+      const invalidData = [];
+      let validCount = 0;
+      let invalidCount = 0;
 
-    // 这里for循环将excel表格数据转化成json数据
-    outdata.forEach((i, index) => {
-      const rowNumber = index + 2; // Excel行号（从第2行开始，第1行是表头）
-      const privateKey = String(i.私钥 || '').trim();
-      const toAddress = String(i.地址 || '').trim();
-      const amount = i.转账数量;
+      // 这里for循环将excel表格数据转化成json数据
+      outdata.forEach((i, index) => {
+        const rowNumber = index + 2; // Excel行号（从第2行开始，第1行是表头）
+        const privateKey = String(i.私钥 || '').trim();
+        const toAddress = String(i.地址 || '').trim();
+        const amount = i.转账数量;
 
-      // 验证私钥和地址
-      const isPrivateKeyValid = privateKey && validatePrivateKey(privateKey);
-      const isAddressValid = toAddress && validateAddress(toAddress);
+        // 验证私钥和地址
+        const isPrivateKeyValid = privateKey && validatePrivateKey(privateKey);
+        const isAddressValid = toAddress && validateAddress(toAddress);
 
-      if (isPrivateKeyValid && isAddressValid) {
-        // 数据合规，添加到表格
-        try {
-          // 从私钥生成地址
-          const wallet = new ethers.Wallet(privateKey);
-          const address = wallet.address;
+        if (isPrivateKeyValid && isAddressValid) {
+          // 数据合规，添加到表格
+          try {
+            // 从私钥生成地址
+            const wallet = new ethers.Wallet(privateKey);
+            const address = wallet.address;
 
-          data.value.push({
-            key: `transfer_${validCount}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            private_key: privateKey,
-            address: address,
-            to_addr: toAddress,
-            amount: amount ? String(amount) : "0", // 转账数量为空时显示为0
-            plat_balance: "",
-            coin_balance: "",
-            exec_status: "0",
-            error_msg: "",
-          });
-          validCount++;
-        } catch (error) {
-          // 私钥无效，添加到不合规数据
+            data.value.push({
+              key: `transfer_${validCount}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              private_key: privateKey,
+              address: address,
+              to_addr: toAddress,
+              amount: amount ? String(amount) : "0", // 转账数量为空时显示为0
+              plat_balance: "",
+              coin_balance: "",
+              exec_status: "0",
+              error_msg: "",
+            });
+            validCount++;
+          } catch (error) {
+            // 私钥无效，添加到不合规数据
+            const errorReasons = [];
+            errorReasons.push('私钥无效');
+
+            invalidData.push({
+              私钥: privateKey,
+              地址: toAddress,
+              转账数量: amount || '',
+              错误原因: errorReasons.join('; '),
+              行号: rowNumber
+            });
+            invalidCount++;
+          }
+        } else {
+          // 数据不合规，记录错误原因
           const errorReasons = [];
-          errorReasons.push('私钥无效');
+          if (!isPrivateKeyValid) {
+            if (!privateKey) {
+              errorReasons.push('私钥为空');
+            } else {
+              errorReasons.push('私钥格式错误');
+            }
+          }
+          if (!isAddressValid) {
+            if (!toAddress) {
+              errorReasons.push('地址为空');
+            } else {
+              errorReasons.push('地址格式错误');
+            }
+          }
 
           invalidData.push({
             私钥: privateKey,
@@ -1389,73 +1489,46 @@ function UploadFile() {
           });
           invalidCount++;
         }
-      } else {
-        // 数据不合规，记录错误原因
-        const errorReasons = [];
-        if (!isPrivateKeyValid) {
-          if (!privateKey) {
-            errorReasons.push('私钥为空');
-          } else {
-            errorReasons.push('私钥格式错误');
-          }
-        }
-        if (!isAddressValid) {
-          if (!toAddress) {
-            errorReasons.push('地址为空');
-          } else {
-            errorReasons.push('地址格式错误');
-          }
-        }
-
-        invalidData.push({
-          私钥: privateKey,
-          地址: toAddress,
-          转账数量: amount || '',
-          错误原因: errorReasons.join('; '),
-          行号: rowNumber
-        });
-        invalidCount++;
-      }
-    });
-
-    // 如果有不合规数据，导出到本地
-    if (invalidData.length > 0) {
-      exportInvalidData(invalidData);
-
-      // 显示导入结果通知
-      if (validCount > 0) {
-        Notification.warning({
-          title: '导入完成',
-          content: `成功导入 ${validCount} 条数据，${invalidCount} 条不合规数据已导出到本地文件`,
-          duration: 5000
-        });
-      } else {
-        Notification.error({
-          title: '导入失败',
-          content: `所有数据都不合规，共 ${invalidCount} 条数据已导出到本地文件`,
-          duration: 5000
-        });
-      }
-    } else {
-      // 全部数据合规
-      Notification.success({
-        title: '导入成功',
-        content: `成功导入 ${validCount} 条数据`,
-        duration: 3000
       });
-    }
-  };
-  reader.onerror = function () {
-    tableLoading.value = false;
-    // 关闭全页面loading
-    pageLoading.value = false;
-    // 显示错误通知
-    Notification.error({
-      title: '文件读取失败',
-      content: '文件读取过程中发生错误，请检查文件格式是否正确',
-      duration: 5000
-    });
-  };
+
+      // 如果有不合规数据，导出到本地
+      if (invalidData.length > 0) {
+        exportInvalidData(invalidData);
+
+        // 显示导入结果通知
+        if (validCount > 0) {
+          Notification.warning({
+            title: '导入完成',
+            content: `成功导入 ${validCount} 条数据，${invalidCount} 条不合规数据已导出到本地文件`,
+            duration: 5000
+          });
+        } else {
+          Notification.error({
+            title: '导入失败',
+            content: `所有数据都不合规，共 ${invalidCount} 条数据已导出到本地文件`,
+            duration: 5000
+          });
+        }
+      } else {
+        // 全部数据合规
+        Notification.success({
+          title: '导入成功',
+          content: `成功导入 ${validCount} 条数据`,
+          duration: 3000
+        });
+      }
+    };
+    reader.onerror = function () {
+      tableLoading.value = false;
+      // 关闭全页面loading
+      pageLoading.value = false;
+      // 显示错误通知
+      Notification.error({
+        title: '文件读取失败',
+        content: '文件读取过程中发生错误，请检查文件格式是否正确',
+        duration: 5000
+      });
+    };
     reader.onloadend = function () {
       tableLoading.value = false;
       // 关闭全页面loading
@@ -1702,14 +1775,27 @@ function clearData() {
     Notification.warning("请停止或等待查询完成后再清空列表！");
     return;
   }
-  data.value = [];
-  // 重置文件输入的value，确保再次选择相同文件时能触发change事件
-  if (uploadInputRef.value) {
-    uploadInputRef.value.value = '';
+  if (data.value.length === 0) {
+    Notification.warning('当前列表无数据！');
+    return;
   }
-  // 重置页面loading状态
-  pageLoading.value = false;
-  Notification.success("清空列表成功！");
+
+  Modal.confirm({
+    title: '确认清空',
+    content: '确定要清空所有列表数据吗？此操作不可撤销。',
+    onOk: () => {
+      data.value = [];
+      // 重置转账执行标识
+      hasExecutedTransfer.value = false;
+      // 重置文件输入的value，确保再次选择相同文件时能触发change事件
+      if (uploadInputRef.value) {
+        uploadInputRef.value.value = '';
+      }
+      // 重置页面loading状态
+      pageLoading.value = false;
+      Notification.success("清空列表成功！");
+    }
+  });
 }
 
 // 导入事件触发
@@ -1831,7 +1917,18 @@ function deleteTokenCancel() {
 // 当前窗口ID
 let currentWindowId = ref('');
 
-// 查询余额
+// 创建防抖版本的操作函数
+const debouncedQueryBalance = customDebounce(queryBalance, 500);
+const debouncedQueryToAddressBalance = customDebounce(queryToAddressBalance, 500);
+const debouncedStartTransfer = customDebounce(startTransfer, 800);
+const debouncedStopBalanceQuery = customDebounce(stopBalanceQuery, 300);
+const debouncedStopTransfer = customDebounce(stopTransfer, 300);
+const debouncedHandleClick = customDebounce(handleClick, 500);
+const debouncedClearData = customDebounce(clearData, 600);
+const debouncedDeleteItemConfirm = customDebounce(deleteItemConfirm, 400);
+const debouncedOpenMultipleWindow = customDebounce(openMultipleWindow, 600);
+
+// 查询余额 - 支持分批处理
 async function queryBalance() {
   if (!stopStatus.value) {
     Notification.warning("请停止或等待执行完成后再查询余额！");
@@ -1845,10 +1942,21 @@ async function queryBalance() {
     Notification.warning("请先导入私钥！");
     return;
   }
+  hasExecutedTransfer.value = false;
+  transferTotal.value = data.value.length;
+  transferCompleted.value = 0;
+  transferProgress.value = 0;
   if (currentCoin.value.coin_type === "base" || currentCoin.value.coin_type === "token") {
     balanceLoading.value = true;
     balanceStopFlag.value = false;
     balanceStopStatus.value = false;
+
+    // 初始化余额查询进度
+    const totalItems = data.value.length;
+    balanceTotal.value = totalItems;
+    balanceCompleted.value = 0;
+    balanceProgress.value = 0;
+    showBalanceProgress.value = totalItems > 0;
 
     // 重置所有项目状态
     data.value.forEach((item) => {
@@ -1858,113 +1966,168 @@ async function queryBalance() {
       item.exec_status = "0";
     });
 
-    try {
-      // 使用窗口感知的余额查询
-      const params = {
-        chain: chainValue.value,
-        coin_config: {
-          coin_type: currentCoin.value.coin_type,
-          contract_address: currentCoin.value.contract_address || null,
-          abi: currentCoin.value.abi || null
-        },
-        items: data.value.map(item => ({
-          key: item.key,
-          address: item.address || null,
-          private_key: item.private_key || null,
-          plat_balance: null,
-          coin_balance: null,
-          nonce: null,
-          exec_status: '0',
-          error_msg: null,
-          retry_flag: false
-        })),
-        only_coin_config: false,
-        thread_count: Number(threadCount.value)
-      };
-
-      // 检查是否需要停止查询
-      if (balanceStopFlag.value) {
-        balanceLoading.value = false;
-        balanceStopStatus.value = true;
-        return;
-      }
-
-      let result;
-      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-      if (isTauri) {
-        result = await invoke('query_balances_with_updates', {
-          params,
-          windowId: currentWindowId.value
-        });
-      } else {
-        // 浏览器环境下的模拟数据
-        result = {
-          success: true,
-          items: data.value.map(item => ({
-            ...item,
-            plat_balance: '1.0',
-            coin_balance: '100.0',
-            nonce: 1,
-            exec_status: '2',
-            error_msg: null
-          }))
-        };
-      }
-
-      if (result.success || result.items) {
-        // 更新数据 - 无论总体是否成功，都要更新单条记录的状态
-        result.items.forEach((resultItem, index) => {
-          if (data.value[index]) {
-            // 保存原始私钥，避免被覆盖
-            const originalPrivateKey = data.value[index].private_key;
-            Object.assign(data.value[index], resultItem);
-            // 恢复私钥字段
-            data.value[index].private_key = originalPrivateKey;
-          }
-        });
-
-        // 统计成功和失败的数量
-        const successCount = result.items.filter(item => item.exec_status === '2').length;
-        const failCount = result.items.filter(item => item.exec_status === '3').length;
-        const totalCount = result.items.length;
-
-        // 查询完成统计
-
-        if (successCount === totalCount) {
-          Notification.success('查询成功！');
-        } else if (successCount > 0) {
-          Notification.warning(`查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
-        } else {
-          Notification.error('查询失败：所有记录都查询失败');
-        }
-      } else {
-        // 只有在没有返回任何结果时才设置所有项目为失败状态
-        data.value.forEach(item => {
-          // 保护私钥字段，只更新状态相关字段
-          item.exec_status = '3';
-          item.error_msg = result.error_msg || '查询失败！';
-        });
-        Notification.error('查询失败：' + (result.error_msg || '未知错误'));
-      }
-
-    } catch (error) {
-      console.error('查询失败:', error);
-
-      // 设置所有项目为失败状态，保护私钥字段
-      data.value.forEach(item => {
-        item.exec_status = '3';
-        item.error_msg = '查询失败！';
-      });
-
-      Notification.error('查询失败：' + error.message);
-    }
-
-    balanceLoading.value = false;
-    balanceStopStatus.value = true;
+    // 分批处理大数据集
+    await queryBalanceInBatches();
   } else {
     Notification.warning("查询 coin 类型错误！");
   }
 }
+
+// 分批查询余额
+async function queryBalanceInBatches() {
+  const BATCH_SIZE = 50; // 每批处理50个地址
+  const totalItems = data.value.length;
+  const totalBatches = Math.ceil(totalItems / BATCH_SIZE);
+
+  console.log(`开始分批查询余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
+
+  try {
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      // 检查是否需要停止查询
+      if (balanceStopFlag.value) {
+        balanceLoading.value = false;
+        balanceStopStatus.value = true;
+        // 隐藏查出账地址进度条
+        showBalanceProgress.value = false;
+        return;
+      }
+
+      const startIndex = batchIndex * BATCH_SIZE;
+      const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
+      const batchData = data.value.slice(startIndex, endIndex);
+
+      console.log(`处理第 ${batchIndex + 1}/${totalBatches} 批，索引 ${startIndex}-${endIndex - 1}`);
+
+      await queryBalanceBatch(batchData, startIndex);
+
+      // 批次间添加短暂延迟，避免过于频繁的请求
+      if (batchIndex < totalBatches - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    // 所有批次完成后的统计
+    const successCount = data.value.filter(item => item.exec_status === '2').length;
+    const failCount = data.value.filter(item => item.exec_status === '3').length;
+    const totalCount = data.value.length;
+
+    if (successCount === totalCount) {
+      Notification.success('查询成功！');
+    } else if (successCount > 0) {
+      Notification.warning(`查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+    } else {
+      Notification.error('查询失败：所有记录都查询失败');
+    }
+
+  } catch (error) {
+    console.error('分批查询失败:', error);
+    Notification.error('查询失败：' + error.message);
+  } finally {
+    balanceLoading.value = false;
+    balanceStopStatus.value = true;
+    // 隐藏查出账地址进度条
+    showBalanceProgress.value = false;
+  }
+}
+
+// 查询单个批次的余额
+async function queryBalanceBatch(batchData, startIndex) {
+  try {
+    // 使用窗口感知的余额查询
+    const params = {
+      chain: chainValue.value,
+      coin_config: {
+        coin_type: currentCoin.value.coin_type,
+        contract_address: currentCoin.value.contract_address || null,
+        abi: currentCoin.value.abi || null
+      },
+      items: batchData.map(item => ({
+        key: item.key,
+        address: item.address || null,
+        private_key: item.private_key || null,
+        plat_balance: null,
+        coin_balance: null,
+        nonce: null,
+        exec_status: '0',
+        error_msg: null,
+        retry_flag: false
+      })),
+      only_coin_config: false,
+      thread_count: Number(threadCount.value)
+    };
+
+    // 检查是否需要停止查询
+    if (balanceStopFlag.value) {
+      return;
+    }
+
+    let result;
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      result = await invoke('query_balances_with_updates', {
+        params,
+        windowId: currentWindowId.value
+      });
+    } else {
+      // 浏览器环境下的模拟数据
+      result = {
+        success: true,
+        items: batchData.map(item => ({
+          ...item,
+          plat_balance: '1.0',
+          coin_balance: '100.0',
+          nonce: 1,
+          exec_status: '2',
+          error_msg: null
+        }))
+      };
+    }
+
+    if (result.success || result.items) {
+      // 更新数据 - 无论总体是否成功，都要更新单条记录的状态
+      result.items.forEach((resultItem, index) => {
+        const dataIndex = startIndex + index;
+        if (data.value[dataIndex]) {
+          // 保存原始私钥，避免被覆盖
+          const originalPrivateKey = data.value[dataIndex].private_key;
+          Object.assign(data.value[dataIndex], resultItem);
+          // 恢复私钥字段
+          data.value[dataIndex].private_key = originalPrivateKey;
+        }
+      });
+    } else {
+      // 只有在没有返回任何结果时才设置批次项目为失败状态
+      batchData.forEach((item, index) => {
+        const dataIndex = startIndex + index;
+        if (data.value[dataIndex]) {
+          // 保护私钥字段，只更新状态相关字段
+          data.value[dataIndex].exec_status = '3';
+          data.value[dataIndex].error_msg = result.error_msg || '查询失败！';
+        }
+      });
+    }
+
+    // 更新余额查询进度
+    updateBalanceProgress();
+
+  } catch (error) {
+    console.error('批次查询失败:', error);
+
+    // 设置批次项目为失败状态，保护私钥字段
+    batchData.forEach((item, index) => {
+      const dataIndex = startIndex + index;
+      if (data.value[dataIndex]) {
+        data.value[dataIndex].exec_status = '3';
+        data.value[dataIndex].error_msg = '查询失败！';
+      }
+    });
+
+    // 更新余额查询进度
+    updateBalanceProgress();
+  }
+}
+
+
 
 // 查询到账地址余额
 async function queryToAddressBalance() {
@@ -1981,6 +2144,11 @@ async function queryToAddressBalance() {
     return;
   }
 
+  hasExecutedTransfer.value = false;
+  transferTotal.value = data.value.length;
+  transferCompleted.value = 0;
+  transferProgress.value = 0;
+
   // 检查是否有到账地址
   const itemsWithToAddr = JSON.parse(JSON.stringify(data.value.filter(item => item.to_addr)));
   if (itemsWithToAddr.length === 0) {
@@ -1993,6 +2161,13 @@ async function queryToAddressBalance() {
     balanceStopFlag.value = false;
     balanceStopStatus.value = false;
 
+    // 初始化查到账地址余额查询进度
+    const totalItems = itemsWithToAddr.length;
+    toAddressBalanceTotal.value = totalItems;
+    toAddressBalanceCompleted.value = 0;
+    toAddressBalanceProgress.value = 0;
+    showToAddressBalanceProgress.value = totalItems > 0;
+
     // 重置所有项目状态
     data.value.forEach((item) => {
       item.plat_balance = "";
@@ -2001,108 +2176,171 @@ async function queryToAddressBalance() {
       item.exec_status = "0";
     });
 
-    try {
-      // 创建独立的查询数据，避免影响原始数据
-      const queryItems = data.value.map(item => ({
-        key: item.key,
-        address: item.to_addr, // 使用到账地址而不是发送地址
-        private_key: null, // 到账地址不需要私钥
-        plat_balance: null,
-        coin_balance: null,
-        nonce: null,
-        exec_status: '0',
-        error_msg: null,
-        retry_flag: false
-      }));
+    // 分批处理大数据集
+    await queryToAddressBalanceInBatches();
+  } else {
+    Notification.warning("查询 coin 类型错误！");
+  }
+}
 
-      // 使用Rust后端进行查询 - 查询到账地址的余额
-      const params = {
-        chain: chainValue.value,
-        coin_config: {
-          coin_type: currentCoin.value.coin_type,
-          contract_address: currentCoin.value.contract_address || null,
-          abi: currentCoin.value.abi || null
-        },
-        items: queryItems, // 使用独立的查询数据
-        only_coin_config: false,
-        thread_count: Number(threadCount.value) // 确保类型转换为数字
-      };
+// 分批查询到账地址余额
+async function queryToAddressBalanceInBatches() {
+  const BATCH_SIZE = 50; // 每批处理50个地址
+  const itemsWithToAddr = data.value.filter(item => item.to_addr);
+  const totalItems = itemsWithToAddr.length;
+  const totalBatches = Math.ceil(totalItems / BATCH_SIZE);
 
+  console.log(`开始分批查询到账地址余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
+
+  try {
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       // 检查是否需要停止查询
       if (balanceStopFlag.value) {
         balanceLoading.value = false;
         balanceStopStatus.value = true;
+        // 隐藏查到账地址进度条
+        showToAddressBalanceProgress.value = false;
         return;
       }
 
-      let result;
-      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-      if (isTauri) {
-        result = await invoke('query_balances_with_updates', {
-          params,
-          windowId: currentWindowId.value
-        });
-      } else {
-        // 浏览器环境下的模拟数据
-        result = {
-          success: true,
-          items: queryItems.map(item => ({
-            address: item.address,
-            plat_balance: '2.5',
-            coin_balance: '250.0',
-            nonce: 1,
-            exec_status: '2',
-            error_msg: null
-          }))
-        };
+      const startIndex = batchIndex * BATCH_SIZE;
+      const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
+      const batchData = itemsWithToAddr.slice(startIndex, endIndex);
+
+      console.log(`处理第 ${batchIndex + 1}/${totalBatches} 批到账地址，索引 ${startIndex}-${endIndex - 1}`);
+
+      await queryToAddressBalanceBatch(batchData, startIndex);
+
+      // 批次间添加短暂延迟，避免过于频繁的请求
+      if (batchIndex < totalBatches - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
-
-      if (result.success || result.items) {
-        // 统计成功和失败的数量
-        const successCount = result.items.filter(item => item.exec_status === '2').length;
-        const failCount = result.items.filter(item => item.exec_status === '3').length;
-        const totalCount = result.items.length;
-
-        // // 显示查询结果
-        // let message = '到账地址余额查询结果：\n';
-        // result.items.forEach((resultItem, index) => {
-        //   if (resultItem.exec_status === '2') {
-        //     message += `地址: ${resultItem.address}\n`;
-        //     message += `平台币余额: ${resultItem.plat_balance}\n`;
-        //     message += `代币余额: ${resultItem.coin_balance}\n\n`;
-        //   } else {
-        //     message += `地址: ${resultItem.address} - 查询失败: ${resultItem.error_msg}\n\n`;
-        //   }
-        // });
-
-        // // 使用Modal显示详细结果
-        // Modal.info({
-        //   title: '到账地址余额查询结果',
-        //   content: message,
-        //   width: 600
-        // });
-
-        // 查询完成统计
-        if (successCount === totalCount) {
-          Notification.success(`到账地址余额查询成功！共查询 ${totalCount} 个地址`);
-        } else if (successCount > 0) {
-          Notification.warning(`到账地址余额查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
-        } else {
-          Notification.error('到账地址余额查询失败：所有地址都查询失败');
-        }
-      } else {
-        Notification.error('到账地址余额查询失败：' + (result.error_msg || '未知错误'));
-      }
-
-    } catch (error) {
-      console.error('到账地址余额查询失败:', error);
-      Notification.error('到账地址余额查询失败：' + error.message);
     }
 
+    // 所有批次完成后的统计
+    const successCount = data.value.filter(item => item.exec_status === '2').length;
+    const failCount = data.value.filter(item => item.exec_status === '3').length;
+    const totalCount = itemsWithToAddr.length;
+
+    if (successCount === totalCount) {
+      Notification.success(`到账地址余额查询成功！共查询 ${totalCount} 个地址`);
+    } else if (successCount > 0) {
+      Notification.warning(`到账地址余额查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+    } else {
+      Notification.error('到账地址余额查询失败：所有地址都查询失败');
+    }
+
+  } catch (error) {
+    console.error('分批查询到账地址失败:', error);
+    Notification.error('到账地址余额查询失败：' + error.message);
+  } finally {
     balanceLoading.value = false;
     balanceStopStatus.value = true;
-  } else {
-    Notification.warning("查询 coin 类型错误！");
+    // 隐藏查到账地址进度条
+    showToAddressBalanceProgress.value = false;
+  }
+}
+
+// 查询单个批次的到账地址余额
+async function queryToAddressBalanceBatch(batchData, startIndex) {
+  try {
+    // 创建独立的查询数据，避免影响原始数据
+    const queryItems = batchData.map(item => ({
+      key: item.key,
+      address: item.to_addr, // 使用到账地址而不是发送地址
+      private_key: null, // 到账地址不需要私钥
+      plat_balance: null,
+      coin_balance: null,
+      nonce: null,
+      exec_status: '0',
+      error_msg: null,
+      retry_flag: false
+    }));
+
+    // 使用窗口感知的余额查询
+    const params = {
+      chain: chainValue.value,
+      coin_config: {
+        coin_type: currentCoin.value.coin_type,
+        contract_address: currentCoin.value.contract_address || null,
+        abi: currentCoin.value.abi || null
+      },
+      items: queryItems,
+      only_coin_config: false,
+      thread_count: Number(threadCount.value)
+    };
+
+    // 检查是否需要停止查询
+    if (balanceStopFlag.value) {
+      return;
+    }
+
+    let result;
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      result = await invoke('query_balances_with_updates', {
+        params,
+        windowId: currentWindowId.value
+      });
+    } else {
+      // 浏览器环境下的模拟数据
+      result = {
+        success: true,
+        items: queryItems.map(item => ({
+          ...item,
+          plat_balance: '2.5',
+          coin_balance: '250.0',
+          nonce: 1,
+          exec_status: '2',
+          error_msg: null
+        }))
+      };
+    }
+
+    if (result.success || result.items) {
+      // 更新数据 - 根据key匹配原始数据项
+      result.items.forEach((resultItem, index) => {
+        const originalItem = batchData[index];
+        const dataIndex = data.value.findIndex(item => item.key === originalItem.key);
+        if (dataIndex !== -1) {
+          // 保存原始私钥和到账地址，避免被覆盖
+          const originalPrivateKey = data.value[dataIndex].private_key;
+          const originalToAddr = data.value[dataIndex].to_addr;
+          Object.assign(data.value[dataIndex], resultItem);
+          // 恢复私钥和到账地址字段
+          data.value[dataIndex].private_key = originalPrivateKey;
+          data.value[dataIndex].to_addr = originalToAddr;
+        }
+      });
+    } else {
+      // 只有在没有返回任何结果时才设置批次项目为失败状态
+      batchData.forEach((item, index) => {
+        const dataIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+        if (dataIndex !== -1) {
+          // 保护私钥字段，只更新状态相关字段
+          data.value[dataIndex].exec_status = '3';
+          data.value[dataIndex].error_msg = result.error_msg || '查询失败！';
+        }
+      });
+    }
+
+    // 更新查到账地址余额查询进度
+    updateToAddressBalanceProgress();
+
+  } catch (error) {
+    console.error('批次查询到账地址失败:', error);
+
+    // 设置批次项目为失败状态，保护私钥字段
+    batchData.forEach((item, index) => {
+      const dataIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+      if (dataIndex !== -1) {
+        data.value[dataIndex].exec_status = '3';
+        data.value[dataIndex].error_msg = '查询失败！';
+      }
+    });
+
+    // 更新查到账地址余额查询进度
+    updateToAddressBalanceProgress();
   }
 }
 
@@ -2164,67 +2402,103 @@ async function transferFnc(inputData) {
 
 // 执行
 function startTransfer() {
+  // 基础验证检查
   if (balanceLoading.value) {
+    startLoading.value = false;
     Notification.warning("请等待余额查询完成后再执行！");
     return;
   }
   if (data.value.length === 0) {
+    startLoading.value = false;
     Notification.warning("请先导入私钥！");
     return;
   }
   if (data.value.find((item) => !item.private_key || !item.to_addr)) {
+    startLoading.value = false;
     Notification.warning("请检查是否所有私钥都有对应的转账地址！");
     return;
   }
   // 如果转账类型为指定数量并且且为表格指定数量则进行数据校验
   if (form.send_type === '2' && form.amount_from === '1' &&
     data.value.find((item) => !item.amount)) {
+    startLoading.value = false;
     Notification.warning("包含转账金额为空的错误数据请核实！");
     return;
   }
+  // 立即设置loading状态，提供即时反馈
+  startLoading.value = true;
 
-  // 检查是否有未完成的转账记录（转账曾经停止过）
-  const hasIncompleteTransfers = data.value.some(item =>
-    item.exec_status === "1" || item.exec_status === "2" || item.exec_status === "3"
-  );
+  setTimeout(() => {
+    // 检查是否有未完成的转账记录（只有真正执行过转账操作时才检查）
+    const hasIncompleteTransfers = hasExecutedTransfer.value && data.value.some(item =>
+      item.exec_status === "1" || item.exec_status === "2" || item.exec_status === "3"
+    );
 
-  if (hasIncompleteTransfers && stopStatus.value) {
-    // 弹出确认对话框
-    Modal.confirm({
-      title: '转账确认',
-      content: '检测到上次转账未完成，请选择操作方式：',
-      okText: '继续上次转账',
-      cancelText: '重新开始转账',
-      onOk: () => {
-        // 继续上次转账 - 只处理等待执行的项目
-        const incompleteData = data.value.filter(item =>
-          item.exec_status === "0"
-        );
-        if (incompleteData.length === 0) {
-          Notification.info("所有转账已完成！");
-          return;
-        }
-        executeTransfer(incompleteData, false);
-      },
-      onCancel: () => {
-        // 重新开始转账 - 重置所有状态
-        executeTransfer(data.value, true);
-      }
-    });
-  } else {
-    // 首次转账或正在进行中，直接开始
+    if (hasIncompleteTransfers && stopStatus.value) {
+      // 暂时重置loading状态，等待用户选择
+      startLoading.value = false;
+
+      // 显示转账确认弹窗
+      transferConfirmVisible.value = true;
+    } else {
+      // 首次转账或正在进行中，直接开始
+      executeTransfer(data.value, true);
+    }
+  }, 100)
+}
+
+// 处理转账确认弹窗的函数
+function handleTransferConfirmOk() {
+  transferConfirmLoading.value = true;
+
+  setTimeout(() => {
+    // 继续上次转账 - 只处理等待执行的项目
+    const incompleteData = data.value.filter(item =>
+      item.exec_status === "0"
+    );
+    if (incompleteData.length === 0) {
+      transferConfirmVisible.value = false;
+      transferConfirmLoading.value = false;
+      startLoading.value = false;
+      Notification.info("所有转账已完成！");
+      return;
+    }
+
+    transferConfirmVisible.value = false;
+    transferConfirmLoading.value = false;
+    startLoading.value = true;
+    executeTransfer(incompleteData, false);
+  }, 100)
+}
+
+function handleTransferConfirmCancel() {
+  transferConfirmLoading.value = true;
+
+  transferConfirmVisible.value = false;
+  transferConfirmLoading.value = false;
+  startLoading.value = true;
+  setTimeout(() => {
+    // 重新开始转账 - 重置所有状态
     executeTransfer(data.value, true);
-  }
+  }, 100)
+}
+
+function handleTransferConfirmClose() {
+  transferConfirmVisible.value = false;
+  transferConfirmLoading.value = false;
+  startLoading.value = false;
 }
 
 // 执行转账的通用方法
 function executeTransfer(transferData, resetStatus = true) {
   validateForm()
     .then(async () => {
-      // 验证通过
-      startLoading.value = true;
+      // 验证通过，loading状态已在startTransfer中设置
       stopFlag.value = false;
       stopStatus.value = false;
+
+      // 标记已执行过转账操作（用于区分余额查询和转账）
+      hasExecutedTransfer.value = true;
 
       // 记录转账开始时间（仅在重新开始时记录）
       if (resetStatus) {
@@ -2239,18 +2513,13 @@ function executeTransfer(transferData, resetStatus = true) {
         transferCompleted.value = 0;
         transferProgress.value = 0;
 
-        // 重新开始时重置所有状态
-        data.value.forEach((item) => {
-          item.exec_status = "0";
-          item.error_msg = "";
-          item.retry_flag = false;
-          item.error_count = 0;
-        });
+        // 重新开始时重置所有状态 - 使用异步批处理优化性能
+        await resetDataStatusAsync();
       } else {
-        // 继续转账时，总数为实际要处理的数据量
-        transferTotal.value = transferData.length;
-        transferCompleted.value = 0;
-        transferProgress.value = 0;
+        // // 继续转账时，总数为实际要处理的数据量
+        // transferTotal.value = transferData.length;
+        // transferCompleted.value = 0;
+        // transferProgress.value = 0;
 
         // 继续转账时不需要重置状态，因为只处理等待执行的项目
       }
@@ -2475,14 +2744,20 @@ async function iterTransfer(accountData) {
   }
 
   // 多线程模式：按钱包地址分组数据，避免nonce冲突
+  // 性能优化：预先构建索引映射，避免重复的findIndex操作
+  const keyToIndexMap = new Map();
+  data.value.forEach((dataItem, index) => {
+    keyToIndexMap.set(dataItem.key, index);
+  });
+
   const walletGroups = new Map();
   accountData.forEach((item, index) => {
     const walletAddress = item.address || item.private_key; // 使用地址或私钥作为分组键
     if (!walletGroups.has(walletAddress)) {
       walletGroups.set(walletAddress, []);
     }
-    // 找到该item在原始data.value数组中的真实索引
-    const realIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+    // 使用预构建的索引映射快速查找真实索引
+    const realIndex = keyToIndexMap.get(item.key) ?? -1;
     walletGroups.get(walletAddress).push({ ...item, originalIndex: index, realIndex: realIndex });
   });
 
@@ -2522,7 +2797,7 @@ async function iterTransfer(accountData) {
         transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
         transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
         left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
-        amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
+        amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 3, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
         limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
         limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000, // limit_count 指定数量 (limit_type 为 2 时生效)
         limit_count_list: [form.limit_min_count && form.limit_min_count.trim() !== '' ? Number(form.limit_min_count) : 21000, form.limit_max_count && form.limit_max_count.trim() !== '' ? Number(form.limit_max_count) : 30000],
@@ -2656,6 +2931,33 @@ function stopTransfer() {
   showProgress.value = false;
 }
 
+// 异步批处理重置数据状态 - 性能优化
+async function resetDataStatusAsync() {
+  const batchSize = 100; // 每批处理100条数据
+  const totalItems = data.value.length;
+
+  for (let i = 0; i < totalItems; i += batchSize) {
+    const endIndex = Math.min(i + batchSize, totalItems);
+
+    // 批量重置当前批次的数据状态
+    for (let j = i; j < endIndex; j++) {
+      const item = data.value[j];
+      item.exec_status = "0";
+      item.error_msg = "";
+      item.retry_flag = false;
+      item.error_count = 0;
+    }
+
+    // 使用nextTick让出控制权，避免阻塞UI线程
+    await nextTick();
+
+    // 可选：显示进度（如果需要的话）
+    if (totalItems > 1000) {
+      console.log(`数据重置进度: ${Math.min(endIndex, totalItems)}/${totalItems}`);
+    }
+  }
+}
+
 // 停止查询余额
 async function stopBalanceQuery() {
   console.log('stopBalanceQuery方法被调用');
@@ -2675,6 +2977,9 @@ async function stopBalanceQuery() {
   balanceLoading.value = false;
   balanceStopFlag.value = true;
   balanceStopStatus.value = true;
+  // 隐藏两个进度条
+  showBalanceProgress.value = false;
+  showToAddressBalanceProgress.value = false;
 }
 
 // 校验数据是否合规
@@ -2996,10 +3301,31 @@ function deleteSelected() {
     Notification.warning("请停止或等待执行完成后再删除数据！");
     return;
   }
-  data.value = data.value.filter(
-    (item) => !selectedKeys.value.includes(item.key)
-  );
-  Notification.success("删除成功");
+
+  // 检查是否有选中的项目
+  if (selectedKeys.value.length === 0) {
+    Notification.warning("请先选择要删除的项目！");
+    return;
+  }
+
+  // 显示确认对话框
+  Modal.confirm({
+    title: '确认删除',
+    content: `确定要删除选中的 ${selectedKeys.value.length} 个项目吗？此操作不可撤销。`,
+    okText: '确认删除',
+    cancelText: '取消',
+    okButtonProps: {
+      status: 'danger'
+    },
+    onOk: () => {
+      // 执行删除操作
+      data.value = data.value.filter(
+        (item) => !selectedKeys.value.includes(item.key)
+      );
+      selectedKeys.value = []; // 清空选中状态
+      Notification.success("删除成功");
+    }
+  });
 }
 
 // 返回首页
@@ -3317,25 +3643,20 @@ async function handleBeforeClose() {
     <!-- <span class="pageTitle">批量转账</span> -->
     <!-- 工具栏 -->
     <div class="toolBar" style="flex-shrink: 0;">
-      <a-button type="primary" @click="handleClick()">
+      <a-button type="primary" @click="debouncedHandleClick">
         <template #icon>
           <Icon icon="mdi:wallet" />
         </template>
         钱包录入
       </a-button>
-      <a-divider direction="vertical" />
-      <a-button type="outline" status="normal" @click="downloadFile">
-        <template #icon>
-          <Icon icon="mdi:download" />
-        </template>
-        下载模板
-      </a-button>
-      <a-button type="primary" status="success" style="margin-left: 10px" @click="upload">
-        <template #icon>
-          <Icon icon="mdi:upload" />
-        </template>
-        导入文件
-      </a-button>
+      <a-tooltip content="导入按照“模板文件”填写的文件" position="bottom">
+        <a-button type="primary" status="success" style="margin-left: 10px" @click="upload">
+          <template #icon>
+            <Icon icon="mdi:upload" />
+          </template>
+          导入文件（推荐）
+        </a-button>
+      </a-tooltip>
       <input type="file" ref="uploadInputRef" @change="UploadFile" id="btn_file" style="display: none" />
       <a-divider direction="vertical" />
       <!-- 选择操作区按钮 -->
@@ -3351,18 +3672,18 @@ async function handleBeforeClose() {
         </template>
         选中失败
       </a-button>
-      <!-- 高级筛选按钮 -->
-      <a-button type="outline" status="normal" style="margin-left: 10px" @click="showAdvancedFilter">
-        <template #icon>
-          <Icon icon="mdi:filter" />
-        </template>
-        高级筛选
-      </a-button>
       <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">
         <template #icon>
           <Icon icon="mdi:swap-horizontal" />
         </template>
         反选
+      </a-button>
+      <!-- 高级筛选按钮 -->
+      <a-button type="primary" status="normal" style="margin-left: 10px" @click="showAdvancedFilter">
+        <template #icon>
+          <Icon icon="mdi:filter" />
+        </template>
+        高级筛选
       </a-button>
       <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">
         <template #icon>
@@ -3370,17 +3691,17 @@ async function handleBeforeClose() {
         </template>
         删除选中
       </a-button>
-      <a-button v-show="false" class="goHome" type="outline" status="success" @click="goHome">
-        <template #icon>
-          <Icon icon="mdi:chevron-double-left" />
-        </template>
-        返回首页
-      </a-button>
-      <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="clearData">
+      <a-button type="primary" status="danger" style="float: right; margin-right: 10px" @click="debouncedClearData">
         <template #icon>
           <Icon icon="mdi:delete" />
         </template>
         清空列表
+      </a-button>
+      <a-button type="outline" status="normal" style="float: right; margin-right: 10px" @click="downloadFile">
+        <template #icon>
+          <Icon icon="mdi:download" />
+        </template>
+        下载模板
       </a-button>
     </div>
     <!-- 操作账号表格 -->
@@ -3398,9 +3719,9 @@ async function handleBeforeClose() {
           </a-tag>
           <a-tag v-if="record.exec_status === '1'" color="#ff7d00">执行中
           </a-tag>
-          <a-tag v-if="record.exec_status === '2'" color="#00b42a">转账成功
+          <a-tag v-if="record.exec_status === '2'" color="#00b42a">执行成功
           </a-tag>
-          <a-tag v-if="record.exec_status === '3'" color="#f53f3f">转账失败
+          <a-tag v-if="record.exec_status === '3'" color="#f53f3f">执行失败
           </a-tag>
         </template>
         <template #optional="{ record }">
@@ -3424,6 +3745,38 @@ async function handleBeforeClose() {
           <a-progress :percent="transferProgress" :show-text="true" :stroke-width="6" :color="{
             '0%': '#00b42a',
             '100%': '#00b42a'
+          }" class="progress-bar" />
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 余额查询进度条 - 悬浮在页面顶部 -->
+    <Transition name="progress-slide" appear>
+      <div v-if="showBalanceProgress" class="floating-progress-bar" :style="{ top: showProgress ? '120px' : '20px' }">
+        <div class="progress-content">
+          <div class="progress-header">
+            <span class="progress-title">查出账地址进度</span>
+            <span class="progress-count">{{ balanceCompleted }} / {{ balanceTotal }}</span>
+          </div>
+          <a-progress :percent="balanceProgress" :show-text="true" :stroke-width="6" :color="{
+            '0%': '#1890ff',
+            '100%': '#1890ff'
+          }" class="progress-bar" />
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 查到账地址余额查询进度条 - 悬浮在页面顶部 -->
+    <Transition name="progress-slide" appear>
+      <div v-if="showToAddressBalanceProgress" class="floating-progress-bar" :style="{ top: (showProgress && showBalanceProgress) ? '220px' : (showProgress || showBalanceProgress) ? '120px' : '20px' }">
+        <div class="progress-content">
+          <div class="progress-header">
+            <span class="progress-title">查到账地址进度</span>
+            <span class="progress-count">{{ toAddressBalanceCompleted }} / {{ toAddressBalanceTotal }}</span>
+          </div>
+          <a-progress :percent="toAddressBalanceProgress" :show-text="true" :stroke-width="6" :color="{
+            '0%': '#52c41a',
+            '100%': '#52c41a'
           }" class="progress-bar" />
         </div>
       </div>
@@ -3577,7 +3930,7 @@ async function handleBeforeClose() {
             <a-input-group style="width: 100px;">
               <a-input-number v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1"
                 placeholder="窗口数" style="width: 50px;" />
-              <a-button status="success" @click="openMultipleWindow">
+              <a-button status="success" @click="debouncedOpenMultipleWindow">
                 <template #icon>
                   <Icon icon="mdi:content-copy" />
                 </template>
@@ -3654,18 +4007,18 @@ async function handleBeforeClose() {
             查询余额
           </a-button>
           <template #content>
-            <a-doption @click="queryBalance">
+            <a-doption @click="debouncedQueryBalance">
               <Icon icon="mdi:export" style="margin-right: 8px;margin-bottom: -2px;" />
               查出账地址
             </a-doption>
-            <a-doption @click="queryToAddressBalance">
+            <a-doption @click="debouncedQueryToAddressBalance">
               <Icon icon="mdi:import" style="margin-right: 8px;margin-bottom: -2px;" />
               查到账地址
             </a-doption>
           </template>
         </a-dropdown>
         <a-tooltip v-else content="点击可以提前停止查询">
-          <div @click="stopBalanceQuery">
+          <div @click="debouncedStopBalanceQuery">
             <a-button v-if="!balanceStopFlag" class="execute-btn executing" loading
               :style="{ width: '130px', height: '40px', fontSize: '14px' }">
               <template #icon>
@@ -3687,15 +4040,15 @@ async function handleBeforeClose() {
       <!-- 右侧区域 -->
       <div style="display: flex; align-items: center; gap: 20px;">
         <!-- 执行转账按钮 -->
-        <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn"
-          @click="startTransfer(data.value)" :style="{ width: '130px', height: '40px', fontSize: '14px' }">
+        <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn" @click="debouncedStartTransfer"
+          :style="{ width: '130px', height: '40px', fontSize: '14px' }">
           <template #icon>
             <Icon icon="mdi:play" />
           </template>
           执行转账
         </a-button>
         <a-tooltip v-else content="点击可以提前停止执行">
-          <div @click="stopTransfer">
+          <div @click="debouncedStopTransfer">
             <a-button v-if="!stopFlag" class="execute-btn executing" loading
               :style="{ width: '130px', height: '40px', fontSize: '14px' }">
               <template #icon>
@@ -3740,7 +4093,24 @@ async function handleBeforeClose() {
     </div>
     <template #footer>
       <a-button @click="deleteItemCancel">取消</a-button>
-      <a-button type="primary" status="danger" @click="deleteItemConfirm" style="margin-left: 10px">确定
+      <a-button type="primary" status="danger" @click="debouncedDeleteItemConfirm" style="margin-left: 10px">确定
+      </a-button>
+    </template>
+  </a-modal>
+
+  <!-- 转账确认弹窗 -->
+  <a-modal v-model:visible="transferConfirmVisible" title="转账确认" :mask-closable="false" :closable="true"
+    @close="handleTransferConfirmClose" @cancel="handleTransferConfirmClose">
+    <div>检测到上次转账未完成，请选择操作方式：</div>
+    <template #footer>
+      <a-button @click="handleTransferConfirmClose">关闭</a-button>
+      <a-button type="primary" @click="handleTransferConfirmCancel" :loading="transferConfirmLoading"
+        style="margin-left: 10px">
+        重新开始转账
+      </a-button>
+      <a-button type="primary" status="success" @click="handleTransferConfirmOk" :loading="transferConfirmLoading"
+        style="margin-left: 10px">
+        继续上次转账
       </a-button>
     </template>
   </a-modal>
@@ -3919,7 +4289,7 @@ async function handleBeforeClose() {
 }
 
 .execute-btn.stopping {
-  background-color: #11c06f;
+  background-color: rgb(255, 125, 0);
 }
 
 /* 全页面Loading覆盖层样式 */

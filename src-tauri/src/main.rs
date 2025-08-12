@@ -5,15 +5,14 @@
 mod utils;
 mod wallet_manager;
 mod plugins;
-mod simple_balance_query;
 mod database;
 
-use tauri::{WindowEvent, Manager, AppHandle, Emitter, tray::TrayIconBuilder, menu::{MenuBuilder, MenuItemBuilder}};
+use tauri::{WindowEvent, Manager, AppHandle, Runtime, Emitter, tray::TrayIconBuilder, menu::{MenuBuilder, MenuItemBuilder}};
 
 
 // Tauri 命令：关闭所有子窗口
 #[tauri::command]
-async fn close_all_child_windows(app: AppHandle, main_window_label: String) -> Result<Vec<String>, String> {
+async fn close_all_child_windows<R: Runtime>(app: AppHandle<R>, main_window_label: String) -> Result<Vec<String>, String> {
     let mut closed_windows = Vec::new();
     
     let windows = app.webview_windows();
@@ -36,7 +35,7 @@ async fn close_all_child_windows(app: AppHandle, main_window_label: String) -> R
 
 // Tauri 命令：获取所有子窗口
 #[tauri::command]
-async fn get_all_child_windows(app: AppHandle, main_window_label: String) -> Result<Vec<String>, String> {
+async fn get_all_child_windows<R: Runtime>(app: AppHandle<R>, main_window_label: String) -> Result<Vec<String>, String> {
     let windows = app.webview_windows();
     let child_windows: Vec<String> = windows.keys()
         .filter(|&label| label != &main_window_label)
@@ -48,14 +47,14 @@ async fn get_all_child_windows(app: AppHandle, main_window_label: String) -> Res
 
 // Tauri 命令：强制关闭主窗口（跳过事件处理）
 #[tauri::command]
-async fn force_close_main_window(_app: AppHandle) -> Result<(), String> {
+async fn force_close_main_window<R: Runtime>(_app: AppHandle<R>) -> Result<(), String> {
     // 直接退出应用程序，跳过窗口关闭事件处理
     std::process::exit(0);
 }
 
 // Tauri 命令：显示主窗口
 #[tauri::command]
-async fn show_main_window(app: AppHandle) -> Result<(), String> {
+async fn show_main_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("wallet_manager") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
@@ -65,7 +64,7 @@ async fn show_main_window(app: AppHandle) -> Result<(), String> {
 
 // Tauri 命令：从托盘打开功能窗口
 #[tauri::command]
-async fn open_function_window(app: AppHandle, page_name: String) -> Result<(), String> {
+async fn open_function_window<R: Runtime>(app: AppHandle<R>, page_name: String) -> Result<(), String> {
     use tauri::WebviewWindowBuilder;
     
     let title = match page_name.as_str() {
@@ -75,24 +74,33 @@ async fn open_function_window(app: AppHandle, page_name: String) -> Result<(), S
         _ => "未知功能"
     };
     
-    // 检查是否已有同类型窗口打开
-    let existing_windows: Vec<String> = app.webview_windows().keys().cloned().collect();
+    // 获取当前所有窗口的标签
+    let existing_windows = app.webview_windows();
     let mut window_count = 1;
     
-    // 计算当前页面类型的窗口数量
-    for label in &existing_windows {
-        if label.starts_with(&page_name) {
-            window_count += 1;
+    // 循环查找可用的窗口标签，确保不与现有窗口冲突
+    let window_label = loop {
+        let candidate_label = format!("{}{}", page_name, window_count);
+        
+        // 检查这个标签是否已经存在
+        if !existing_windows.contains_key(&candidate_label) {
+            break candidate_label;
         }
-    }
-    
-    let window_label = format!("{}{}", page_name, window_count);
+        
+        // 如果存在，递增计数器继续尝试
+        window_count += 1;
+        
+        // 防止无限循环，设置一个合理的上限
+        if window_count > 100 {
+            return Err("无法找到可用的窗口标签，已达到最大窗口数量限制".to_string());
+        }
+    };
     let window_url = format!("/#/{}", page_name);
     
     // 创建新窗口
-    let _webview = WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(window_url.into()))
-        .title(&format!("▶ 窗口 {} 🧡 {}", window_count, title))
-        .inner_size(1275.0, 850.0)
+    let webview = WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(window_url.into()))
+        .title(&format!("【托盘】{}-{}", title, window_count))
+        .inner_size(1350.0, 900.0)
         .resizable(true)
         .center()
         .decorations(false)
@@ -100,6 +108,9 @@ async fn open_function_window(app: AppHandle, page_name: String) -> Result<(), S
         .skip_taskbar(false)
         .build()
         .map_err(|e| e.to_string())?;
+    
+    // 显示窗口
+    webview.show().map_err(|e| e.to_string())?;
     
     Ok(())
 }
@@ -140,6 +151,7 @@ async fn main() {
             // 创建托盘图标
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
                         "show_main" => {
@@ -205,10 +217,7 @@ async fn main() {
                             button_state: tauri::tray::MouseButtonState::Up,
                             ..  
                         } => {
-                            // 右键点击显示菜单
-                            if let Err(e) = tray.set_menu(Some(menu.clone())) {
-                                eprintln!("设置托盘菜单失败: {}", e);
-                            }
+                            // 右键点击事件（菜单已在创建时设置）
                         }
                         _ => {}
                     }
@@ -260,18 +269,18 @@ async fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            wallet_manager::chain_config::get_chain_list,
-            wallet_manager::chain_config::get_coin_list,
-            wallet_manager::chain_config::add_coin,
-            wallet_manager::chain_config::remove_coin,
-            wallet_manager::chain_config::update_coin,
-            wallet_manager::chain_config::update_chain_pic_urls,
-            wallet_manager::chain_config::update_token_abi,
+            wallet_manager::ecosystems::ethereum::chain_config::get_chain_list,
+            wallet_manager::ecosystems::ethereum::chain_config::get_coin_list,
+            wallet_manager::ecosystems::ethereum::chain_config::add_coin,
+            wallet_manager::ecosystems::ethereum::chain_config::remove_coin,
+            wallet_manager::ecosystems::ethereum::chain_config::update_coin,
+            wallet_manager::ecosystems::ethereum::chain_config::update_chain_pic_urls,
+            wallet_manager::ecosystems::ethereum::chain_config::update_token_abi,
             // chain management commands
-            wallet_manager::chain_config::add_chain,
-            wallet_manager::chain_config::update_chain,
-            wallet_manager::chain_config::remove_chain,
-            wallet_manager::chain_config::get_chain_detail,
+            wallet_manager::ecosystems::ethereum::chain_config::add_chain,
+            wallet_manager::ecosystems::ethereum::chain_config::update_chain,
+            wallet_manager::ecosystems::ethereum::chain_config::remove_chain,
+            wallet_manager::ecosystems::ethereum::chain_config::get_chain_detail,
             wallet_manager::utils::download_file,
             wallet_manager::utils::save_chain_icon,
             wallet_manager::utils::get_chain_icon,
@@ -279,10 +288,10 @@ async fn main() {
             plugins::fs_extra::exists,
             plugins::fs_extra::open_file,
             // balance query functions
-            simple_balance_query::query_balances_simple,
-            simple_balance_query::query_balances_with_updates,
-            simple_balance_query::stop_balance_query,
-            simple_balance_query::reset_balance_query_stop,
+            wallet_manager::ecosystems::ethereum::simple_balance_query::query_balances_simple,
+            wallet_manager::ecosystems::ethereum::simple_balance_query::query_balances_with_updates,
+            wallet_manager::ecosystems::ethereum::simple_balance_query::stop_balance_query,
+            wallet_manager::ecosystems::ethereum::simple_balance_query::reset_balance_query_stop,
             // window management functions
             close_all_child_windows,
             get_all_child_windows,
@@ -306,11 +315,11 @@ async fn main() {
             wallet_manager::provider::test_rpc_url,
             wallet_manager::provider::get_multiple_gas_prices,
             // rpc management functions
-            wallet_manager::rpc_management::get_rpc_providers,
-            wallet_manager::rpc_management::add_rpc_provider,
-            wallet_manager::rpc_management::update_rpc_provider,
-            wallet_manager::rpc_management::delete_rpc_provider,
-            wallet_manager::rpc_management::test_rpc_connection,
+            wallet_manager::ecosystems::ethereum::rpc_management::get_rpc_providers,
+            wallet_manager::ecosystems::ethereum::rpc_management::add_rpc_provider,
+            wallet_manager::ecosystems::ethereum::rpc_management::update_rpc_provider,
+            wallet_manager::ecosystems::ethereum::rpc_management::delete_rpc_provider,
+            wallet_manager::ecosystems::ethereum::rpc_management::test_rpc_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,6 +11,7 @@ use ethers::{
 use std::sync::Arc;
 use rand::Rng;
 use crate::database::get_database_manager;
+use super::provider::ProviderUtils;
 use sqlx::Row;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -297,8 +298,8 @@ impl TransferUtils {
 
 // Tauri命令：基础币转账
 #[tauri::command]
-pub async fn base_coin_transfer(
-    app_handle: tauri::AppHandle,
+pub async fn base_coin_transfer<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     index: usize,
     item: TransferItem,
     config: TransferConfig,
@@ -318,8 +319,8 @@ pub async fn base_coin_transfer(
 }
 
 // 内部基础币转账实现
-async fn base_coin_transfer_internal(
-    app_handle: tauri::AppHandle,
+async fn base_coin_transfer_internal<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     index: usize,
     mut item: TransferItem,
     config: TransferConfig,
@@ -344,14 +345,18 @@ async fn base_coin_transfer_internal(
     let wallet = private_key.parse::<LocalWallet>().map_err(|e| {
         format!("私钥格式错误: {}，请检查私钥格式是否正确（应为64位十六进制字符串，可带或不带0x前缀）", e)
     })?;
-    let wallet = wallet.with_chain_id(get_rpc_config(&config.chain).await.unwrap().chain_id);
+    // 优先通过统一ProviderUtils获取链ID，避免重复查询逻辑
+    let chain_id = ProviderUtils::get_chain_id(&config.chain).await.unwrap_or(
+        get_rpc_config(&config.chain).await.map(|c| c.chain_id).unwrap_or(1)
+    );
+    let wallet = wallet.with_chain_id(chain_id);
     let wallet_address = wallet.address();
     
     // 获取余额
     let balance = provider.get_balance(wallet_address, None).await?;
     let balance_ether = format_ether(balance);
     
-    println!("序号：{}, 当前余额为: {} ETH", index, balance_ether);
+    println!("序号：{}, 当前余额为: {} ", index, balance_ether);
     
     if balance.is_zero() {
         return Err("当前余额不足，不做转账操作！".into());

@@ -117,8 +117,8 @@ impl TokenTransferUtils {
 
 // Tauri命令：代币转账
 #[tauri::command]
-pub async fn token_transfer(
-    app_handle: tauri::AppHandle,
+pub async fn token_transfer<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     index: usize,
     item: TransferItem,
     config: TokenTransferConfig,
@@ -138,8 +138,8 @@ pub async fn token_transfer(
 }
 
 // 内部代币转账实现
-async fn token_transfer_internal(
-    app_handle: tauri::AppHandle,
+async fn token_transfer_internal<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     index: usize,
     mut item: TransferItem,
     config: TokenTransferConfig,

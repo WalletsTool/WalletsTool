@@ -5,7 +5,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeMount, onMounted, rea
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ethers } from "ethers";
-import { Notification } from "@arco-design/web-vue";
+import { Notification, Modal } from "@arco-design/web-vue";
 import { utils as xlUtils, writeFile } from "xlsx";
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import ChainIcon from '@/components/ChainIcon.vue';
@@ -106,7 +106,7 @@ const showProgress = ref(false); // 是否显示进度条
 const pagination = ref(false);
 const scrollbar = ref(true);
 // 窗口标题
-const windowTitle = ref('Wallet Manager - 余额查询');
+const windowTitle = ref('余额查询');
 // chain默认值
 const chainValue = ref('');
 // 当前chain
@@ -281,6 +281,13 @@ onMounted(async () => {
   if (isTauri) {
     try {
       const currentWindow = getCurrentWindow();
+      
+      // 获取窗口标题
+      const title = await currentWindow.title();
+      if (title) {
+        windowTitle.value = title;
+      }
+      
       // 获取当前窗口ID
       currentWindowId.value = currentWindow.label;
       console.log('当前窗口ID:', currentWindowId.value);
@@ -301,7 +308,8 @@ onMounted(async () => {
       console.error('Error getting window info:', error);
     }
   } else {
-    // 浏览器环境下设置默认ID
+    // 浏览器环境下设置默认标题和ID
+    windowTitle.value = '余额查询';
     currentWindowId.value = 'browser_window';
   }
 
@@ -508,8 +516,18 @@ function clearData() {
     Notification.warning('请停止或等待查询完成后再清空列表！');
     return;
   }
-  data.value = []
-  Notification.success('清空列表成功！');
+   if(data.value.length === 0){
+    Notification.warning('当前列表无数据！');
+    return;
+  }
+  Modal.confirm({
+    title: '确认清空',
+    content: '确定要清空所有列表数据吗？此操作不可撤销。',
+    onOk: () => {
+      data.value = [];
+      Notification.success('清空列表成功！');
+    }
+  });
 }
 
 // 导入事件触发
@@ -732,6 +750,15 @@ function updateBalanceProgress() {
   balanceProgress.value = balanceTotal.value > 0 ? Number((balanceCompleted.value / balanceTotal.value).toFixed(2)) : 0
 }
 
+// 创建防抖版本的操作函数
+const debouncedQueryBalance = debounce(queryBalance, 500);
+const debouncedStopBalanceQuery = debounce(stopBalanceQuery, 300);
+const debouncedDeleteSelected = debounce(deleteSelected, 400);
+const debouncedExportAllToExcel = debounce(exportAllToExcel, 600);
+const debouncedExportSelectToExcel = debounce(exportSelectToExcel, 600);
+const debouncedClearData = debounce(clearData, 600);
+const debouncedDeleteItemConfirm = debounce(deleteItemConfirm, 400);
+
 // 查询余额（改为使用Rust后端）
 async function queryBalance() {
   if (data.value.length === 0) {
@@ -751,7 +778,7 @@ async function queryBalance() {
   executeBalanceQuery(data.value, true);
 }
 
-// 查询余额的通用方法
+// 查询余额的通用方法 - 支持分批处理
 async function executeBalanceQuery(queryData) {
   if (currentCoin.value.coin_type === 'base' || currentCoin.value.coin_type === 'token') {
     balanceLoading.value = true
@@ -773,99 +800,168 @@ async function executeBalanceQuery(queryData) {
 
     showProgress.value = true
 
-    try {
-      // 使用Rust后端进行查询
-      const params = {
-        chain: chainValue.value,
-        coin_config: {
-          coin_type: currentCoin.value.coin_type,
-          contract_address: currentCoin.value.contract_address || null,
-          abi: currentCoin.value.abi || null
-        },
-        items: queryData.map(item => ({
-          key: item.address,
-          address: item.address,
-          private_key: item.private_key || null,
-          plat_balance: null,
-          coin_balance: null,
-          nonce: null,
-          exec_status: '0',
-          error_msg: null,
-          retry_flag: false
-        })),
-        only_coin_config: onlyCoin.value,
-        thread_count: form.thread_count
-      }
-
-      // 检查是否需要停止查询
-      if (balanceStopFlag.value) {
-        console.log('查询已被停止');
-        balanceLoading.value = false;
-        return;
-      }
-
-      const result = await invoke('query_balances_with_updates', {
-        params,
-        windowId: currentWindowId.value
-      })
-
-      if (result.success || result.items) {
-        // 更新数据 - 无论总体是否成功，都要更新单条记录的状态
-        result.items.forEach((resultItem, index) => {
-          if (data.value[index]) {
-            Object.assign(data.value[index], resultItem)
-          }
-        })
-
-        // 确保进度条显示100%
-        balanceProgress.value = 1
-
-        // 延迟隐藏进度条
-        setTimeout(() => {
-          showProgress.value = false;
-        }, 3000); // 3秒后隐藏进度条
-
-        // 统计成功和失败的数量
-        const successCount = result.items.filter(item => item.exec_status === '2').length
-        const failCount = result.items.filter(item => item.exec_status === '3').length
-        const totalCount = result.items.length
-
-        // 查询完成统计
-
-        if (successCount === totalCount) {
-          Notification.success('查询成功！')
-        } else if (successCount > 0) {
-          Notification.warning(`查询完成！成功 ${successCount} 条，失败 ${failCount} 条`)
-        } else {
-          Notification.error('查询失败：所有记录都查询失败')
-        }
-      } else {
-        // 只有在没有返回任何结果时才设置所有项目为失败状态
-        data.value.forEach(item => {
-          item.exec_status = '3'
-          item.error_msg = result.error_msg || '查询失败！'
-        })
-        balanceProgress.value = 1 // 即使失败也要显示100%完成
-        Notification.error('查询失败：' + (result.error_msg || '未知错误'))
-      }
-
-    } catch (error) {
-      console.error('查询失败:', error)
-
-      // 设置所有项目为失败状态
-      data.value.forEach(item => {
-        item.exec_status = '3'
-        item.error_msg = '查询失败！'
-      })
-
-      // 隐藏进度条
-      showProgress.value = false;
-      Notification.error('查询失败：' + error.message)
-    }
-
-    balanceLoading.value = false
+    // 分批处理大数据集
+    await queryBalanceInBatches()
   } else {
     Notification.warning('查询 coin 类型错误！');
+  }
+}
+
+// 分批查询余额
+async function queryBalanceInBatches() {
+  const BATCH_SIZE = 50; // 每批处理50个地址
+  const totalItems = data.value.length;
+  const totalBatches = Math.ceil(totalItems / BATCH_SIZE);
+  
+  console.log(`开始分批查询余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
+  
+  try {
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      // 检查是否需要停止查询
+      if (balanceStopFlag.value) {
+        balanceLoading.value = false;
+        showProgress.value = false;
+        return;
+      }
+      
+      const startIndex = batchIndex * BATCH_SIZE;
+      const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
+      const batchData = data.value.slice(startIndex, endIndex);
+      
+      console.log(`处理第 ${batchIndex + 1}/${totalBatches} 批，索引 ${startIndex}-${endIndex - 1}`);
+      
+      await queryBalanceBatch(batchData, startIndex);
+      
+      // 更新进度条
+      updateBalanceProgress();
+      
+      // 批次间添加短暂延迟，避免过于频繁的请求
+      if (batchIndex < totalBatches - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    
+    // 所有批次完成后的统计
+    const successCount = data.value.filter(item => item.exec_status === '2').length;
+    const failCount = data.value.filter(item => item.exec_status === '3').length;
+    const totalCount = data.value.length;
+    
+    // 确保进度条显示100%
+    balanceProgress.value = 1;
+    
+    // 延迟隐藏进度条
+    setTimeout(() => {
+      showProgress.value = false;
+    }, 3000); // 3秒后隐藏进度条
+    
+    if (successCount === totalCount) {
+      Notification.success('查询成功！');
+    } else if (successCount > 0) {
+      Notification.warning(`查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+    } else {
+      Notification.error('查询失败：所有记录都查询失败');
+    }
+    
+  } catch (error) {
+    console.error('分批查询失败:', error);
+    
+    // 设置所有项目为失败状态
+    data.value.forEach(item => {
+      item.exec_status = '3';
+      item.error_msg = '查询失败！';
+    });
+    
+    // 隐藏进度条
+    showProgress.value = false;
+    Notification.error('查询失败：' + error.message);
+  } finally {
+    balanceLoading.value = false;
+  }
+}
+
+// 查询单个批次的余额
+async function queryBalanceBatch(batchData, startIndex) {
+  try {
+    // 使用Rust后端进行查询
+    const params = {
+      chain: chainValue.value,
+      coin_config: {
+        coin_type: currentCoin.value.coin_type,
+        contract_address: currentCoin.value.contract_address || null,
+        abi: currentCoin.value.abi || null
+      },
+      items: batchData.map(item => ({
+        key: item.address,
+        address: item.address,
+        private_key: item.private_key || null,
+        plat_balance: null,
+        coin_balance: null,
+        nonce: null,
+        exec_status: '0',
+        error_msg: null,
+        retry_flag: false
+      })),
+      only_coin_config: onlyCoin.value,
+      thread_count: form.thread_count
+    };
+
+    // 检查是否需要停止查询
+    if (balanceStopFlag.value) {
+      return;
+    }
+
+    let result;
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      result = await invoke('query_balances_with_updates', {
+        params,
+        windowId: currentWindowId.value
+      });
+    } else {
+      // 浏览器环境下的模拟数据
+      result = {
+        success: true,
+        items: batchData.map(item => ({
+          ...item,
+          plat_balance: '1.0',
+          coin_balance: '100.0',
+          nonce: 1,
+          exec_status: '2',
+          error_msg: null
+        }))
+      };
+    }
+
+    if (result.success || result.items) {
+      // 更新数据 - 无论总体是否成功，都要更新单条记录的状态
+      result.items.forEach((resultItem, index) => {
+        const dataIndex = startIndex + index;
+        if (data.value[dataIndex]) {
+          Object.assign(data.value[dataIndex], resultItem);
+        }
+      });
+    } else {
+      // 只有在没有返回任何结果时才设置批次项目为失败状态
+      batchData.forEach((item, index) => {
+        const dataIndex = startIndex + index;
+        if (data.value[dataIndex]) {
+          data.value[dataIndex].exec_status = '3';
+          data.value[dataIndex].error_msg = result.error_msg || '查询失败！';
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('批次查询失败:', error);
+    
+    // 设置批次项目为失败状态
+    batchData.forEach((item, index) => {
+      const dataIndex = startIndex + index;
+      if (data.value[dataIndex]) {
+        data.value[dataIndex].exec_status = '3';
+        data.value[dataIndex].error_msg = '查询失败！';
+      }
+    });
   }
 }
 
@@ -1107,26 +1203,26 @@ async function handleBeforeClose() {
         </template>
         反选
       </a-button>
-      <a-button type="primary" status="danger" style="margin-left: 10px" @click="deleteSelected">
+      <a-button type="primary" status="danger" style="margin-left: 10px" @click="debouncedDeleteSelected">
         <template #icon>
           <Icon icon="mdi:delete" />
         </template>
         删除选中
       </a-button>
       <a-divider direction="vertical" />
-      <a-button type="primary" status="success" @click="exportAllToExcel">
+      <a-button type="primary" status="success" @click="debouncedExportAllToExcel">
         <template #icon>
           <Icon icon="mdi:download" />
         </template>
         导出全表
       </a-button>
-      <a-button type="outline" status="normal" style="margin-left: 10px" @click="exportSelectToExcel">
+      <a-button type="outline" status="normal" style="margin-left: 10px" @click="debouncedExportSelectToExcel">
         <template #icon>
           <Icon icon="mdi:download" />
         </template>
         导出选中
       </a-button>
-      <a-button type="outline" status="normal" style="float: right;margin-right: 10px" @click="clearData">
+      <a-button type="primary" status="danger" style="float: right;margin-right: 10px" @click="debouncedClearData">
         <template #icon>
           <Icon icon="mdi:delete" />
         </template>
@@ -1278,14 +1374,14 @@ async function handleBeforeClose() {
     <div style="display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 5px; flex-shrink: 0;">
       <!-- 查询按钮 -->
       <a-tooltip v-if="balanceLoading" content="点击可以提前停止查询">
-        <a-button type="primary" status="danger" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="stopBalanceQuery">
+        <a-button type="primary" status="danger" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="debouncedStopBalanceQuery">
           <template #icon>
             <Icon icon="mdi:stop" />
           </template>
           查询中...
         </a-button>
       </a-tooltip>
-      <a-button v-else type="primary" status="success" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="queryBalance">
+      <a-button v-else type="primary" status="success" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="debouncedQueryBalance">
         <template #icon>
           <Icon icon="mdi:play" />
         </template>
@@ -1353,7 +1449,7 @@ async function handleBeforeClose() {
     </div>
     <template #footer>
       <a-button @click="deleteItemCancel">取消</a-button>
-      <a-button type="primary" status="danger" @click="deleteItemConfirm" style="margin-left: 10px">确定
+      <a-button type="primary" status="danger" @click="debouncedDeleteItemConfirm" style="margin-left: 10px">确定
       </a-button>
     </template>
   </a-modal>

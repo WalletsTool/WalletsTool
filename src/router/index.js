@@ -1,40 +1,27 @@
-import {createRouter, createWebHashHistory} from "vue-router";
+import { createRouter, createWebHashHistory } from "vue-router";
 const routes = [
-    {path: "/", redirect: "/home"},
-    {
-        path: "/home",
-        name: "home",
-        component:() => import('../pages/Home.vue')
-    },
-    {
-        path: "/transfer",
-        name: "transfer",
-        component:() => import('../pages/Transfer.vue')
-    },
-    {
-        path: "/balance",
-        name: "balance",
-        component:() => import('../pages/Balance.vue')
-    }
-]
+    // default redirects (keep backward compatibility for tray/open_function_window)
+    { path: "/", redirect: "/home" },
+    { path: "/home", name: "home", component: () => import('@/features/home/pages/Home.vue') },
+    { path: "/transfer", redirect: "/eth/transfer" },
+    { path: "/balance", redirect: "/eth/balance" },
+
+    // Ethereum
+    { path: "/eth/transfer", name: "eth-transfer", component: () => import('@/features/ethereum/transfer/pages/Transfer.vue') },
+    { path: "/eth/balance", name: "eth-balance", component: () => import('@/features/ethereum/balance/pages/Balance.vue') },
+
+    // Solana
+    { path: "/sol/transfer", name: "sol-transfer", component: () => import('@/features/solana/transfer/pages/Transfer.vue') },
+    { path: "/sol/balance", name: "sol-balance", component: () => import('@/features/solana/balance/pages/Balance.vue') },
+];
 
 const router = createRouter({
     history: createWebHashHistory(),
     routes,
 })
 
-// 添加路由守卫进行调试
-router.beforeEach((to, from, next) => {
-    console.log('[DEBUG] 路由跳转 - 从:', from.path, '到:', to.path)
-    next()
-})
-
-router.afterEach((to, from) => {
-    console.log('[DEBUG] 路由跳转完成 - 当前路由:', to.path)
-})
-
 router.onError((error) => {
-    console.error('[DEBUG] 路由错误:', error)
+    console.error('路由错误:', error)
 })
 
 export {router}

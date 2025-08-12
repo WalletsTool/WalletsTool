@@ -1,7 +1,10 @@
 <template>
   <!-- 自定义标题栏 -->
   <div class="title-bar">
-    <div class="title-bar-text">{{ title }}</div>
+    <div class="title-bar-left">
+      <img src="/app-icon.png" alt="Logo" class="title-bar-logo" />
+      <div class="title-bar-text">{{ title }}</div>
+    </div>
     <div class="title-bar-controls">
       <!-- 主题切换开关 -->
       <div class="titlebar-center">
@@ -161,10 +164,23 @@ async function closeWindow() {
   z-index: 1000;
 }
 
-.title-bar-text {
+.title-bar-left {
+  display: flex;
+  align-items: center;
   margin-left: 10px;
+}
+
+.title-bar-logo {
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.title-bar-text {
   font-weight: 500;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .title-bar-controls {

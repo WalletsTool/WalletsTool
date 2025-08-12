@@ -79,7 +79,10 @@
       },
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["SimpChinese"]
+        "languages": ["SimpChinese"],
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/icon.ico",
+        "sidebarImage": "icons/icon.ico"
       }
     },
     "linux": {

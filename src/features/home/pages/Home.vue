@@ -1,6 +1,6 @@
 <script setup name="home">
 import { useRouter } from 'vue-router'
-import { useEcosystemStore } from '@/features/common/stores/ecosystem'
+import { useEcosystemStore } from '@/stores/ecosystem'
 import { Notification, Modal } from "@arco-design/web-vue";
 import { onMounted, onBeforeUnmount, ref, h, computed, nextTick } from "vue";
 import party from "party-js";

@@ -1,5 +1,5 @@
 {
-  "productName": "wallet_manager",
+  "productName": "WalletsTool",
   "version": "0.1.0",
   "identifier": "com.ezban.walletmanager",
   "build": {
@@ -12,8 +12,8 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "钱包管理器",
-        "label": "wallet_manager",
+        "title": "WalletsTool",
+        "label": "WalletsTool",
         "width": 350,
         "height": 750,
         "resizable": false,

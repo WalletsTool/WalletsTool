@@ -1,4 +1,4 @@
-# Wallet Manager
+# WalletsTool
 
 一个功能强大的多链钱包管理工具，基于 Vue 3 + Tauri 构建，支持钱包导入、余额查询、批量转账等功能。提供直观的用户界面，帮助用户安全便捷地管理多个区块链网络上的数字资产。
 
@@ -75,7 +75,7 @@
 ### 项目结构
 
 ```
-wallet_manager/
+WalletsTool/
 ├── src/                    # 前端源码
 │   ├── components/         # 公共组件
 │   ├── features/          # 功能模块

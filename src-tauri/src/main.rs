@@ -55,7 +55,7 @@ async fn force_close_main_window<R: Runtime>(_app: AppHandle<R>) -> Result<(), S
 // Tauri 命令：显示主窗口
 #[tauri::command]
 async fn show_main_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("wallet_manager") {
+    if let Some(window) = app.get_webview_window("WalletsTool") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
     }
@@ -187,7 +187,7 @@ async fn main() {
                                 }
                                 
                                 // 发送退出确认事件到前端
-                                if let Some(window) = app_handle.get_webview_window("wallet_manager") {
+                                if let Some(window) = app_handle.get_webview_window("WalletsTool") {
                                     if let Err(e) = window.emit("tray-quit-requested", ()) {
                                         eprintln!("发送托盘退出事件失败: {}", e);
                                     }
@@ -231,7 +231,7 @@ async fn main() {
                 WindowEvent::CloseRequested { api, .. } => {
                     let window_label = window.label().to_string();
                     
-                    if window_label == "wallet_manager" {
+                    if window_label == "WalletsTool" {
                         // 阻止默认的关闭行为
                         api.prevent_close();
                         

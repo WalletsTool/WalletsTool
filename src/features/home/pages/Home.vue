@@ -478,7 +478,7 @@ async function handleMainWindowCloseRequest() {
 
     // 先获取所有子窗口
     const childWindows = await invoke('get_all_child_windows', {
-      mainWindowLabel: 'wallet_manager'
+      mainWindowLabel: 'WalletsTool'
     })
 
     // 获取子窗口列表
@@ -515,7 +515,7 @@ async function handleMainWindowCloseRequest() {
             if (childWindows && childWindows.length > 0) {
               // 正在关闭子窗口
               await invoke('close_all_child_windows', {
-                mainWindowLabel: 'wallet_manager'
+                mainWindowLabel: 'WalletsTool'
               })
               // 已关闭子窗口
 

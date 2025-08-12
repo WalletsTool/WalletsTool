@@ -13,6 +13,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "WalletsTool"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "base64ct",
+ "chrono",
+ "ethers",
+ "futures",
+ "hex",
+ "rand 0.8.5",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-shell",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid 1.17.0",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6151,31 +6176,6 @@ checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
 dependencies = [
  "same-file",
  "winapi-util",
-]
-
-[[package]]
-name = "wallet_manager"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "base64 0.21.7",
- "base64ct",
- "chrono",
- "ethers",
- "futures",
- "hex",
- "rand 0.8.5",
- "regex",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "sqlx",
- "tauri",
- "tauri-build",
- "tauri-plugin-shell",
- "thiserror 1.0.69",
- "tokio",
- "uuid 1.17.0",
 ]
 
 [[package]]

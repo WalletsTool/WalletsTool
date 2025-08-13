@@ -1295,6 +1295,13 @@ onBeforeUnmount(async () => {
   console.log('Transfer页面清理完成，所有后台操作已停止');
 });
 
+// 导入进度相关变量
+const importProgress = ref(0); // 导入进度百分比
+const importTotal = ref(0); // 总导入数量
+const importCompleted = ref(0); // 已完成导入数量
+const showImportProgress = ref(false); // 是否显示导入进度条
+const importProgressText = ref(''); // 导入进度文本
+
 // 读取上传的文件
 // 验证私钥格式
 function validatePrivateKey(privateKey) {
@@ -1358,6 +1365,25 @@ function validateAddress(address) {
   }
 }
 
+// 更新导入进度
+function updateImportProgress() {
+  if (!showImportProgress.value) return;
+
+  // 计算进度百分比
+  if (importTotal.value > 0) {
+    importProgress.value = Number((importCompleted.value / importTotal.value).toFixed(4));
+  } else {
+    importProgress.value = 0;
+  }
+
+  // 如果全部完成，延迟隐藏进度条
+  if (importCompleted.value === importTotal.value && importTotal.value > 0) {
+    setTimeout(() => {
+      showImportProgress.value = false;
+    }, 2000); // 2秒后隐藏进度条
+  }
+}
+
 // 导出不合规数据到Excel
 function exportInvalidData(invalidData) {
   if (invalidData.length === 0) {
@@ -1392,6 +1418,90 @@ function exportInvalidData(invalidData) {
   writeFile(wb, fileName);
 }
 
+// 异步分批处理数据的函数
+async function processBatchData(batchData, batchIndex, totalBatches) {
+  const validItems = [];
+  const invalidItems = [];
+
+  for (let i = 0; i < batchData.length; i++) {
+    const item = batchData[i];
+    const rowNumber = item._originalIndex + 2; // Excel行号（从第2行开始，第1行是表头）
+    const privateKey = String(item.私钥 || '').trim();
+    const toAddress = String(item.地址 || '').trim();
+    const amount = item.转账数量;
+
+    // 验证私钥和地址
+    const isPrivateKeyValid = privateKey && validatePrivateKey(privateKey);
+    const isAddressValid = toAddress && validateAddress(toAddress);
+
+    if (isPrivateKeyValid && isAddressValid) {
+      // 数据合规，添加到表格
+      try {
+        // 从私钥生成地址
+        const wallet = new ethers.Wallet(privateKey);
+        const address = wallet.address;
+
+        validItems.push({
+          key: `transfer_${validItems.length}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          private_key: privateKey,
+          address: address,
+          to_addr: toAddress,
+          amount: amount ? String(amount) : "0", // 转账数量为空时显示为0
+          plat_balance: "",
+          coin_balance: "",
+          exec_status: "0",
+          error_msg: "",
+        });
+      } catch (error) {
+        // 私钥无效，添加到不合规数据
+        invalidItems.push({
+          私钥: privateKey,
+          地址: toAddress,
+          转账数量: amount || '',
+          错误原因: '私钥无效',
+          行号: rowNumber
+        });
+      }
+    } else {
+      // 数据不合规，记录错误原因
+      const errorReasons = [];
+      if (!isPrivateKeyValid) {
+        if (!privateKey) {
+          errorReasons.push('私钥为空');
+        } else {
+          errorReasons.push('私钥格式错误');
+        }
+      }
+      if (!isAddressValid) {
+        if (!toAddress) {
+          errorReasons.push('地址为空');
+        } else {
+          errorReasons.push('地址格式错误');
+        }
+      }
+
+      invalidItems.push({
+        私钥: privateKey,
+        地址: toAddress,
+        转账数量: amount || '',
+        错误原因: errorReasons.join('; '),
+        行号: rowNumber
+      });
+    }
+
+    // 更新进度
+    importCompleted.value++;
+    updateImportProgress();
+
+    // 每处理10条数据就让出一次控制权，避免阻塞UI
+    if (i % 10 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  }
+
+  return { validItems, invalidItems };
+}
+
 function UploadFile() {
   // 检查是否有文件被选择
   if (!uploadInputRef.value.files || !uploadInputRef.value.files[0]) {
@@ -1402,151 +1512,161 @@ function UploadFile() {
   pageLoading.value = true;
   tableLoading.value = true;
 
-  // 添加500毫秒延迟，确保loading窗口显示
-  setTimeout(() => {
-    let file = uploadInputRef.value.files[0];
-    let reader = new FileReader();
-    //提取excel中文件内容
-    reader.readAsArrayBuffer(file);
-    data.value = [];
-    clearValidationCache(); // 清除验证缓存
-    reader.onload = function () {
-      const buffer = reader.result;
-      const bytes = new Uint8Array(buffer);
-      const length = bytes.byteLength;
-      let binary = "";
-      for (let i = 0; i < length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      //转换二进制
-      const wb = read(binary, {
-        type: "binary",
-      });
-      const outdata = xlUtils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-      // 用于存储不合规数据
-      const invalidData = [];
-      let validCount = 0;
-      let invalidCount = 0;
+  // 添加100毫秒延迟，确保loading窗口显示
+  setTimeout(async () => {
+    try {
+      let file = uploadInputRef.value.files[0];
+      let reader = new FileReader();
 
-      // 这里for循环将excel表格数据转化成json数据
-      outdata.forEach((i, index) => {
-        const rowNumber = index + 2; // Excel行号（从第2行开始，第1行是表头）
-        const privateKey = String(i.私钥 || '').trim();
-        const toAddress = String(i.地址 || '').trim();
-        const amount = i.转账数量;
+      // 清空现有数据
+      data.value = [];
+      clearValidationCache(); // 清除验证缓存
 
-        // 验证私钥和地址
-        const isPrivateKeyValid = privateKey && validatePrivateKey(privateKey);
-        const isAddressValid = toAddress && validateAddress(toAddress);
+      // 读取文件
+      reader.readAsArrayBuffer(file);
 
-        if (isPrivateKeyValid && isAddressValid) {
-          // 数据合规，添加到表格
-          try {
-            // 从私钥生成地址
-            const wallet = new ethers.Wallet(privateKey);
-            const address = wallet.address;
-
-            data.value.push({
-              key: `transfer_${validCount}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              private_key: privateKey,
-              address: address,
-              to_addr: toAddress,
-              amount: amount ? String(amount) : "0", // 转账数量为空时显示为0
-              plat_balance: "",
-              coin_balance: "",
-              exec_status: "0",
-              error_msg: "",
-            });
-            validCount++;
-          } catch (error) {
-            // 私钥无效，添加到不合规数据
-            const errorReasons = [];
-            errorReasons.push('私钥无效');
-
-            invalidData.push({
-              私钥: privateKey,
-              地址: toAddress,
-              转账数量: amount || '',
-              错误原因: errorReasons.join('; '),
-              行号: rowNumber
-            });
-            invalidCount++;
-          }
-        } else {
-          // 数据不合规，记录错误原因
-          const errorReasons = [];
-          if (!isPrivateKeyValid) {
-            if (!privateKey) {
-              errorReasons.push('私钥为空');
-            } else {
-              errorReasons.push('私钥格式错误');
-            }
-          }
-          if (!isAddressValid) {
-            if (!toAddress) {
-              errorReasons.push('地址为空');
-            } else {
-              errorReasons.push('地址格式错误');
-            }
+      reader.onload = async function () {
+        try {
+          const buffer = reader.result;
+          const bytes = new Uint8Array(buffer);
+          const length = bytes.byteLength;
+          let binary = "";
+          for (let i = 0; i < length; i++) {
+            binary += String.fromCharCode(bytes[i]);
           }
 
-          invalidData.push({
-            私钥: privateKey,
-            地址: toAddress,
-            转账数量: amount || '',
-            错误原因: errorReasons.join('; '),
-            行号: rowNumber
+          // 转换二进制
+          const wb = read(binary, {
+            type: "binary",
           });
-          invalidCount++;
-        }
-      });
+          const outdata = xlUtils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
 
-      // 如果有不合规数据，导出到本地
-      if (invalidData.length > 0) {
-        exportInvalidData(invalidData);
+          // 为每个数据项添加原始索引
+          const indexedData = outdata.map((item, index) => ({
+            ...item,
+            _originalIndex: index
+          }));
 
-        // 显示导入结果通知
-        if (validCount > 0) {
-          Notification.warning({
-            title: '导入完成',
-            content: `成功导入 ${validCount} 条数据，${invalidCount} 条不合规数据已导出到本地文件`,
-            duration: 5000
-          });
-        } else {
+          // 初始化进度
+          importTotal.value = indexedData.length;
+          importCompleted.value = 0;
+          importProgress.value = 0;
+          importProgressText.value = '正在处理数据...';
+          showImportProgress.value = true;
+
+          // 用于存储所有结果
+          const allValidData = [];
+          const allInvalidData = [];
+
+          // 分批处理数据，每批处理50条
+          const batchSize = 50;
+          const totalBatches = Math.ceil(indexedData.length / batchSize);
+
+          for (let i = 0; i < totalBatches; i++) {
+            const start = i * batchSize;
+            const end = Math.min(start + batchSize, indexedData.length);
+            const batchData = indexedData.slice(start, end);
+
+            // 处理当前批次
+            const { validItems, invalidItems } = await processBatchData(batchData, i, totalBatches);
+
+            // 累积结果
+            allValidData.push(...validItems);
+            allInvalidData.push(...invalidItems);
+
+            // 更新进度文本
+            importProgressText.value = `正在处理数据...`;
+          }
+
+          // 数据处理完成，更新进度文本
+          importProgressText.value = '数据处理完成，正在渲染表格...';
+
+          // 等待一个微任务，确保进度更新显示
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          // 重新生成key确保唯一性
+          const finalValidData = allValidData.map((item, index) => ({
+            ...item,
+            key: index + 1
+          }));
+
+          // 一次性更新数据，触发表格渲染
+          data.value = finalValidData;
+
+          // 处理不合规数据
+          if (allInvalidData.length > 0) {
+            exportInvalidData(allInvalidData);
+
+            // 显示导入结果通知
+            if (allValidData.length > 0) {
+              Notification.warning({
+                title: '导入完成',
+                content: `成功导入 ${allValidData.length} 条数据，${allInvalidData.length} 条不合规数据已导出到本地文件`,
+                duration: 5000
+              });
+            } else {
+              Notification.error({
+                title: '导入失败',
+                content: `所有数据都不合规，共 ${allInvalidData.length} 条数据已导出到本地文件`,
+                duration: 5000
+              });
+            }
+          } else {
+            // 全部数据合规
+            Notification.success({
+              title: '导入成功',
+              content: `成功导入 ${allValidData.length} 条数据`,
+              duration: 3000
+            });
+          }
+
+        } catch (error) {
+          console.error('文件处理失败:', error);
           Notification.error({
-            title: '导入失败',
-            content: `所有数据都不合规，共 ${invalidCount} 条数据已导出到本地文件`,
+            title: '文件处理失败',
+            content: '文件处理过程中发生错误，请检查文件格式是否正确',
             duration: 5000
           });
+        } finally {
+          // 关闭loading
+          tableLoading.value = false;
+          pageLoading.value = false;
+
+          // 延迟隐藏导入进度条
+          setTimeout(() => {
+            showImportProgress.value = false;
+          }, 2000);
         }
-      } else {
-        // 全部数据合规
-        Notification.success({
-          title: '导入成功',
-          content: `成功导入 ${validCount} 条数据`,
-          duration: 3000
+      };
+
+      reader.onerror = function () {
+        tableLoading.value = false;
+        pageLoading.value = false;
+        showImportProgress.value = false;
+
+        Notification.error({
+          title: '文件读取失败',
+          content: '文件读取过程中发生错误，请检查文件格式是否正确',
+          duration: 5000
         });
-      }
-    };
-    reader.onerror = function () {
+      };
+
+    } catch (error) {
+      console.error('导入文件失败:', error);
       tableLoading.value = false;
-      // 关闭全页面loading
       pageLoading.value = false;
-      // 显示错误通知
+      showImportProgress.value = false;
+
       Notification.error({
-        title: '文件读取失败',
-        content: '文件读取过程中发生错误，请检查文件格式是否正确',
+        title: '导入失败',
+        content: '导入过程中发生错误，请重试',
         duration: 5000
       });
-    };
-    reader.onloadend = function () {
-      tableLoading.value = false;
-      // 关闭全页面loading
-      pageLoading.value = false;
-      // 文件读取完成
-    };
-    if (uploadInputRef.value) {
-      uploadInputRef.value.value = '';
+    } finally {
+      // 清空文件输入
+      if (uploadInputRef.value) {
+        uploadInputRef.value.value = '';
+      }
     }
   }, 100);
 }
@@ -3849,9 +3969,25 @@ async function handleBeforeClose() {
       </VirtualScrollerTable>
     </div>
 
+    <!-- 导入进度条 - 悬浮在页面顶部 -->
+    <Transition name="progress-slide" appear>
+      <div v-if="showImportProgress" class="floating-progress-bar">
+        <div class="progress-content">
+          <div class="progress-header">
+            <span class="progress-title">{{ importProgressText }}</span>
+            <span class="progress-count">{{ importCompleted }} / {{ importTotal }}</span>
+          </div>
+          <a-progress :percent="importProgress" :show-text="true" :stroke-width="6" :color="{
+            '0%': '#722ed1',
+            '100%': '#722ed1'
+          }" class="progress-bar" />
+        </div>
+      </div>
+    </Transition>
+
     <!-- 转账进度条 - 悬浮在页面顶部 -->
     <Transition name="progress-slide" appear>
-      <div v-if="showProgress" class="floating-progress-bar">
+      <div v-if="showProgress" class="floating-progress-bar" :style="{ top: showImportProgress ? '120px' : '45px' }">
         <div class="progress-content">
           <div class="progress-header">
             <span class="progress-title">转账进度</span>
@@ -3867,7 +4003,10 @@ async function handleBeforeClose() {
 
     <!-- 余额查询进度条 - 悬浮在页面顶部 -->
     <Transition name="progress-slide" appear>
-      <div v-if="showBalanceProgress" class="floating-progress-bar" :style="{ top: showProgress ? '120px' : '20px' }">
+      <div v-if="showBalanceProgress" class="floating-progress-bar" :style="{
+        top: (showImportProgress && showProgress) ? '220px' :
+             (showImportProgress || showProgress) ? '120px' : '45px'
+      }">
         <div class="progress-content">
           <div class="progress-header">
             <span class="progress-title">查出账地址进度</span>
@@ -3883,7 +4022,11 @@ async function handleBeforeClose() {
 
     <!-- 查到账地址余额查询进度条 - 悬浮在页面顶部 -->
     <Transition name="progress-slide" appear>
-      <div v-if="showToAddressBalanceProgress" class="floating-progress-bar" :style="{ top: (showProgress && showBalanceProgress) ? '220px' : (showProgress || showBalanceProgress) ? '120px' : '20px' }">
+      <div v-if="showToAddressBalanceProgress" class="floating-progress-bar" :style="{
+        top: (showImportProgress && showProgress && showBalanceProgress) ? '320px' :
+             ((showImportProgress && showProgress) || (showImportProgress && showBalanceProgress) || (showProgress && showBalanceProgress)) ? '220px' :
+             (showImportProgress || showProgress || showBalanceProgress) ? '120px' : '45px'
+      }">
         <div class="progress-content">
           <div class="progress-header">
             <span class="progress-title">查到账地址进度</span>
@@ -4283,10 +4426,13 @@ async function handleBeforeClose() {
     @rpc-updated="handleRpcUpdated" />
 
   <!-- 全页面Loading覆盖层 -->
-  <div v-if="pageLoading" class="page-loading-overlay">
+  <div v-if="pageLoading" class="page-loading-overlay" :class="{ 'with-progress': showImportProgress }">
     <div class="loading-content">
       <a-spin size="large" />
       <div class="loading-text">正在导入文件，请稍候...</div>
+      <div v-if="showImportProgress" class="loading-hint">
+        请查看页面顶部的进度条了解详细进度
+      </div>
     </div>
   </div>
 
@@ -4439,6 +4585,18 @@ async function handleBeforeClose() {
   font-weight: 500;
 }
 
+.loading-hint {
+  font-size: 14px;
+  color: var(--text-color-secondary, #86909c);
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* 当有进度条时，调整loading遮罩层的透明度 */
+.page-loading-overlay.with-progress {
+  background-color: var(--overlay-bg, rgba(0, 0, 0, 0.3));
+}
+
 .execute-btn.stopping:hover {
   color: #ffffff;
   background-color: #fc0934;
@@ -4526,7 +4684,7 @@ async function handleBeforeClose() {
   top: 45px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1000;
+  z-index: 10000; /* 设置比loading遮罩层(9999)更高的层级 */
   width: 90%;
   max-width: 600px;
   background: var(--card-bg, #ffffff);

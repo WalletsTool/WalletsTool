@@ -201,6 +201,8 @@ let stopFlag = ref(false);
 let stopStatus = ref(true);
 // 是否执行过真正的转账操作（用于区分余额查询和转账）
 let hasExecutedTransfer = ref(false);
+// 转账会话是否完全结束（用于区分正常完成和中断）
+let transferSessionCompleted = ref(true);
 // 转账确认弹窗相关变量
 const transferConfirmVisible = ref(false);
 const transferConfirmLoading = ref(false);
@@ -667,6 +669,8 @@ async function performIntelligentRetry(failedData) {
     } else {
       Notification.success('智能重试检查完成，所有失败交易均检测到链上已有相关交易，无需重试');
       stopStatus.value = true;
+      // 标记转账会话完全结束
+      transferSessionCompleted.value = true;
     }
 
   } catch (error) {
@@ -1341,6 +1345,8 @@ async function continueTransferFromIndex(accountData, startIndex) {
   // 转账完成
   startLoading.value = false;
   stopStatus.value = true;
+  // 标记转账会话完全结束
+  transferSessionCompleted.value = true;
 }
 
 watch(stopStatus, (newValue, oldValue) => {
@@ -2863,6 +2869,8 @@ async function transferFnc(inputData) {
           }
 
           stopStatus.value = true;
+          // 标记转账会话完全结束
+          transferSessionCompleted.value = true;
         }
       }
       startLoading.value = false;
@@ -2909,18 +2917,11 @@ function startTransfer() {
         return;
       }
 
-      // 检查未完成的转账记录（这个检查相对较快，不需要缓存）
+      // 检查未完成的转账记录
       let hasIncompleteTransfers = false;
-      if (hasExecutedTransfer.value) {
-        // 只检查前100条记录来快速判断是否有未完成的转账
-        const checkLimit = Math.min(100, data.value.length);
-        for (let i = 0; i < checkLimit; i++) {
-          const item = data.value[i];
-          if (item.exec_status === "1" || item.exec_status === "2" || item.exec_status === "3") {
-            hasIncompleteTransfers = true;
-            break;
-          }
-        }
+      if (hasExecutedTransfer.value && !transferSessionCompleted.value) {
+        // 如果执行过转账且转账会话未完成，则认为有未完成的转账
+        hasIncompleteTransfers = true;
       }
 
       if (hasIncompleteTransfers && stopStatus.value) {
@@ -2999,6 +3000,8 @@ function executeTransfer(transferData, resetStatus = true) {
 
       // 标记已执行过转账操作（用于区分余额查询和转账）
       hasExecutedTransfer.value = true;
+      // 标记转账会话开始，未完成
+      transferSessionCompleted.value = false;
 
       // 记录转账开始时间（仅在重新开始时记录）
       if (resetStatus) {
@@ -5231,7 +5234,7 @@ async function handleBeforeClose() {
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.9), rgba(255, 165, 0, 0.9));
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(16, 185, 129, 0.9));
   display: flex;
   justify-content: center;
   align-items: center;

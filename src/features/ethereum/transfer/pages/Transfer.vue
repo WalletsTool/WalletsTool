@@ -208,6 +208,15 @@ let threadCount = ref(1);
 // 多窗口数量设置，默认为1
 let multiWindowCount = ref(1);
 
+// 数据验证缓存 - 避免重复验证
+const dataValidationCache = ref({
+  lastDataLength: 0,
+  lastFormState: '',
+  isValid: false,
+  invalidReason: '',
+  cacheTime: 0
+});
+
 // 智能重试相关变量
 const transferStartTime = ref(null); // 转账开始时间戳
 const retryInProgress = ref(false); // 是否正在进行重试检查
@@ -1400,6 +1409,7 @@ function UploadFile() {
     //提取excel中文件内容
     reader.readAsArrayBuffer(file);
     data.value = [];
+    clearValidationCache(); // 清除验证缓存
     reader.onload = function () {
       const buffer = reader.result;
       const bytes = new Uint8Array(buffer);
@@ -1785,6 +1795,7 @@ function clearData() {
     content: '确定要清空所有列表数据吗？此操作不可撤销。',
     onOk: () => {
       data.value = [];
+      clearValidationCache(); // 清除验证缓存
       // 重置转账执行标识
       hasExecutedTransfer.value = false;
       // 重置文件输入的value，确保再次选择相同文件时能触发change事件
@@ -1843,6 +1854,7 @@ function handleWalletImportConfirm(importData) {
 
   // 添加到表格数据
   data.value.push(...newData);
+  clearValidationCache(); // 清除验证缓存
 
   // 计算重复数据信息
   const uniqueKeys = new Set(privateKeys);
@@ -2413,38 +2425,59 @@ function startTransfer() {
     Notification.warning("请先导入私钥！");
     return;
   }
-  if (data.value.find((item) => !item.private_key || !item.to_addr)) {
-    startLoading.value = false;
-    Notification.warning("请检查是否所有私钥都有对应的转账地址！");
-    return;
-  }
-  // 如果转账类型为指定数量并且且为表格指定数量则进行数据校验
-  if (form.send_type === '2' && form.amount_from === '1' &&
-    data.value.find((item) => !item.amount)) {
-    startLoading.value = false;
-    Notification.warning("包含转账金额为空的错误数据请核实！");
-    return;
-  }
+
   // 立即设置loading状态，提供即时反馈
   startLoading.value = true;
 
-  setTimeout(() => {
-    // 检查是否有未完成的转账记录（只有真正执行过转账操作时才检查）
-    const hasIncompleteTransfers = hasExecutedTransfer.value && data.value.some(item =>
-      item.exec_status === "1" || item.exec_status === "2" || item.exec_status === "3"
-    );
+  // 使用 requestIdleCallback 或 setTimeout 来异步执行数据验证，避免阻塞UI
+  const performValidationAndStart = () => {
+    try {
+      // 首先进行快速验证
+      const quickValidation = quickValidateData();
+      if (!quickValidation.isValid) {
+        startLoading.value = false;
+        Notification.warning(quickValidation.reason === '存在私钥或地址为空的数据'
+          ? "请检查是否所有私钥都有对应的转账地址！"
+          : "包含转账金额为空的错误数据请核实！");
+        return;
+      }
 
-    if (hasIncompleteTransfers && stopStatus.value) {
-      // 暂时重置loading状态，等待用户选择
+      // 检查未完成的转账记录（这个检查相对较快，不需要缓存）
+      let hasIncompleteTransfers = false;
+      if (hasExecutedTransfer.value) {
+        // 只检查前100条记录来快速判断是否有未完成的转账
+        const checkLimit = Math.min(100, data.value.length);
+        for (let i = 0; i < checkLimit; i++) {
+          const item = data.value[i];
+          if (item.exec_status === "1" || item.exec_status === "2" || item.exec_status === "3") {
+            hasIncompleteTransfers = true;
+            break;
+          }
+        }
+      }
+
+      if (hasIncompleteTransfers && stopStatus.value) {
+        // 暂时重置loading状态，等待用户选择
+        startLoading.value = false;
+        // 显示转账确认弹窗
+        transferConfirmVisible.value = true;
+      } else {
+        // 首次转账或正在进行中，直接开始
+        executeTransfer(data.value, true);
+      }
+    } catch (error) {
+      console.error('数据验证过程中发生错误:', error);
       startLoading.value = false;
-
-      // 显示转账确认弹窗
-      transferConfirmVisible.value = true;
-    } else {
-      // 首次转账或正在进行中，直接开始
-      executeTransfer(data.value, true);
+      Notification.error('数据验证失败，请重试');
     }
-  }, 100)
+  };
+
+  // 使用 requestIdleCallback 在浏览器空闲时执行，如果不支持则使用 setTimeout
+  if (window.requestIdleCallback) {
+    window.requestIdleCallback(performValidationAndStart, { timeout: 100 });
+  } else {
+    setTimeout(performValidationAndStart, 0);
+  }
 }
 
 // 处理转账确认弹窗的函数
@@ -2931,10 +2964,88 @@ function stopTransfer() {
   showProgress.value = false;
 }
 
+// 快速数据验证 - 使用缓存避免重复验证
+function quickValidateData() {
+  const currentDataLength = data.value.length;
+  const currentFormState = `${form.send_type}_${form.amount_from}`;
+  const currentTime = Date.now();
+
+  // 检查缓存是否有效（数据长度和表单状态未变，且缓存时间在5秒内）
+  if (dataValidationCache.value.lastDataLength === currentDataLength &&
+      dataValidationCache.value.lastFormState === currentFormState &&
+      currentTime - dataValidationCache.value.cacheTime < 5000) {
+    return {
+      isValid: dataValidationCache.value.isValid,
+      reason: dataValidationCache.value.invalidReason
+    };
+  }
+
+  // 执行快速验证
+  let isValid = true;
+  let reason = '';
+
+  // 快速检查：只验证前100条和随机抽样
+  const sampleSize = Math.min(100, currentDataLength);
+  const step = Math.max(1, Math.floor(currentDataLength / sampleSize));
+
+  for (let i = 0; i < currentDataLength; i += step) {
+    const item = data.value[i];
+
+    if (!item.private_key || !item.to_addr) {
+      isValid = false;
+      reason = '存在私钥或地址为空的数据';
+      break;
+    }
+
+    if (form.send_type === '2' && form.amount_from === '1' && !item.amount) {
+      isValid = false;
+      reason = '存在转账金额为空的数据';
+      break;
+    }
+  }
+
+  // 更新缓存
+  dataValidationCache.value = {
+    lastDataLength: currentDataLength,
+    lastFormState: currentFormState,
+    isValid,
+    invalidReason: reason,
+    cacheTime: currentTime
+  };
+
+  return { isValid, reason };
+}
+
+// 清除数据验证缓存
+function clearValidationCache() {
+  dataValidationCache.value = {
+    lastDataLength: 0,
+    lastFormState: '',
+    isValid: false,
+    invalidReason: '',
+    cacheTime: 0
+  };
+}
+
 // 异步批处理重置数据状态 - 性能优化
 async function resetDataStatusAsync() {
-  const batchSize = 100; // 每批处理100条数据
   const totalItems = data.value.length;
+
+  // 对于小数据量，直接同步处理
+  if (totalItems <= 500) {
+    for (let i = 0; i < totalItems; i++) {
+      const item = data.value[i];
+      item.exec_status = "0";
+      item.error_msg = "";
+      item.retry_flag = false;
+      item.error_count = 0;
+    }
+    return;
+  }
+
+  // 对于大数据量，使用批处理
+  const batchSize = Math.max(50, Math.min(200, Math.floor(totalItems / 20))); // 动态调整批次大小
+  let processedCount = 0;
 
   for (let i = 0; i < totalItems; i += batchSize) {
     const endIndex = Math.min(i + batchSize, totalItems);
@@ -2948,12 +3059,16 @@ async function resetDataStatusAsync() {
       item.error_count = 0;
     }
 
-    // 使用nextTick让出控制权，避免阻塞UI线程
-    await nextTick();
+    processedCount = endIndex;
 
-    // 可选：显示进度（如果需要的话）
-    if (totalItems > 1000) {
-      console.log(`数据重置进度: ${Math.min(endIndex, totalItems)}/${totalItems}`);
+    // 每处理一定数量后让出控制权
+    if (i > 0 && i % (batchSize * 5) === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    // 显示进度（仅在大数据量时）
+    if (totalItems > 2000 && processedCount % 1000 === 0) {
+      console.log(`数据重置进度: ${processedCount}/${totalItems} (${Math.round(processedCount / totalItems * 100)}%)`);
     }
   }
 }

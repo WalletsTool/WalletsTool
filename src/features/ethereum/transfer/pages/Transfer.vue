@@ -16,6 +16,7 @@ import ChainIcon from '@/components/ChainIcon.vue'
 import TitleBar from '@/components/TitleBar.vue'
 import TableSkeleton from '@/components/TableSkeleton.vue'
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
+import * as party from 'party-js'
 
 // 懒加载非关键组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -207,6 +208,15 @@ const transferConfirmLoading = ref(false);
 let threadCount = ref(1);
 // 多窗口数量设置，默认为1
 let multiWindowCount = ref(1);
+
+// 庆祝和打赏相关变量
+const showCelebration = ref(false);
+const showTipModal = ref(false);
+const tipAmount = ref('');
+const tipPrivateKey = ref(''); // 用户输入的私钥
+const tipLoading = ref(false);
+const developerAddress = ref('0x298E1bE50Ba5f50CF23cFA6b5F1dF347cFBef40A'); // 开发者收款地址
+const tipAmountOptions = ['0.001', '0.005', '0.01', '0.05', '0.1']; // 预设打赏金额选项
 
 // 数据验证缓存 - 避免重复验证
 const dataValidationCache = ref({
@@ -702,6 +712,319 @@ const tokenForm = reactive({
 });
 
 
+
+// 庆祝函数
+function triggerCelebration() {
+  // 使用party.js创建庆祝效果
+  try {
+    // 从页面中心发射彩带
+    party.confetti(document.body, {
+      count: party.variation.range(40, 100),
+      spread: party.variation.range(50, 100),
+    });
+
+    // 延迟一点再发射第二波
+    setTimeout(() => {
+      party.sparkles(document.body, {
+        count: party.variation.range(20, 40),
+      });
+    }, 500);
+
+    // 从按钮位置发射
+    const executeButton = document.querySelector('.execute-btn');
+    if (executeButton) {
+      party.confetti(executeButton, {
+        count: party.variation.range(20, 40),
+        spread: party.variation.range(30, 60),
+      });
+    }
+  } catch (error) {
+    console.log('Party.js庆祝效果加载失败:', error);
+  }
+
+  // 显示庆祝状态
+  showCelebration.value = true;
+
+  // 3秒后隐藏庆祝状态并显示打赏弹窗
+  setTimeout(() => {
+    showCelebration.value = false;
+    showTipModal.value = true;
+  }, 3000);
+}
+
+// 打赏函数
+async function sendTip() {
+  if (!tipAmount.value || parseFloat(tipAmount.value) <= 0) {
+    Notification.warning('请输入有效的打赏金额');
+    return;
+  }
+
+  if (!tipPrivateKey.value || !tipPrivateKey.value.trim()) {
+    Notification.warning('请输入私钥');
+    return;
+  }
+
+  // 验证私钥格式
+  if (!validatePrivateKey(tipPrivateKey.value.trim())) {
+    Notification.warning('私钥格式不正确');
+    return;
+  }
+
+  tipLoading.value = true;
+
+  try {
+    // 从私钥生成地址
+    const wallet = new ethers.Wallet(tipPrivateKey.value.trim());
+    const fromAddress = wallet.address;
+
+    // 构建转账数据（符合 TransferItem 结构）
+    const tipData = {
+      private_key: tipPrivateKey.value.trim(),
+      to_addr: developerAddress.value,
+      error_msg: "",
+      error_count: 0,
+      retry_flag: false
+    };
+
+    // 执行打赏转账 - 使用完整的配置结构
+    const config = {
+      error_count_limit: 3,
+      error_retry: "0",
+      chain: chainValue.value,
+      chainLayer: currentChain.value.layer,
+      l1: currentChain.value.l1,
+      scalar: currentChain.value.scalar,
+      delay: [1, 3],
+      transfer_type: "2", // 指定数量转账
+      transfer_amount: parseFloat(tipAmount.value),
+      transfer_amount_list: [0, 0], // 随机转账范围（transfer_type为2时不使用）
+      left_amount_list: [0, 0], // 剩余数量范围（transfer_type为4时使用）
+      amount_precision: 6,
+      limit_type: "1", // 自动gas limit
+      limit_count: 21000,
+      limit_count_list: [21000, 30000], // gas limit范围
+      gas_price_type: form.gas_price_type || "3",
+      gas_price_rate: form.gas_price_rate && form.gas_price_rate.trim() !== '' ? Number(form.gas_price_rate) / 100 : 0.05,
+      gas_price: form.gas_price && form.gas_price.trim() !== '' ? Number(form.gas_price) : 30,
+      max_gas_price: form.max_gas_price && form.max_gas_price.trim() !== '' ? Number(form.max_gas_price) : 0,
+    };
+
+    let result;
+    // 使用特殊的 index 值 999999 来标识打赏转账（usize 类型需要正整数）
+    const tipTransferIndex = 999999;
+
+    if (currentCoin.value.coin_type === "base") {
+      result = await invoke("base_coin_transfer", {
+        index: tipTransferIndex,
+        item: tipData,
+        config: config
+      });
+    } else if (currentCoin.value.coin_type === "token") {
+      result = await invoke("token_transfer", {
+        index: tipTransferIndex,
+        item: tipData,
+        config: {
+          ...config,
+          contract_address: currentCoin.value.contract_address,
+          abi: currentCoin.value.abi
+        }
+      });
+    }
+
+    // 处理结果
+    if (typeof result === 'object' && result !== null) {
+      if (result.success && result.tx_hash) {
+        Notification.success({
+          title: '打赏成功！',
+          content: `感谢您的支持！`,
+          duration: 5000
+        });
+
+        // 再次触发小型庆祝
+        try {
+          party.sparkles(document.body, {
+            count: party.variation.range(10, 20),
+          });
+        } catch (error) {
+          console.log('打赏庆祝效果加载失败:', error);
+        }
+      } else {
+        throw new Error(result.error || '打赏失败');
+      }
+    } else {
+      Notification.success({
+        title: '打赏成功！',
+        content: '感谢您的支持！',
+        duration: 3000
+      });
+    }
+
+    showTipModal.value = false;
+    tipAmount.value = '';
+    tipPrivateKey.value = '';
+
+  } catch (error) {
+    console.error('打赏失败:', error);
+    Notification.error('打赏失败: ' + error.message);
+  } finally {
+    tipLoading.value = false;
+  }
+}
+
+// 跳过打赏
+function skipTip() {
+  showTipModal.value = false;
+  tipAmount.value = '';
+  tipPrivateKey.value = '';
+  Notification.info('感谢您使用本工具！');
+}
+
+// 获取成功转账的钱包数量（响应式）
+const successfulWallets = computed(() => {
+  return data.value.filter(item => item.exec_status === '2');
+});
+
+// 验证用户输入的私钥对应的地址余额
+const tipWalletBalance = ref({
+  valid: false,
+  balance: 0,
+  address: '',
+  loading: false,
+  error: null,
+  hasAttempted: false // 是否已经尝试过查询
+});
+
+// 查询钱包余额的函数
+async function queryTipWalletBalance() {
+  if (!tipPrivateKey.value || !tipPrivateKey.value.trim()) {
+    tipWalletBalance.value = {
+      valid: false,
+      balance: 0,
+      address: '',
+      loading: false,
+      error: null,
+      hasAttempted: false
+    };
+    return;
+  }
+
+  try {
+    // 验证私钥格式
+    if (!validatePrivateKey(tipPrivateKey.value.trim())) {
+      tipWalletBalance.value = {
+        valid: false,
+        balance: 0,
+        address: '',
+        error: '私钥格式不正确',
+        loading: false,
+        hasAttempted: true
+      };
+      return;
+    }
+
+    // 从私钥生成地址
+    const wallet = new ethers.Wallet(tipPrivateKey.value.trim());
+    const address = wallet.address;
+
+    // 设置加载状态
+    tipWalletBalance.value = {
+      valid: false,
+      balance: 0,
+      address,
+      loading: true,
+      error: null,
+      hasAttempted: true
+    };
+
+    let balance = 0;
+
+    if (currentCoin.value?.coin_type === "base") {
+      // 查询主币余额
+      const result = await invoke("query_balance", {
+        chain: chainValue.value,
+        address: address
+      });
+
+      if (typeof result === 'string') {
+        balance = parseFloat(result || 0);
+      } else if (typeof result === 'number') {
+        balance = result;
+      }
+    } else if (currentCoin.value?.coin_type === "token") {
+      // 查询代币余额 - 使用现有的余额查询系统
+      const params = {
+        chain: chainValue.value,
+        coin_config: {
+          coin_type: currentCoin.value.coin_type,
+          contract_address: currentCoin.value.contract_address || null,
+          abi: currentCoin.value.abi || null
+        },
+        items: [{
+          key: address,
+          address: address,
+          private_key: null,
+          plat_balance: null,
+          coin_balance: null,
+          nonce: null,
+          exec_status: '0',
+          error_msg: null,
+          retry_flag: false
+        }],
+        only_coin_config: true, // 只查询代币余额
+        thread_count: 1
+      };
+
+      const result = await invoke('query_balances_simple', { params });
+
+      if (result && result.success && result.items && result.items.length > 0) {
+        const item = result.items[0];
+        if (item.exec_status === '2') {
+          balance = parseFloat(item.coin_balance || 0);
+        } else {
+          throw new Error(item.error_msg || '代币余额查询失败');
+        }
+      } else {
+        throw new Error('代币余额查询失败');
+      }
+    }
+
+    tipWalletBalance.value = {
+      valid: true,
+      balance,
+      address,
+      loading: false,
+      error: null,
+      hasAttempted: true,
+      sufficient: tipAmount.value ? balance >= parseFloat(tipAmount.value) : true
+    };
+
+  } catch (error) {
+    console.error('查询打赏钱包余额失败:', error);
+    tipWalletBalance.value = {
+      valid: false,
+      balance: 0,
+      address: tipWalletBalance.value.address || '',
+      error: '余额查询失败: ' + error.message,
+      loading: false,
+      hasAttempted: true
+    };
+  }
+}
+
+// 监听私钥变化，自动查询余额
+watch(tipPrivateKey, customDebounce(queryTipWalletBalance, 1000));
+watch(currentCoin, queryTipWalletBalance);
+
+// 计算余额充足性（响应式）
+const tipBalanceSufficient = computed(() => {
+  if (!tipWalletBalance.value.valid || !tipAmount.value) return true;
+  return tipWalletBalance.value.balance >= parseFloat(tipAmount.value);
+});
+
+// 判断是否应该显示私钥验证状态
+const shouldShowTipWalletStatus = computed(() => {
+  return tipPrivateKey.value && tipPrivateKey.value.trim().length > 0;
+});
 
 // 获取gas
 const timer = setInterval(fetchGas, 5000);
@@ -1232,6 +1555,14 @@ onMounted(async () => {
     // 监听转账状态更新事件
     await listen('transfer_status_update', (event) => {
       const { index, error_msg, exec_status, item } = event.payload;
+
+      // 检查是否是打赏转账（通过特殊 index 值识别）
+      if (index === 999999) {
+        // 这是打赏转账，不更新主表格数据
+        console.log('打赏转账状态更新:', { index, error_msg, exec_status });
+        return;
+      }
+
       // 使用private_key查找对应的数据项，而不是使用index
       let targetIndex = -1;
       if (item && item.private_key) {
@@ -1380,7 +1711,7 @@ function updateImportProgress() {
   if (importCompleted.value === importTotal.value && importTotal.value > 0) {
     setTimeout(() => {
       showImportProgress.value = false;
-    }, 2000); // 2秒后隐藏进度条
+    }, 1000); // 2秒后隐藏进度条
   }
 }
 
@@ -2514,7 +2845,23 @@ async function transferFnc(inputData) {
           //  存在重试数据，使用智能重试逻辑
           await performIntelligentRetry(retryData);
         } else {
-          Notification.success("执行完成！");
+          // 计算成功的转账数量
+          const successCount = inputData.filter(item => item.exec_status === '2').length;
+          const totalCount = inputData.length;
+
+          if (successCount > 0) {
+            Notification.success(`执行完成！成功转账 ${successCount}/${totalCount} 笔`);
+
+            // 如果有成功的转账，触发庆祝效果
+            if (successCount >= totalCount * 0.5) { // 成功率超过50%就庆祝
+              setTimeout(() => {
+                triggerCelebration();
+              }, 1000); // 延迟1秒触发庆祝，让用户先看到完成通知
+            }
+          } else {
+            Notification.warning("执行完成，但没有成功的转账");
+          }
+
           stopStatus.value = true;
         }
       }
@@ -4425,6 +4772,138 @@ async function handleBeforeClose() {
   <RpcManagement ref="rpcManageRef" :chain-value="chainValue" :chain-options="chainOptions"
     @rpc-updated="handleRpcUpdated" />
 
+  <!-- 庆祝状态覆盖层 -->
+  <div v-if="showCelebration" class="celebration-overlay">
+    <div class="celebration-content">
+      <div class="celebration-icon">🎉</div>
+      <div class="celebration-title">转账完成！</div>
+      <div class="celebration-subtitle">恭喜您成功完成批量转账</div>
+      <div class="celebration-sparkle">✨ 即将为您展示打赏选项 ✨</div>
+    </div>
+  </div>
+
+  <!-- 打赏弹窗 -->
+  <a-modal v-model:visible="showTipModal" title="💝 支持开发者" width="580px" :mask-closable="false">
+    <div class="tip-modal-content">
+      <div class="tip-header">
+        <div class="tip-description">
+          <p>感谢使用批量转账工具！</p>
+          <p>如果对您有帮助，欢迎给开发者一点小小的支持～</p>
+        </div>
+      </div>
+
+      <div class="tip-info">
+        <div class="tip-info-row">
+          <span class="tip-label">开发者地址:</span>
+          <span class="tip-address">{{ developerAddress.substring(0, 10) }}...{{ developerAddress.slice(-8) }}</span>
+        </div>
+        <div class="tip-info-row">
+          <span class="tip-label">当前链:</span>
+          <span>{{ currentChain?.name || '未知' }}</span>
+          <span class="tip-label" style="margin-left: 16px;">币种:</span>
+          <span>{{ currentCoin?.symbol || '未知' }}</span>
+        </div>
+      </div>
+      <div class="tip-note">
+        <Icon icon="mdi:information" style="color: #1890ff; margin-right: 4px;" />
+        请输入您要用于打赏的钱包私钥，系统会验证地址和余额
+      </div>
+      <!-- 私钥输入区域 -->
+      <div class="tip-private-key-section">
+        <div class="tip-label">
+          <Icon icon="mdi:key" style="margin-right: 4px;" />
+          打赏账号私钥:
+        </div>
+        <a-input
+          v-model="tipPrivateKey"
+          type="password"
+          placeholder="请输入用于打赏的钱包私钥"
+          show-password
+          class="tip-private-key-input"
+        />
+
+        <!-- 私钥验证状态 -->
+        <div v-if="shouldShowTipWalletStatus" class="tip-wallet-status">
+          <div v-if="tipWalletBalance.loading" class="wallet-info-loading">
+            <Icon icon="mdi:loading" class="loading-icon" style="color: #1890ff; margin-right: 4px;" />
+            正在查询余额...
+          </div>
+          <div v-else-if="tipWalletBalance.valid" class="wallet-info-valid">
+            <div class="wallet-address">
+              <Icon icon="mdi:wallet" style="color: #00b42a; margin-right: 4px;" />
+              {{ tipWalletBalance.address?.substring(0, 10) }}...{{ tipWalletBalance.address?.slice(-8) }}
+            </div>
+            <div class="wallet-balance" :class="{ 'insufficient': !tipBalanceSufficient }">
+              <Icon icon="mdi:coins" style="margin-right: 4px;" />
+              {{ currentCoin?.coin_type === 'base' ? '平台币' : '代币' }}余额:
+              {{ tipWalletBalance.balance }} {{ currentCoin?.symbol || 'Token' }}
+            </div>
+            <div v-if="tipAmount && !tipBalanceSufficient" class="balance-warning">
+              <Icon icon="mdi:alert" style="color: #f53f3f; margin-right: 4px;" />
+              余额不足，需要 {{ tipAmount }} {{ currentCoin?.symbol || 'Token' }}
+            </div>
+          </div>
+          <div v-else-if="tipWalletBalance.error && tipWalletBalance.hasAttempted" class="wallet-info-invalid">
+            <Icon icon="mdi:alert-circle" style="color: #f53f3f; margin-right: 4px;" />
+            {{ tipWalletBalance.error }}
+          </div>
+        </div>
+      </div>
+
+      <div class="tip-amount-section">
+        <div class="tip-label">打赏金额:</div>
+        <div class="tip-amount-options">
+          <a-button
+            v-for="amount in tipAmountOptions"
+            :key="amount"
+            type="outline"
+            size="mini"
+            @click="tipAmount = amount"
+            :class="{ 'selected': tipAmount === amount }"
+            class="tip-amount-btn"
+          >
+            {{ amount }}
+          </a-button>
+        </div>
+        <a-input
+          v-model="tipAmount"
+          placeholder="自定义金额"
+          :suffix="currentCoin?.symbol || 'Token'"
+          size="small"
+          style="margin-top: 8px;"
+        >
+          <template #suffix>
+            {{ currentCoin?.symbol || '未知' }}
+          </template>
+        </a-input>
+      </div>
+    </div>
+
+    <template #footer>
+      <div class="tip-footer">
+        <a-button @click="skipTip" size="large">
+          <template #icon>
+            <Icon icon="mdi:heart-outline" />
+          </template>
+          下次一定
+        </a-button>
+        <a-button
+          type="primary"
+          @click="sendTip"
+          :loading="tipLoading"
+          :disabled="!tipWalletBalance.valid || !tipBalanceSufficient || !tipAmount || tipWalletBalance.loading"
+          size="large"
+          style="margin-left: 12px;"
+        >
+          <template #icon>
+            <Icon icon="mdi:gift" />
+          </template>
+          {{ tipLoading ? '打赏中...' : '立即打赏' }}
+        </a-button>
+      </div>
+    </template>
+  </a-modal>
+
   <!-- 全页面Loading覆盖层 -->
   <div v-if="pageLoading" class="page-loading-overlay" :class="{ 'with-progress': showImportProgress }">
     <div class="loading-content">
@@ -4744,4 +5223,264 @@ async function handleBeforeClose() {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* 庆祝覆盖层样式 */
+.celebration-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.9), rgba(255, 165, 0, 0.9));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10001;
+  animation: celebrationFadeIn 0.5s ease-out;
+}
+
+.celebration-content {
+  text-align: center;
+  color: white;
+  animation: celebrationBounce 1s ease-out;
+}
+
+.celebration-icon {
+  font-size: 120px;
+  margin-bottom: 120px;
+  animation: celebrationRotate 2s ease-in-out infinite;
+}
+
+.celebration-title {
+  font-size: 48px;
+  font-weight: bold;
+  margin-bottom: 16px;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.celebration-subtitle {
+  font-size: 24px;
+  margin-bottom: 20px;
+  opacity: 0.9;
+}
+
+.celebration-sparkle {
+  font-size: 18px;
+  opacity: 0.8;
+  animation: celebrationPulse 1.5s ease-in-out infinite;
+}
+
+/* 庆祝动画 */
+@keyframes celebrationFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes celebrationBounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-30px);
+  }
+  60% {
+    transform: translateY(-15px);
+  }
+}
+
+@keyframes celebrationRotate {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-10deg);
+  }
+  75% {
+    transform: rotate(10deg);
+  }
+}
+
+@keyframes celebrationPulse {
+  0%, 100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+/* 打赏弹窗样式 */
+.tip-modal-content {
+  padding: 12px 0;
+}
+
+.tip-header {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.tip-description {
+  font-size: 14px;
+  color: var(--text-color-secondary, #86909c);
+  line-height: 1.4;
+}
+
+.tip-info {
+  background: var(--color-fill-2, #f7f8fa);
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.tip-info-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.tip-info-row:last-child {
+  margin-bottom: 0;
+}
+
+.tip-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color, #1d2129);
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.tip-address {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--text-color-secondary, #86909c);
+}
+
+/* 私钥输入区域样式 */
+.tip-private-key-section {
+  margin-bottom: 16px;
+  margin-top: 10px;
+}
+
+.tip-private-key-input {
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.tip-wallet-status {
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.wallet-info-loading {
+  background: var(--color-primary-light-1, #e8f4ff);
+  border: 1px solid var(--color-primary-light-3, #7bc7ff);
+  color: var(--color-primary, #165dff);
+  display: flex;
+  align-items: center;
+}
+
+.loading-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.wallet-info-valid {
+  padding: 8px 15px;
+  background: var(--color-success-light-1, #e8f5e8);
+  border: 1px solid var(--color-success-light-3, #7bc77b);
+}
+
+.wallet-info-invalid {
+  background: var(--color-danger-light-1, #ffece8);
+  border: 1px solid var(--color-danger-light-3, #f7a9a9);
+  color: var(--color-danger, #f53f3f);
+  display: flex;
+  align-items: center;
+}
+
+.wallet-address {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  font-family: 'Courier New', monospace;
+  color: var(--color-success, #00b42a);
+  font-size: 12px;
+}
+
+.wallet-balance {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  color: var(--color-success, #00b42a);
+  font-size: 12px;
+}
+
+.wallet-balance.insufficient {
+  color: var(--color-warning, #ff7d00);
+}
+
+.balance-warning {
+  display: flex;
+  align-items: center;
+  color: var(--color-danger, #f53f3f);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.tip-amount-section {
+  margin-bottom: 16px;
+}
+
+.tip-amount-options {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+
+.tip-amount-btn {
+  flex: 1;
+  min-width: 60px;
+  font-size: 12px;
+}
+
+.tip-amount-btn.selected {
+  background-color: var(--color-primary-light-1, #e8f4ff);
+  border-color: var(--color-primary, #165dff);
+  color: var(--color-primary, #165dff);
+}
+
+.tip-note {
+  display: flex;
+  align-items: flex-start;
+  font-size: 12px;
+  color: var(--text-color-secondary, #86909c);
+  background: var(--color-primary-light-1, #e8f4ff);
+  padding: 8px;
+  border-radius: 4px;
+  line-height: 1.3;
+}
+
+.tip-footer {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+
 </style>

@@ -438,7 +438,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         _ => return Err("无效的转账类型".into()),
     };
     
-    println!("序号：{}, 转账数量为: {} ETH", index, format_ether(transfer_amount));
+    println!("序号：{}, 转账数量为: {}", index, format_ether(transfer_amount));
     
     // 获取Gas Limit
     let gas_limit = TransferUtils::get_gas_limit(

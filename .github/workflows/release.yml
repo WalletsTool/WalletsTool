@@ -61,18 +61,34 @@ jobs:
 
       - name: Verify data files exist
         run: |
-          echo "=== Checking data files ==="
-          ls -la src-tauri/data/
-          if [ ! -f "src-tauri/data/init.sql" ]; then
-            echo "Error: init.sql not found"
-            exit 1
-          fi
-          if [ ! -f "src-tauri/data/wallet_manager.db" ]; then
-            echo "Error: wallet_manager.db not found"
-            exit 1
-          fi
-          echo "=== All data files found ==="
-          find src-tauri/data -type f -name "*" | head -10
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+
+          console.log('=== Checking data files ===');
+
+          const dataDir = 'src-tauri/data';
+          const requiredFiles = ['init.sql', 'wallet_manager.db'];
+
+          try {
+            const files = fs.readdirSync(dataDir);
+            console.log('Files in data directory:', files);
+
+            for (const file of requiredFiles) {
+              const filePath = path.join(dataDir, file);
+              if (!fs.existsSync(filePath)) {
+                console.error('Error: ' + file + ' not found');
+                process.exit(1);
+              }
+              console.log('✓ Found:', file);
+            }
+
+            console.log('=== All required data files found ===');
+          } catch (error) {
+            console.error('Error checking data files:', error.message);
+            process.exit(1);
+          }
+          "
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0

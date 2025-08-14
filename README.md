@@ -1,9 +1,18 @@
 # Wallets Tool
+[![GitHub release](https://img.shields.io/github/v/release/WalletsTool/WalletsTool)](https://github.com/WalletsTool/WalletsTool/releases)
+[![Release](https://github.com/WalletsTool/WalletsTool/actions/workflows/release.yml/badge.svg)](https://github.com/WalletsTool/WalletsTool/actions/workflows/release.yml)
+![Tauri](https://img.shields.io/badge/Tauri-Rust-orange) ![Vue 3](https://img.shields.io/badge/Vue-3-42b883) ![Desktop](https://img.shields.io/badge/Platform-Desktop-blue)
+<p align="center">
+  <a href="https://github.com/WalletsTool/WalletsTool/releases">快速开始 | Download</a>
+</p>
+
 <div align="center"  style="margin-bottom: 20px;">
     <img src="app-icon.png" width="80" height="80" alt="应用logo"/>
 </div>
 
-一个功能强大的Web3多链钱包管理工具，基于 Vue 3 + Tauri 构建，支持钱包导入、余额查询、批量转账等功能。提供直观的用户界面，帮助用户安全便捷地管理多个区块链网络上的数字资产。
+Web3 多链钱包管理工具（Vue 3 + Tauri/Rust），支持 Ethereum/Solana，批量导入、余额批量查询、批量转账、RPC/代币配置、Excel 导入导出，SQLite 本地存储（私钥不落盘）。
+
+Web3 multi-chain wallet manager (Vue 3 + Tauri/Rust). Supports Ethereum & Solana, batch import/transfer/balance check, RPC/Token config, Excel I/O, local SQLite with no private key persistence.
 
 ## ✨ 功能特性
 

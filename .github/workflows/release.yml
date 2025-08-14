@@ -68,7 +68,7 @@ jobs:
           console.log('=== Checking data files ===');
 
           const dataDir = 'src-tauri/data';
-          const requiredFiles = ['init.sql', 'wallet_manager.db'];
+          const requiredFiles = ['init.sql', 'wallets_tool.db'];
 
           try {
             const files = fs.readdirSync(dataDir);
@@ -96,7 +96,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
-          releaseName: 'wallet_manager ${{ github.ref_name || github.event.inputs.version }}'
+          releaseName: 'Wallets Tool ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
             ## 🎉 新版本发布
             

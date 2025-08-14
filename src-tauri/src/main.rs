@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 mod utils;
-mod wallet_manager;
+mod wallets_tool;
 mod plugins;
 mod database;
 
@@ -269,29 +269,29 @@ async fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            wallet_manager::ecosystems::ethereum::chain_config::get_chain_list,
-            wallet_manager::ecosystems::ethereum::chain_config::get_coin_list,
-            wallet_manager::ecosystems::ethereum::chain_config::add_coin,
-            wallet_manager::ecosystems::ethereum::chain_config::remove_coin,
-            wallet_manager::ecosystems::ethereum::chain_config::update_coin,
-            wallet_manager::ecosystems::ethereum::chain_config::update_chain_pic_urls,
-            wallet_manager::ecosystems::ethereum::chain_config::update_token_abi,
+            wallets_tool::ecosystems::ethereum::chain_config::get_chain_list,
+            wallets_tool::ecosystems::ethereum::chain_config::get_coin_list,
+            wallets_tool::ecosystems::ethereum::chain_config::add_coin,
+            wallets_tool::ecosystems::ethereum::chain_config::remove_coin,
+            wallets_tool::ecosystems::ethereum::chain_config::update_coin,
+            wallets_tool::ecosystems::ethereum::chain_config::update_chain_pic_urls,
+            wallets_tool::ecosystems::ethereum::chain_config::update_token_abi,
             // chain management commands
-            wallet_manager::ecosystems::ethereum::chain_config::add_chain,
-            wallet_manager::ecosystems::ethereum::chain_config::update_chain,
-            wallet_manager::ecosystems::ethereum::chain_config::remove_chain,
-            wallet_manager::ecosystems::ethereum::chain_config::get_chain_detail,
-            wallet_manager::utils::download_file,
-            wallet_manager::utils::save_chain_icon,
-            wallet_manager::utils::get_chain_icon,
+            wallets_tool::ecosystems::ethereum::chain_config::add_chain,
+            wallets_tool::ecosystems::ethereum::chain_config::update_chain,
+            wallets_tool::ecosystems::ethereum::chain_config::remove_chain,
+            wallets_tool::ecosystems::ethereum::chain_config::get_chain_detail,
+            wallets_tool::utils::download_file,
+            wallets_tool::utils::save_chain_icon,
+            wallets_tool::utils::get_chain_icon,
             // fs extra functions
             plugins::fs_extra::exists,
             plugins::fs_extra::open_file,
             // balance query functions
-            wallet_manager::ecosystems::ethereum::simple_balance_query::query_balances_simple,
-            wallet_manager::ecosystems::ethereum::simple_balance_query::query_balances_with_updates,
-            wallet_manager::ecosystems::ethereum::simple_balance_query::stop_balance_query,
-            wallet_manager::ecosystems::ethereum::simple_balance_query::reset_balance_query_stop,
+            wallets_tool::ecosystems::ethereum::simple_balance_query::query_balances_simple,
+            wallets_tool::ecosystems::ethereum::simple_balance_query::query_balances_with_updates,
+            wallets_tool::ecosystems::ethereum::simple_balance_query::stop_balance_query,
+            wallets_tool::ecosystems::ethereum::simple_balance_query::reset_balance_query_stop,
             // window management functions
             close_all_child_windows,
             get_all_child_windows,
@@ -303,23 +303,23 @@ async fn main() {
             database::check_database_schema,
             database::export_database_to_init_sql,
             // transfer functions
-            wallet_manager::transfer::base_coin_transfer,
-            wallet_manager::transfer::query_balance,
-            wallet_manager::transfer::check_wallet_recent_transfers,
+            wallets_tool::transfer::base_coin_transfer,
+            wallets_tool::transfer::query_balance,
+            wallets_tool::transfer::check_wallet_recent_transfers,
             // token transfer functions
-            wallet_manager::token_transfer::token_transfer,
-            wallet_manager::token_transfer::query_token_balance,
-            wallet_manager::token_transfer::get_token_info,
+            wallets_tool::token_transfer::token_transfer,
+            wallets_tool::token_transfer::query_token_balance,
+            wallets_tool::token_transfer::get_token_info,
             // provider functions
-            wallet_manager::provider::get_chain_gas_price,
-            wallet_manager::provider::test_rpc_url,
-            wallet_manager::provider::get_multiple_gas_prices,
+            wallets_tool::provider::get_chain_gas_price,
+            wallets_tool::provider::test_rpc_url,
+            wallets_tool::provider::get_multiple_gas_prices,
             // rpc management functions
-            wallet_manager::ecosystems::ethereum::rpc_management::get_rpc_providers,
-            wallet_manager::ecosystems::ethereum::rpc_management::add_rpc_provider,
-            wallet_manager::ecosystems::ethereum::rpc_management::update_rpc_provider,
-            wallet_manager::ecosystems::ethereum::rpc_management::delete_rpc_provider,
-            wallet_manager::ecosystems::ethereum::rpc_management::test_rpc_connection,
+            wallets_tool::ecosystems::ethereum::rpc_management::get_rpc_providers,
+            wallets_tool::ecosystems::ethereum::rpc_management::add_rpc_provider,
+            wallets_tool::ecosystems::ethereum::rpc_management::update_rpc_provider,
+            wallets_tool::ecosystems::ethereum::rpc_management::delete_rpc_provider,
+            wallets_tool::ecosystems::ethereum::rpc_management::test_rpc_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

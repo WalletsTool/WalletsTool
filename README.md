@@ -1,9 +1,9 @@
-# WalletsTool
-<div align="center">
+# Wallets Tool
+<div align="center"  style="margin-bottom: 20px;">
     <img src="app-icon.png" width="80" height="80" alt="应用logo"/>
 </div>
 
-一个功能强大的多链钱包管理工具，基于 Vue 3 + Tauri 构建，支持钱包导入、余额查询、批量转账等功能。提供直观的用户界面，帮助用户安全便捷地管理多个区块链网络上的数字资产。
+一个功能强大的Web3多链钱包管理工具，基于 Vue 3 + Tauri 构建，支持钱包导入、余额查询、批量转账等功能。提供直观的用户界面，帮助用户安全便捷地管理多个区块链网络上的数字资产。
 
 ## ✨ 功能特性
 
@@ -11,7 +11,7 @@
 
 * **Ethereum** - 以太坊主网及测试网
 
-* **Solana** - Solana 主网及测试网
+* **Solana** - Solana 主网及测试网（进行中）
 
 * **自定义链** - 支持添加自定义区块链网络
 
@@ -39,9 +39,10 @@
 
 ### 🛡️ 安全特性
 
-* **本地存储** - 所有数据本地 SQLite 数据库存储
+* **本地存储** - 所有数据本地 SQLite 数据库存储（数据库仅保存链信息、币信息和rpc信息，钱包私钥仅在内存中处理，不会存储在数据库中）
 
-* **私钥保护** - 私钥仅在内存中处理，不明文存储
+
+* **私钥保护** - 私钥仅在内存中处理，不做任何存储
 
 * **交易验证** - 完整的交易验证和确认机制
 
@@ -129,12 +130,16 @@ yarn tauri-build
 
 ## 📖 使用指南
 <div align="center">
+  <br/>
     <span>主页截图</span>
-<br>
+  <br/>
+    <br/>
     <img src="docs/screenshot/app-screenshot_1.png" alt="应用截图"/>
-    <br>
+    <br/>
+      <br/>
     <span>批量转账页面截图</span>
-<br>
+    <br/>
+      <br/>
     <img src="docs/screenshot/app-screenshot_2.png" alt="应用截图"/>
 </div>
 

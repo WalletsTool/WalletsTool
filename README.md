@@ -3,7 +3,7 @@
 一个功能强大的多链钱包管理工具，基于 Vue 3 + Tauri 构建，支持钱包导入、余额查询、批量转账等功能。提供直观的用户界面，帮助用户安全便捷地管理多个区块链网络上的数字资产。
 
 <div align="center">
-  <img src="app-icon.png" width="80" height="80" alt="应用截图"/>
+    <img src="app-icon.png" width="80" height="80" alt="应用logo"/>
 </div>
 
 ## ✨ 功能特性
@@ -129,6 +129,15 @@ yarn tauri-build
 ```
 
 ## 📖 使用指南
+<div align="center">
+    <span>主页截图</span>
+<br>
+    <img src="docs/screenshot/app-screenshot_1.png" alt="应用截图"/>
+    <br>
+    <span>批量转账页面截图</span>
+<br>
+    <img src="docs/screenshot/app-screenshot_2.png" alt="应用截图"/>
+</div>
 
 ### 1. 链配置管理
 

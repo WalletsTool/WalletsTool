@@ -84,4 +84,4 @@ playwright/.cache/
 public/avatar/optimized/
 
 # 数据库文件（开发用）
-# data/wallet_manager.db
+# data/wallets_tool.db

@@ -193,7 +193,7 @@ pub async fn init_database() -> Result<()> {
     // 确保配置目录存在
     std::fs::create_dir_all("data")?;
 
-    let database_path = "data/wallet_manager.db";
+    let database_path = "data/wallets_tool.db";
     let database_url = format!("sqlite://{}", database_path);
     let db_exists = Path::new(&database_path).exists();
     

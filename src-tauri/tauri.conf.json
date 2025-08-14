@@ -1,6 +1,6 @@
 {
   "productName": "Wallets Tool",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "com.ezban.walletstool",
   "build": {
     "beforeDevCommand": "yarn dev",
@@ -41,7 +41,7 @@
     "category": "DeveloperTool",
     "copyright": "Copyright © 2025 EzBan. All rights reserved.",
     "publisher": "EzBan",
-    "homepage": "https://github.com/ezban/wallet_manager",
+    "homepage": "https://github.com/WalletsTool/WalletsTool",
     "externalBin": [],
     "createUpdaterArtifacts": false,
     "icon": [

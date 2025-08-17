@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "icon": "tauri icon",
     "tauri-build": "tauri build",
-    "tauri-dev": "tauri dev"
+    "tauri-dev": "tauri dev",
+    "version:update": "node scripts/update-version.js"
   },
   "config": {
     "database": {

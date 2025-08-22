@@ -58,8 +58,23 @@
       "minimumSystemVersion": "10.13",
       "exceptionDomain": "",
       "signingIdentity": null,
-      "providerShortName": "EzBan",
-      "entitlements": null
+      "providerShortName": null,
+      "entitlements": null,
+      "license": "LICENSE",
+      "dmg": {
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        },
+        "windowSize": {
+          "width": 350,
+          "height": 750
+        }
+      }
     },
     "resources": [
       "data/*"

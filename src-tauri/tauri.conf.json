@@ -60,7 +60,6 @@
       "signingIdentity": null,
       "providerShortName": null,
       "entitlements": null,
-      "license": "LICENSE",
       "dmg": {
         "appPosition": {
           "x": 180,

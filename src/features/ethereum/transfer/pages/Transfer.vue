@@ -507,7 +507,7 @@ function applySharedConfig(config) {
     if (config.data && Array.isArray(config.data)) {
       data.value = config.data.map((item, index) => ({
         ...item,
-        key: index + 1 // 重新生成key
+        key: String(index + 1) // 确保key是字符串类型
       }));
     }
 
@@ -1188,8 +1188,8 @@ async function continueTransferFromIndex(accountData, startIndex) {
       delay: [form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) : 1, form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) : 3], // 延迟时间
       transfer_type: form.send_type, // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
       transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
-      transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
-      left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
+      transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 3 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
+      left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 4 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
       amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
       limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
       limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000, // limit_count 指定数量 (limit_type 为 2 时生效)
@@ -1210,15 +1210,19 @@ async function continueTransferFromIndex(accountData, startIndex) {
             item: item,
             config: config
           });
-          data.value[realIndex].exec_status = "2";
-          // 转账成功时只显示tx_hash
+          
+          // 根据转账结果设置状态
           if (typeof res === 'object' && res !== null) {
             if (res.success && res.tx_hash) {
+              data.value[realIndex].exec_status = "2"; // 成功
               data.value[realIndex].error_msg = res.tx_hash;
             } else {
+              data.value[realIndex].exec_status = "3"; // 失败
               data.value[realIndex].error_msg = res.error || '转账失败';
             }
           } else {
+            // 对于非对象返回值，假设成功
+            data.value[realIndex].exec_status = "2";
             data.value[realIndex].error_msg = String(res || '转账成功');
           }
           // 更新进度条
@@ -1251,15 +1255,19 @@ async function continueTransferFromIndex(accountData, startIndex) {
               abi: contract.abi
             }
           });
-          data.value[realIndex].exec_status = "2";
-          // 转账成功时只显示tx_hash
+          
+          // 根据转账结果设置状态
           if (typeof res === 'object' && res !== null) {
             if (res.success && res.tx_hash) {
+              data.value[realIndex].exec_status = "2"; // 成功
               data.value[realIndex].error_msg = res.tx_hash;
             } else {
+              data.value[realIndex].exec_status = "3"; // 失败
               data.value[realIndex].error_msg = res.error || '转账失败';
             }
           } else {
+            // 对于非对象返回值，假设成功
+            data.value[realIndex].exec_status = "2";
             data.value[realIndex].error_msg = String(res || '转账成功');
           }
           // 更新进度条
@@ -1427,7 +1435,7 @@ onBeforeMount(async () => {
         if (sharedConfig.data && Array.isArray(sharedConfig.data)) {
           data.value = sharedConfig.data.map((item, index) => ({
             ...item,
-            key: index + 1 // 重新生成key
+            key: String(index + 1) // 确保key是字符串类型
           }));
         }
       } else {
@@ -1493,7 +1501,7 @@ onBeforeMount(async () => {
       if (sharedConfig.data && Array.isArray(sharedConfig.data)) {
         data.value = sharedConfig.data.map((item, index) => ({
           ...item,
-          key: index + 1 // 重新生成key
+          key: String(index + 1) // 确保key是字符串类型
         }));
       }
     } else {
@@ -1924,7 +1932,7 @@ function UploadFile() {
           // 重新生成key确保唯一性
           const finalValidData = allValidData.map((item, index) => ({
             ...item,
-            key: index + 1
+            key: String(index + 1) // 确保key是字符串类型
           }));
 
           // 一次性更新数据，触发表格渲染
@@ -3107,15 +3115,19 @@ async function iterTransfer(accountData) {
               config: config
             });
             console.log("base_coin_transfer 返回信息:", res);
-            data.value[realIndex].exec_status = "2";
-            // 转账成功时只显示tx_hash
+            
+            // 根据转账结果设置状态
             if (typeof res === 'object' && res !== null) {
               if (res.success && res.tx_hash) {
+                data.value[realIndex].exec_status = "2"; // 成功
                 data.value[realIndex].error_msg = res.tx_hash;
               } else {
+                data.value[realIndex].exec_status = "3"; // 失败
                 data.value[realIndex].error_msg = res.error || '转账失败';
               }
             } else {
+              // 对于非对象返回值，假设成功
+              data.value[realIndex].exec_status = "2";
               data.value[realIndex].error_msg = String(res || '转账成功');
             }
             // 更新进度条
@@ -3149,15 +3161,19 @@ async function iterTransfer(accountData) {
               }
             });
             console.log("token_transfer 返回信息:", res);
-            data.value[realIndex].exec_status = "2";
-            // 转账成功时只显示tx_hash
+            
+            // 根据转账结果设置状态
             if (typeof res === 'object' && res !== null) {
               if (res.success && res.tx_hash) {
+                data.value[realIndex].exec_status = "2"; // 成功
                 data.value[realIndex].error_msg = res.tx_hash;
               } else {
+                data.value[realIndex].exec_status = "3"; // 失败
                 data.value[realIndex].error_msg = res.error || '转账失败';
               }
             } else {
+              // 对于非对象返回值，假设成功
+              data.value[realIndex].exec_status = "2";
               data.value[realIndex].error_msg = String(res || '转账成功');
             }
             // 更新进度条
@@ -3298,8 +3314,8 @@ async function iterTransfer(accountData) {
         delay: [form.min_interval && form.min_interval.trim() !== '' ? Number(form.min_interval) : 1, form.max_interval && form.max_interval.trim() !== '' ? Number(form.max_interval) : 3], // 延迟时间
         transfer_type: form.send_type, // 转账类型 1：全部转账 2:转账固定数量 3：转账随机数量  4：剩余随机数量
         transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
-        transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 1 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
-        left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 2 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
+        transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 3 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
+        left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 4 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
         amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 3, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
         limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
         limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000, // limit_count 指定数量 (limit_type 为 2 时生效)
@@ -3322,15 +3338,19 @@ async function iterTransfer(accountData) {
               config: config
             });
             console.log("base_coin_transfer 返回信息:", res);
-            data.value[realIndex].exec_status = "2";
-            // 转账成功时只显示tx_hash
+            
+            // 根据转账结果设置状态
             if (typeof res === 'object' && res !== null) {
               if (res.success && res.tx_hash) {
+                data.value[realIndex].exec_status = "2"; // 成功
                 data.value[realIndex].error_msg = res.tx_hash;
               } else {
+                data.value[realIndex].exec_status = "3"; // 失败
                 data.value[realIndex].error_msg = res.error || '转账失败';
               }
             } else {
+              // 对于非对象返回值，假设成功
+              data.value[realIndex].exec_status = "2";
               data.value[realIndex].error_msg = String(res || '转账成功');
             }
             // 更新进度条
@@ -3364,15 +3384,19 @@ async function iterTransfer(accountData) {
               }
             });
             console.log("token_transfer 返回信息:", res);
-            data.value[realIndex].exec_status = "2";
-            // 转账成功时只显示tx_hash
+            
+            // 根据转账结果设置状态
             if (typeof res === 'object' && res !== null) {
               if (res.success && res.tx_hash) {
+                data.value[realIndex].exec_status = "2"; // 成功
                 data.value[realIndex].error_msg = res.tx_hash;
               } else {
+                data.value[realIndex].exec_status = "3"; // 失败
                 data.value[realIndex].error_msg = res.error || '转账失败';
               }
             } else {
+              // 对于非对象返回值，假设成功
+              data.value[realIndex].exec_status = "2";
               data.value[realIndex].error_msg = String(res || '转账成功');
             }
             // 更新进度条
@@ -4512,13 +4536,13 @@ async function handleBeforeClose() {
             <a-input v-model="form.send_count" />
           </a-form-item>
           <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope"
-            :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 180px;">
+            :label="form.send_type === '3' ? '发送数量范围' : '剩余数量范围'" style="width: 220px;">
             <a-input v-model="form.send_min_count" />
             <span style="padding: 0 5px">至</span>
             <a-input v-model="form.send_max_count" />
           </a-form-item>
           <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度"
-            style="width: 110px;" tooltip="金额小数点位数">
+            style="width: 95px;" tooltip="金额小数点位数">
             <a-input v-model="form.amount_precision" />
           </a-form-item>
           <a-divider direction="vertical" style="height: 50px; margin: 15px 10px 0 10px;" />

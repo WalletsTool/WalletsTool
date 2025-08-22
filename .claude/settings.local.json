@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(yarn tauri-build:*)",
+      "Bash(cargo check:*)",
+      "Bash(rustc:*)",
+      "Bash(cargo --version)",
+      "Bash(rustup:*)",
+      "Bash(cargo clean:*)",
+      "Bash(yarn tauri-dev:*)",
+      "Bash(where link)",
+      "Bash(where cl)",
+      "Bash(grep:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

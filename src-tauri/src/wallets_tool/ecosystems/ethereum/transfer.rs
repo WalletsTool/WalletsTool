@@ -415,24 +415,48 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         "4" => {
             // 剩余随机数量
             let balance_f64: f64 = balance_ether.to_string().parse()?;
-            if balance_f64 >= config.left_amount_list[0] && balance_f64 <= config.left_amount_list[1] {
+            
+            // 预估Gas费用
+            let gas_limit = TransferUtils::get_gas_limit(
+                &config,
+                provider.clone(),
+                wallet_address,
+                to_address,
+                parse_ether(1.0)?, // 使用1 ETH作为临时值进行Gas估算
+            ).await?;
+            let gas_fee = gas_price * gas_limit;
+            let gas_fee_ether: f64 = format_ether(gas_fee).to_string().parse()?;
+            
+            // 可用于转账的余额 = 总余额 - Gas费用
+            let available_balance = balance_f64 - gas_fee_ether;
+            
+            println!("序号：{}, 总余额: {}, Gas费用: {}, 可用余额: {}", index, balance_f64, gas_fee_ether, available_balance);
+            
+            // 检查可用余额是否足够满足最小剩余数量要求
+            if available_balance <= config.left_amount_list[1] {
                 return Err(format!(
-                    "当前余额为：{} 在设置的剩余范围内，不做转账操作！",
-                    balance_ether
+                    "当前可用余额为：{} (总余额: {} - Gas费用: {})，无法满足最大剩余数量 {} 要求，不做转账操作！",
+                    available_balance, balance_f64, gas_fee_ether, config.left_amount_list[1]
                 ).into());
             }
             
             let mut rng = rand::thread_rng();
             let left_amount = rng.gen_range(config.left_amount_list[0]..=config.left_amount_list[1]);
-            let transfer_amount_f64 = balance_f64 - left_amount;
+            let transfer_amount_f64 = available_balance - left_amount;
             
             if transfer_amount_f64 <= 0.0 {
-                return Err("当前余额不足，不做转账操作！".into());
+                return Err(format!(
+                    "计算转账金额为负数或零：可用余额 {} - 剩余数量 {} = {}，不做转账操作！",
+                    available_balance, left_amount, transfer_amount_f64
+                ).into());
             }
             
             // 根据精度设置格式化转账金额
             let formatted_amount = format!("{:.precision$}", transfer_amount_f64, precision = config.amount_precision as usize);
             let precise_amount: f64 = formatted_amount.parse()?;
+            
+            println!("序号：{}, 剩余数量: {}, 转账金额: {} (格式化后: {})", index, left_amount, transfer_amount_f64, precise_amount);
+            
             parse_ether(precise_amount)?
         }
         _ => return Err("无效的转账类型".into()),

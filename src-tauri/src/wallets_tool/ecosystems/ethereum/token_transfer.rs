@@ -240,10 +240,14 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         "4" => {
             // 剩余随机数量
             let balance_f64 = format_units(balance, decimals as u32)?.parse::<f64>()?;
-            if balance_f64 >= config.left_amount_list[0] && balance_f64 <= config.left_amount_list[1] {
+            
+            println!("序号：{}, 代币余额: {}", index, balance_f64);
+            
+            // 检查余额是否足够满足最小剩余数量要求
+            if balance_f64 <= config.left_amount_list[1] {
                 return Err(format!(
-                    "当前余额为：{} 在设置的剩余范围内，不做转账操作！",
-                    balance_formatted
+                    "当前代币余额为：{}，无法满足最大剩余数量 {} 要求，不做转账操作！",
+                    balance_formatted, config.left_amount_list[1]
                 ).into());
             }
             
@@ -252,12 +256,18 @@ async fn token_transfer_internal<R: tauri::Runtime>(
             let transfer_amount_f64 = balance_f64 - left_amount;
             
             if transfer_amount_f64 <= 0.0 {
-                return Err("当前余额不足，不做转账操作！".into());
+                return Err(format!(
+                    "计算转账金额为负数或零：代币余额 {} - 剩余数量 {} = {}，不做转账操作！",
+                    balance_f64, left_amount, transfer_amount_f64
+                ).into());
             }
             
             // 根据精度设置格式化转账金额
             let formatted_amount = format!("{:.precision$}", transfer_amount_f64, precision = config.amount_precision as usize);
             let precise_amount: f64 = formatted_amount.parse()?;
+            
+            println!("序号：{}, 剩余数量: {}, 转账金额: {} (格式化后: {})", index, left_amount, transfer_amount_f64, precise_amount);
+            
             parse_units(precise_amount, decimals as u32)?.into()
         }
         _ => return Err("无效的转账类型".into()),

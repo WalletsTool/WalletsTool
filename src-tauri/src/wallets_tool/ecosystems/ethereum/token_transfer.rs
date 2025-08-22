@@ -97,7 +97,21 @@ impl TokenTransferUtils {
                 let call = contract.method::<_, bool>("transfer", (to_address, transfer_amount))?;
                 let tx = call.tx;
                 
-                let gas_limit = provider.estimate_gas(&tx, None).await?;
+                let estimated_gas = provider.estimate_gas(&tx, None).await?;
+                
+                // 添加合理性检查：ERC20转账的gas limit通常在50000-200000范围内
+                // 如果估算值过高（超过500000），使用安全的默认值
+                let gas_limit = if estimated_gas > U256::from(500_000) {
+                    println!("警告：估算的 token gas limit {} 异常过高，使用默认值 100000", estimated_gas);
+                    U256::from(100_000)
+                } else if estimated_gas < U256::from(50_000) {
+                    // 如果估算值过低，使用最小安全值
+                    U256::from(50_000)
+                } else {
+                    // 为估算值添加20%的安全边际
+                    estimated_gas * U256::from(120) / U256::from(100)
+                };
+                
                 Ok(gas_limit)
             }
             "2" => {

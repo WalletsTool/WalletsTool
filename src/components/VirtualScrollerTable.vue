@@ -287,8 +287,8 @@ const getDisplayText = (column, item) => {
   if (!value) return ''
   
   // 特殊处理error_msg字段，只显示前20个字符
-  if (column.dataIndex === 'error_msg' && value.length > 30) {
-    return value.substring(0, 30) + '...'
+  if (column.dataIndex === 'error_msg' && value.length > 25) {
+    return value.substring(0, 25) + '...'
   }
   
   return value

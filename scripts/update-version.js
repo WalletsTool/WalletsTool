@@ -74,6 +74,27 @@ async function updateCargoToml(newVersion) {
 }
 
 /**
+ * 更新 tauri.conf.json 文件中的版本号
+ * @param {string} newVersion - 新版本号
+ */
+async function updateTauriConfig(newVersion) {
+  const tauriConfigPath = path.join(projectRoot, 'src-tauri', 'tauri.conf.json');
+  
+  try {
+    const content = await fs.readFile(tauriConfigPath, 'utf8');
+    const tauriConfig = JSON.parse(content);
+    
+    const oldVersion = tauriConfig.version;
+    tauriConfig.version = newVersion;
+    
+    await fs.writeFile(tauriConfigPath, JSON.stringify(tauriConfig, null, 2) + '\n');
+    console.log(`✅ 已更新 tauri.conf.json: ${oldVersion} → ${newVersion}`);
+  } catch (error) {
+    throw new Error(`更新 tauri.conf.json 失败: ${error.message}`);
+  }
+}
+
+/**
  * 更新 Cargo.lock 文件中的版本号
  * @param {string} newVersion - 新版本号
  */
@@ -150,7 +171,7 @@ function commitAndPushChanges(version) {
   try {
     // 添加修改的文件
     console.log('📝 添加修改的文件到暂存区...');
-    execGitCommand('git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock');
+    execGitCommand('git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/Cargo.lock');
     console.log('✅ 已添加修改的文件到暂存区');
     
     // 创建提交
@@ -223,6 +244,7 @@ async function main() {
       console.log('\n功能:');
       console.log('  - 更新 package.json 中的版本号');
       console.log('  - 更新 Cargo.toml 中的版本号');
+      console.log('  - 更新 tauri.conf.json 中的版本号');
       console.log('  - 更新 Cargo.lock 中的版本号');
       console.log('  - 提交修改的文件并推送到远端');
       console.log('  - 创建并推送 Git 标签');
@@ -250,6 +272,7 @@ async function main() {
     // 更新各个文件中的版本号
     await updatePackageJson(newVersion);
     await updateCargoToml(newVersion);
+    await updateTauriConfig(newVersion);
     await updateCargoLock(newVersion);
     
     console.log('\n📝 版本号更新完成，准备提交更改...');

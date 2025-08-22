@@ -199,7 +199,109 @@ pub async fn create_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn
 pub struct TransferUtils;
 
 impl TransferUtils {
-
+    // 预检查余额是否充足（在实际转账前进行检查，避免RPC调用后才发现余额不足）
+    pub async fn pre_check_balance(
+        config: &TransferConfig,
+        provider: Arc<Provider<Http>>,
+        wallet_address: Address,
+        to_address: Address,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // 获取当前余额
+        let balance = provider.get_balance(wallet_address, None).await?;
+        
+        if balance.is_zero() {
+            return Err("当前余额为0，无法进行转账操作！".into());
+        }
+        
+        // 获取Gas Price进行预估
+        let gas_price = Self::get_gas_price(config, provider.clone()).await?;
+        
+        if gas_price.is_zero() {
+            return Err("获取到的 gas price 为0，请检查网络连接或RPC配置".into());
+        }
+        
+        // 根据转账类型进行不同的余额检查
+        match config.transfer_type.as_str() {
+            "1" => {
+                // 全部转账 - 需要预留Gas费用
+                let estimated_gas_limit = Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, parse_ether(0.001)?).await?;
+          
+                print!("estimated_gas_limit: {}", estimated_gas_limit);
+                let estimated_gas_fee = gas_price * estimated_gas_limit;
+                if estimated_gas_fee >= balance {
+                    return Err(format!(
+                        "余额不足支付Gas费用！当前余额: {} ETH，预估Gas费用: {} ETH",
+                        format_units(balance, 18)?,
+                        format_units(estimated_gas_fee, 18)?
+                    ).into());
+                }
+            }
+            "2" => {
+                // 转账固定数量
+                let transfer_amount = parse_ether(config.transfer_amount)?;
+                let estimated_gas_limit = Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, parse_ether(0.001)?).await?;
+                let estimated_gas_fee = gas_price * estimated_gas_limit;
+                let total_needed = transfer_amount + estimated_gas_fee;
+                print!("estimated_gas_limit: {}", estimated_gas_limit);
+                if total_needed > balance {
+                    return Err(format!(
+                        "余额不足！需要: {} ETH (转账: {} + Gas: {} ETH)，当前余额: {} ETH",
+                        format_units(total_needed, 18)?,
+                        format_units(transfer_amount, 18)?,
+                        format_units(estimated_gas_fee, 18)?,
+                        format_units(balance, 18)?
+                    ).into());
+                }
+            }
+            "3" => {
+                // 转账随机数量 - 使用最大可能金额进行检查
+                let max_transfer_amount = parse_ether(config.transfer_amount_list[1])?;
+                let estimated_gas_limit =Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, parse_ether(0.001)?).await?;
+                let estimated_gas_fee = gas_price * estimated_gas_limit;
+                let total_needed = max_transfer_amount + estimated_gas_fee;
+                
+                if total_needed > balance {
+                    return Err(format!(
+                        "余额不足！最大可能需要: {} ETH (转账: {} + Gas: {} ETH)，当前余额: {} ETH",
+                        format_units(total_needed, 18)?,
+                        format_units(max_transfer_amount, 18)?,
+                        format_units(estimated_gas_fee, 18)?,
+                        format_units(balance, 18)?
+                    ).into());
+                }
+            }
+            "4" => {
+                // 剩余随机数量 - 检查是否有足够余额满足最小剩余要求
+                 let estimated_gas_limit = match config.limit_type.as_str() {
+                    "1" => {
+                        // 自动估算模式，使用最小转账金额进行估算
+                        let min_transfer = parse_ether(0.001)?;
+                        Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, min_transfer).await?
+                    }
+                    "2" => U256::from(config.limit_count),
+                    "3" => {
+                        // 使用最大可能的gas limit进行保守估算
+                        U256::from(config.limit_count_list[1])
+                    }
+                    _ => U256::from(21000), // 默认ETH转账gas limit
+                };
+                let estimated_gas_fee = gas_price * estimated_gas_limit;
+                let balance_ether = format_units(balance, 18)?.parse::<f64>()?;
+                let gas_fee_ether = format_units(estimated_gas_fee, 18)?.parse::<f64>()?;
+                let available_balance = balance_ether - gas_fee_ether;
+                
+                if available_balance <= config.left_amount_list[1] {
+                    return Err(format!(
+                        "余额不足！可用余额: {} ETH (总余额: {} - Gas: {} ETH)，无法满足最大剩余数量 {} ETH 要求",
+                        available_balance, balance_ether, gas_fee_ether, config.left_amount_list[1]
+                    ).into());
+                }
+            }
+            _ => return Err("无效的转账类型".into()),
+        }
+        
+        Ok(())
+    }
 
     // 获取Gas Price
     pub async fn get_gas_price(
@@ -278,8 +380,16 @@ impl TransferUtils {
                     .to(to)
                     .value(value);
                 
-                let estimated_gas = provider.estimate_gas(&tx.into(), None).await?;
-                
+                let estimated_gas = match provider.estimate_gas(&tx.into(), None).await {
+                    Ok(gas) => {
+                        eprintln!("estimated_gas: {}", gas);
+                        gas
+                    }
+                    Err(e) => {
+                        eprintln!("estimate_gas failed: {}, 使用默认gas limit 50000", e);
+                        U256::from(50_000)
+                    }
+                };
                 // 添加合理性检查：ETH转账的gas limit通常在21000-100000范围内
                 // 如果估算值过高（超过1000000），使用安全的默认值
                 let gas_limit = if estimated_gas > U256::from(1_000_000) {
@@ -366,16 +476,6 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     let wallet = wallet.with_chain_id(chain_id);
     let wallet_address = wallet.address();
     
-    // 获取余额
-    let balance = provider.get_balance(wallet_address, None).await?;
-    let balance_ether = format_ether(balance);
-    
-    println!("序号：{}, 当前余额为: {} ", index, balance_ether);
-    
-    if balance.is_zero() {
-        return Err("当前余额不足，不做转账操作！".into());
-    }
-    
     // 解析目标地址
     if item.to_addr.trim().is_empty() {
         return Err("目标地址不能为空，请先导入接收地址！".into());
@@ -384,8 +484,24 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         format!("目标地址格式错误: {}，请检查地址格式是否正确", e)
     })?;
     
+    // 预检查余额是否充足（避免RPC调用后才发现余额不足）
+    TransferUtils::pre_check_balance(&config, provider.clone(), wallet_address, to_address).await?;
+    
+    // 获取余额
+    let balance = provider.get_balance(wallet_address, None).await?;
+    let balance_ether_str = format_ether(balance);
+    
+    println!("序号：{}, 当前余额为: {} ETH", index, balance_ether_str);
+    
     // 获取Gas Price
     let gas_price = TransferUtils::get_gas_price(&config, provider.clone()).await?;
+    
+
+    
+    // 检查gas_price是否为0
+    if gas_price.is_zero() {
+        return Err("获取到的 gas price 为0，请检查网络连接或RPC配置".into());
+    }
     
     // 计算转账金额
     let transfer_amount = match config.transfer_type.as_str() {
@@ -428,18 +544,55 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         }
         "4" => {
             // 剩余随机数量
-            let balance_f64: f64 = balance_ether.to_string().parse()?;
+            // 使用format_units替代format_ether，确保精度不丢失
+            let balance_ether_str = format_units(balance, 18).map_err(|e| {
+                format!("余额格式化失败: {}, 原始余额: {}", e, balance)
+            })?;
+            let balance_f64: f64 = balance_ether_str.parse::<f64>().map_err(|e| {
+                format!("余额转换失败: {}, 原始余额: {}, format_units结果: {}", e, balance, balance_ether_str)
+            })?;
             
-            // 预估Gas费用
-            let gas_limit = TransferUtils::get_gas_limit(
-                &config,
-                provider.clone(),
-                wallet_address,
-                to_address,
-                parse_ether(1.0)?, // 使用1 ETH作为临时值进行Gas估算
-            ).await?;
+
+            
+            // 获取Gas Limit - 根据用户设置直接获取，避免不必要的网络调用
+            let gas_limit = match config.limit_type.as_str() {
+                "1" => {
+                    // 自动估算模式才需要网络调用
+                    let min_transfer_amount = parse_ether(0.001)?;
+                    TransferUtils::get_gas_limit(
+                        &config,
+                        provider.clone(),
+                        wallet_address,
+                        to_address,
+                        min_transfer_amount,
+                    ).await?
+                }
+                "2" => {
+                    // 固定数量模式直接使用设定值
+                    U256::from(config.limit_count)
+                }
+                "3" => {
+                    // 随机范围模式生成随机值
+                    let mut rng = rand::thread_rng();
+                    let random_limit = rng.gen_range(config.limit_count_list[0]..=config.limit_count_list[1]);
+                    U256::from(random_limit)
+                }
+                _ => {
+                    return Err("gas limit type error".into());
+                }
+            };
+            
+            println!("序号：{}, gas limit: {}", index, gas_limit);
+            
             let gas_fee = gas_price * gas_limit;
-            let gas_fee_ether: f64 = format_ether(gas_fee).to_string().parse()?;
+            let gas_fee_ether_str = format_units(gas_fee, 18).map_err(|e| {
+                format!("gas费用格式化失败: {}, gas_fee: {}", e, gas_fee)
+            })?;
+            let gas_fee_ether: f64 = gas_fee_ether_str.parse::<f64>().map_err(|e| {
+                format!("gas费用转换失败: {}, gas_fee: {}, format_units结果: {}", e, gas_fee, gas_fee_ether_str)
+            })?;
+            
+
             
             // 可用于转账的余额 = 总余额 - Gas费用
             let available_balance = balance_f64 - gas_fee_ether;
@@ -476,7 +629,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         _ => return Err("无效的转账类型".into()),
     };
     
-    println!("序号：{}, 转账数量为: {}", index, format_ether(transfer_amount));
+    println!("序号：{}, 转账数量为: {}", index, format_units(transfer_amount, 18).unwrap_or_else(|_| "0".to_string()));
     
     // 获取Gas Limit
     let gas_limit = TransferUtils::get_gas_limit(
@@ -556,7 +709,10 @@ async fn query_balance_internal(
         format!("地址格式错误: {}，请检查地址格式是否正确", e)
     })?;
     let balance = provider.get_balance(address, None).await?;
-    Ok(format_ether(balance).to_string())
+    let balance_str = format_units(balance, 18).map_err(|e| {
+        format!("余额格式化失败: {}", e)
+    })?;
+    Ok(balance_str)
 }
 
 // 检查钱包最近转账记录的结果结构

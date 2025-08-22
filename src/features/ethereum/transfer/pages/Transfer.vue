@@ -159,7 +159,7 @@ const form = reactive({
   limit_max_count: "30000",
   min_interval: "1",
   max_interval: "3",
-  amount_precision: "3",
+  amount_precision: "6",
   error_retry: "0",
 });
 
@@ -3224,15 +3224,8 @@ async function iterTransfer(accountData) {
           const originalErrorMsg = data.value[nextPendingIndex].error_msg;
           let remainingTime = Math.ceil(randomDelay / 1000);
 
-          // 每秒更新倒计时
+          // 每秒更新倒计时，同时每100ms检查stopFlag以提高响应速度
           const countdownInterval = setInterval(() => {
-            if (stopFlag.value) {
-              clearInterval(countdownInterval);
-              // 恢复原始错误信息
-              data.value[nextPendingIndex].error_msg = originalErrorMsg;
-              return;
-            }
-
             data.value[nextPendingIndex].error_msg = `等待中...${remainingTime}秒`;
             remainingTime--;
 
@@ -3242,20 +3235,64 @@ async function iterTransfer(accountData) {
               data.value[nextPendingIndex].error_msg = originalErrorMsg;
             }
           }, 1000);
+          
+          // 高频检查stopFlag以提高停止响应速度
+          const stopCheckInterval = setInterval(() => {
+            if (stopFlag.value) {
+              clearInterval(countdownInterval);
+              clearInterval(stopCheckInterval);
+              // 恢复原始错误信息
+              data.value[nextPendingIndex].error_msg = originalErrorMsg;
+              return;
+            }
+          }, 100);
 
           await new Promise(resolve => {
-            setTimeout(() => {
-              clearInterval(countdownInterval);
-              // 确保恢复原始错误信息
-              if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
-                data.value[nextPendingIndex].error_msg = originalErrorMsg;
-              }
-              resolve();
-            }, randomDelay);
+            const timeoutId = setTimeout(() => {
+               clearInterval(countdownInterval);
+               clearInterval(stopCheckInterval);
+               // 确保恢复原始错误信息
+               if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
+                 data.value[nextPendingIndex].error_msg = originalErrorMsg;
+               }
+               resolve();
+             }, randomDelay);
+            
+            // 检查stopFlag，如果为true则立即中断等待
+             const checkStopFlag = () => {
+               if (stopFlag.value) {
+                 clearTimeout(timeoutId);
+                 clearInterval(countdownInterval);
+                 clearInterval(stopCheckInterval);
+                 // 恢复原始错误信息
+                 if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
+                   data.value[nextPendingIndex].error_msg = originalErrorMsg;
+                 }
+                 resolve();
+                 return;
+               }
+               // 如果没有停止，继续检查
+               setTimeout(checkStopFlag, 100);
+             };
+            checkStopFlag();
           });
         } else {
           // 如果没有找到下一条待执行的数据，使用原来的延迟方式
-          await new Promise(resolve => setTimeout(resolve, randomDelay));
+          await new Promise(resolve => {
+            const timeoutId = setTimeout(resolve, randomDelay);
+            
+            // 检查stopFlag，如果为true则立即中断等待
+            const checkStopFlag = () => {
+              if (stopFlag.value) {
+                clearTimeout(timeoutId);
+                resolve();
+                return;
+              }
+              // 如果没有停止，继续检查
+              setTimeout(checkStopFlag, 100);
+            };
+            checkStopFlag();
+          });
         }
       }
     }
@@ -3316,7 +3353,7 @@ async function iterTransfer(accountData) {
         transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0), // 转账当前指定的固定金额
         transfer_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 转账数量 (transfer_type 为 3 时生效) 转账数量在5-10之间随机，第二个数要大于第一个数！！
         left_amount_list: [form.send_min_count && form.send_min_count.trim() !== '' ? Number(form.send_min_count) : 0, form.send_max_count && form.send_max_count.trim() !== '' ? Number(form.send_max_count) : 0], // 剩余数量 (transfer_type 为 4 时生效) 剩余数量在4-6之间随机，第二个数要大于第一个数！！
-        amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 3, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
+        amount_precision: form.amount_precision && form.amount_precision.trim() !== '' ? Number(form.amount_precision) : 6, // 一般无需修改，转账个数的精确度 6 代表个数有6位小数
         limit_type: form.limit_type, // limit_type 限制类型 1：自动 2：指定数量 3：范围随机
         limit_count: form.limit_count && form.limit_count.trim() !== '' ? Number(form.limit_count) : 21000, // limit_count 指定数量 (limit_type 为 2 时生效)
         limit_count_list: [form.limit_min_count && form.limit_min_count.trim() !== '' ? Number(form.limit_min_count) : 21000, form.limit_max_count && form.limit_max_count.trim() !== '' ? Number(form.limit_max_count) : 30000],

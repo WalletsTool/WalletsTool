@@ -143,16 +143,3 @@ pub struct ChainInfo {
     pub check_verify_api: String,
     pub rpc_urls: Vec<String>,
 }
-
-/// 简化的代币配置（用于API返回）
-#[derive(Debug, Serialize)]
-pub struct TokenInfo {
-    pub key: String,
-    pub coin: String,
-    #[serde(rename = "type")]
-    pub coin_type: String,
-    pub contract_type: Option<String>,
-    pub contract_address: Option<String>,
-    pub decimals: i32,
-    pub abi: Option<String>,
-}

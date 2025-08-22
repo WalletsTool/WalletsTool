@@ -10,6 +10,7 @@ use tokio::sync::Semaphore;
 use tokio::time::{sleep, Duration};
 use tauri::Emitter;
 use rand;
+use ethers::signers::{LocalWallet, Signer};
 use crate::database::{get_database_manager, rpc_service::RpcService};
 
 // 基于窗口ID的停止标志映射
@@ -281,6 +282,29 @@ impl SimpleBalanceQueryService {
 
         item.exec_status = "1".to_string(); // 执行中
         item.error_msg = None;
+
+        // 如果有私钥，优先从私钥生成地址
+        if let Some(private_key_str) = &item.private_key {
+            if !private_key_str.trim().is_empty() {
+                // 处理私钥格式，兼容带0x和不带0x的格式
+                let private_key = if private_key_str.starts_with("0x") || private_key_str.starts_with("0X") {
+                    private_key_str[2..].to_string()
+                } else {
+                    private_key_str.clone()
+                };
+                
+                // 从私钥生成地址
+                if let Ok(wallet) = private_key.parse::<LocalWallet>() {
+                    let address = format!("{:?}", wallet.address());
+                    item.address = address;
+                    println!("[INFO] 从私钥生成地址: {}", item.address);
+                } else {
+                    item.exec_status = "3".to_string();
+                    item.error_msg = Some("私钥格式错误，无法生成地址".to_string());
+                    return item;
+                }
+            }
+        }
 
         // 设置单个查询任务的超时时间为15秒
         let query_timeout = Duration::from_secs(15);

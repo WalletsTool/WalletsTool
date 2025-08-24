@@ -222,7 +222,7 @@ const developerAddress = ref('0x298E1bE50Ba5f50CF23cFA6b5F1dF347cFBef40A'); // �
 const tipAmountOptions = ['0.001', '0.005', '0.01', '0.05', '0.1']; // 预设打赏金额选项（仅用于私钥模式）
 
 // 打赏模式控制变量
-const tipMode = ref('privatekey'); // 'qrcode' 或 'privatekey'
+const tipMode = ref('qrcode'); // 'qrcode' 或 'privatekey'
 const showQRCode = computed(() => tipMode.value === 'qrcode');
 const showPrivateKeyInput = computed(() => tipMode.value === 'privatekey');
 

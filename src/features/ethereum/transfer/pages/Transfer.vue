@@ -9,6 +9,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Notification, Modal } from "@arco-design/web-vue";
 import { ethers } from "ethers";
+import QRCode from 'qrcode';
 
 import { read, utils as xlUtils, writeFile } from "xlsx";
 import { debounce as customDebounce } from '@/utils/debounce.js'
@@ -218,7 +219,58 @@ const tipAmount = ref('');
 const tipPrivateKey = ref(''); // 用户输入的私钥
 const tipLoading = ref(false);
 const developerAddress = ref('0x298E1bE50Ba5f50CF23cFA6b5F1dF347cFBef40A'); // 开发者收款地址
-const tipAmountOptions = ['0.001', '0.005', '0.01', '0.05', '0.1']; // 预设打赏金额选项
+const tipAmountOptions = ['0.001', '0.005', '0.01', '0.05', '0.1']; // 预设打赏金额选项（仅用于私钥模式）
+
+// 打赏模式控制变量
+const tipMode = ref('privatekey'); // 'qrcode' 或 'privatekey'
+const showQRCode = computed(() => tipMode.value === 'qrcode');
+const showPrivateKeyInput = computed(() => tipMode.value === 'privatekey');
+
+// 切换打赏模式的函数
+function switchTipMode(mode) {
+  tipMode.value = mode;
+  // 切换到私钥模式时清空之前的输入
+  if (mode === 'privatekey') {
+    tipPrivateKey.value = '';
+  }
+}
+
+// 复制地址到剪贴板的函数
+function copyDeveloperAddress() {
+  navigator.clipboard.writeText(developerAddress.value).then(() => {
+    Notification.success('地址已复制到剪贴板');
+  }).catch(() => {
+    Notification.error('复制失败，请手动复制');
+  });
+}
+
+// 生成二维码的响应式变量
+const qrCodeDataURL = ref('');
+
+// 生成二维码的函数
+async function generateQRCode() {
+  try {
+    const dataURL = await QRCode.toDataURL(developerAddress.value, {
+      width: 200,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    });
+    qrCodeDataURL.value = dataURL;
+  } catch (error) {
+    console.error('生成二维码失败:', error);
+    Notification.error('生成二维码失败');
+  }
+}
+
+// 监听打赏模态框显示状态，自动生成二维码
+watch(showTipModal, (newValue) => {
+  if (newValue && tipMode.value === 'qrcode') {
+    generateQRCode();
+  }
+});
 
 // 数据验证缓存 - 避免重复验证
 const dataValidationCache = ref({
@@ -1210,7 +1262,7 @@ async function continueTransferFromIndex(accountData, startIndex) {
             item: item,
             config: config
           });
-          
+
           // 根据转账结果设置状态
           if (typeof res === 'object' && res !== null) {
             if (res.success && res.tx_hash) {
@@ -1255,7 +1307,7 @@ async function continueTransferFromIndex(accountData, startIndex) {
               abi: contract.abi
             }
           });
-          
+
           // 根据转账结果设置状态
           if (typeof res === 'object' && res !== null) {
             if (res.success && res.tx_hash) {
@@ -1559,7 +1611,7 @@ onMounted(async () => {
         data.value[targetIndex].coin_balance = item.coin_balance;
         data.value[targetIndex].exec_status = item.exec_status;
         data.value[targetIndex].error_msg = item.error_msg;
-        
+
         // 实时更新余额查询进度
         updateBalanceProgress();
         updateToAddressBalanceProgress();
@@ -3115,7 +3167,7 @@ async function iterTransfer(accountData) {
               config: config
             });
             console.log("base_coin_transfer 返回信息:", res);
-            
+
             // 根据转账结果设置状态
             if (typeof res === 'object' && res !== null) {
               if (res.success && res.tx_hash) {
@@ -3161,7 +3213,7 @@ async function iterTransfer(accountData) {
               }
             });
             console.log("token_transfer 返回信息:", res);
-            
+
             // 根据转账结果设置状态
             if (typeof res === 'object' && res !== null) {
               if (res.success && res.tx_hash) {
@@ -3235,7 +3287,7 @@ async function iterTransfer(accountData) {
               data.value[nextPendingIndex].error_msg = originalErrorMsg;
             }
           }, 1000);
-          
+
           // 高频检查stopFlag以提高停止响应速度
           const stopCheckInterval = setInterval(() => {
             if (stopFlag.value) {
@@ -3249,38 +3301,38 @@ async function iterTransfer(accountData) {
 
           await new Promise(resolve => {
             const timeoutId = setTimeout(() => {
-               clearInterval(countdownInterval);
-               clearInterval(stopCheckInterval);
-               // 确保恢复原始错误信息
-               if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
-                 data.value[nextPendingIndex].error_msg = originalErrorMsg;
-               }
-               resolve();
-             }, randomDelay);
-            
+              clearInterval(countdownInterval);
+              clearInterval(stopCheckInterval);
+              // 确保恢复原始错误信息
+              if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
+                data.value[nextPendingIndex].error_msg = originalErrorMsg;
+              }
+              resolve();
+            }, randomDelay);
+
             // 检查stopFlag，如果为true则立即中断等待
-             const checkStopFlag = () => {
-               if (stopFlag.value) {
-                 clearTimeout(timeoutId);
-                 clearInterval(countdownInterval);
-                 clearInterval(stopCheckInterval);
-                 // 恢复原始错误信息
-                 if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
-                   data.value[nextPendingIndex].error_msg = originalErrorMsg;
-                 }
-                 resolve();
-                 return;
-               }
-               // 如果没有停止，继续检查
-               setTimeout(checkStopFlag, 100);
-             };
+            const checkStopFlag = () => {
+              if (stopFlag.value) {
+                clearTimeout(timeoutId);
+                clearInterval(countdownInterval);
+                clearInterval(stopCheckInterval);
+                // 恢复原始错误信息
+                if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
+                  data.value[nextPendingIndex].error_msg = originalErrorMsg;
+                }
+                resolve();
+                return;
+              }
+              // 如果没有停止，继续检查
+              setTimeout(checkStopFlag, 100);
+            };
             checkStopFlag();
           });
         } else {
           // 如果没有找到下一条待执行的数据，使用原来的延迟方式
           await new Promise(resolve => {
             const timeoutId = setTimeout(resolve, randomDelay);
-            
+
             // 检查stopFlag，如果为true则立即中断等待
             const checkStopFlag = () => {
               if (stopFlag.value) {
@@ -3375,7 +3427,7 @@ async function iterTransfer(accountData) {
               config: config
             });
             console.log("base_coin_transfer 返回信息:", res);
-            
+
             // 根据转账结果设置状态
             if (typeof res === 'object' && res !== null) {
               if (res.success && res.tx_hash) {
@@ -3421,7 +3473,7 @@ async function iterTransfer(accountData) {
               }
             });
             console.log("token_transfer 返回信息:", res);
-            
+
             // 根据转账结果设置状态
             if (typeof res === 'object' && res !== null) {
               if (res.success && res.tx_hash) {
@@ -3503,8 +3555,8 @@ function quickValidateData() {
 
   // 检查缓存是否有效（数据长度和表单状态未变，且缓存时间在5秒内）
   if (dataValidationCache.value.lastDataLength === currentDataLength &&
-      dataValidationCache.value.lastFormState === currentFormState &&
-      currentTime - dataValidationCache.value.cacheTime < 5000) {
+    dataValidationCache.value.lastFormState === currentFormState &&
+    currentTime - dataValidationCache.value.cacheTime < 5000) {
     return {
       isValid: dataValidationCache.value.isValid,
       reason: dataValidationCache.value.invalidReason
@@ -4416,7 +4468,7 @@ async function handleBeforeClose() {
     <Transition name="progress-slide" appear>
       <div v-if="showBalanceProgress" class="floating-progress-bar" :style="{
         top: (showImportProgress && showProgress) ? '220px' :
-             (showImportProgress || showProgress) ? '120px' : '45px'
+          (showImportProgress || showProgress) ? '120px' : '45px'
       }">
         <div class="progress-content">
           <div class="progress-header">
@@ -4435,8 +4487,8 @@ async function handleBeforeClose() {
     <Transition name="progress-slide" appear>
       <div v-if="showToAddressBalanceProgress" class="floating-progress-bar" :style="{
         top: (showImportProgress && showProgress && showBalanceProgress) ? '320px' :
-             ((showImportProgress && showProgress) || (showImportProgress && showBalanceProgress) || (showProgress && showBalanceProgress)) ? '220px' :
-             (showImportProgress || showProgress || showBalanceProgress) ? '120px' : '45px'
+          ((showImportProgress && showProgress) || (showImportProgress && showBalanceProgress) || (showProgress && showBalanceProgress)) ? '220px' :
+            (showImportProgress || showProgress || showBalanceProgress) ? '120px' : '45px'
       }">
         <div class="progress-content">
           <div class="progress-header">
@@ -4858,88 +4910,112 @@ async function handleBeforeClose() {
 
       <div class="tip-info">
         <div class="tip-info-row">
-          <span class="tip-label">开发者地址:</span>
-          <span class="tip-address">{{ developerAddress.substring(0, 10) }}...{{ developerAddress.slice(-8) }}</span>
-        </div>
-        <div class="tip-info-row">
           <span class="tip-label">当前链:</span>
           <span>{{ currentChain?.name || '未知' }}</span>
           <span class="tip-label" style="margin-left: 16px;">币种:</span>
           <span>{{ currentCoin?.symbol || '未知' }}</span>
         </div>
       </div>
-      <div class="tip-note">
-        <Icon icon="mdi:information" style="color: #1890ff; margin-right: 4px;" />
-        请输入您要用于打赏的钱包私钥，系统会验证地址和余额
-      </div>
-      <!-- 私钥输入区域 -->
-      <div class="tip-private-key-section">
-        <div class="tip-label">
-          <Icon icon="mdi:key" style="margin-right: 4px;" />
-          打赏账号私钥:
-        </div>
-        <a-input
-          v-model="tipPrivateKey"
-          type="password"
-          placeholder="请输入用于打赏的钱包私钥"
-          show-password
-          class="tip-private-key-input"
-        />
 
-        <!-- 私钥验证状态 -->
-        <div v-if="shouldShowTipWalletStatus" class="tip-wallet-status">
-          <div v-if="tipWalletBalance.loading" class="wallet-info-loading">
-            <Icon icon="mdi:loading" class="loading-icon" style="color: #1890ff; margin-right: 4px;" />
-            正在查询余额...
-          </div>
-          <div v-else-if="tipWalletBalance.valid" class="wallet-info-valid">
-            <div class="wallet-address">
-              <Icon icon="mdi:wallet" style="color: #00b42a; margin-right: 4px;" />
-              {{ tipWalletBalance.address?.substring(0, 10) }}...{{ tipWalletBalance.address?.slice(-8) }}
-            </div>
-            <div class="wallet-balance" :class="{ 'insufficient': !tipBalanceSufficient }">
-              <Icon icon="mdi:coins" style="margin-right: 4px;" />
-              {{ currentCoin?.coin_type === 'base' ? '平台币' : '代币' }}余额:
-              {{ tipWalletBalance.balance }} {{ currentCoin?.symbol || 'Token' }}
-            </div>
-            <div v-if="tipAmount && !tipBalanceSufficient" class="balance-warning">
-              <Icon icon="mdi:alert" style="color: #f53f3f; margin-right: 4px;" />
-              余额不足，需要 {{ tipAmount }} {{ currentCoin?.symbol || 'Token' }}
+      <!-- 二维码模式 -->
+      <div v-if="showQRCode" class="tip-qrcode-section">
+        <div class="qrcode-container">
+          <div class="qrcode-wrapper">
+            <img v-if="qrCodeDataURL" :src="qrCodeDataURL" alt="开发者地址二维码" class="qrcode-image" />
+            <div v-else class="qrcode-loading">
+              <Icon icon="mdi:loading" class="loading-icon" />
+              <span>生成二维码中...</span>
             </div>
           </div>
-          <div v-else-if="tipWalletBalance.error && tipWalletBalance.hasAttempted" class="wallet-info-invalid">
-            <Icon icon="mdi:alert-circle" style="color: #f53f3f; margin-right: 4px;" />
-            {{ tipWalletBalance.error }}
+          <div class="address-info">
+            <div class="address-label">开发者收款地址:</div>
+            <div class="address-display">
+              <span class="address-text">{{ developerAddress }}</span>
+              <a-button type="text" size="mini" @click="copyDeveloperAddress" class="copy-btn">
+                <Icon icon="mdi:content-copy" />
+              </a-button>
+            </div>
           </div>
+        </div>
+
+        <div class="tip-note qrcode-note">
+          <Icon icon="mdi:information" style="color: #1890ff; margin-right: 4px;" />
+          请使用支持该链的钱包扫描二维码进行打赏，金额由您自主决定
         </div>
       </div>
 
-      <div class="tip-amount-section">
+      <!-- 私钥输入模式 -->
+      <div v-if="showPrivateKeyInput" class="tip-private-key-section">
+        <!-- 安全声明 -->
+        <div class="security-disclaimer">
+          <Icon icon="mdi:shield-check" style="color: #f53f3f; margin-right: 4px;" />
+          <span style="color: #f53f3f; font-weight: 600; font-size: 13px;">
+            您的私钥信息仅用于本次交易签名，系统不会存储或获取您的私钥，确保资产安全
+          </span>
+        </div>
+        <div class="private-key-input-area">
+          <div class="tip-label">
+            <Icon icon="mdi:key" style="margin-right: 4px;" />
+            打赏账号私钥:
+          </div>
+          <a-input v-model="tipPrivateKey" type="password" placeholder="请输入用于打赏的钱包私钥" show-password
+            class="tip-private-key-input" />
+
+          <!-- 私钥验证状态 -->
+          <div v-if="shouldShowTipWalletStatus" class="tip-wallet-status">
+            <div v-if="tipWalletBalance.loading" class="wallet-info-loading">
+              <Icon icon="mdi:loading" class="loading-icon" style="color: #1890ff; margin-right: 4px;" />
+              正在查询余额...
+            </div>
+            <div v-else-if="tipWalletBalance.valid" class="wallet-info-valid">
+              <div class="wallet-address">
+                <Icon icon="mdi:wallet" style="color: #00b42a; margin-right: 4px;" />
+                {{ tipWalletBalance.address?.substring(0, 10) }}...{{ tipWalletBalance.address?.slice(-8) }}
+              </div>
+              <div class="wallet-balance" :class="{ 'insufficient': !tipBalanceSufficient }">
+                <Icon icon="mdi:coins" style="margin-right: 4px;" />
+                {{ currentCoin?.coin_type === 'base' ? '平台币' : '代币' }}余额:
+                {{ tipWalletBalance.balance }} {{ currentCoin?.symbol || 'Token' }}
+              </div>
+              <div v-if="tipAmount && !tipBalanceSufficient" class="balance-warning">
+                <Icon icon="mdi:alert" style="color: #f53f3f; margin-right: 4px;" />
+                余额不足，需要 {{ tipAmount }} {{ currentCoin?.symbol || 'Token' }}
+              </div>
+            </div>
+            <div v-else-if="tipWalletBalance.error && tipWalletBalance.hasAttempted" class="wallet-info-invalid">
+              <Icon icon="mdi:alert-circle" style="color: #f53f3f; margin-right: 4px;" />
+              {{ tipWalletBalance.error }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 打赏金额选择 (仅私钥模式显示) -->
+      <div v-if="showPrivateKeyInput" class="tip-amount-section">
         <div class="tip-label">打赏金额:</div>
         <div class="tip-amount-options">
-          <a-button
-            v-for="amount in tipAmountOptions"
-            :key="amount"
-            type="outline"
-            size="mini"
-            @click="tipAmount = amount"
-            :class="{ 'selected': tipAmount === amount }"
-            class="tip-amount-btn"
-          >
+          <a-button v-for="amount in tipAmountOptions" :key="amount" type="outline" size="mini"
+            @click="tipAmount = amount" :class="{ 'selected': tipAmount === amount }" class="tip-amount-btn">
             {{ amount }}
           </a-button>
         </div>
-        <a-input
-          v-model="tipAmount"
-          placeholder="自定义金额"
-          :suffix="currentCoin?.symbol || 'Token'"
-          size="small"
-          style="margin-top: 8px;"
-        >
+        <a-input v-model="tipAmount" placeholder="自定义金额" size="small" style="margin-top: 8px;">
           <template #suffix>
             {{ currentCoin?.symbol || '未知' }}
           </template>
         </a-input>
+      </div>
+
+      <!-- 模式切换按钮 -->
+      <div class="tip-mode-switch">
+        <a-button v-if="showQRCode" type="outline" @click="switchTipMode('privatekey')" class="switch-mode-btn">
+          <Icon icon="mdi:key" style="margin-right: 4px;" />
+          也可通过本工具进行打赏
+        </a-button>
+        <a-button v-if="showPrivateKeyInput" type="outline" @click="switchTipMode('qrcode')" class="switch-mode-btn">
+          <Icon icon="mdi:qrcode" style="margin-right: 4px;" />
+          返回二维码打赏
+        </a-button>
       </div>
     </div>
 
@@ -4951,18 +5027,19 @@ async function handleBeforeClose() {
           </template>
           下次一定
         </a-button>
-        <a-button
-          type="primary"
-          @click="sendTip"
-          :loading="tipLoading"
+        <a-button v-if="showPrivateKeyInput" type="primary" @click="sendTip" :loading="tipLoading"
           :disabled="!tipWalletBalance.valid || !tipBalanceSufficient || !tipAmount || tipWalletBalance.loading"
-          size="large"
-          style="margin-left: 12px;"
-        >
+          size="large" style="margin-left: 12px;">
           <template #icon>
             <Icon icon="mdi:gift" />
           </template>
           {{ tipLoading ? '打赏中...' : '立即打赏' }}
+        </a-button>
+        <a-button v-if="showQRCode" type="primary" @click="skipTip" size="large" style="margin-left: 12px;">
+          <template #icon>
+            <Icon icon="mdi:check" />
+          </template>
+          已完成打赏
         </a-button>
       </div>
     </template>
@@ -5227,7 +5304,8 @@ async function handleBeforeClose() {
   top: 45px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10000; /* 设置比loading遮罩层(9999)更高的层级 */
+  z-index: 10000;
+  /* 设置比loading遮罩层(9999)更高的层级 */
   width: 90%;
   max-width: 600px;
   background: var(--card-bg, #ffffff);
@@ -5340,6 +5418,7 @@ async function handleBeforeClose() {
     opacity: 0;
     transform: scale(0.8);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -5347,34 +5426,48 @@ async function handleBeforeClose() {
 }
 
 @keyframes celebrationBounce {
-  0%, 20%, 50%, 80%, 100% {
+
+  0%,
+  20%,
+  50%,
+  80%,
+  100% {
     transform: translateY(0);
   }
+
   40% {
     transform: translateY(-30px);
   }
+
   60% {
     transform: translateY(-15px);
   }
 }
 
 @keyframes celebrationRotate {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: rotate(0deg);
   }
+
   25% {
     transform: rotate(-10deg);
   }
+
   75% {
     transform: rotate(10deg);
   }
 }
 
 @keyframes celebrationPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.8;
     transform: scale(1);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.05);
@@ -5459,8 +5552,13 @@ async function handleBeforeClose() {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .wallet-info-valid {
@@ -5546,5 +5644,152 @@ async function handleBeforeClose() {
   gap: 12px;
 }
 
+/* 二维码显示区域样式 */
+.tip-qrcode-section {
+  margin-bottom: 16px;
+  margin-top: 10px;
+}
 
+.qrcode-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  background: var(--color-fill-1, #f7f8fa);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.qrcode-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 200px;
+  height: 200px;
+  background: white;
+  border-radius: 8px;
+  border: 2px solid var(--color-border-2, #e5e6eb);
+  margin-bottom: 16px;
+}
+
+.qrcode-image {
+  width: 180px;
+  height: 180px;
+  border-radius: 4px;
+}
+
+.qrcode-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-color-secondary, #86909c);
+  font-size: 14px;
+}
+
+.address-info {
+  width: 100%;
+  text-align: center;
+}
+
+.address-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color, #1d2129);
+  margin-bottom: 8px;
+}
+
+.address-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-2, #e5e6eb);
+}
+
+.address-text {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--text-color, #1d2129);
+  word-break: break-all;
+  flex: 1;
+}
+
+.copy-btn {
+  padding: 4px;
+  min-width: auto;
+  height: auto;
+  color: var(--color-primary, #165dff);
+}
+
+.copy-btn:hover {
+  background-color: var(--color-primary-light-1, #e8f4ff);
+}
+
+.qrcode-note {
+  margin-top: 0;
+}
+
+/* 私钥输入模式样式 */
+.private-key-input-area {
+  margin-top: 12px;
+}
+
+/* 模式切换按钮样式 */
+.tip-mode-switch {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.switch-mode-btn {
+  font-size: 13px;
+  padding: 8px 16px;
+  border-color: var(--color-primary, #165dff);
+  color: var(--color-primary, #165dff);
+}
+
+.switch-mode-btn:hover {
+  background-color: var(--color-primary-light-1, #e8f4ff);
+  border-color: var(--color-primary, #165dff);
+  color: var(--color-primary, #165dff);
+}
+
+/* 安全声明样式 */
+.security-disclaimer {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+/* 二维码金额选择区域样式 */
+.qr-amount-section {
+  margin: 16px 0;
+  padding: 12px;
+  background: var(--color-fill-1, #f7f8fa);
+  border-radius: 6px;
+  border: 1px solid var(--color-border-2, #e5e6eb);
+}
+
+.selected-amount-display {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 4px;
+  color: #389e0d;
+  font-size: 13px;
+  font-weight: 500;
+}
 </style>

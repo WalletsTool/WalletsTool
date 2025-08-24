@@ -23,6 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .trae
+.qoder
 
 # Tauri generated files
 src-tauri/gen/

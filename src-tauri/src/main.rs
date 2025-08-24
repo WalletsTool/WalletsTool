@@ -58,6 +58,11 @@ async fn show_main_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("WalletsTool") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+        
+        // 在Windows系统中强制窗口置顶，然后立即取消置顶状态
+        // 这样可以确保窗口弹出到最上层而不会一直保持在最上层
+        window.set_always_on_top(true).map_err(|e| e.to_string())?;
+        window.set_always_on_top(false).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -258,7 +263,7 @@ async fn main() {
                         
                         // 在短暂延迟后恢复窗口的正常状态
                         tokio::spawn(async move {
-                            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
                             if let Err(e) = window_clone.set_always_on_top(false) {
                                 eprintln!("恢复窗口正常状态失败: {}", e);
                             }

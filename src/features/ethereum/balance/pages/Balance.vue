@@ -1572,7 +1572,7 @@ async function handleBeforeClose() {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  text-fill-color: transparent;
+  -webkit-text-fill-color: transparent;
   position: relative;
   display: inline-block;
 }
@@ -1596,6 +1596,7 @@ async function handleBeforeClose() {
   line-height: 100px;
   font-size: 100px;
   background-image: linear-gradient(to bottom, #f2f3f5, #ffffff);
+  background-clip: text;
   -webkit-background-clip: text;
   font-weight: 600;
   height: 120px;

@@ -719,11 +719,30 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                 "exec_status": "1"
             }));
             
-            // 多轮优化策略：从保守到激进
-            let safety_margins = [103, 102, 101]; // 3%, 2%, 1%安全边际
-            let search_ranges = [98, 99, 99]; // 98%, 99%, 99%搜索范围
+            // 根据金额大小动态调整优化策略
+            let balance_eth = ethers::utils::format_units(balance, 18)
+                .unwrap_or_default()
+                .parse::<f64>()
+                .unwrap_or(0.0);
             
-            println!("序号：{}, 开始多轮二分法优化，余额: {}", index, balance);
+            let (safety_margins, search_ranges, max_iterations, amount_type): (Vec<i32>, Vec<i32>, usize, &str) = if balance_eth > 0.1 {
+                // 大金额：4轮，每轮25次迭代
+                (vec![104, 103, 102, 101], vec![97, 98, 99, 99], 25, "大金额")
+            } else if balance_eth > 0.01 {
+                // 中型金额：3轮，每轮20次迭代
+                (vec![103, 102, 101], vec![98, 99, 99], 20, "中型金额")
+            } else if balance_eth > 0.001 {
+                // 小型金额：2轮，每轮15次迭代
+                (vec![102, 101], vec![98, 99], 15, "小型金额")
+            } else {
+                // 极简金额：1轮，10次迭代
+                (vec![101], vec![99], 10, "极简金额")
+            };
+            
+            println!("序号：{}, 开始多轮二分法优化，余额: {} ETH ({})", index, balance_eth, amount_type);
+            
+            let mut no_improvement_count = 0; // 连续无改进计数器
+            let mut last_best_amount = final_transfer_amount;
             
             for (round, (&margin, &range)) in safety_margins.iter().zip(search_ranges.iter()).enumerate() {
                 // 发送当前轮次状态到前端
@@ -746,8 +765,8 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                 let mut best_amount = final_transfer_amount;
                 let mut best_gas_limit = final_gas_limit;
                 
-                // 二分法最多尝试20次
-                for iteration in 0..20 {
+                // 使用动态迭代次数
+                for iteration in 0..max_iterations {
                     if high <= low {
                         break;
                     }
@@ -815,13 +834,28 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                         println!("序号：{}, 第{}轮成功: 转账金额={}, gas_limit={}, 剩余={}", 
                             index, round + 1, final_transfer_amount, final_gas_limit, 
                             balance - verification_cost);
+                        
+                        // 检查是否有显著改进
+                        if final_transfer_amount > last_best_amount {
+                            no_improvement_count = 0; // 重置计数器
+                            last_best_amount = final_transfer_amount;
+                        } else {
+                            no_improvement_count += 1;
+                        }
                     } else {
                         println!("序号：{}, 第{}轮验证失败，保持上一轮结果", index, round + 1);
+                        no_improvement_count += 1;
                         break; // 验证失败，停止更激进的尝试
                     }
                 } else {
-                    println!("序号：{}, 第{}轮无改进，停止优化", index, round + 1);
-                    break; // 没有改进，停止后续轮次
+                    no_improvement_count += 1;
+                    println!("序号：{}, 第{}轮无改进，连续无改进次数: {}", index, round + 1, no_improvement_count);
+                }
+                
+                // 收敛检测：连续3次无改进时提前退出
+                if no_improvement_count >= 3 {
+                    println!("序号：{}, 连续{}次无改进，提前结束优化", index, no_improvement_count);
+                    break;
                 }
             }
             

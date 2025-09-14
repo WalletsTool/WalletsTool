@@ -82,35 +82,43 @@ impl TokenTransferUtils {
     pub async fn get_contract_gas_limit(
         config: &TokenTransferConfig,
         provider: Arc<Provider<Http>>,
-        contract_address: Address,
-        _wallet_address: Address,
+        _contract_address: Address,
+        wallet_address: Address,
         to_address: Address,
         transfer_amount: U256,
     ) -> Result<U256, Box<dyn std::error::Error>> {
+        // 将TokenTransferConfig转换为TransferConfig
+        let transfer_config = TransferConfig {
+            chain: config.chain.clone(),
+            delay: config.delay,
+            transfer_type: config.transfer_type.clone(),
+            transfer_amount: config.transfer_amount,
+            transfer_amount_list: config.transfer_amount_list.clone(),
+            left_amount_list: config.left_amount_list.clone(),
+            amount_precision: config.amount_precision,
+            limit_type: config.limit_type.clone(),
+            limit_count: config.limit_count,
+            limit_count_list: config.limit_count_list.clone(),
+            gas_price_type: config.gas_price_type.clone(),
+            gas_price: config.gas_price,
+            gas_price_rate: config.gas_price_rate,
+            max_gas_price: config.max_gas_price,
+            error_retry: config.error_retry.clone(),
+            error_count_limit: config.error_count_limit,
+        };
+        
         match config.limit_type.as_str() {
             "1" => {
                 // 自动估算Gas Limit
-                let abi: ethers::abi::Abi = serde_json::from_str(ERC20_ABI)?;
-                let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_address, abi, provider.clone());
-                
-                // 构建transfer调用数据
-                let call = contract.method::<_, bool>("transfer", (to_address, transfer_amount))?;
-                let tx = call.tx;
-                
-                let estimated_gas = provider.estimate_gas(&tx, None).await?;
-                
-                // 添加合理性检查：ERC20转账的gas limit通常在50000-200000范围内
-                // 如果估算值过高（超过500000），使用安全的默认值
-                let gas_limit = if estimated_gas > U256::from(500_000) {
-                    println!("警告：估算的 token gas limit {} 异常过高，使用默认值 100000", estimated_gas);
-                    U256::from(100_000)
-                } else if estimated_gas < U256::from(50_000) {
-                    // 如果估算值过低，使用最小安全值
-                    U256::from(50_000)
-                } else {
-                    // 为估算值添加20%的安全边际
-                    estimated_gas * U256::from(120) / U256::from(100)
-                };
+                // 使用新的gas limit函数，传入is_eth=false表示这是代币转账
+                let gas_limit = TransferUtils::get_gas_limit_with_token_type(
+                    &transfer_config,
+                    provider.clone(),
+                    wallet_address, // from地址
+                    to_address,      // to地址
+                    transfer_amount, // 转账金额
+                    false // is_eth = false，表示这是代币转账
+                ).await?;
                 
                 Ok(gas_limit)
             }

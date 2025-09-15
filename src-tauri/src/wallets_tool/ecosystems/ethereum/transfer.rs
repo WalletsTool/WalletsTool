@@ -195,6 +195,18 @@ pub async fn create_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn
     Ok(Arc::new(provider))
 }
 
+// 随机获取Provider的辅助函数
+pub async fn get_random_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn std::error::Error>> {
+    let rpc_config = get_rpc_config(chain).await
+        .ok_or(format!("不支持的链: {}", chain))?;
+    
+    let rpc_url = rpc_config.get_random_rpc();
+    println!("使用RPC: {}", rpc_url);
+    let provider = Provider::<Http>::try_from(rpc_url)?;
+    
+    Ok(Arc::new(provider))
+}
+
 // 转账工具函数
 pub struct TransferUtils;
 
@@ -587,8 +599,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
 ) -> Result<String, Box<dyn std::error::Error>> {
     item.retry_flag = false;
     
-    // 创建Provider
-    let provider = create_provider(&config.chain).await?;
+    // 不再在方法开头创建固定的provider，改为在每次RPC调用时动态获取
     
     // 创建钱包
     if item.private_key.trim().is_empty() {
@@ -621,16 +632,19 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     })?;
     
     // 预检查余额是否充足（避免RPC调用后才发现余额不足）
-    TransferUtils::pre_check_balance(&config, provider.clone(), wallet_address, to_address).await?;
+    let provider_for_precheck = get_random_provider(&config.chain).await?;
+    TransferUtils::pre_check_balance(&config, provider_for_precheck.clone(), wallet_address, to_address).await?;
     
     // 获取余额
-    let balance = provider.get_balance(wallet_address, None).await?;
+    let provider_for_balance = get_random_provider(&config.chain).await?;
+    let balance = provider_for_balance.get_balance(wallet_address, None).await?;
     let balance_ether_str = format_ether(balance);
     
     println!("序号：{}, 当前余额为: {} ETH", index, balance_ether_str);
     
     // 获取Gas Price
-    let gas_price = TransferUtils::get_gas_price(&config, provider.clone()).await?;
+    let provider_for_gas_price = get_random_provider(&config.chain).await?;
+    let gas_price = TransferUtils::get_gas_price(&config, provider_for_gas_price.clone()).await?;
     
 
     
@@ -648,9 +662,10 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                 // 全部转账：使用多层回退机制估算gas limit
                 // 1. 首先尝试用余额的90%估算
                 let amount_90_percent = balance * U256::from(90) / U256::from(100);
+                let provider_for_gas_limit_90 = get_random_provider(&config.chain).await?;
                 match TransferUtils::get_gas_limit(
                      &config,
-                     provider.clone(),
+                     provider_for_gas_limit_90.clone(),
                      wallet_address,
                      to_address,
                      amount_90_percent,
@@ -660,9 +675,10 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                          println!("序号：{}, 90%余额估算gas limit失败，尝试0.001 ETH估算", index);
                          // 2. 如果90%估算失败，尝试用0.001 ETH估算
                          let fallback_amount = parse_ether(0.000003).map_err(|e| format!("解析金额失败: {}", e))?;
+                         let provider_for_gas_limit_fallback = get_random_provider(&config.chain).await?;
                          match TransferUtils::get_gas_limit(
                              &config,
-                             provider.clone(),
+                             provider_for_gas_limit_fallback.clone(),
                              wallet_address,
                              to_address,
                              fallback_amount,
@@ -679,9 +695,10 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
             } else {
                 // 其他转账类型使用最小金额估算
                 let estimate_amount = parse_ether(0.000003).map_err(|e| format!("解析金额失败: {}", e))?;
+                let provider_for_gas_limit_estimate = get_random_provider(&config.chain).await?;
                 TransferUtils::get_gas_limit(
                     &config,
-                    provider.clone(),
+                    provider_for_gas_limit_estimate.clone(),
                     wallet_address,
                     to_address,
                     estimate_amount,
@@ -778,9 +795,10 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                     
                     // 估算这个转账金额需要的gas limit
                     let estimated_gas_limit = if config.limit_type == "1" {
+                        let provider_for_gas_estimation = get_random_provider(&config.chain).await?;
                         match TransferUtils::get_gas_limit(
                             &config,
-                            provider.clone(),
+                            provider_for_gas_estimation.clone(),
                             wallet_address,
                             to_address,
                             mid,
@@ -879,9 +897,10 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                     
                     // 重新估算gas limit
                     if config.limit_type == "1" {
+                        let provider_for_final_gas = get_random_provider(&config.chain).await?;
                         if let Ok(new_gas_limit) = TransferUtils::get_gas_limit(
                             &config,
-                            provider.clone(),
+                            provider_for_final_gas.clone(),
                             wallet_address,
                             to_address,
                             new_transfer_amount,
@@ -1025,7 +1044,8 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         "exec_status": "1"
     }));
     
-    let client = SignerMiddleware::new(provider.clone(), wallet);
+    let provider_for_transaction = get_random_provider(&config.chain).await?;
+    let client = SignerMiddleware::new(provider_for_transaction.clone(), wallet);
     let pending_tx = client.send_transaction(tx, None).await?;
     
     println!("序号：{}, 交易 hash 为：{:?}", index, pending_tx.tx_hash());
@@ -1069,7 +1089,7 @@ async fn query_balance_internal(
     chain: String,
     address: String,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let provider = create_provider(&chain).await?;
+    let provider = get_random_provider(&chain).await?;
     if address.trim().is_empty() {
         return Err("查询地址不能为空！".into());
     }
@@ -1124,7 +1144,7 @@ async fn check_wallet_recent_transfers_internal(
     contract_address: Option<String>,
 ) -> Result<RecentTransferResult, Box<dyn std::error::Error>> {
     // 创建Provider
-    let provider = create_provider(&chain).await?;
+    let provider = get_random_provider(&chain).await?;
     
     // 处理私钥格式
     let private_key = if private_key.starts_with("0x") || private_key.starts_with("0X") {

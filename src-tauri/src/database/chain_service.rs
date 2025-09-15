@@ -137,7 +137,7 @@ impl<'a> ChainService<'a> {
 
         // 添加RPC URLs
         if let Some(rpc_urls) = request.rpc_urls {
-            for (index, rpc_url) in rpc_urls.iter().enumerate() {
+            for rpc_url in rpc_urls.iter() {
                 if !rpc_url.trim().is_empty() {
                     sqlx::query(
                         r#"
@@ -148,7 +148,7 @@ impl<'a> ChainService<'a> {
                     )
                     .bind(chain_id)
                     .bind(rpc_url.trim())
-                    .bind((index + 1) as i32)
+                    .bind(100)
                     .bind(now)
                     .bind(now)
                     .execute(self.pool)
@@ -221,7 +221,7 @@ impl<'a> ChainService<'a> {
             .await?;
             
             // 添加新的RPC提供商
-            for (index, rpc_url) in rpc_urls.iter().enumerate() {
+            for rpc_url in rpc_urls.iter() {
                 sqlx::query(
                     r#"
                     INSERT INTO rpc_providers (
@@ -231,7 +231,7 @@ impl<'a> ChainService<'a> {
                 )
                 .bind(chain.id)
                 .bind(rpc_url)
-                .bind(index as i32 + 1)
+                .bind(100)
                 .bind(now)
                 .bind(now)
                 .execute(self.pool)

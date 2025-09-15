@@ -139,12 +139,48 @@
               <icon-delete />
             </a-button>
           </div>
-          <div style="margin-top: 8px;">
+          <div style="margin-top: 8px; display: flex; gap: 8px;">
             <a-button @click="addRpcUrl" type="outline" size="small">
               <icon-plus />
               添加RPC
             </a-button>
+            <a-button @click="showBatchRpcInput" type="outline" size="small">
+              <icon-plus />
+              批量添加
+            </a-button>
           </div>
+          
+          <!-- 批量添加RPC弹窗 -->
+          <a-modal v-model:visible="batchRpcVisible" title="批量添加RPC地址" width="600px" @ok="addBatchRpcs" @cancel="closeBatchRpc">
+            <div style="margin-bottom: 16px;">
+              <div style="margin-bottom: 8px; color: #666; font-size: 14px;">
+                请每行输入一个RPC地址，系统将自动校验和去重：
+              </div>
+              <a-textarea 
+                v-model="batchRpcText" 
+                placeholder="https://mainnet.infura.io/v3/your-key&#10;https://eth-mainnet.alchemyapi.io/v2/your-key&#10;https://rpc.ankr.com/eth"
+                :rows="8"
+                style="width: 100%;"
+              />
+            </div>
+            
+            <!-- 校验结果显示 -->
+            <div v-if="batchRpcValidation.length > 0" style="margin-bottom: 16px;">
+              <div style="margin-bottom: 8px; font-weight: 500;">校验结果：</div>
+              <div v-for="(item, index) in batchRpcValidation" :key="index" 
+                   :style="{color: item.valid ? '#52c41a' : '#ff4d4f', fontSize: '12px', marginBottom: '4px'}">
+                {{ item.url }} - {{ item.message }}
+              </div>
+            </div>
+            
+            <!-- 统计信息 -->
+            <div v-if="batchRpcStats.total > 0" style="background: #f6f8fa; padding: 12px; border-radius: 4px; font-size: 14px;">
+              <div>总计：{{ batchRpcStats.total }} 个地址</div>
+              <div style="color: #52c41a;">有效：{{ batchRpcStats.valid }} 个</div>
+              <div style="color: #ff4d4f;">无效：{{ batchRpcStats.invalid }} 个</div>
+              <div style="color: #faad14;">重复：{{ batchRpcStats.duplicate }} 个</div>
+            </div>
+          </a-modal>
         </div>
       </a-form-item>
     </a-form>
@@ -169,6 +205,17 @@ const chainManageData = ref([])
 const currentEditChain = ref(null)
 const chainTableLoading = ref(false)
 const uploadedIconData = ref(null)
+
+// 批量添加RPC相关
+const batchRpcVisible = ref(false)
+const batchRpcText = ref('')
+const batchRpcValidation = ref([])
+const batchRpcStats = reactive({
+  total: 0,
+  valid: 0,
+  invalid: 0,
+  duplicate: 0
+})
 
 // 链信息表单
 const chainForm = reactive({
@@ -275,6 +322,199 @@ function removeRpcUrl(index) {
   }
 }
 
+// 显示批量添加RPC弹窗
+function showBatchRpcInput() {
+  batchRpcVisible.value = true
+  batchRpcText.value = ''
+  batchRpcValidation.value = []
+  resetBatchRpcStats()
+}
+
+// 关闭批量添加RPC弹窗
+function closeBatchRpc() {
+  batchRpcVisible.value = false
+  batchRpcText.value = ''
+  batchRpcValidation.value = []
+  resetBatchRpcStats()
+}
+
+// 重置批量RPC统计
+function resetBatchRpcStats() {
+  Object.assign(batchRpcStats, {
+    total: 0,
+    valid: 0,
+    invalid: 0,
+    duplicate: 0
+  })
+}
+
+// 校验RPC地址
+function validateRpcUrl(url) {
+  const trimmedUrl = url.trim()
+  if (!trimmedUrl) {
+    return { valid: false, message: '地址为空' }
+  }
+  
+  // 检查是否为有效的URL格式
+  try {
+    new URL(trimmedUrl)
+  } catch {
+    return { valid: false, message: '无效的URL格式' }
+  }
+  
+  // 检查是否以http或https开头
+  if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+    return { valid: false, message: '必须以http://或https://开头' }
+  }
+  
+  // 建议使用https
+  if (trimmedUrl.startsWith('http://')) {
+    return { valid: true, message: '有效（建议使用https）' }
+  }
+  
+  return { valid: true, message: '有效' }
+}
+
+// URL标准化函数
+function normalizeUrl(url) {
+  try {
+    const urlObj = new URL(url.trim())
+    // 移除末尾斜杠，转换为小写
+    return urlObj.href.toLowerCase().replace(/\/$/, '')
+  } catch {
+    return url.trim().toLowerCase().replace(/\/$/, '')
+  }
+}
+
+// 批量添加RPC
+function addBatchRpcs() {
+  if (!batchRpcText.value.trim()) {
+    Notification.warning('请输入RPC地址')
+    return
+  }
+  
+  // 解析输入的RPC地址
+  const inputUrls = batchRpcText.value
+    .split('\n')
+    .map(url => url.trim())
+    .filter(url => url.length > 0)
+  
+  if (inputUrls.length === 0) {
+    Notification.warning('请输入有效的RPC地址')
+    return
+  }
+  
+  // 校验和统计
+  const validation = []
+  const validUrls = []
+  // 获取现有RPC地址并标准化用于去重比较
+  const existingNormalizedUrls = new Set(
+    chainForm.rpc_urls
+      .filter(url => url.trim())
+      .map(url => normalizeUrl(url))
+  )
+  const seenNormalizedUrls = new Set()
+  
+  resetBatchRpcStats()
+  batchRpcStats.total = inputUrls.length
+  
+  inputUrls.forEach(url => {
+    const result = validateRpcUrl(url)
+    const normalizedUrl = normalizeUrl(url)
+    
+    if (!result.valid) {
+      validation.push({ url, valid: false, message: result.message })
+      batchRpcStats.invalid++
+    } else if (existingNormalizedUrls.has(normalizedUrl)) {
+      validation.push({ url, valid: false, message: '重复地址（已存在）' })
+      batchRpcStats.duplicate++
+    } else if (seenNormalizedUrls.has(normalizedUrl)) {
+      validation.push({ url, valid: false, message: '重复地址（输入重复）' })
+      batchRpcStats.duplicate++
+    } else {
+      validation.push({ url, valid: true, message: result.message })
+      validUrls.push(url)
+      seenNormalizedUrls.add(normalizedUrl)
+      existingNormalizedUrls.add(normalizedUrl)
+      batchRpcStats.valid++
+    }
+  })
+  
+  batchRpcValidation.value = validation
+  
+  // 如果有有效的URL，添加到表单中
+  if (validUrls.length > 0) {
+    // 移除空的RPC URL
+    const filteredRpcs = chainForm.rpc_urls.filter(url => url.trim())
+    chainForm.rpc_urls = [...filteredRpcs, ...validUrls]
+    
+    Notification.success(`成功添加 ${validUrls.length} 个RPC地址`)
+    
+    // 延迟关闭弹窗，让用户看到结果
+    setTimeout(() => {
+      closeBatchRpc()
+    }, 2000)
+  } else {
+    Notification.warning('没有有效的RPC地址可以添加')
+  }
+}
+
+// 实时校验批量RPC输入
+function validateBatchRpcInput() {
+  if (!batchRpcText.value.trim()) {
+    batchRpcValidation.value = []
+    resetBatchRpcStats()
+    return
+  }
+  
+  // 解析输入的RPC地址
+  const inputUrls = batchRpcText.value
+    .split('\n')
+    .map(url => url.trim())
+    .filter(url => url.length > 0)
+  
+  // 获取现有RPC地址并标准化用于去重比较
+  const existingNormalizedUrls = new Set(
+    chainForm.rpc_urls
+      .filter(url => url.trim())
+      .map(url => normalizeUrl(url))
+  )
+  
+  // 校验和统计
+  const validation = []
+  const seenNormalizedUrls = new Set()
+  
+  resetBatchRpcStats()
+  batchRpcStats.total = inputUrls.length
+  
+  inputUrls.forEach(url => {
+    const result = validateRpcUrl(url)
+    const normalizedUrl = normalizeUrl(url)
+    
+    if (!result.valid) {
+      validation.push({ url, valid: false, message: result.message })
+      batchRpcStats.invalid++
+    } else if (existingNormalizedUrls.has(normalizedUrl)) {
+      validation.push({ url, valid: false, message: '重复地址（已存在）' })
+      batchRpcStats.duplicate++
+    } else if (seenNormalizedUrls.has(normalizedUrl)) {
+      validation.push({ url, valid: false, message: '重复地址（输入重复）' })
+      batchRpcStats.duplicate++
+    } else {
+      validation.push({ url, valid: true, message: result.message })
+      seenNormalizedUrls.add(normalizedUrl)
+      batchRpcStats.valid++
+    }
+  })
+  
+  batchRpcValidation.value = validation
+}
+
+// 监听批量RPC文本变化
+watch(batchRpcText, () => {
+  validateBatchRpcInput()
+}, { immediate: true })
+
 // 上传链图标
 function uploadChainIcon(option) {
   const file = option.fileItem.file
@@ -307,7 +547,7 @@ async function submitChainForm() {
       ...chainForm,
       chain_id: parseInt(chainForm.chain_id),
       native_currency_decimals: parseInt(chainForm.native_currency_decimals),
-      rpc_urls: filteredRpcUrls,
+      rpc_urls: filteredRpcUrls,  // 直接使用字符串数组，后端会自动设置priority为100
       // 在编辑模式下，如果没有上传新图标，保留原有图标数据
       pic_data: uploadedIconData.value || (isEditMode.value && currentEditChain.value ? currentEditChain.value.pic_data : null)
     }

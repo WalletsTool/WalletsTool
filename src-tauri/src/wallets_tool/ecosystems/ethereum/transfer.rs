@@ -201,7 +201,7 @@ pub async fn get_random_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box
         .ok_or(format!("不支持的链: {}", chain))?;
     
     let rpc_url = rpc_config.get_random_rpc();
-    println!("使用RPC: {}", rpc_url);
+    println!("[INFO] 当前使用RPC: {}", rpc_url);
     let provider = Provider::<Http>::try_from(rpc_url)?;
     
     Ok(Arc::new(provider))

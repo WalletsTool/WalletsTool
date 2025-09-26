@@ -486,6 +486,22 @@ impl TransferUtils {
         value: U256,
         is_eth: bool,
     ) -> Result<U256, String> {
+        // 首先获取区块gas limit作为上限检查
+        let block_gas_limit = match Self::get_block_gas_limit(provider.clone()).await {
+            Ok(limit) => {
+                println!("[DEBUG] 获取到区块gas limit: {}", limit);
+                limit
+            }
+            Err(e) => {
+                println!("[WARN] 获取区块gas limit失败: {}, 使用默认上限", e);
+                U256::from(30_000_000) // 使用一个合理的默认上限
+            }
+        };
+        
+        // 计算区块gas limit的80%作为安全上限
+        let max_safe_gas_limit = block_gas_limit * U256::from(80) / U256::from(100);
+        println!("[DEBUG] 区块gas limit安全上限(80%): {}", max_safe_gas_limit);
+        
         match config.limit_type.as_str() {
             "1" => {
                 // 自动估算Gas Limit
@@ -496,72 +512,107 @@ impl TransferUtils {
                 
                 let estimated_gas = match provider.estimate_gas(&tx.into(), None).await {
                     Ok(gas) => {
-                        eprintln!("estimated_gas: {}", gas);
+                        println!("[DEBUG] estimate_gas成功: {}", gas);
                         gas
                     }
                     Err(e) => {
-                        eprintln!("estimate_gas failed: {}, 尝试获取最近3个区块transfer交易的平均gas limit", e);
+                        println!("[WARN] estimate_gas失败: {}, 尝试获取最近3个区块transfer交易的平均gas limit", e);
                         // 尝试获取最近3个区块transfer交易的平均gas limit
                         if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
-                            println!("使用最近3个区块transfer交易的平均gas limit: {}", avg_gas_limit);
+                            println!("[INFO] 使用最近3个区块transfer交易的平均gas limit: {}", avg_gas_limit);
                             avg_gas_limit
                         } else {
-                            eprintln!("获取区块gas limit也失败，使用备用默认值 50000");
-                            U256::from(50_000)
+                            println!("[WARN] 获取平均gas limit也失败，使用区块gas limit的合理比例");
+                            // 优先使用区块gas limit的合理比例，而不是固定默认值
+                            if is_eth {
+                                // ETH转账使用区块gas limit的1%，最小21000
+                                std::cmp::max(
+                                    block_gas_limit / U256::from(100),
+                                    U256::from(21_000)
+                                )
+                            } else {
+                                // 代币转账使用区块gas limit的5%，最小200000
+                                std::cmp::max(
+                                    block_gas_limit * U256::from(5) / U256::from(100),
+                                    U256::from(200_000)
+                                )
+                            }
                         }
-                    }
-                };
-                // 添加合理性检查：根据代币类型区分处理
-                let gas_limit = if is_eth {
-                    // ETH转账的gas limit处理
-                    if estimated_gas > U256::from(150_000_000) {
-                        println!("警告：ETH转账估算的 gas limit {} 异常过高，使用默认值 150000000", estimated_gas);
-                        U256::from(150_000_000)
-                    } else if estimated_gas < U256::from(21_000) {
-                        // ETH转账最小值为21000
-                        U256::from(21_000)
-                    } else {
-                        // 为估算值添加5%的安全边际
-                        estimated_gas * U256::from(105) / U256::from(100)
-                    }
-                } else {
-                    // 代币转账的gas limit处理
-                    if estimated_gas > U256::from(100_000_000) {
-                        println!("警告：代币转账估算的 gas limit {} 异常过高，使用平均gas limit", estimated_gas);
-                        // 使用最近3个区块transfer交易的平均gas limit
-                        if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
-                            avg_gas_limit
-                        } else if let Ok(block_gas_limit) = Self::get_block_gas_limit(provider.clone()).await {
-                            block_gas_limit * U256::from(80) / U256::from(100)
-                        } else {
-                            U256::from(200_000) // 代币转账的合理默认值
-                        }
-                    } else if estimated_gas < U256::from(21_000) {
-                        // 代币转账使用平均gas limit
-                        if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
-                            avg_gas_limit
-                        } else if let Ok(block_gas_limit) = Self::get_block_gas_limit(provider.clone()).await {
-                            block_gas_limit * U256::from(80) / U256::from(100)
-                        } else {
-                            U256::from(200_000) // 代币转账的合理默认值
-                        }
-                    } else {
-                        // 为估算值添加20%的安全边际
-                        estimated_gas * U256::from(120) / U256::from(100)
                     }
                 };
                 
+                // 添加合理性检查：根据代币类型区分处理
+                let mut gas_limit = if is_eth {
+                    // ETH转账的gas limit处理
+                    if estimated_gas < U256::from(21_000) {
+                        // ETH转账最小值为21000
+                        println!("[DEBUG] ETH转账gas limit过小，使用最小值21000");
+                        U256::from(21_000)
+                    } else {
+                        // 为估算值添加5%的安全边际
+                        let gas_with_margin = estimated_gas * U256::from(105) / U256::from(100);
+                        println!("[DEBUG] ETH转账添加5%安全边际: {} -> {}", estimated_gas, gas_with_margin);
+                        gas_with_margin
+                    }
+                } else {
+                    // 代币转账的gas limit处理
+                    if estimated_gas < U256::from(21_000) {
+                        // 代币转账使用平均gas limit或区块gas limit的合理比例
+                        println!("[DEBUG] 代币转账gas limit过小，使用备用方案");
+                        if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
+                            avg_gas_limit
+                        } else {
+                            // 使用区块gas limit的5%作为代币转账的合理默认值
+                            std::cmp::max(
+                                block_gas_limit * U256::from(5) / U256::from(100),
+                                U256::from(200_000)
+                            )
+                        }
+                    } else {
+                        // 为估算值添加20%的安全边际
+                        let gas_with_margin = estimated_gas * U256::from(120) / U256::from(100);
+                        println!("[DEBUG] 代币转账添加20%安全边际: {} -> {}", estimated_gas, gas_with_margin);
+                        gas_with_margin
+                    }
+                };
+                
+                // 关键检查：确保gas limit不超过区块限制
+                if gas_limit > max_safe_gas_limit {
+                    println!("[WARN] 估算的gas limit {} 超过区块安全上限 {}，调整为安全上限", gas_limit, max_safe_gas_limit);
+                    gas_limit = max_safe_gas_limit;
+                }
+                
+                // 最终验证：确保gas limit在合理范围内
+                if gas_limit > block_gas_limit {
+                    println!("[ERROR] gas limit {} 仍然超过区块限制 {}，强制设为区块限制的70%", gas_limit, block_gas_limit);
+                    gas_limit = block_gas_limit * U256::from(70) / U256::from(100);
+                }
+                
+                println!("[INFO] 最终确定的gas limit: {}", gas_limit);
                 Ok(gas_limit)
             }
             "2" => {
-                // 使用固定Gas Limit
-                Ok(U256::from(config.limit_count))
+                // 使用固定Gas Limit，但仍需检查是否超过区块限制
+                let fixed_gas_limit = U256::from(config.limit_count);
+                if fixed_gas_limit > max_safe_gas_limit {
+                    println!("[WARN] 固定gas limit {} 超过区块安全上限 {}，调整为安全上限", fixed_gas_limit, max_safe_gas_limit);
+                    Ok(max_safe_gas_limit)
+                } else {
+                    Ok(fixed_gas_limit)
+                }
             }
             "3" => {
-                // 使用随机Gas Limit
+                // 使用随机Gas Limit，但仍需检查是否超过区块限制
                 let mut rng = rand::thread_rng();
-                let gas_limit = rng.gen_range(config.limit_count_list[0]..=config.limit_count_list[1]);
-                Ok(U256::from(gas_limit))
+                let random_gas_limit = rng.gen_range(config.limit_count_list[0]..=config.limit_count_list[1]);
+                let gas_limit = U256::from(random_gas_limit);
+                
+                if gas_limit > max_safe_gas_limit {
+                    println!("[WARN] 随机gas limit {} 超过区块安全上限 {}，调整为安全上限", gas_limit, max_safe_gas_limit);
+                    Ok(max_safe_gas_limit)
+                } else {
+                    Ok(gas_limit)
+                }
             }
             _ => Err("gas limit type error".to_string()),
         }

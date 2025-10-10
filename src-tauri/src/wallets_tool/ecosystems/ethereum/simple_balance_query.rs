@@ -11,7 +11,7 @@ use tokio::time::{sleep, Duration};
 use tauri::Emitter;
 use rand;
 use ethers::signers::{LocalWallet, Signer};
-use crate::database::{get_database_manager, rpc_service::RpcService};
+use crate::database::{get_database_manager, rpc_service::RpcService, chain_service::ChainService};
 
 // 基于窗口ID的停止标志映射
 static STOP_FLAGS: LazyLock<Mutex<HashMap<String, AtomicBool>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -170,7 +170,6 @@ impl SimpleBalanceQueryService {
     async fn query_base_balance(&self, item: &mut QueryItem, chain: &str) -> Result<()> {
         let rpc_url = self.get_rpc_url(chain).await?;
         
-        
         // 查询余额
         let balance_result = self.send_rpc_request(
             &rpc_url,
@@ -179,48 +178,16 @@ impl SimpleBalanceQueryService {
         ).await?;
 
         if let Some(balance_hex) = balance_result.as_str() {
-            
-            // 检查十六进制字符串长度
             let hex_without_prefix = &balance_hex[2..];
-            
-            // 将十六进制转换为十进制，使用u128避免溢出
             match u128::from_str_radix(hex_without_prefix, 16) {
                 Ok(balance_wei) => {
                     let balance_eth = balance_wei as f64 / 1e18;
                     item.plat_balance = Some(format!("{:.6}", balance_eth));
                 }
                 Err(e) => {
-                    println!("[ERROR] 十六进制转换失败 - 链: {}, 地址: {}, 十六进制: {}, 错误: {}", 
-                            chain, item.address, balance_hex, e);
                     return Err(anyhow!("余额数值转换失败: {} (原始值: {})", e, balance_hex));
                 }
             }
-        } else {
-            println!("[WARNING] 余额查询返回空值 - 链: {}, 地址: {}", chain, item.address);
-        }
-
-        // 查询 nonce
-        let nonce_result = self.send_rpc_request(
-            &rpc_url,
-            "eth_getTransactionCount",
-            serde_json::json!([item.address, "latest"])
-        ).await?;
-
-        if let Some(nonce_hex) = nonce_result.as_str() {
-            let nonce_without_prefix = &nonce_hex[2..];
-            
-            match u64::from_str_radix(nonce_without_prefix, 16) {
-                Ok(nonce) => {
-                    item.nonce = Some(nonce);
-                }
-                Err(e) => {
-                    println!("[ERROR] nonce转换失败 - 链: {}, 地址: {}, 十六进制: {}, 错误: {}", 
-                            chain, item.address, nonce_hex, e);
-                    return Err(anyhow!("nonce数值转换失败: {} (原始值: {})", e, nonce_hex));
-                }
-            }
-        } else {
-            println!("[WARNING] nonce查询返回空值 - 链: {}, 地址: {}", chain, item.address);
         }
 
         Ok(())
@@ -229,6 +196,59 @@ impl SimpleBalanceQueryService {
     // 查询代币余额
     async fn query_token_balance(&self, item: &mut QueryItem, chain: &str, contract_address: &str) -> Result<()> {
         let rpc_url = self.get_rpc_url(chain).await?;
+        
+        println!("[DEBUG] 开始查询代币余额 - 链: {}, 地址: {}, 合约: {}", chain, item.address, contract_address);
+        
+        // 首先尝试从数据库获取代币的 decimals 配置
+        let decimals = match get_database_manager().get_pool() {
+            pool => {
+                let chain_service = ChainService::new(pool);
+                match chain_service.get_token_decimals_by_contract(chain, contract_address).await {
+                    Ok(Some(db_decimals)) => {
+                        println!("[DEBUG] 从数据库获取到代币decimals - 链: {}, 合约: {}, decimals: {}", chain, contract_address, db_decimals);
+                        db_decimals as u8
+                    }
+                    Ok(None) | Err(_) => {
+                        println!("[DEBUG] 数据库中未找到代币配置，回退到合约查询 - 链: {}, 合约: {}", chain, contract_address);
+                        // 回退到从合约查询 decimals
+                        let decimals_method = "313ce567"; // decimals() 函数的方法ID
+                        let decimals_data = format!("0x{}", decimals_method);
+                        
+                        match self.send_rpc_request(
+                            &rpc_url,
+                            "eth_call",
+                            serde_json::json!([{
+                                "to": contract_address,
+                                "data": decimals_data
+                            }, "latest"])
+                        ).await {
+                            Ok(decimals_result) => {
+                                if let Some(decimals_hex) = decimals_result.as_str() {
+                                    let hex_without_prefix = &decimals_hex[2..];
+                                    match u8::from_str_radix(hex_without_prefix, 16) {
+                                        Ok(d) => {
+                                            println!("[DEBUG] 从合约查询到代币decimals - 链: {}, 合约: {}, decimals: {}", chain, contract_address, d);
+                                            d
+                                        }
+                                        Err(e) => {
+                                            println!("[WARNING] decimals查询失败，使用默认值18 - 链: {}, 合约: {}, 错误: {}", chain, contract_address, e);
+                                            18 // 默认使用18位小数
+                                        }
+                                    }
+                                } else {
+                                    println!("[WARNING] decimals查询返回空值，使用默认值18 - 链: {}, 合约: {}", chain, contract_address);
+                                    18 // 默认使用18位小数
+                                }
+                            }
+                            Err(e) => {
+                                println!("[WARNING] decimals查询失败，使用默认值18 - 链: {}, 合约: {}, 错误: {}", chain, contract_address, e);
+                                18 // 默认使用18位小数
+                            }
+                        }
+                    }
+                }
+            }
+        };
         
         // ERC20 balanceOf 函数的方法ID
         let balance_of_method = "70a08231";
@@ -251,11 +271,26 @@ impl SimpleBalanceQueryService {
             // 检查十六进制字符串长度
             let hex_without_prefix = &balance_hex[2..];
             
+            println!("[DEBUG] 原始余额查询结果 - 链: {}, 地址: {}, 合约: {}, 十六进制: {}", 
+                    chain, item.address, contract_address, balance_hex);
+            
             // 将十六进制转换为十进制，使用u128避免溢出
             match u128::from_str_radix(hex_without_prefix, 16) {
                 Ok(balance_wei) => {
-                    let balance_tokens = balance_wei as f64 / 1e18; // 假设18位小数
-                    item.coin_balance = Some(format!("{:.4}", balance_tokens));
+                    println!("[DEBUG] 原始余额转换 - 链: {}, 地址: {}, 合约: {}, 原始余额(十进制): {}, 是否为零: {}", 
+                            chain, item.address, contract_address, balance_wei, balance_wei == 0);
+                    
+                    // 使用实际的 decimals 值计算余额
+                    let divisor = 10_u128.pow(decimals as u32);
+                    let balance_tokens = balance_wei as f64 / divisor as f64;
+                    
+                    println!("[DEBUG] 余额计算过程 - 链: {}, 地址: {}, 合约: {}, 原始余额: {}, decimals: {}, 除数: {}, 最终余额: {}", 
+                            chain, item.address, contract_address, balance_wei, decimals, divisor, balance_tokens);
+                    
+                    item.coin_balance = Some(format!("{:.6}", balance_tokens)); // 显示6位小数
+                    
+                    println!("[DEBUG] 代币余额查询完成 - 链: {}, 地址: {}, 合约: {}, 格式化余额: {}", 
+                            chain, item.address, contract_address, item.coin_balance.as_ref().unwrap());
                 }
                 Err(e) => {
                     println!("[ERROR] 代币余额十六进制转换失败 - 链: {}, 地址: {}, 合约: {}, 十六进制: {}, 错误: {}", 

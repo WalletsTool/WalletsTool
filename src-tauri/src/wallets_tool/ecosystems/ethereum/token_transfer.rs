@@ -10,6 +10,7 @@ use std::sync::Arc;
 use rand::Rng;
 use tauri::Emitter;
 use super::transfer::{TransferConfig, TransferItem, TransferResult, create_provider, get_rpc_config, TransferUtils};
+use crate::database::{get_database_manager, chain_service::ChainService};
 
 // ERC20 ABI (简化版，只包含必要的函数)
 const ERC20_ABI: &str = r#"[
@@ -168,6 +169,16 @@ async fn token_transfer_internal<R: tauri::Runtime>(
 ) -> Result<String, Box<dyn std::error::Error>> {
     item.retry_flag = false;
     
+    // 从数据库获取代币的decimals配置
+    let db_manager = get_database_manager();
+    let chain_service = ChainService::new(db_manager.get_pool());
+    
+    let db_decimals = chain_service.get_token_decimals_by_contract(&config.chain, &config.contract_address).await
+        .map_err(|e| {
+            println!("[ERROR] 从数据库获取decimals失败: {}", e);
+            e
+        })?;
+    
     // 创建Provider
     let provider = create_provider(&config.chain).await?;
     
@@ -199,7 +210,18 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     // 获取代币信息
     let balance: U256 = contract.method("balanceOf", wallet_address)?.call().await?;
-    let decimals: u8 = contract.method("decimals", ())?.call().await?;
+    
+    // 使用数据库配置的decimals值，如果没有则从合约查询
+    let decimals = if let Some(db_decimals) = db_decimals {
+        println!("[DEBUG] 使用数据库配置的decimals: {}", db_decimals);
+        db_decimals as u8
+    } else {
+        println!("[DEBUG] 数据库中未找到decimals配置，从合约查询...");
+        let contract_decimals: u8 = contract.method("decimals", ())?.call().await?;
+        println!("[DEBUG] 合约返回的decimals: {}", contract_decimals);
+        contract_decimals
+    };
+    
     let symbol: String = contract.method("symbol", ())?.call().await?;
     
     let balance_formatted = format_units(balance, decimals as u32)?;
@@ -310,6 +332,47 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     println!("序号：{}, gasLimit: {}", index, gas_limit);
     
+    // 构建转账交易前的详细验证和日志
+    println!("[DEBUG] ===== 转账交易构建阶段 =====");
+    println!("[DEBUG] 序号: {}", index);
+    println!("[DEBUG] 合约地址: {:?}", contract_address);
+    println!("[DEBUG] 发送方地址: {:?}", wallet_address);
+    println!("[DEBUG] 接收方地址: {:?}", to_address);
+    println!("[DEBUG] 转账金额: {} (原始值: {})", transfer_amount_formatted, transfer_amount);
+    println!("[DEBUG] Gas Price: {} wei", gas_price);
+    println!("[DEBUG] Gas Limit: {}", gas_limit);
+    
+    // 验证地址有效性
+    if wallet_address == Address::zero() {
+        return Err("发送方地址无效（零地址）".into());
+    }
+    if to_address == Address::zero() {
+        return Err("接收方地址无效（零地址）".into());
+    }
+    if contract_address == Address::zero() {
+        return Err("合约地址无效（零地址）".into());
+    }
+    
+    // 验证转账金额
+    if transfer_amount.is_zero() {
+        return Err("转账金额不能为零".into());
+    }
+    
+    // 获取发送方ETH余额用于gas费检查
+    let eth_balance = provider.get_balance(wallet_address, None).await
+        .map_err(|e| format!("获取ETH余额失败: {}", e))?;
+    let estimated_gas_fee = gas_price * gas_limit;
+    
+    println!("[DEBUG] ETH余额: {} wei", eth_balance);
+    println!("[DEBUG] 预估Gas费用: {} wei", estimated_gas_fee);
+    
+    if eth_balance < estimated_gas_fee {
+        return Err(format!(
+            "ETH余额不足支付Gas费用！当前余额: {} wei，预估Gas费用: {} wei",
+            eth_balance, estimated_gas_fee
+        ).into());
+    }
+    
     // 构建转账交易
     let client = SignerMiddleware::new(provider.clone(), wallet);
     let contract_with_signer: Contract<Arc<SignerMiddleware<Arc<Provider<Http>>, LocalWallet>>> = Contract::new(contract_address, contract.abi().clone(), Arc::new(client));
@@ -322,15 +385,44 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         "exec_status": "1"
     }));
     
+    println!("[DEBUG] ===== 发送交易阶段 =====");
+    
     // 调用transfer方法
     let call = contract_with_signer
         .method::<_, bool>("transfer", (to_address, transfer_amount))?
         .gas_price(gas_price)
         .gas(gas_limit);
     
-    let pending_tx = call.send().await?;
+    println!("[DEBUG] 交易调用已构建，准备发送...");
     
-    println!("序号：{}, 交易 hash 为：{:?}", index, pending_tx.tx_hash());
+    let pending_tx = match call.send().await {
+        Ok(tx) => {
+            println!("[DEBUG] 交易发送成功，等待确认...");
+            tx
+        }
+        Err(e) => {
+            let error_msg = format!("发送交易失败: {}", e);
+            println!("[ERROR] {}", error_msg);
+            
+            // 分析具体的错误类型
+            let detailed_error = if e.to_string().contains("insufficient funds") {
+                format!("余额不足: {}", e)
+            } else if e.to_string().contains("gas") {
+                format!("Gas相关错误: {}", e)
+            } else if e.to_string().contains("revert") {
+                format!("合约执行被回滚: {}", e)
+            } else if e.to_string().contains("nonce") {
+                format!("Nonce错误: {}", e)
+            } else {
+                format!("网络或其他错误: {}", e)
+            };
+            
+            return Err(detailed_error.into());
+        }
+    };
+    
+    let tx_hash = pending_tx.tx_hash();
+    println!("序号：{}, 交易 hash 为：{:?}", index, tx_hash);
     
     // 等待交易确认
     item.error_msg = "等待交易结果...".to_string();
@@ -341,17 +433,60 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         "exec_status": "1"
     }));
     
-    let receipt = pending_tx.await?;
+    println!("[DEBUG] ===== 等待交易确认阶段 =====");
+    println!("[DEBUG] 交易哈希: {:?}", tx_hash);
+    
+    let receipt = match pending_tx.await {
+        Ok(receipt_opt) => receipt_opt,
+        Err(e) => {
+            let error_msg = format!("等待交易确认失败 (交易哈希: {:?}): {}", tx_hash, e);
+            println!("[ERROR] {}", error_msg);
+            return Err(error_msg.into());
+        }
+    };
     
     match receipt {
         Some(receipt) => {
+            println!("[DEBUG] ===== 交易收据分析 =====");
+            println!("[DEBUG] 交易哈希: {:?}", receipt.transaction_hash);
+            println!("[DEBUG] 区块号: {:?}", receipt.block_number);
+            println!("[DEBUG] Gas使用量: {:?}", receipt.gas_used);
+            println!("[DEBUG] 交易状态: {:?}", receipt.status);
+            println!("[DEBUG] 累积Gas使用量: {:?}", receipt.cumulative_gas_used);
+            
             if receipt.status == Some(U64::from(1)) {
+                println!("[INFO] 交易执行成功！");
                 Ok(format!("{:?}", receipt.transaction_hash))
             } else {
-                Err("交易失败".into())
+                let error_msg = format!(
+                    "交易执行失败 - 交易哈希: {:?}, 区块号: {:?}, Gas使用: {:?}/{}, 状态: {:?}",
+                    receipt.transaction_hash,
+                    receipt.block_number.unwrap_or_default(),
+                    receipt.gas_used.unwrap_or_default(),
+                    gas_limit,
+                    receipt.status.unwrap_or_default()
+                );
+                println!("[ERROR] {}", error_msg);
+                
+                // 尝试获取更详细的失败原因
+                let detailed_error = if let Some(gas_used) = receipt.gas_used {
+                    if gas_used >= gas_limit {
+                        format!("{} (可能原因: Gas不足，已用完所有Gas)", error_msg)
+                    } else {
+                        format!("{} (可能原因: 合约执行被回滚)", error_msg)
+                    }
+                } else {
+                    error_msg
+                };
+                
+                Err(detailed_error.into())
             }
         }
-        None => Err("交易未确认".into()),
+        None => {
+            let error_msg = format!("交易未确认 (交易哈希: {:?}) - 可能网络拥堵或交易被丢弃", tx_hash);
+            println!("[ERROR] {}", error_msg);
+            Err(error_msg.into())
+        }
     }
 }
 
@@ -374,27 +509,116 @@ async fn query_token_balance_internal(
     contract_address: String,
     wallet_address: String,
 ) -> Result<TokenInfo, Box<dyn std::error::Error>> {
-    let provider = create_provider(&chain).await?;
+    println!("[DEBUG] 开始查询代币余额");
+    println!("[DEBUG] 链: {}", chain);
+    println!("[DEBUG] 合约地址: {}", contract_address);
+    println!("[DEBUG] 钱包地址: {}", wallet_address);
     
-    let contract_addr: Address = contract_address.parse()?;
-    let wallet_addr: Address = wallet_address.parse()?;
+    // 从数据库获取代币的decimals配置
+    println!("[DEBUG] 正在从数据库获取代币decimals配置...");
+    let db_manager = get_database_manager();
+    let chain_service = ChainService::new(db_manager.get_pool());
+    
+    let db_decimals = chain_service.get_token_decimals_by_contract(&chain, &contract_address).await
+        .map_err(|e| {
+            println!("[ERROR] 从数据库获取decimals失败: {}", e);
+            e
+        })?;
+    
+    println!("[DEBUG] 数据库中的decimals配置: {:?}", db_decimals);
+    
+    // 创建Provider
+    println!("[DEBUG] 正在创建Provider...");
+    let provider = create_provider(&chain).await?;
+    println!("[DEBUG] Provider创建成功");
+    
+    // 解析地址
+    println!("[DEBUG] 正在解析合约地址...");
+    let contract_addr: Address = contract_address.parse()
+        .map_err(|e| {
+            println!("[ERROR] 合约地址解析失败: {}", e);
+            e
+        })?;
+    println!("[DEBUG] 合约地址解析成功: {:?}", contract_addr);
+    
+    println!("[DEBUG] 正在解析钱包地址...");
+    let wallet_addr: Address = wallet_address.parse()
+        .map_err(|e| {
+            println!("[ERROR] 钱包地址解析失败: {}", e);
+            e
+        })?;
+    println!("[DEBUG] 钱包地址解析成功: {:?}", wallet_addr);
     
     // 创建合约实例
+    println!("[DEBUG] 正在创建合约实例...");
     let abi: ethers::abi::Abi = serde_json::from_str(ERC20_ABI)?;
     let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_addr, abi, provider);
+    println!("[DEBUG] 合约实例创建成功");
     
     // 获取代币信息
-    let balance: U256 = contract.method("balanceOf", wallet_addr)?.call().await?;
-    let decimals: u8 = contract.method("decimals", ())?.call().await?;
-    let symbol: String = contract.method("symbol", ())?.call().await?;
+    println!("[DEBUG] 正在调用balanceOf方法...");
+    let balance: U256 = contract.method("balanceOf", wallet_addr)?.call().await
+        .map_err(|e| {
+            println!("[ERROR] balanceOf调用失败: {}", e);
+            e
+        })?;
+    println!("[DEBUG] balanceOf原始返回值: {}", balance);
+    
+    // 详细的原始余额分析
+    println!("[DEBUG] ===== 原始余额详细分析 =====");
+    println!("[DEBUG] 原始余额十进制: {}", balance);
+    println!("[DEBUG] 原始余额十六进制: 0x{:x}", balance);
+    println!("[DEBUG] 原始余额是否为零: {}", balance.is_zero());
+    if !balance.is_zero() {
+        println!("[DEBUG] 原始余额位数: {} bits", balance.bits());
+    }
+    
+    // 使用数据库配置的decimals值，如果没有则从合约查询
+    let decimals = if let Some(db_decimals) = db_decimals {
+        println!("[DEBUG] 使用数据库配置的decimals: {}", db_decimals);
+        db_decimals as u8
+    } else {
+        println!("[DEBUG] 数据库中未找到decimals配置，从合约查询...");
+        let contract_decimals: u8 = contract.method("decimals", ())?.call().await
+            .map_err(|e| {
+                println!("[ERROR] decimals调用失败: {}", e);
+                e
+            })?;
+        println!("[DEBUG] 合约返回的decimals: {}", contract_decimals);
+        contract_decimals
+    };
+    
+    println!("[DEBUG] 正在获取symbol...");
+    let symbol: String = contract.method("symbol", ())?.call().await
+        .map_err(|e| {
+            println!("[ERROR] symbol调用失败: {}", e);
+            e
+        })?;
+    println!("[DEBUG] symbol: {}", symbol);
+    
+    println!("[DEBUG] 正在格式化余额...");
+    println!("[DEBUG] 用于格式化的decimals值: {}", decimals);
+    println!("[DEBUG] 格式化前原始余额: {} (十进制)", balance);
+    println!("[DEBUG] 格式化计算: {} ÷ 10^{} = {} ÷ {}", balance, decimals, balance, 10_u64.pow(decimals as u32));
     
     let balance_formatted = format_units(balance, decimals as u32)?;
     
-    Ok(TokenInfo {
-        symbol,
+    println!("[DEBUG] 格式化后的余额: {}", balance_formatted);
+    println!("[DEBUG] ===== 格式化对比 =====");
+    println!("[DEBUG] 原始值: {}", balance);
+    println!("[DEBUG] 格式化值: {}", balance_formatted);
+    println!("[DEBUG] Decimals: {}", decimals);
+    
+    let result = TokenInfo {
+        symbol: symbol.clone(),
         decimals,
-        balance: balance_formatted,
-    })
+        balance: balance_formatted.clone(),
+    };
+    
+    println!("[DEBUG] 查询完成，返回结果: symbol={}, decimals={}, balance={}", 
+             result.symbol, result.decimals, result.balance);
+    
+    Ok(result)
 }
 
 // Tauri命令：获取代币信息

@@ -116,9 +116,12 @@ impl RpcConfig {
 
 // 从数据库获取RPC配置
 pub async fn get_rpc_config(chain: &str) -> Option<RpcConfig> {
+    println!("[DEBUG] get_rpc_config - 开始获取链 '{}' 的RPC配置", chain);
+    
     let pool = get_database_manager().get_pool();
     
     // 首先获取链信息
+    println!("[DEBUG] get_rpc_config - 查询链信息...");
     let chain_info = match sqlx::query(
         r#"
         SELECT id, chain_id FROM chains WHERE chain_key = ?
@@ -128,13 +131,16 @@ pub async fn get_rpc_config(chain: &str) -> Option<RpcConfig> {
     .fetch_optional(pool)
     .await
     {
-        Ok(Some(row)) => row,
+        Ok(Some(row)) => {
+            println!("[DEBUG] get_rpc_config - 找到链信息");
+            row
+        },
         Ok(None) => {
-            eprintln!("Chain not found: {}", chain);
+            println!("[ERROR] get_rpc_config - 链未找到: {}", chain);
             return None;
         }
         Err(e) => {
-            eprintln!("Database error when fetching chain: {}", e);
+            println!("[ERROR] get_rpc_config - 数据库查询链信息失败: {}", e);
             return None;
         }
     };
@@ -142,7 +148,11 @@ pub async fn get_rpc_config(chain: &str) -> Option<RpcConfig> {
     let db_chain_id: i64 = chain_info.get("id");
     let network_chain_id: i64 = chain_info.get("chain_id");
     
+    println!("[DEBUG] get_rpc_config - 链信息: db_chain_id={}, network_chain_id={}", 
+             db_chain_id, network_chain_id);
+    
     // 获取该链的所有活跃RPC提供商，按优先级排序
+    println!("[DEBUG] get_rpc_config - 查询RPC提供商...");
     let rpc_providers = match sqlx::query(
         r#"
         SELECT rpc_url, priority, failure_count, avg_response_time_ms 
@@ -155,42 +165,79 @@ pub async fn get_rpc_config(chain: &str) -> Option<RpcConfig> {
     .fetch_all(pool)
     .await
     {
-        Ok(providers) => providers,
+        Ok(providers) => {
+            println!("[DEBUG] get_rpc_config - 找到 {} 个RPC提供商", providers.len());
+            providers
+        },
         Err(e) => {
-            eprintln!("Database error when fetching RPC providers: {}", e);
+            println!("[ERROR] get_rpc_config - 数据库查询RPC提供商失败: {}", e);
             return None;
         }
     };
     
     if rpc_providers.is_empty() {
-        eprintln!("No active RPC providers found for chain: {}", chain);
+        println!("[ERROR] get_rpc_config - 没有找到活跃的RPC提供商，链: {}", chain);
         return None;
     }
     
     // 构建RPC提供商列表
     let providers: Vec<RpcProvider> = rpc_providers
         .iter()
-        .map(|row| RpcProvider {
-            rpc_url: row.get::<String, _>("rpc_url"),
-            priority: row.get::<i32, _>("priority"),
-            failure_count: row.get::<i32, _>("failure_count"),
-            avg_response_time_ms: row.get::<i32, _>("avg_response_time_ms"),
+        .map(|row| {
+            let rpc_url = row.get::<String, _>("rpc_url");
+            println!("[DEBUG] get_rpc_config - RPC提供商: {}", rpc_url);
+            RpcProvider {
+                rpc_url,
+                priority: row.get::<i32, _>("priority"),
+                failure_count: row.get::<i32, _>("failure_count"),
+                avg_response_time_ms: row.get::<i32, _>("avg_response_time_ms"),
+            }
         })
         .collect();
     
-    Some(RpcConfig {
+    let config = RpcConfig {
         providers,
         chain_id: network_chain_id as u64,
-    })
+    };
+    
+    println!("[DEBUG] get_rpc_config - RPC配置创建成功，chain_id: {}", config.chain_id);
+    
+    Some(config)
 }
 
 // 创建Provider
 pub async fn create_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn std::error::Error>> {
+    println!("[DEBUG] create_provider - 开始为链 '{}' 创建Provider", chain);
+    
     let rpc_config = get_rpc_config(chain).await
-        .ok_or(format!("不支持的链: {}", chain))?;
+        .ok_or_else(|| {
+            println!("[ERROR] create_provider - 不支持的链: {}", chain);
+            format!("不支持的链: {}", chain)
+        })?;
+    
+    println!("[DEBUG] create_provider - 获取到RPC配置，chain_id: {}, providers数量: {}", 
+             rpc_config.chain_id, rpc_config.providers.len());
     
     let rpc_url = rpc_config.get_random_rpc();
-    let provider = Provider::<Http>::try_from(rpc_url)?;
+    println!("[DEBUG] create_provider - 选择的RPC URL: {}", rpc_url);
+    
+    let provider = Provider::<Http>::try_from(rpc_url)
+        .map_err(|e| {
+            println!("[ERROR] create_provider - Provider创建失败: {}", e);
+            e
+        })?;
+    
+    println!("[DEBUG] create_provider - Provider创建成功");
+    
+    // 测试连接
+    match provider.get_chainid().await {
+        Ok(chain_id) => {
+            println!("[DEBUG] create_provider - 连接测试成功，链ID: {}", chain_id);
+        }
+        Err(e) => {
+            println!("[WARN] create_provider - 连接测试失败: {}", e);
+        }
+    }
     
     Ok(Arc::new(provider))
 }
@@ -201,7 +248,7 @@ pub async fn get_random_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box
         .ok_or(format!("不支持的链: {}", chain))?;
     
     let rpc_url = rpc_config.get_random_rpc();
-    println!("使用RPC: {}", rpc_url);
+    println!("[INFO] 当前使用RPC: {}", rpc_url);
     let provider = Provider::<Http>::try_from(rpc_url)?;
     
     Ok(Arc::new(provider))
@@ -217,16 +264,42 @@ impl TransferUtils {
     ) -> Result<U256, Box<dyn std::error::Error>> {
         match provider.get_block(BlockNumber::Latest).await {
             Ok(Some(block)) => {
-                let gas_limit = block.gas_limit;
-                println!("获取到区块gas limit: {}", gas_limit);
-                Ok(gas_limit)
+                let raw_gas_limit = block.gas_limit;
+                println!("[DEBUG] 从RPC获取到的原始区块gas limit: {}", raw_gas_limit);
+                
+                // 合理性检查：如果gas limit超过1亿，认为是异常值
+                let max_reasonable_gas_limit = U256::from(100_000_000u64); // 1亿
+                
+                if raw_gas_limit > max_reasonable_gas_limit {
+                    println!("[WARN] 检测到异常的区块gas limit: {}，远超合理范围", raw_gas_limit);
+                    
+                    // 根据链ID返回合理的默认值
+                    let chain_id = match provider.get_chainid().await {
+                        Ok(id) => id.as_u64(),
+                        Err(_) => 0,
+                    };
+                    
+                    let default_gas_limit = match chain_id {
+                        42161 => U256::from(30_000_000u64), // Arbitrum One
+                        1 => U256::from(30_000_000u64),     // Ethereum Mainnet
+                        137 => U256::from(30_000_000u64),   // Polygon
+                        56 => U256::from(140_000_000u64),   // BSC (更高的gas limit)
+                        _ => U256::from(30_000_000u64),     // 其他链的默认值
+                    };
+                    
+                    println!("[INFO] 使用链ID {} 的默认gas limit: {}", chain_id, default_gas_limit);
+                    Ok(default_gas_limit)
+                } else {
+                    println!("[DEBUG] 区块gas limit正常: {}", raw_gas_limit);
+                    Ok(raw_gas_limit)
+                }
             }
             Ok(None) => {
-                eprintln!("无法获取最新区块信息");
+                eprintln!("[ERROR] 无法获取最新区块信息");
                 Err("无法获取最新区块信息".into())
             }
             Err(e) => {
-                eprintln!("获取区块gas limit失败: {}", e);
+                eprintln!("[ERROR] 获取区块gas limit失败: {}", e);
                 Err(format!("获取区块gas limit失败: {}", e).into())
             }
         }
@@ -486,6 +559,22 @@ impl TransferUtils {
         value: U256,
         is_eth: bool,
     ) -> Result<U256, String> {
+        // 首先获取区块gas limit作为上限检查
+        let block_gas_limit = match Self::get_block_gas_limit(provider.clone()).await {
+            Ok(limit) => {
+                println!("[DEBUG] 获取到区块gas limit: {}", limit);
+                limit
+            }
+            Err(e) => {
+                println!("[WARN] 获取区块gas limit失败: {}, 使用默认上限", e);
+                U256::from(30_000_000) // 使用一个合理的默认上限
+            }
+        };
+        
+        // 计算区块gas limit的80%作为安全上限
+        let max_safe_gas_limit = block_gas_limit * U256::from(80) / U256::from(100);
+        println!("[DEBUG] 区块gas limit安全上限(80%): {}", max_safe_gas_limit);
+        
         match config.limit_type.as_str() {
             "1" => {
                 // 自动估算Gas Limit
@@ -496,72 +585,133 @@ impl TransferUtils {
                 
                 let estimated_gas = match provider.estimate_gas(&tx.into(), None).await {
                     Ok(gas) => {
-                        eprintln!("estimated_gas: {}", gas);
+                        println!("[DEBUG] estimate_gas成功: {}", gas);
                         gas
                     }
                     Err(e) => {
-                        eprintln!("estimate_gas failed: {}, 尝试获取最近3个区块transfer交易的平均gas limit", e);
+                        println!("[WARN] estimate_gas失败: {}, 尝试获取最近3个区块transfer交易的平均gas limit", e);
                         // 尝试获取最近3个区块transfer交易的平均gas limit
                         if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
-                            println!("使用最近3个区块transfer交易的平均gas limit: {}", avg_gas_limit);
+                            println!("[INFO] 使用最近3个区块transfer交易的平均gas limit: {}", avg_gas_limit);
                             avg_gas_limit
                         } else {
-                            eprintln!("获取区块gas limit也失败，使用备用默认值 50000");
-                            U256::from(50_000)
+                            println!("[WARN] 获取平均gas limit也失败，使用区块gas limit的合理比例");
+                            // 优先使用区块gas limit的合理比例，而不是固定默认值
+                            if is_eth {
+                                // ETH转账使用区块gas limit的1%，最小21000
+                                std::cmp::max(
+                                    block_gas_limit / U256::from(100),
+                                    U256::from(21_000)
+                                )
+                            } else {
+                                // 代币转账使用区块gas limit的5%，根据链类型设置最小值
+                                let chain_id = provider.get_chainid().await.unwrap_or_default().as_u64();
+                                let min_token_gas = match chain_id {
+                                    42161 => U256::from(80_000),  // Arbitrum One - 更高的最小值
+                                    1 => U256::from(60_000),      // Ethereum Mainnet
+                                    137 => U256::from(60_000),    // Polygon
+                                    56 => U256::from(60_000),     // BSC
+                                    _ => U256::from(80_000),      // 其他链使用保守值
+                                };
+                                println!("[DEBUG] 链ID: {}, 代币转账最小Gas Limit: {}", chain_id, min_token_gas);
+                                
+                                std::cmp::max(
+                                    block_gas_limit * U256::from(5) / U256::from(100),
+                                    min_token_gas
+                                )
+                            }
                         }
-                    }
-                };
-                // 添加合理性检查：根据代币类型区分处理
-                let gas_limit = if is_eth {
-                    // ETH转账的gas limit处理
-                    if estimated_gas > U256::from(150_000_000) {
-                        println!("警告：ETH转账估算的 gas limit {} 异常过高，使用默认值 150000000", estimated_gas);
-                        U256::from(150_000_000)
-                    } else if estimated_gas < U256::from(21_000) {
-                        // ETH转账最小值为21000
-                        U256::from(21_000)
-                    } else {
-                        // 为估算值添加5%的安全边际
-                        estimated_gas * U256::from(105) / U256::from(100)
-                    }
-                } else {
-                    // 代币转账的gas limit处理
-                    if estimated_gas > U256::from(100_000_000) {
-                        println!("警告：代币转账估算的 gas limit {} 异常过高，使用平均gas limit", estimated_gas);
-                        // 使用最近3个区块transfer交易的平均gas limit
-                        if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
-                            avg_gas_limit
-                        } else if let Ok(block_gas_limit) = Self::get_block_gas_limit(provider.clone()).await {
-                            block_gas_limit * U256::from(80) / U256::from(100)
-                        } else {
-                            U256::from(200_000) // 代币转账的合理默认值
-                        }
-                    } else if estimated_gas < U256::from(21_000) {
-                        // 代币转账使用平均gas limit
-                        if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
-                            avg_gas_limit
-                        } else if let Ok(block_gas_limit) = Self::get_block_gas_limit(provider.clone()).await {
-                            block_gas_limit * U256::from(80) / U256::from(100)
-                        } else {
-                            U256::from(200_000) // 代币转账的合理默认值
-                        }
-                    } else {
-                        // 为估算值添加20%的安全边际
-                        estimated_gas * U256::from(120) / U256::from(100)
                     }
                 };
                 
+                // 添加合理性检查：根据代币类型区分处理
+                let mut gas_limit = if is_eth {
+                    // ETH转账的gas limit处理
+                    if estimated_gas < U256::from(21_000) {
+                        // ETH转账最小值为21000
+                        println!("[DEBUG] ETH转账gas limit过小，使用最小值21000");
+                        U256::from(21_000)
+                    } else {
+                        // 为估算值添加5%的安全边际
+                        let gas_with_margin = estimated_gas * U256::from(105) / U256::from(100);
+                        println!("[DEBUG] ETH转账添加5%安全边际: {} -> {}", estimated_gas, gas_with_margin);
+                        gas_with_margin
+                    }
+                } else {
+                    // 代币转账的gas limit处理
+                    let chain_id = provider.get_chainid().await.unwrap_or_default().as_u64();
+                    let min_token_gas = match chain_id {
+                        42161 => U256::from(80_000),  // Arbitrum One - 更高的最小值
+                        1 => U256::from(60_000),      // Ethereum Mainnet
+                        137 => U256::from(60_000),    // Polygon
+                        56 => U256::from(60_000),     // BSC
+                        _ => U256::from(80_000),      // 其他链使用保守值
+                    };
+                    println!("[DEBUG] 链ID: {}, 代币转账最小Gas Limit: {}", chain_id, min_token_gas);
+                    
+                    if estimated_gas < min_token_gas {
+                        // 代币转账gas limit过小，使用备用方案
+                        println!("[DEBUG] 估算的gas limit {} 小于最小值 {}，使用备用方案", estimated_gas, min_token_gas);
+                        if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
+                            // 确保平均值也不低于最小值
+                            let final_gas = std::cmp::max(avg_gas_limit, min_token_gas);
+                            println!("[DEBUG] 使用平均gas limit: {} (调整后: {})", avg_gas_limit, final_gas);
+                            final_gas
+                        } else {
+                            // 使用区块gas limit的5%作为代币转账的合理默认值，但不低于最小值
+                            let calculated_gas = std::cmp::max(
+                                block_gas_limit * U256::from(5) / U256::from(100),
+                                min_token_gas
+                            );
+                            println!("[DEBUG] 使用计算的gas limit: {}", calculated_gas);
+                            calculated_gas
+                        }
+                    } else {
+                        // 为估算值添加20%的安全边际，但确保不低于最小值
+                        let gas_with_margin = estimated_gas * U256::from(120) / U256::from(100);
+                        let final_gas = std::cmp::max(gas_with_margin, min_token_gas);
+                        println!("[DEBUG] 代币转账添加20%安全边际: {} -> {} (最终: {})", estimated_gas, gas_with_margin, final_gas);
+                        final_gas
+                    }
+                };
+                
+                // 关键检查：确保gas limit不超过区块限制
+                if gas_limit > max_safe_gas_limit {
+                    println!("[WARN] 估算的gas limit {} 超过区块安全上限 {}，调整为安全上限", gas_limit, max_safe_gas_limit);
+                    gas_limit = max_safe_gas_limit;
+                }
+                
+                // 最终验证：确保gas limit在合理范围内
+                if gas_limit > block_gas_limit {
+                    println!("[ERROR] gas limit {} 仍然超过区块限制 {}，强制设为区块限制的70%", gas_limit, block_gas_limit);
+                    gas_limit = block_gas_limit * U256::from(70) / U256::from(100);
+                }
+                
+                println!("[INFO] 最终确定的gas limit: {}", gas_limit);
                 Ok(gas_limit)
             }
             "2" => {
-                // 使用固定Gas Limit
-                Ok(U256::from(config.limit_count))
+                // 使用固定Gas Limit，但仍需检查是否超过区块限制
+                let fixed_gas_limit = U256::from(config.limit_count);
+                if fixed_gas_limit > max_safe_gas_limit {
+                    println!("[WARN] 固定gas limit {} 超过区块安全上限 {}，调整为安全上限", fixed_gas_limit, max_safe_gas_limit);
+                    Ok(max_safe_gas_limit)
+                } else {
+                    Ok(fixed_gas_limit)
+                }
             }
             "3" => {
-                // 使用随机Gas Limit
+                // 使用随机Gas Limit，但仍需检查是否超过区块限制
                 let mut rng = rand::thread_rng();
-                let gas_limit = rng.gen_range(config.limit_count_list[0]..=config.limit_count_list[1]);
-                Ok(U256::from(gas_limit))
+                let random_gas_limit = rng.gen_range(config.limit_count_list[0]..=config.limit_count_list[1]);
+                let gas_limit = U256::from(random_gas_limit);
+                
+                if gas_limit > max_safe_gas_limit {
+                    println!("[WARN] 随机gas limit {} 超过区块安全上限 {}，调整为安全上限", gas_limit, max_safe_gas_limit);
+                    Ok(max_safe_gas_limit)
+                } else {
+                    Ok(gas_limit)
+                }
             }
             _ => Err("gas limit type error".to_string()),
         }

@@ -344,6 +344,40 @@ impl<'a> ChainService<'a> {
 
         Ok(token)
     }
+
+    /// 根据链key和合约地址获取代币的decimals配置
+    pub async fn get_token_decimals_by_contract(&self, chain_key: &str, contract_address: &str) -> Result<Option<i32>> {
+        let decimals = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT t.decimals FROM tokens t
+            JOIN chains c ON t.chain_id = c.id
+            WHERE c.chain_key = ? AND t.contract_address = ?
+            "#
+        )
+        .bind(chain_key)
+        .bind(contract_address)
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(decimals)
+    }
+
+    /// 根据链key和token_key获取代币的decimals配置
+    pub async fn get_token_decimals_by_key(&self, chain_key: &str, token_key: &str) -> Result<Option<i32>> {
+        let decimals = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT t.decimals FROM tokens t
+            JOIN chains c ON t.chain_id = c.id
+            WHERE c.chain_key = ? AND t.token_key = ?
+            "#
+        )
+        .bind(chain_key)
+        .bind(token_key)
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(decimals)
+    }
     
     /// 更新代币的ABI
     pub async fn update_token_abi(&self, chain_key: &str, token_key: &str, abi: Option<String>) -> Result<()> {

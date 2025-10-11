@@ -258,7 +258,29 @@ pub async fn get_random_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box
 pub struct TransferUtils;
 
 impl TransferUtils {
-    // 获取当前区块的gas limit
+    // 获取当前网络的baseFee
+    pub async fn get_base_fee(
+        provider: Arc<Provider<Http>>,
+    ) -> Result<U256, Box<dyn std::error::Error>> {
+        // 获取最新区块
+        let latest_block = provider.get_block(BlockNumber::Latest).await?;
+        
+        if let Some(block) = latest_block {
+            if let Some(base_fee) = block.base_fee_per_gas {
+                println!("[DEBUG] 获取到当前baseFee: {} wei ({} gwei)", 
+                    base_fee, 
+                    format_units(base_fee, "gwei").unwrap_or_default()
+                );
+                return Ok(base_fee);
+            }
+        }
+        
+        // 如果无法获取baseFee，返回默认值（适用于非EIP-1559网络）
+        println!("[DEBUG] 无法获取baseFee，使用默认值0");
+        Ok(U256::zero())
+    }
+
+    // 获取区块Gas Limit
     pub async fn get_block_gas_limit(
         provider: Arc<Provider<Http>>,
     ) -> Result<U256, Box<dyn std::error::Error>> {
@@ -479,7 +501,16 @@ impl TransferUtils {
         config: &TransferConfig,
         provider: Arc<Provider<Http>>,
     ) -> Result<U256, Box<dyn std::error::Error>> {
-        match config.gas_price_type.as_str() {
+        // 获取当前网络的baseFee
+        let base_fee = Self::get_base_fee(provider.clone()).await?;
+        
+        // 获取链ID以确定是否为Arbitrum
+        let chain_id = provider.get_chainid().await?;
+        let is_arbitrum = chain_id == U256::from(42161); // Arbitrum One
+        
+        println!("[DEBUG] 链ID: {}, 是否为Arbitrum: {}", chain_id, is_arbitrum);
+        
+        let calculated_gas_price = match config.gas_price_type.as_str() {
             "1" => {
                 // 使用网络Gas Price
                 let gas_price = provider.get_gas_price().await?;
@@ -492,16 +523,15 @@ impl TransferUtils {
                     }
                 }
                 
-                Ok(gas_price)
+                gas_price
             }
             "2" => {
                 // 使用固定Gas Price
-                Ok(parse_units(config.gas_price, "gwei")?.into())
+                parse_units(config.gas_price, "gwei")?.into()
             }
             "3" => {
                 // 使用溢价Gas Price
                 let base_gas_price = provider.get_gas_price().await?;
-                
                 
                 // 安全地计算gas price rate，避免溢出
                 let rate_percentage = config.gas_price_rate * 100.0;
@@ -514,7 +544,6 @@ impl TransferUtils {
                 let rate_u256 = U256::from((rate_percentage as u64).min(u64::MAX));
                 let multiplier = U256::from(100) + rate_u256;
                 let gas_price_with_rate = base_gas_price * multiplier / U256::from(100);
-                
                 
                 // 检查最大Gas Price限制
                 if config.max_gas_price > 0.0 {
@@ -529,9 +558,43 @@ impl TransferUtils {
                     }
                 }
                 
-                Ok(gas_price_with_rate)
+                gas_price_with_rate
             }
-            _ => Err("gas price type error".into()),
+            _ => return Err("gas price type error".into()),
+        };
+        
+        // 确保Gas Price高于baseFee
+        if base_fee > U256::zero() {
+            let min_gas_price = if is_arbitrum {
+                // Arbitrum链：baseFee * 1.5 (50%安全边际)
+                base_fee * U256::from(150) / U256::from(100)
+            } else {
+                // 其他链：baseFee * 1.2 (20%安全边际)
+                base_fee * U256::from(120) / U256::from(100)
+            };
+            
+            let final_gas_price = if calculated_gas_price < min_gas_price {
+                println!("[DEBUG] 计算的Gas Price ({} gwei) 低于最小要求 ({} gwei)，使用最小值", 
+                    format_units(calculated_gas_price, "gwei").unwrap_or_default(),
+                    format_units(min_gas_price, "gwei").unwrap_or_default()
+                );
+                min_gas_price
+            } else {
+                calculated_gas_price
+            };
+            
+            println!("[DEBUG] 最终Gas Price: {} gwei (baseFee: {} gwei)", 
+                format_units(final_gas_price, "gwei").unwrap_or_default(),
+                format_units(base_fee, "gwei").unwrap_or_default()
+            );
+            
+            Ok(final_gas_price)
+        } else {
+            // 非EIP-1559网络，直接返回计算的Gas Price
+            println!("[DEBUG] 非EIP-1559网络，使用计算的Gas Price: {} gwei", 
+                format_units(calculated_gas_price, "gwei").unwrap_or_default()
+            );
+            Ok(calculated_gas_price)
         }
     }
 
@@ -1013,6 +1076,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                     } else {
                         println!("序号：{}, 第{}轮验证失败，保持上一轮结果", index, round + 1);
                         no_improvement_count += 1;
+                        println!("序号：{}, 第{}轮验证失败，连续无改进次数: {}", index, round + 1, no_improvement_count);
                         break; // 验证失败，停止更激进的尝试
                     }
                 } else {

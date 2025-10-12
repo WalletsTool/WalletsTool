@@ -363,6 +363,7 @@ impl<'a> ChainService<'a> {
     }
 
     /// 根据链key和token_key获取代币的decimals配置
+    #[allow(dead_code)]
     pub async fn get_token_decimals_by_key(&self, chain_key: &str, token_key: &str) -> Result<Option<i32>> {
         let decimals = sqlx::query_scalar::<_, i32>(
             r#"

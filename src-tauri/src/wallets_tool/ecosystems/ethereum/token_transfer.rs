@@ -180,7 +180,9 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         })?;
     
     // 创建Provider
-    let provider = create_provider(&config.chain).await?;
+    let provider = create_provider(&config.chain).await.map_err(|e| {
+        format!("获取RPC提供商失败: {}", e)
+    })?;
     
     // 创建钱包
     if item.private_key.trim().is_empty() {
@@ -208,8 +210,17 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     let abi: ethers::abi::Abi = serde_json::from_str(ERC20_ABI)?;
     let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_address, abi, provider.clone());
     
+    // 获取当前使用的RPC URL
+    let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+        rpc_config.get_random_rpc().to_string()
+    } else {
+        "未知RPC".to_string()
+    };
+    
     // 获取代币信息
-    let balance: U256 = contract.method("balanceOf", wallet_address)?.call().await?;
+    let balance: U256 = contract.method("balanceOf", wallet_address)?.call().await.map_err(|e| {
+        format!("获取代币余额失败 (RPC: {}): {}", rpc_url, e)
+    })?;
     
     // 使用数据库配置的decimals值，如果没有则从合约查询
     let decimals = if let Some(db_decimals) = db_decimals {
@@ -217,12 +228,16 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         db_decimals as u8
     } else {
         println!("[DEBUG] 数据库中未找到decimals配置，从合约查询...");
-        let contract_decimals: u8 = contract.method("decimals", ())?.call().await?;
+        let contract_decimals: u8 = contract.method("decimals", ())?.call().await.map_err(|e| {
+            format!("获取代币decimals失败 (RPC: {}): {}", rpc_url, e)
+        })?;
         println!("[DEBUG] 合约返回的decimals: {}", contract_decimals);
         contract_decimals
     };
     
-    let symbol: String = contract.method("symbol", ())?.call().await?;
+    let symbol: String = contract.method("symbol", ())?.call().await.map_err(|e| {
+        format!("获取代币symbol失败 (RPC: {}): {}", rpc_url, e)
+    })?;
     
     let balance_formatted = format_units(balance, decimals as u32)?;
     
@@ -252,7 +267,16 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         error_count_limit: config.error_count_limit,
     };
     
-    let gas_price = TransferUtils::get_gas_price(&transfer_config, provider.clone()).await?;
+    // 获取当前使用的RPC URL用于错误信息
+    let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+        rpc_config.get_random_rpc().to_string()
+    } else {
+        "未知RPC".to_string()
+    };
+    
+    let gas_price = TransferUtils::get_gas_price(&transfer_config, provider.clone()).await.map_err(|e| {
+        format!("获取Gas Price失败 (RPC: {}): {}", rpc_url, e)
+    })?;
     
     // 计算转账金额
     let transfer_amount = match config.transfer_type.as_str() {
@@ -359,8 +383,9 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     }
     
     // 获取发送方ETH余额用于gas费检查
-    let eth_balance = provider.get_balance(wallet_address, None).await
-        .map_err(|e| format!("获取ETH余额失败: {}", e))?;
+    let eth_balance = provider.get_balance(wallet_address, None).await.map_err(|e| {
+        format!("获取ETH余额失败 (RPC: {}): {}", rpc_url, e)
+    })?;
     let estimated_gas_fee = gas_price * gas_limit;
     
     println!("[DEBUG] ETH余额: {} wei", eth_balance);
@@ -401,20 +426,27 @@ async fn token_transfer_internal<R: tauri::Runtime>(
             tx
         }
         Err(e) => {
-            let error_msg = format!("发送交易失败: {}", e);
+            // 获取当前使用的RPC URL
+            let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+                rpc_config.get_random_rpc().to_string()
+            } else {
+                "未知RPC".to_string()
+            };
+            
+            let error_msg = format!("发送交易失败 (RPC: {}): {}", rpc_url, e);
             println!("[ERROR] {}", error_msg);
             
             // 分析具体的错误类型
             let detailed_error = if e.to_string().contains("insufficient funds") {
-                format!("余额不足: {}", e)
+                format!("余额不足 (RPC: {}): {}", rpc_url, e)
             } else if e.to_string().contains("gas") {
-                format!("Gas相关错误: {}", e)
+                format!("Gas相关错误 (RPC: {}): {}", rpc_url, e)
             } else if e.to_string().contains("revert") {
-                format!("合约执行被回滚: {}", e)
+                format!("合约执行被回滚 (RPC: {}): {}", rpc_url, e)
             } else if e.to_string().contains("nonce") {
-                format!("Nonce错误: {}", e)
+                format!("Nonce错误 (RPC: {}): {}", rpc_url, e)
             } else {
-                format!("网络或其他错误: {}", e)
+                format!("网络或其他错误 (RPC: {}): {}", rpc_url, e)
             };
             
             return Err(detailed_error.into());
@@ -439,7 +471,13 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     let receipt = match pending_tx.await {
         Ok(receipt_opt) => receipt_opt,
         Err(e) => {
-            let error_msg = format!("等待交易确认失败 (交易哈希: {:?}): {}", tx_hash, e);
+            // 获取当前使用的RPC URL
+            let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+                rpc_config.get_random_rpc().to_string()
+            } else {
+                "未知RPC".to_string()
+            };
+            let error_msg = format!("等待交易确认失败 (RPC: {}) (交易哈希: {:?}): {}", rpc_url, tx_hash, e);
             println!("[ERROR] {}", error_msg);
             return Err(error_msg.into());
         }
@@ -458,8 +496,16 @@ async fn token_transfer_internal<R: tauri::Runtime>(
                 println!("[INFO] 交易执行成功！");
                 Ok(format!("{:?}", receipt.transaction_hash))
             } else {
+                // 获取当前使用的RPC URL
+                let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+                    rpc_config.get_random_rpc().to_string()
+                } else {
+                    "未知RPC".to_string()
+                };
+                
                 let error_msg = format!(
-                    "交易执行失败 - 交易哈希: {:?}, 区块号: {:?}, Gas使用: {:?}/{}, 状态: {:?}",
+                    "交易执行失败 (RPC: {}) - 交易哈希: {:?}, 区块号: {:?}, Gas使用: {:?}/{}, 状态: {:?}",
+                    rpc_url,
                     receipt.transaction_hash,
                     receipt.block_number.unwrap_or_default(),
                     receipt.gas_used.unwrap_or_default(),
@@ -483,7 +529,13 @@ async fn token_transfer_internal<R: tauri::Runtime>(
             }
         }
         None => {
-            let error_msg = format!("交易未确认 (交易哈希: {:?}) - 可能网络拥堵或交易被丢弃", tx_hash);
+            // 获取当前使用的RPC URL
+            let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+                rpc_config.get_random_rpc().to_string()
+            } else {
+                "未知RPC".to_string()
+            };
+            let error_msg = format!("交易未确认 (RPC: {}) (交易哈希: {:?}) - 可能网络拥堵或交易被丢弃", rpc_url, tx_hash);
             println!("[ERROR] {}", error_msg);
             Err(error_msg.into())
         }

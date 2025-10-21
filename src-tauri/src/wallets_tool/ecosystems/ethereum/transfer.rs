@@ -400,7 +400,19 @@ impl TransferUtils {
         to_address: Address,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // 获取当前余额
-        let balance = provider.get_balance(wallet_address, None).await?;
+        let balance = match provider.get_balance(wallet_address, None).await {
+            Ok(balance) => balance,
+            Err(e) => {
+                // 获取当前使用的RPC URL
+                let error_msg = e.to_string();
+                let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+                    rpc_config.get_random_rpc().to_string()
+                } else {
+                    "未知RPC".to_string()
+                };
+                return Err(format!("获取钱包余额失败 (RPC: {}): {}", rpc_url, error_msg).into());
+            }
+        };
         
         if balance.is_zero() {
             return Err("当前余额为0，无法进行转账操作！".into());
@@ -502,7 +514,18 @@ impl TransferUtils {
         provider: Arc<Provider<Http>>,
     ) -> Result<U256, Box<dyn std::error::Error>> {
         // 获取当前网络的baseFee
-        let base_fee = Self::get_base_fee(provider.clone()).await?;
+        let base_fee = if let Ok(fee) = Self::get_base_fee(provider.clone()).await {
+            fee
+        } else {
+            // 获取当前使用的RPC URL
+            let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+                rpc_config.get_random_rpc().to_string()
+            } else {
+                "未知RPC".to_string()
+            };
+            println!("[WARN] 获取Base Fee失败 (RPC: {}), 使用默认值0", rpc_url);
+            U256::zero()
+        };
         
         // 获取链ID以确定是否为Arbitrum
         let chain_id = provider.get_chainid().await?;
@@ -513,7 +536,19 @@ impl TransferUtils {
         let calculated_gas_price = match config.gas_price_type.as_str() {
             "1" => {
                 // 使用网络Gas Price
-                let gas_price = provider.get_gas_price().await?;
+                let gas_price = match provider.get_gas_price().await {
+                    Ok(price) => price,
+                    Err(e) => {
+                        // 获取当前使用的RPC URL
+                        let error_msg = e.to_string();
+                        let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+                            rpc_config.get_random_rpc().to_string()
+                        } else {
+                            "未知RPC".to_string()
+                        };
+                        return Err(format!("获取网络Gas Price失败 (RPC: {}): {}", rpc_url, error_msg).into());
+                    }
+                };
                 
                 // 检查最大Gas Price限制
                 if config.max_gas_price > 0.0 {
@@ -531,7 +566,19 @@ impl TransferUtils {
             }
             "3" => {
                 // 使用溢价Gas Price
-                let base_gas_price = provider.get_gas_price().await?;
+                let base_gas_price = match provider.get_gas_price().await {
+                    Ok(price) => price,
+                    Err(e) => {
+                        // 获取当前使用的RPC URL
+                        let error_msg = e.to_string();
+                        let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+                            rpc_config.get_random_rpc().to_string()
+                        } else {
+                            "未知RPC".to_string()
+                        };
+                        return Err(format!("获取基础Gas Price失败 (RPC: {}): {}", rpc_url, error_msg).into());
+                    }
+                };
                 
                 // 安全地计算gas price rate，避免溢出
                 let rate_percentage = config.gas_price_rate * 100.0;
@@ -652,7 +699,14 @@ impl TransferUtils {
                         gas
                     }
                     Err(e) => {
-                        println!("[WARN] estimate_gas失败: {}, 尝试获取最近3个区块transfer交易的平均gas limit", e);
+                        // 获取当前使用的RPC URL
+                        let error_msg = e.to_string();
+                        let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+                            rpc_config.get_random_rpc().to_string()
+                        } else {
+                            "未知RPC".to_string()
+                        };
+                        println!("[WARN] estimate_gas失败 (RPC: {}): {}, 尝试获取最近3个区块transfer交易的平均gas limit", rpc_url, error_msg);
                         // 尝试获取最近3个区块transfer交易的平均gas limit
                         if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
                             println!("[INFO] 使用最近3个区块transfer交易的平均gas limit: {}", avg_gas_limit);
@@ -844,20 +898,40 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         format!("目标地址格式错误: {}，请检查地址格式是否正确", e)
     })?;
     
+    // 获取当前使用的RPC URL用于错误信息
+    let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+        rpc_config.get_random_rpc().to_string()
+    } else {
+        "未知RPC".to_string()
+    };
+    
     // 预检查余额是否充足（避免RPC调用后才发现余额不足）
-    let provider_for_precheck = get_random_provider(&config.chain).await?;
-    TransferUtils::pre_check_balance(&config, provider_for_precheck.clone(), wallet_address, to_address).await?;
+    let provider_for_precheck = get_random_provider(&config.chain).await.map_err(|e| {
+        format!("获取RPC提供商失败: {}", e)
+    })?;
+    TransferUtils::pre_check_balance(&config, provider_for_precheck.clone(), wallet_address, to_address).await.map_err(|e| {
+        format!("余额预检查失败 (RPC: {}): {}", rpc_url, e)
+    })?;
     
     // 获取余额
-    let provider_for_balance = get_random_provider(&config.chain).await?;
-    let balance = provider_for_balance.get_balance(wallet_address, None).await?;
+    let provider_for_balance = get_random_provider(&config.chain).await.map_err(|e| {
+        format!("获取RPC提供商失败: {}", e)
+    })?;
+    let balance = provider_for_balance.get_balance(wallet_address, None).await.map_err(|e| {
+        format!("获取余额失败 (RPC: {}): {}", rpc_url, e)
+    })?;
     let balance_ether_str = format_ether(balance);
     
     println!("序号：{}, 当前余额为: {} ETH", index, balance_ether_str);
     
     // 获取Gas Price
-    let provider_for_gas_price = get_random_provider(&config.chain).await?;
-    let gas_price = TransferUtils::get_gas_price(&config, provider_for_gas_price.clone()).await?;
+    let provider_for_gas_price = get_random_provider(&config.chain).await.map_err(|e| {
+        format!("获取RPC提供商失败: {}", e)
+    })?;
+    
+    let gas_price = TransferUtils::get_gas_price(&config, provider_for_gas_price.clone()).await.map_err(|e| {
+        format!("获取Gas Price失败 (RPC: {}): {}", rpc_url, e)
+    })?;
     
 
     
@@ -1258,9 +1332,13 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         "exec_status": "1"
     }));
     
-    let provider_for_transaction = get_random_provider(&config.chain).await?;
+    let provider_for_transaction = get_random_provider(&config.chain).await.map_err(|e| {
+        format!("获取RPC提供商失败: {}", e)
+    })?;
     let client = SignerMiddleware::new(provider_for_transaction.clone(), wallet);
-    let pending_tx = client.send_transaction(tx, None).await?;
+    let pending_tx = client.send_transaction(tx, None).await.map_err(|e| {
+        format!("发送交易失败 (RPC: {}): {}", rpc_url, e)
+    })?;
     
     println!("序号：{}, 交易 hash 为：{:?}", index, pending_tx.tx_hash());
     
@@ -1272,17 +1350,21 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         "error_msg": item.error_msg.clone(),
         "exec_status": "1"
     }));
-    let receipt = pending_tx.await?;
+    let receipt = pending_tx.await.map_err(|e| {
+        format!("等待交易确认失败 (RPC: {}): {}", rpc_url, e)
+    })?;
     
     match receipt {
         Some(receipt) => {
             if receipt.status == Some(U64::from(1)) {
                 Ok(format!("{:?}", receipt.transaction_hash))
             } else {
-                Err("交易失败".into())
+                Err(format!("交易失败 (RPC: {})", rpc_url).into())
             }
         }
-        None => Err("交易未确认".into()),
+        None => {
+            Err(format!("交易未确认 (RPC: {})", rpc_url).into())
+        }
     }
 }
 
@@ -1310,7 +1392,19 @@ async fn query_balance_internal(
     let address: Address = address.parse().map_err(|e| {
         format!("地址格式错误: {}，请检查地址格式是否正确", e)
     })?;
-    let balance = provider.get_balance(address, None).await?;
+    let balance = match provider.get_balance(address, None).await {
+        Ok(balance) => balance,
+        Err(e) => {
+             // 获取当前使用的RPC URL
+             let error_msg = e.to_string();
+             let rpc_url = if let Some(rpc_config) = get_rpc_config(&chain).await {
+                 rpc_config.get_random_rpc().to_string()
+             } else {
+                 "未知RPC".to_string()
+             };
+             return Err(format!("获取余额失败 (RPC: {}): {}", rpc_url, error_msg).into());
+         }
+    };
     let balance_str = format_units(balance, 18).map_err(|e| {
         format!("余额格式化失败: {}", e)
     })?;
@@ -1379,7 +1473,19 @@ async fn check_wallet_recent_transfers_internal(
     })?;
     
     // 获取当前区块号
-    let current_block = provider.get_block_number().await?;
+    let current_block = match provider.get_block_number().await {
+        Ok(block) => block,
+        Err(e) => {
+             // 获取当前使用的RPC URL
+             let error_msg = e.to_string();
+             let rpc_url = if let Some(rpc_config) = get_rpc_config(&chain).await {
+                 rpc_config.get_random_rpc().to_string()
+             } else {
+                 "未知RPC".to_string()
+             };
+             return Err(format!("获取当前区块号失败 (RPC: {}): {}", rpc_url, error_msg).into());
+         }
+    };
     
     // 计算开始查询的区块号（简化实现：从最近1000个区块开始查询）
     let start_block = if current_block.as_u64() > 1000 {

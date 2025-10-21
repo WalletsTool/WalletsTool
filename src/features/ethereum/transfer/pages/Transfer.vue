@@ -3518,25 +3518,37 @@ async function iterTransfer(accountData) {
     }
   };
 
-  // 使用Promise.all并发处理不同钱包组，但限制并发数量
+  // 真正的多线程并发控制 - 使用工作队列和信号量机制
+  const workQueue = [...walletGroupsArray];
+  const runningTasks = new Set();
   const maxConcurrency = Math.min(threadCount.value, walletGroupsArray.length);
-  const chunks = [];
 
-  // 将钱包组分批处理，每批最多threadCount个
-  for (let i = 0; i < walletGroupsArray.length; i += maxConcurrency) {
-    chunks.push(walletGroupsArray.slice(i, i + maxConcurrency));
-  }
+  // 启动工作任务的函数
+  const startWorkerTask = async () => {
+    while (workQueue.length > 0 && !stopFlag.value) {
+      const walletGroup = workQueue.shift();
+      if (!walletGroup) break;
 
-  // 逐批处理钱包组
-  for (const chunk of chunks) {
-    if (stopFlag.value) {
-      stopStatus.value = true;
-      return;
+      const taskPromise = processWalletGroup(walletGroup);
+      runningTasks.add(taskPromise);
+
+      // 任务完成后从运行集合中移除
+      taskPromise.finally(() => {
+        runningTasks.delete(taskPromise);
+      });
+
+      await taskPromise;
     }
+  };
 
-    // 并发处理当前批次的钱包组
-    await Promise.all(chunk.map(processWalletGroup));
+  // 启动指定数量的并发工作任务
+  const workers = [];
+  for (let i = 0; i < maxConcurrency; i++) {
+    workers.push(startWorkerTask());
   }
+
+  // 等待所有工作任务完成
+  await Promise.all(workers);
 }
 
 // 停止执行

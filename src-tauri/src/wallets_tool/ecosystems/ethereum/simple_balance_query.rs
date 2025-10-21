@@ -87,7 +87,7 @@ struct JsonRpcRequest {
     jsonrpc: String,
     method: String,
     params: serde_json::Value,
-    id: i32,
+    id: Option<i32>,
 }
 
 // RPC 响应结构
@@ -98,7 +98,7 @@ struct JsonRpcResponse {
     result: Option<serde_json::Value>,
     error: Option<JsonRpcError>,
     #[allow(dead_code)]
-    id: i32,
+    id: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,7 +139,7 @@ impl SimpleBalanceQueryService {
             jsonrpc: "2.0".to_string(),
             method: method.to_string(),
             params,
-            id: 1,
+            id: Some(1),
         };
 
         // 设置10秒超时

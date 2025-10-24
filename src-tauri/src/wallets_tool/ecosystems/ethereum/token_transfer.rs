@@ -456,7 +456,7 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     let tx_hash = pending_tx.tx_hash();
     println!("序号：{}, 交易 hash 为：{:?}", index, tx_hash);
     
-    // 等待交易确认
+    // 等待交易确认（设置30秒超时）
     item.error_msg = "等待交易结果...".to_string();
     // 发送状态更新事件到前端
     let _ = app_handle.emit("transfer_status_update", serde_json::json!({
@@ -467,19 +467,31 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     println!("[DEBUG] ===== 等待交易确认阶段 =====");
     println!("[DEBUG] 交易哈希: {:?}", tx_hash);
+    println!("[DEBUG] 开始等待交易确认，设置30秒超时...");
     
-    let receipt = match pending_tx.await {
-        Ok(receipt_opt) => receipt_opt,
-        Err(e) => {
-            // 获取当前使用的RPC URL
-            let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-                rpc_config.get_random_rpc().to_string()
-            } else {
-                "未知RPC".to_string()
-            };
-            let error_msg = format!("等待交易确认失败 (RPC: {}) (交易哈希: {:?}): {}", rpc_url, tx_hash, e);
-            println!("[ERROR] {}", error_msg);
-            return Err(error_msg.into());
+    // 获取RPC URL用于错误消息
+    let rpc_url_for_error = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
+        rpc_config.get_random_rpc().to_string()
+    } else {
+        "未知RPC".to_string()
+    };
+    
+    let receipt = match tokio::time::timeout(
+        tokio::time::Duration::from_secs(30),
+        pending_tx
+    ).await {
+        Ok(result) => {
+            result.map_err(|e| {
+                let error_msg = format!("等待交易确认失败 (RPC: {}) (交易哈希: {:?}): {}", rpc_url_for_error, tx_hash, e);
+                println!("[ERROR] {}", error_msg);
+                error_msg
+            })?
+        }
+        Err(_) => {
+            // 超时处理
+            let timeout_msg = format!("等待交易确认超时 (RPC: {}) - 超过30秒未收到确认，交易哈希: {:?}", rpc_url_for_error, tx_hash);
+            println!("[ERROR] {}", timeout_msg);
+            return Err(timeout_msg.into());
         }
     };
     

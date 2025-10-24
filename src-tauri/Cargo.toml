@@ -28,6 +28,12 @@ futures = "0.3"
 rand = "0.8"
 # 序列化
 hex = "0.4"
+# URL 解析
+url = "2.0"
+# 目录路径
+dirs = "5.0"
+# 懒加载静态变量
+lazy_static = "1.4"
 # 数据库
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "chrono", "macros"], default-features = false }
 chrono = { version = "0.4", features = ["serde"] }

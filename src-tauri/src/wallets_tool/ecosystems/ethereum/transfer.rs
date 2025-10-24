@@ -8,6 +8,7 @@ use ethers::{
     signers::{LocalWallet, Signer},
     middleware::SignerMiddleware,
 };
+use url::Url;
 use std::sync::Arc;
 use rand::Rng;
 use crate::database::get_database_manager;
@@ -205,8 +206,23 @@ pub async fn get_rpc_config(chain: &str) -> Option<RpcConfig> {
     Some(config)
 }
 
-// 创建Provider
+// RPC请求间隔控制(防止429错误)
+use tokio::time::{sleep, Duration};
+
+// 添加随机延迟，防止RPC请求过于密集
+async fn add_rpc_delay() {
+    // 生成300-800ms随机延迟，立即使用，不跨await持有rng
+    let delay_ms = rand::thread_rng().gen_range(300..800);
+    sleep(Duration::from_millis(delay_ms)).await;
+}
+
+// 创建Provider(支持代理和请求间隔控制)
 pub async fn create_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn std::error::Error>> {
+    use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
+    
+    // 添加随机延迟，避免请求过于密集
+    add_rpc_delay().await;
+    
     println!("[DEBUG] create_provider - 开始为链 '{}' 创建Provider", chain);
     
     let rpc_config = get_rpc_config(chain).await
@@ -221,11 +237,33 @@ pub async fn create_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn
     let rpc_url = rpc_config.get_random_rpc();
     println!("[DEBUG] create_provider - 选择的RPC URL: {}", rpc_url);
     
-    let provider = Provider::<Http>::try_from(rpc_url)
-        .map_err(|e| {
-            println!("[ERROR] create_provider - Provider创建失败: {}", e);
-            e
-        })?;
+    // 检查代理配置状态
+    let proxy_config = PROXY_MANAGER.get_config();
+    let using_proxy = proxy_config.enabled && !proxy_config.proxies.is_empty();
+    
+    if using_proxy {
+        println!("[INFO] 代理已启用，当前有 {} 个代理可用", proxy_config.proxies.len());
+    } else if proxy_config.enabled {
+        println!("[WARN] 代理已启用但没有配置代理地址，将使用直连模式");
+    } else {
+        println!("[INFO] 代理未启用，使用直连模式");
+    }
+    
+    // 尝试使用代理客户端，如果没有代理则使用默认方式
+    let provider = if let Some(proxy_client) = PROXY_MANAGER.get_random_proxy_client() {
+        println!("[DEBUG] create_provider - 使用代理客户端创建Provider");
+        let url: Url = rpc_url.parse()
+            .map_err(|e| format!("Failed to parse RPC URL: {}", e))?;
+        let http_provider = Http::new_with_client(url, proxy_client);
+        Provider::new(http_provider)
+    } else {
+        println!("[DEBUG] create_provider - 使用默认方式创建Provider");
+        Provider::<Http>::try_from(rpc_url)
+            .map_err(|e| {
+                println!("[ERROR] create_provider - Provider创建失败: {}", e);
+                e
+            })?
+    };
     
     println!("[DEBUG] create_provider - Provider创建成功");
     
@@ -242,16 +280,46 @@ pub async fn create_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn
     Ok(Arc::new(provider))
 }
 
-// 随机获取Provider的辅助函数
+// 随机获取Provider的辅助函数（带请求间隔控制和429重试）
 pub async fn get_random_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn std::error::Error>> {
-    let rpc_config = get_rpc_config(chain).await
-        .ok_or(format!("不支持的链: {}", chain))?;
+    // 添加随机延迟，避免请求过于密集
+    add_rpc_delay().await;
     
-    let rpc_url = rpc_config.get_random_rpc();
-    println!("[INFO] 当前使用RPC: {}", rpc_url);
-    let provider = Provider::<Http>::try_from(rpc_url)?;
+    // 实现429错误的智能重试机制（最多3次，指数退避）
+    let max_retries = 3;
+    let mut last_error = String::new();
     
-    Ok(Arc::new(provider))
+    for retry_count in 0..max_retries {
+        let rpc_config = get_rpc_config(chain).await
+            .ok_or(format!("不支持的链: {}", chain))?;
+        
+        let rpc_url = rpc_config.get_random_rpc();
+        
+        if retry_count > 0 {
+            // 指数退避：2^retry_count 秒
+            let wait_seconds = 2u64.pow(retry_count);
+            println!("[RETRY] 第{}次重试获取Provider，等待{}秒后使用新RPC: {}", retry_count, wait_seconds, rpc_url);
+            sleep(Duration::from_secs(wait_seconds)).await;
+        } else {
+            println!("[INFO] 当前使用RPC: {}", rpc_url);
+        }
+        
+        match Provider::<Http>::try_from(rpc_url) {
+            Ok(provider) => return Ok(Arc::new(provider)),
+            Err(e) => {
+                last_error = e.to_string();
+                if last_error.contains("429") || last_error.contains("Too Many Requests") {
+                    println!("[WARN] RPC返回429限流错误，将重试");
+                    continue;
+                } else {
+                    // 非429错误直接返回
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+    
+    Err(format!("获取Provider失败，已重试{}次: {}", max_retries, last_error).into())
 }
 
 // 转账工具函数
@@ -1340,9 +1408,10 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         format!("发送交易失败 (RPC: {}): {}", rpc_url, e)
     })?;
     
-    println!("序号：{}, 交易 hash 为：{:?}", index, pending_tx.tx_hash());
+    let tx_hash = pending_tx.tx_hash();
+    println!("序号：{}, 交易 hash 为：{:?}", index, tx_hash);
     
-    // 等待交易确认
+    // 等待交易确认（设置30秒超时）
     item.error_msg = "等待交易结果...".to_string();
     // 发送状态更新事件到前端
     let _ = app_handle.emit("transfer_status_update", serde_json::json!({
@@ -1350,9 +1419,23 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         "error_msg": item.error_msg.clone(),
         "exec_status": "1"
     }));
-    let receipt = pending_tx.await.map_err(|e| {
-        format!("等待交易确认失败 (RPC: {}): {}", rpc_url, e)
-    })?;
+    
+    println!("[DEBUG] 开始等待交易确认，设置30秒超时...");
+    let receipt = match tokio::time::timeout(
+        tokio::time::Duration::from_secs(30),
+        pending_tx
+    ).await {
+        Ok(result) => {
+            result.map_err(|e| {
+                format!("等待交易确认失败 (RPC: {}): {}", rpc_url, e)
+            })?
+        }
+        Err(_) => {
+            let timeout_msg = format!("等待交易确认超时 (RPC: {}) - 超过30秒未收到确认，交易哈希: {:?}", rpc_url, tx_hash);
+            println!("[ERROR] {}", timeout_msg);
+            return Err(timeout_msg.into());
+        }
+    };
     
     match receipt {
         Some(receipt) => {

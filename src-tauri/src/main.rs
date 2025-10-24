@@ -325,6 +325,11 @@ async fn main() {
             wallets_tool::ecosystems::ethereum::rpc_management::update_rpc_provider,
             wallets_tool::ecosystems::ethereum::rpc_management::delete_rpc_provider,
             wallets_tool::ecosystems::ethereum::rpc_management::test_rpc_connection,
+            // proxy management functions
+            wallets_tool::ecosystems::ethereum::proxy_commands::save_proxy_config,
+            wallets_tool::ecosystems::ethereum::proxy_commands::get_proxy_config,
+            wallets_tool::ecosystems::ethereum::proxy_commands::test_proxy_connection,
+            wallets_tool::ecosystems::ethereum::proxy_commands::get_proxy_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

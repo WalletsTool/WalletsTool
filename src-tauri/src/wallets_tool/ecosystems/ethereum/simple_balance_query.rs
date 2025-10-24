@@ -121,7 +121,12 @@ pub struct SimpleBalanceQueryService {
 
 impl SimpleBalanceQueryService {
     pub fn new() -> Self {
-        let client = Client::new();
+        // 创建默认客户端（用于非代理模式）
+        // 设置30秒超时，与代理客户端保持一致
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| Client::new());
         Self { client }
     }
 
@@ -133,8 +138,10 @@ impl SimpleBalanceQueryService {
         rpc_service.get_random_rpc_url(chain).await
     }
 
-    // 发送 JSON-RPC 请求（带超时）
+    // 发送 JSON-RPC 请求（带超时、代理支持和429重试）
     async fn send_rpc_request(&self, rpc_url: &str, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+        use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
+        
         let request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: method.to_string(),
@@ -144,26 +151,65 @@ impl SimpleBalanceQueryService {
 
         // 设置10秒超时
         let timeout = Duration::from_secs(10);
-        let response = tokio::time::timeout(timeout, 
-            self.client
-                .post(rpc_url)
-                .json(&request)
-                .send()
-        ).await
-        .map_err(|_| anyhow!("RPC请求超时（10秒），RPC地址: {}", rpc_url))??
-        ;
+        
+        // 检查代理配置并获取代理客户端
+        let proxy_config = PROXY_MANAGER.get_config();
+        let using_proxy = proxy_config.enabled && !proxy_config.proxies.is_empty();
+        
+        // 优先使用代理客户端，如果没有代理则使用默认客户端
+        let client = if let Some(proxy_client) = PROXY_MANAGER.get_random_proxy_client() {
+            println!("[DEBUG] 使用代理发送RPC请求 (余额查询): {}", rpc_url);
+            if using_proxy {
+                println!("[INFO] 代理已启用，当前有 {} 个代理可用", proxy_config.proxies.len());
+            }
+            proxy_client
+        } else {
+            if proxy_config.enabled {
+                println!("[WARN] 代理已启用但没有可用代理，使用直连模式: {}", rpc_url);
+            } else {
+                println!("[DEBUG] 代理未启用，使用直连模式发送RPC请求 (余额查询): {}", rpc_url);
+            }
+            self.client.clone()
+        };
+        
+        // 实现429错误重试机制（最多重试3次）
+        let mut retry_count = 0;
+        let max_retries = 3;
+        
+        loop {
+            let response = tokio::time::timeout(timeout, 
+                client
+                    .post(rpc_url)
+                    .json(&request)
+                    .send()
+            ).await
+            .map_err(|_| anyhow!("RPC请求超时（10秒），RPC地址: {}", rpc_url))??;
 
-        let json_response: JsonRpcResponse = tokio::time::timeout(timeout,
-            response.json::<JsonRpcResponse>()
-        ).await
-        .map_err(|_| anyhow!("RPC响应解析超时（10秒），RPC地址: {}", rpc_url))??
-        ;
+            // 检查是否为429错误
+            if response.status().as_u16() == 429 {
+                retry_count += 1;
+                if retry_count > max_retries {
+                    return Err(anyhow!("RPC请求速率限制（429错误），已达到最大重试次数，RPC地址: {}", rpc_url));
+                }
+                
+                // 指数退避：等待时间随重试次数增加而增加
+                let wait_time = Duration::from_secs(2_u64.pow(retry_count as u32));
+                println!("[WARN] 遇到429速率限制，等待 {:?} 后重试（第 {} 次重试），RPC: {}", wait_time, retry_count, rpc_url);
+                sleep(wait_time).await;
+                continue;
+            }
+            
+            let json_response: JsonRpcResponse = tokio::time::timeout(timeout,
+                response.json::<JsonRpcResponse>()
+            ).await
+            .map_err(|_| anyhow!("RPC响应解析超时（10秒），RPC地址: {}", rpc_url))??;
 
-        if let Some(error) = json_response.error {
-            return Err(anyhow!("RPC Error: {} - {}", error.code, error.message));
+            if let Some(error) = json_response.error {
+                return Err(anyhow!("RPC Error: {} - {}", error.code, error.message));
+            }
+
+            return json_response.result.ok_or_else(|| anyhow!("No result in RPC response"));
         }
-
-        json_response.result.ok_or_else(|| anyhow!("No result in RPC response"))
     }
 
     // 查询基础币种余额
@@ -306,7 +352,7 @@ impl SimpleBalanceQueryService {
         Ok(())
     }
 
-    // 查询单个项目的余额（带超时控制）
+    // 查询单个项目的余额（带超时控制和失败重试）
     async fn query_single_item(&self, mut item: QueryItem, params: &QueryParams, window_id: &str) -> QueryItem {
         // 检查是否需要停止查询
         if get_stop_flag(window_id) {
@@ -341,51 +387,88 @@ impl SimpleBalanceQueryService {
             }
         }
 
-        // 设置单个查询任务的超时时间为15秒
-        let query_timeout = Duration::from_secs(15);
+        // 实现失败重试机制（最多3次，每次重试更换RPC节点）
+        let max_retries = 3;
+        let mut last_error = String::new();
+        let mut last_rpc_url = String::new();
         
-        // 获取当前使用的RPC地址用于错误信息
-        let rpc_url = if let Ok(url) = self.get_rpc_url(&params.chain).await {
-            url
-        } else {
-            "未知RPC地址".to_string()
-        };
-        
-        let result = tokio::time::timeout(query_timeout, async {
-            if params.coin_config.coin_type == "base" {
-                self.query_base_balance(&mut item, &params.chain).await?;
-            } else if params.coin_config.coin_type == "token" {
-                // 如果不是仅查询目标代币，也要查询平台币
-                if !params.only_coin_config {
-                    if let Err(e) = self.query_base_balance(&mut item, &params.chain).await {
-                        println!("查询平台币失败: {}", e);
+        for retry_count in 0..max_retries {
+            // 检查是否需要停止查询
+            if get_stop_flag(window_id) {
+                item.exec_status = "3".to_string();
+                item.error_msg = Some("查询已被用户停止".to_string());
+                return item;
+            }
+            
+            // 如果是重试（不是第一次尝试），添加短暂延迟
+            if retry_count > 0 {
+                println!("[RETRY] 余额查询重试 {}/{} - 地址: {}，更换RPC节点", retry_count, max_retries - 1, item.address);
+                sleep(Duration::from_millis(500)).await; // 重试间隔500ms
+            }
+            
+            // 每次重试都重新获取RPC地址（会随机选择不同的RPC节点）
+            let rpc_url = if let Ok(url) = self.get_rpc_url(&params.chain).await {
+                url
+            } else {
+                "未知RPC地址".to_string()
+            };
+            
+            // 记录当前使用的RPC
+            if retry_count > 0 {
+                println!("[RPC] 第{}次尝试使用RPC: {}", retry_count + 1, rpc_url);
+            }
+            last_rpc_url = rpc_url.clone();
+            
+            // 设置单个查询任务的超时时间为15秒
+            let query_timeout = Duration::from_secs(15);
+            
+            let result = tokio::time::timeout(query_timeout, async {
+                if params.coin_config.coin_type == "base" {
+                    self.query_base_balance(&mut item, &params.chain).await?;
+                } else if params.coin_config.coin_type == "token" {
+                    // 如果不是仅查询目标代币，也要查询平台币
+                    if !params.only_coin_config {
+                        if let Err(e) = self.query_base_balance(&mut item, &params.chain).await {
+                            println!("查询平台币失败: {}", e);
+                        }
+                    }
+                    
+                    if let Some(contract_address) = &params.coin_config.contract_address {
+                        self.query_token_balance(&mut item, &params.chain, contract_address).await?;
                     }
                 }
-                
-                if let Some(contract_address) = &params.coin_config.contract_address {
-                    self.query_token_balance(&mut item, &params.chain, contract_address).await?;
+                Ok::<(), anyhow::Error>(())
+            }).await;
+
+            match result {
+                Ok(Ok(_)) => {
+                    // 查询成功
+                    item.exec_status = "2".to_string();
+                    if retry_count > 0 {
+                        println!("[SUCCESS] 余额查询重试成功 - 地址: {}, 重试次数: {}, 使用RPC: {}", 
+                                item.address, retry_count, last_rpc_url);
+                    }
+                    return item; // 成功后直接返回
+                }
+                Ok(Err(e)) => {
+                    last_error = format!("查询失败: {}", e);
+                    println!("[ERROR] 余额查询失败 (尝试 {}/{}) - 地址: {}, RPC: {}, 错误: {}", 
+                            retry_count + 1, max_retries, item.address, last_rpc_url, e);
+                }
+                Err(_) => {
+                    last_error = format!("查询超时（15秒）");
+                    println!("[ERROR] 余额查询超时 (尝试 {}/{}) - 地址: {}, RPC: {}", 
+                            retry_count + 1, max_retries, item.address, last_rpc_url);
                 }
             }
-            Ok::<(), anyhow::Error>(())
-        }).await;
-
-        match result {
-            Ok(Ok(_)) => {
-                item.exec_status = "2".to_string(); // 成功
-            }
-            Ok(Err(e)) => {
-                item.exec_status = "3".to_string(); // 失败
-                item.retry_flag = true;
-                item.error_msg = Some(format!("查询失败: {}", e));
-                println!("查询失败: {}", e);
-            }
-            Err(_) => {
-                item.exec_status = "3".to_string(); // 超时
-                item.retry_flag = true;
-                item.error_msg = Some(format!("查询超时（15秒），RPC地址: {}", rpc_url));
-                println!("查询超时: {}, RPC地址: {}", item.address, rpc_url);
-            }
         }
+        
+        // 所有重试都失败，设置最终失败状态
+        item.exec_status = "3".to_string();
+        item.retry_flag = true;
+        item.error_msg = Some(format!("{} (已重试{}次，最后RPC: {})", last_error, max_retries - 1, last_rpc_url));
+        println!("[FAILED] 余额查询最终失败 - 地址: {}, 已重试{}次，最后RPC: {}", 
+                item.address, max_retries - 1, last_rpc_url);
 
         item
     }
@@ -406,8 +489,8 @@ impl SimpleBalanceQueryService {
             async move {
                 let _permit = semaphore.acquire().await.unwrap();
                 
-                // 添加随机延迟，避免过快请求
-                let delay = Duration::from_millis(rand::random::<u64>() % 100);
+                // 添加随机延迟，避免速率限制（300-800ms）
+                let delay = Duration::from_millis(300 + (rand::random::<u64>() % 500));
                 sleep(delay).await;
                 
                 service.query_single_item(item, &params, "default").await
@@ -468,8 +551,8 @@ impl SimpleBalanceQueryService {
                     return item.clone();
                 }
                 
-                // 添加随机延迟，避免过快请求
-                let delay = Duration::from_millis(rand::random::<u64>() % 100);
+                // 添加随机延迟，避免速率限制（300-800ms）
+                let delay = Duration::from_millis(300 + (rand::random::<u64>() % 500));
                 sleep(delay).await;
                 
                 // 通知前端该项目开始执行

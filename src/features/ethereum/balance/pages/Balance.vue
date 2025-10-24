@@ -1590,7 +1590,7 @@ async function handleBeforeClose() {
   <ProxyConfigModal 
     v-if="proxyConfigVisible" 
     :visible="proxyConfigVisible" 
-    @close="proxyConfigVisible = false"
+    @update:visible="proxyConfigVisible = $event"
     @config-change="handleProxyConfigChange"
     ref="proxyConfigRef"
   />

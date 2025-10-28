@@ -212,6 +212,33 @@ impl SimpleBalanceQueryService {
         }
     }
 
+    // 查询基础币种余额（带重试机制）
+    async fn query_base_balance_with_retry(&self, item: &mut QueryItem, chain: &str, max_retries: usize) -> Result<()> {
+        let mut last_error = None;
+        
+        for retry_count in 0..max_retries {
+            // 每次重试都重新获取RPC地址（会随机选择不同的RPC节点）
+            match self.query_base_balance(item, chain).await {
+                Ok(_) => {
+                    if retry_count > 0 {
+                        println!("[SUCCESS] 平台币查询重试成功 - 地址: {}, 重试次数: {}", item.address, retry_count);
+                    }
+                    return Ok(());
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    if retry_count < max_retries - 1 {
+                        println!("[RETRY] 平台币查询失败，将重试 ({}/{}) - 地址: {}, 错误: {}", 
+                                retry_count + 1, max_retries - 1, item.address, last_error.as_ref().unwrap());
+                        sleep(Duration::from_millis(500)).await; // 重试间隔500ms
+                    }
+                }
+            }
+        }
+        
+        Err(last_error.unwrap_or_else(|| anyhow!("平台币查询失败")))
+    }
+
     // 查询基础币种余额
     async fn query_base_balance(&self, item: &mut QueryItem, chain: &str) -> Result<()> {
         let rpc_url = self.get_rpc_url(chain).await?;
@@ -426,15 +453,42 @@ impl SimpleBalanceQueryService {
                 if params.coin_config.coin_type == "base" {
                     self.query_base_balance(&mut item, &params.chain).await?;
                 } else if params.coin_config.coin_type == "token" {
-                    // 如果不是仅查询目标代币，也要查询平台币
+                    // 查询代币时，同时查询平台币和代币余额
+                    let mut base_query_success = true;
+                    let mut token_query_success = true;
+                    let mut errors = Vec::new();
+                    
+                    // 如果不是仅查询目标代币，也要查询平台币（带重试机制）
                     if !params.only_coin_config {
-                        if let Err(e) = self.query_base_balance(&mut item, &params.chain).await {
-                            println!("查询平台币失败: {}", e);
+                        // 平台币查询失败时记录错误，但不立即返回
+                        if let Err(e) = self.query_base_balance_with_retry(&mut item, &params.chain, 3).await {
+                            base_query_success = false;
+                            errors.push(format!("平台币查询失败: {}", e));
+                            println!("[WARN] 平台币查询最终失败: {}", e);
+                        } else {
+                            println!("[SUCCESS] 平台币查询成功");
                         }
                     }
                     
+                    // 查询代币余额
                     if let Some(contract_address) = &params.coin_config.contract_address {
-                        self.query_token_balance(&mut item, &params.chain, contract_address).await?;
+                        if let Err(e) = self.query_token_balance(&mut item, &params.chain, contract_address).await {
+                            token_query_success = false;
+                            errors.push(format!("代币查询失败: {}", e));
+                            println!("[WARN] 代币查询失败: {}", e);
+                        } else {
+                            println!("[SUCCESS] 代币查询成功");
+                        }
+                    }
+                    
+                    // 只有当代币查询失败时才返回错误（平台币查询失败不影响整体结果）
+                    if !token_query_success {
+                        return Err(anyhow!(errors.join("; ")));
+                    }
+                    
+                    // 如果平台币查询失败但代币查询成功，记录警告但不返回错误
+                    if !base_query_success {
+                        println!("[WARN] 平台币查询失败但代币查询成功，继续处理");
                     }
                 }
                 Ok::<(), anyhow::Error>(())
@@ -531,14 +585,18 @@ impl SimpleBalanceQueryService {
         println!("开始批量查询余额（实时更新），线程数: {}, 总任务数: {}", thread_count, params.items.len());
         
         let items = params.items.clone();
+        // 使用Arc包装service，使其能在tokio::spawn中使用
+        let service = Arc::new(SimpleBalanceQueryService::new());
+        
         let tasks: Vec<_> = items.into_iter().enumerate().map(|(index, item)| {
             let semaphore = semaphore.clone();
             let params = params.clone();
-            let service = self;
+            let service = service.clone();
             let app_handle = app_handle.clone();
             let window_id = window_id.clone();
             
-            async move {
+            // 使用tokio::spawn创建真正的独立任务
+            tokio::spawn(async move {
                 // 在获取信号量前检查停止标志
                 if get_stop_flag(&window_id) {
                     return item.clone();
@@ -578,10 +636,32 @@ impl SimpleBalanceQueryService {
                 }
                 
                 result
-            }
+            })
         }).collect();
 
-        let results = join_all(tasks).await;
+        // 等待所有tokio任务完成
+        let mut results = Vec::new();
+        for task in tasks {
+            match task.await {
+                Ok(result) => results.push(result),
+                Err(e) => {
+                    println!("[ERROR] 任务执行失败: {}", e);
+                    // 对于失败的任务，创建一个错误结果
+                    let error_item = QueryItem {
+                        key: String::new(),
+                        address: String::new(),
+                        private_key: None,
+                        plat_balance: None,
+                        coin_balance: None,
+                        nonce: None,
+                        retry_flag: true,
+                        exec_status: "3".to_string(),
+                        error_msg: Some(format!("任务执行失败: {}", e)),
+                    };
+                    results.push(error_item);
+                }
+            }
+        }
         
         let success = results.iter().all(|item| item.exec_status == "2");
         let error_msg = if success {

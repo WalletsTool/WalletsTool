@@ -212,7 +212,10 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     // 获取当前使用的RPC URL
     let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-        rpc_config.get_random_rpc().to_string()
+        match rpc_config.get_random_rpc() {
+            Ok(url) => url.to_string(),
+            Err(e) => format!("获取RPC地址失败: {}", e)
+        }
     } else {
         "未知RPC".to_string()
     };
@@ -269,7 +272,10 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     // 获取当前使用的RPC URL用于错误信息
     let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-        rpc_config.get_random_rpc().to_string()
+        match rpc_config.get_random_rpc() {
+            Ok(url) => url.to_string(),
+            Err(e) => format!("获取RPC地址失败: {}", e)
+        }
     } else {
         "未知RPC".to_string()
     };
@@ -382,20 +388,51 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         return Err("转账金额不能为零".into());
     }
     
-    // 获取发送方ETH余额用于gas费检查
-    let eth_balance = provider.get_balance(wallet_address, None).await.map_err(|e| {
-        format!("获取ETH余额失败 (RPC: {}): {}", rpc_url, e)
+    // 获取发送方平台币余额用于gas费检查
+    let wallet_balance = provider.get_balance(wallet_address, None).await.map_err(|e| {
+        format!("获取平台币余额失败 (RPC: {}): {}", rpc_url, e)
     })?;
     let estimated_gas_fee = gas_price * gas_limit;
     
-    println!("[DEBUG] ETH余额: {} wei", eth_balance);
-    println!("[DEBUG] 预估Gas费用: {} wei", estimated_gas_fee);
+    // 格式化为可读的单位
+    let balance_formatted = format_units(wallet_balance, 18).unwrap_or_else(|_| "N/A".to_string());
+    let gas_fee_formatted = format_units(estimated_gas_fee, 18).unwrap_or_else(|_| "N/A".to_string());
+    let gas_price_gwei = format_units(gas_price, "gwei").unwrap_or_else(|_| "N/A".to_string());
     
-    if eth_balance < estimated_gas_fee {
-        return Err(format!(
-            "ETH余额不足支付Gas费用！当前余额: {} wei，预估Gas费用: {} wei",
-            eth_balance, estimated_gas_fee
-        ).into());
+    println!("[DEBUG] 平台币余额: {} wei ({} BNB/ETH)", wallet_balance, balance_formatted);
+    println!("[DEBUG] Gas Price: {} wei ({} gwei)", gas_price, gas_price_gwei);
+    println!("[DEBUG] Gas Limit: {}", gas_limit);
+    println!("[DEBUG] 预估Gas费用: {} wei ({} BNB/ETH)", estimated_gas_fee, gas_fee_formatted);
+    
+    // 获取链ID以进行特殊处理
+    let chain_id = provider.get_chainid().await.unwrap_or_default().as_u64();
+    
+    // 对BSC链进行特殊处理，使用更宽松的余额检查
+    if chain_id == 56 || chain_id == 97 {
+        // BSC链的余额检查应该更加宽松，考虑到可能的计算误差
+        let buffer_percentage = U256::from(110); // 10%的缓冲
+        let buffered_gas_fee = estimated_gas_fee * buffer_percentage / U256::from(100);
+        
+        println!("[DEBUG] BSC链特殊处理 - 原始预估Gas费用: {}, 带缓冲的Gas费用: {}", estimated_gas_fee, buffered_gas_fee);
+        
+        if wallet_balance < buffered_gas_fee {
+            return Err(format!(
+                "平台币余额不足支付Gas费用！\n当前余额: {} ({} wei)\n预估Gas费用: {} ({} wei)\nGas Price: {} gwei, Gas Limit: {}\n(已考虑10%缓冲)",
+                balance_formatted, wallet_balance,
+                gas_fee_formatted, estimated_gas_fee,
+                gas_price_gwei, gas_limit
+            ).into());
+        }
+    } else {
+        // 其他链使用标准检查
+        if wallet_balance < estimated_gas_fee {
+            return Err(format!(
+                "平台币余额不足支付Gas费用！\n当前余额: {} ({} wei)\n预估Gas费用: {} ({} wei)\nGas Price: {} gwei, Gas Limit: {}",
+                balance_formatted, wallet_balance,
+                gas_fee_formatted, estimated_gas_fee,
+                gas_price_gwei, gas_limit
+            ).into());
+        }
     }
     
     // 构建转账交易
@@ -428,7 +465,10 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         Err(e) => {
             // 获取当前使用的RPC URL
             let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-                rpc_config.get_random_rpc().to_string()
+                match rpc_config.get_random_rpc() {
+                    Ok(url) => url.to_string(),
+                    Err(e) => format!("获取RPC地址失败: {}", e)
+                }
             } else {
                 "未知RPC".to_string()
             };
@@ -471,7 +511,10 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     // 获取RPC URL用于错误消息
     let rpc_url_for_error = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-        rpc_config.get_random_rpc().to_string()
+        match rpc_config.get_random_rpc() {
+            Ok(url) => url.to_string(),
+            Err(e) => format!("获取RPC地址失败: {}", e)
+        }
     } else {
         "未知RPC".to_string()
     };
@@ -510,7 +553,10 @@ async fn token_transfer_internal<R: tauri::Runtime>(
             } else {
                 // 获取当前使用的RPC URL
                 let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-                    rpc_config.get_random_rpc().to_string()
+                    match rpc_config.get_random_rpc() {
+                        Ok(url) => url.to_string(),
+                        Err(e) => format!("获取RPC地址失败: {}", e)
+                    }
                 } else {
                     "未知RPC".to_string()
                 };
@@ -543,7 +589,10 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         None => {
             // 获取当前使用的RPC URL
             let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-                rpc_config.get_random_rpc().to_string()
+                match rpc_config.get_random_rpc() {
+                    Ok(url) => url.to_string(),
+                    Err(e) => format!("获取RPC地址失败: {}", e)
+                }
             } else {
                 "未知RPC".to_string()
             };

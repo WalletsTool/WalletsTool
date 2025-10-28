@@ -65,9 +65,12 @@ impl ProviderUtils {
     }
     
     // 随机选择RPC URL
-    fn get_random_rpc_url(rpc_urls: &[String]) -> &str {
+    fn get_random_rpc_url(rpc_urls: &[String]) -> Result<&str, String> {
+        if rpc_urls.is_empty() {
+            return Err("没有可用的RPC URL".to_string());
+        }
         let mut rng = rand::thread_rng();
-        &rpc_urls[rng.gen_range(0..rpc_urls.len())]
+        Ok(&rpc_urls[rng.gen_range(0..rpc_urls.len())])
     }
     // 获取指定链的Provider
     pub async fn get_provider(chain: &str) -> Result<Provider<Http>, Box<dyn std::error::Error>> {
@@ -79,7 +82,8 @@ impl ProviderUtils {
         println!("[DEBUG] get_provider - 获取到链配置，chain_id: {}, rpc_urls数量: {}", 
                  chain_config.chain_id, chain_config.rpc_urls.len());
         
-        let rpc_url = Self::get_random_rpc_url(&chain_config.rpc_urls);
+        let rpc_url = Self::get_random_rpc_url(&chain_config.rpc_urls)
+            .map_err(|e| format!("获取RPC URL失败: {}. 请检查链 '{}' 是否配置了RPC节点。", e, chain))?;
         println!("[DEBUG] get_provider - 选择的RPC URL: {}", rpc_url);
         
         // 尝试使用代理客户端，如果没有代理则使用默认方式

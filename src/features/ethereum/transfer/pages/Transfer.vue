@@ -2101,6 +2101,22 @@ async function chainChange() {
     try {
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
       if (isTauri) {
+        // 检查是否有启用的RPC节点
+        try {
+          const rpcProviders = await invoke('get_rpc_providers', { chainKey: chainValue.value });
+          const activeRpcs = rpcProviders.filter(rpc => rpc.is_active);
+          
+          if (activeRpcs.length === 0) {
+            Notification.warning({
+              title: '注意：没有启用的RPC节点',
+              content: `当前链 "${currentChain.value.name}" 没有启用的RPC节点，无法执行查询和转账操作。请在"RPC管理"中至少启用一个RPC节点。`,
+              duration: 8000
+            });
+          }
+        } catch (err) {
+          console.error('检查RPC状态失败:', err);
+        }
+
         const tokenList = await invoke("get_coin_list", {
           chainKey: chainValue.value
         });
@@ -2499,6 +2515,11 @@ async function queryBalance() {
     Notification.warning("请先导入私钥！");
     return;
   }
+  // 检查是否有启用的RPC节点
+  if (!currentChain.value || !chainValue.value) {
+    Notification.warning("请选择一个区块链网络！");
+    return;
+  }
   hasExecutedTransfer.value = false;
   transferTotal.value = data.value.length;
   transferCompleted.value = 0;
@@ -2539,6 +2560,7 @@ async function queryBalanceInBatches() {
   console.log(`开始分批查询余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
 
   try {
+    // 按照从上到下的顺序，串行执行每个批次
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       // 检查是否需要停止查询
       if (balanceStopFlag.value) {
@@ -2553,14 +2575,10 @@ async function queryBalanceInBatches() {
       const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
       const batchData = data.value.slice(startIndex, endIndex);
 
-      console.log(`处理第 ${batchIndex + 1}/${totalBatches} 批，索引 ${startIndex}-${endIndex - 1}`);
+      console.log(`执行第 ${batchIndex + 1}/${totalBatches} 批，索引 ${startIndex}-${endIndex - 1}`);
 
+      // 顺序执行批次查询
       await queryBalanceBatch(batchData, startIndex);
-
-      // 批次间添加短暂延迟，避免过于频繁的请求
-      if (batchIndex < totalBatches - 1) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
     }
 
     // 所有批次完成后的统计
@@ -2669,8 +2687,18 @@ async function queryBalanceBatch(batchData, startIndex) {
 
   } catch (error) {
     console.error('批次查询失败:', error);
-
-    // 设置批次项目为失败状态，保护私钥字段
+    
+    // 检查是否是RPC配置错误
+    const errorMsg = String(error);
+    if (errorMsg.includes('RPC配置') || errorMsg.includes('RPC节点') || errorMsg.includes('禁用')) {
+      Notification.error({
+        title: '查询失败',
+        content: errorMsg,
+        duration: 5000
+      });
+    } else {
+      Notification.error('查询失败：' + errorMsg);
+    }
     batchData.forEach((item, index) => {
       const dataIndex = startIndex + index;
       if (data.value[dataIndex]) {
@@ -2750,6 +2778,7 @@ async function queryToAddressBalanceInBatches() {
   console.log(`开始分批查询到账地址余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
 
   try {
+    // 按照从上到下的顺序，串行执行每个批次
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       // 检查是否需要停止查询
       if (balanceStopFlag.value) {
@@ -2764,14 +2793,10 @@ async function queryToAddressBalanceInBatches() {
       const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
       const batchData = itemsWithToAddr.slice(startIndex, endIndex);
 
-      console.log(`处理第 ${batchIndex + 1}/${totalBatches} 批到账地址，索引 ${startIndex}-${endIndex - 1}`);
+      console.log(`执行第 ${batchIndex + 1}/${totalBatches} 批到账地址，索引 ${startIndex}-${endIndex - 1}`);
 
+      // 顺序执行批次查询
       await queryToAddressBalanceBatch(batchData, startIndex);
-
-      // 批次间添加短暂延迟，避免过于频繁的请求
-      if (batchIndex < totalBatches - 1) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
     }
 
     // 所有批次完成后的统计
@@ -2886,6 +2911,16 @@ async function queryToAddressBalanceBatch(batchData, startIndex) {
 
   } catch (error) {
     console.error('批次查询到账地址失败:', error);
+
+    // 检查是否是RPC配置错误
+    const errorMsg = String(error);
+    if (errorMsg.includes('RPC配置') || errorMsg.includes('RPC节点') || errorMsg.includes('禁用')) {
+      Notification.error({
+        title: '查询失败',
+        content: errorMsg,
+        duration: 5000
+      });
+    }
 
     // 设置批次项目为失败状态，保护私钥字段
     batchData.forEach((item, index) => {

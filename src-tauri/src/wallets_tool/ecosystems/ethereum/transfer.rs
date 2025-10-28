@@ -68,13 +68,13 @@ pub struct RpcConfig {
 
 impl RpcConfig {
     // 基于优先级权重的负载均衡选择RPC
-    pub fn get_random_rpc(&self) -> &str {
+    pub fn get_random_rpc(&self) -> Result<&str, String> {
         if self.providers.is_empty() {
-            panic!("No RPC providers available");
+            return Err("没有可用的RPC提供商。请在RPC管理中至少启用一个RPC节点。".to_string());
         }
         
         if self.providers.len() == 1 {
-            return &self.providers[0].rpc_url;
+            return Ok(&self.providers[0].rpc_url);
         }
         
         // 计算每个提供商的权重
@@ -106,12 +106,12 @@ impl RpcConfig {
         for (i, weight) in weights.iter().enumerate() {
             cumulative_weight += weight;
             if random_value <= cumulative_weight {
-                return &self.providers[i].rpc_url;
+                return Ok(&self.providers[i].rpc_url);
             }
         }
         
         // 如果由于浮点精度问题没有选中，返回最后一个
-        &self.providers.last().unwrap().rpc_url
+        Ok(&self.providers.last().ok_or("RPC提供商列表为空")?.rpc_url)
     }
 }
 
@@ -177,7 +177,7 @@ pub async fn get_rpc_config(chain: &str) -> Option<RpcConfig> {
     };
     
     if rpc_providers.is_empty() {
-        println!("[ERROR] get_rpc_config - 没有找到活跃的RPC提供商，链: {}", chain);
+        println!("[ERROR] get_rpc_config - 没有找到活跃的RPC提供商，链: {}。请在RPC管理中至少启用一个RPC节点。", chain);
         return None;
     }
     
@@ -227,14 +227,16 @@ pub async fn create_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn
     
     let rpc_config = get_rpc_config(chain).await
         .ok_or_else(|| {
-            println!("[ERROR] create_provider - 不支持的链: {}", chain);
-            format!("不支持的链: {}", chain)
+            let error_msg = format!("无法获取链 '{}' 的RPC配置。可能原因：1) 链不存在  2) 所有RPC节点都已被禁用。请检查RPC管理设置，至少启用一个RPC节点。", chain);
+            println!("[ERROR] create_provider - {}", error_msg);
+            error_msg
         })?;
     
     println!("[DEBUG] create_provider - 获取到RPC配置，chain_id: {}, providers数量: {}", 
              rpc_config.chain_id, rpc_config.providers.len());
     
-    let rpc_url = rpc_config.get_random_rpc();
+    let rpc_url = rpc_config.get_random_rpc()
+        .map_err(|e| format!("选择RPC失败: {}", e))?;
     println!("[DEBUG] create_provider - 选择的RPC URL: {}", rpc_url);
     
     // 检查代理配置状态
@@ -291,9 +293,12 @@ pub async fn get_random_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box
     
     for retry_count in 0..max_retries {
         let rpc_config = get_rpc_config(chain).await
-            .ok_or(format!("不支持的链: {}", chain))?;
+            .ok_or_else(|| {
+                format!("无法获取链 '{}' 的RPC配置。可能原因：1) 链不存在  2) 所有RPC节点都已被禁用。请检查RPC管理设置，至少启用一个RPC节点。", chain)
+            })?;
         
-        let rpc_url = rpc_config.get_random_rpc();
+        let rpc_url = rpc_config.get_random_rpc()
+            .map_err(|e| format!("选择RPC失败: {}", e))?;
         
         if retry_count > 0 {
             // 指数退避：2^retry_count 秒
@@ -474,7 +479,10 @@ impl TransferUtils {
                 // 获取当前使用的RPC URL
                 let error_msg = e.to_string();
                 let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-                    rpc_config.get_random_rpc().to_string()
+                    match rpc_config.get_random_rpc() {
+                        Ok(url) => url.to_string(),
+                        Err(e) => format!("获取RPC地址失败: {}", e)
+                    }
                 } else {
                     "未知RPC".to_string()
                 };
@@ -492,7 +500,6 @@ impl TransferUtils {
         if gas_price.is_zero() {
             return Err("获取到的 gas price 为0，请检查网络连接或RPC配置".into());
         }
-        
         // 根据转账类型进行不同的余额检查
         match config.transfer_type.as_str() {
             "1" => {
@@ -587,7 +594,10 @@ impl TransferUtils {
         } else {
             // 获取当前使用的RPC URL
             let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-                rpc_config.get_random_rpc().to_string()
+                match rpc_config.get_random_rpc() {
+                    Ok(url) => url.to_string(),
+                    Err(e) => format!("获取RPC地址失败: {}", e)
+                }
             } else {
                 "未知RPC".to_string()
             };
@@ -595,11 +605,26 @@ impl TransferUtils {
             U256::zero()
         };
         
-        // 获取链ID以确定是否为Arbitrum
+        // 获取链ID并判断链类型
         let chain_id = provider.get_chainid().await?;
-        let is_arbitrum = chain_id == U256::from(42161); // Arbitrum One
+        let chain_id_u64 = chain_id.as_u64();
+        let is_arbitrum = chain_id_u64 == 42161; // Arbitrum One
         
-        println!("[DEBUG] 链ID: {}, 是否为Arbitrum: {}", chain_id, is_arbitrum);
+        // 判断是否为真正的EIP-1559链
+        // BSC(56)虽然可能返回baseFee，但实际上不是标准的EIP-1559链，其Gas Price机制不同
+        let is_eip1559_chain = match chain_id_u64 {
+            1 => true,      // Ethereum Mainnet
+            5 => true,      // Goerli
+            11155111 => true, // Sepolia
+            137 => true,    // Polygon
+            42161 => true,  // Arbitrum One
+            10 => true,     // Optimism
+            56 => false,    // BSC - 非EIP-1559链
+            97 => false,    // BSC Testnet - 非EIP-1559链
+            _ => base_fee > U256::zero(), // 其他链根据是否有baseFee判断
+        };
+        
+        println!("[DEBUG] 链ID: {}, 是否为Arbitrum: {}, 是否为EIP-1559链: {}", chain_id_u64, is_arbitrum, is_eip1559_chain);
         
         let calculated_gas_price = match config.gas_price_type.as_str() {
             "1" => {
@@ -610,7 +635,10 @@ impl TransferUtils {
                         // 获取当前使用的RPC URL
                         let error_msg = e.to_string();
                         let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-                            rpc_config.get_random_rpc().to_string()
+                            match rpc_config.get_random_rpc() {
+                                Ok(url) => url.to_string(),
+                                Err(e) => format!("获取RPC地址失败: {}", e)
+                            }
                         } else {
                             "未知RPC".to_string()
                         };
@@ -640,7 +668,10 @@ impl TransferUtils {
                         // 获取当前使用的RPC URL
                         let error_msg = e.to_string();
                         let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-                            rpc_config.get_random_rpc().to_string()
+                            match rpc_config.get_random_rpc() {
+                                Ok(url) => url.to_string(),
+                                Err(e) => format!("获取RPC地址失败: {}", e)
+                            }
                         } else {
                             "未知RPC".to_string()
                         };
@@ -678,13 +709,22 @@ impl TransferUtils {
             _ => return Err("gas price type error".into()),
         };
         
-        // 确保Gas Price高于baseFee
-        if base_fee > U256::zero() {
+        // 对于BSC链，使用更合理的Gas Price计算方式
+        if chain_id_u64 == 56 || chain_id_u64 == 97 {
+            // BSC链的特殊处理：直接返回计算的Gas Price，不使用baseFee
+            println!("[DEBUG] BSC链特殊处理，直接使用计算的Gas Price: {} gwei", 
+                format_units(calculated_gas_price, "gwei").unwrap_or_default()
+            );
+            return Ok(calculated_gas_price);
+        }
+        
+        // 确保Gas Price高于baseFee（仅对真正的EIP-1559链生效）
+        if is_eip1559_chain && base_fee > U256::zero() {
             let min_gas_price = if is_arbitrum {
                 // Arbitrum链：baseFee * 1.5 (50%安全边际)
                 base_fee * U256::from(150) / U256::from(100)
             } else {
-                // 其他链：baseFee * 1.2 (20%安全边际)
+                // 其他EIP-1559链：baseFee * 1.2 (20%安全边际)
                 base_fee * U256::from(120) / U256::from(100)
             };
             
@@ -705,8 +745,8 @@ impl TransferUtils {
             
             Ok(final_gas_price)
         } else {
-            // 非EIP-1559网络，直接返回计算的Gas Price
-            println!("[DEBUG] 非EIP-1559网络，使用计算的Gas Price: {} gwei", 
+            // 非EIP-1559网络（如BSC），直接使用计算的Gas Price，不受baseFee影响
+            println!("[DEBUG] 非EIP-1559网络或无baseFee，使用计算的Gas Price: {} gwei", 
                 format_units(calculated_gas_price, "gwei").unwrap_or_default()
             );
             Ok(calculated_gas_price)
@@ -770,40 +810,33 @@ impl TransferUtils {
                         // 获取当前使用的RPC URL
                         let error_msg = e.to_string();
                         let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-                            rpc_config.get_random_rpc().to_string()
+                            match rpc_config.get_random_rpc() {
+                                Ok(url) => url.to_string(),
+                                Err(e) => format!("获取RPC地址失败: {}", e)
+                            }
                         } else {
                             "未知RPC".to_string()
                         };
-                        println!("[WARN] estimate_gas失败 (RPC: {}): {}, 尝试获取最近3个区块transfer交易的平均gas limit", rpc_url, error_msg);
-                        // 尝试获取最近3个区块transfer交易的平均gas limit
-                        if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
-                            println!("[INFO] 使用最近3个区块transfer交易的平均gas limit: {}", avg_gas_limit);
-                            avg_gas_limit
-                        } else {
-                            println!("[WARN] 获取平均gas limit也失败，使用区块gas limit的合理比例");
-                            // 优先使用区块gas limit的合理比例，而不是固定默认值
+                        println!("[WARN] estimate_gas失败 (RPC: {}): {}, 使用默认值", rpc_url, error_msg);
+                        // 直接使用默认值，不再尝试获取平均gas limit（因为tx.gas是gas limit而非实际使用值）
+                        {
+                            println!("[WARN] 获取平均gas limit也失败，使用固定默认值");
+                            // 直接使用合理的固定默认值，不使用区块gas limit计算
                             if is_eth {
-                                // ETH转账使用区块gas limit的1%，最小21000
-                                std::cmp::max(
-                                    block_gas_limit / U256::from(100),
-                                    U256::from(21_000)
-                                )
+                                // ETH转账
+                                U256::from(21_000)
                             } else {
-                                // 代币转账使用区块gas limit的5%，根据链类型设置最小值
+                                // 代币转账根据链类型设置默认值
                                 let chain_id = provider.get_chainid().await.unwrap_or_default().as_u64();
-                                let min_token_gas = match chain_id {
-                                    42161 => U256::from(80_000),  // Arbitrum One - 更高的最小值
-                                    1 => U256::from(60_000),      // Ethereum Mainnet
-                                    137 => U256::from(60_000),    // Polygon
-                                    56 => U256::from(60_000),     // BSC
-                                    _ => U256::from(80_000),      // 其他链使用保守值
+                                let default_token_gas = match chain_id {
+                                    42161 => U256::from(150_000),  // Arbitrum One - 更高的默认值
+                                    1 => U256::from(65_000),       // Ethereum Mainnet
+                                    137 => U256::from(65_000),     // Polygon
+                                    56 => U256::from(60_000),      // BSC
+                                    _ => U256::from(80_000),       // 其他链使用保守值
                                 };
-                                println!("[DEBUG] 链ID: {}, 代币转账最小Gas Limit: {}", chain_id, min_token_gas);
-                                
-                                std::cmp::max(
-                                    block_gas_limit * U256::from(5) / U256::from(100),
-                                    min_token_gas
-                                )
+                                println!("[DEBUG] 链ID: {}, 代币转账默认Gas Limit: {}", chain_id, default_token_gas);
+                                default_token_gas
                             }
                         }
                     }
@@ -835,22 +868,9 @@ impl TransferUtils {
                     println!("[DEBUG] 链ID: {}, 代币转账最小Gas Limit: {}", chain_id, min_token_gas);
                     
                     if estimated_gas < min_token_gas {
-                        // 代币转账gas limit过小，使用备用方案
-                        println!("[DEBUG] 估算的gas limit {} 小于最小值 {}，使用备用方案", estimated_gas, min_token_gas);
-                        if let Ok(avg_gas_limit) = Self::get_average_gas_limit_from_recent_blocks(provider.clone()).await {
-                            // 确保平均值也不低于最小值
-                            let final_gas = std::cmp::max(avg_gas_limit, min_token_gas);
-                            println!("[DEBUG] 使用平均gas limit: {} (调整后: {})", avg_gas_limit, final_gas);
-                            final_gas
-                        } else {
-                            // 使用区块gas limit的5%作为代币转账的合理默认值，但不低于最小值
-                            let calculated_gas = std::cmp::max(
-                                block_gas_limit * U256::from(5) / U256::from(100),
-                                min_token_gas
-                            );
-                            println!("[DEBUG] 使用计算的gas limit: {}", calculated_gas);
-                            calculated_gas
-                        }
+                        // 代币转账gas limit过小，直接使用最小值
+                        println!("[DEBUG] 估算的gas limit {} 小于最小值 {}，使用最小值", estimated_gas, min_token_gas);
+                        min_token_gas
                     } else {
                         // 为估算值添加20%的安全边际，但确保不低于最小值
                         let gas_with_margin = estimated_gas * U256::from(120) / U256::from(100);
@@ -952,9 +972,21 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         format!("私钥格式错误: {}，请检查私钥格式是否正确（应为64位十六进制字符串，可带或不带0x前缀）", e)
     })?;
     // 优先通过统一ProviderUtils获取链ID，避免重复查询逻辑
-    let chain_id = ProviderUtils::get_chain_id(&config.chain).await.unwrap_or(
-        get_rpc_config(&config.chain).await.map(|c| c.chain_id).unwrap_or(1)
-    );
+    let chain_id = match ProviderUtils::get_chain_id(&config.chain).await {
+        Ok(id) => id,
+        Err(_) => {
+            // 如果ProviderUtils获取失败，尝试从RPC配置获取
+            match get_rpc_config(&config.chain).await {
+                Some(c) => c.chain_id,
+                None => {
+                    return Err(format!(
+                        "无法获取链 '{}' 的配置信息。请检查：1) 链是否存在  2) 是否至少有一个启用的RPC节点。",
+                        config.chain
+                    ).into());
+                }
+            }
+        }
+    };
     let wallet = wallet.with_chain_id(chain_id);
     let wallet_address = wallet.address();
     
@@ -968,9 +1000,17 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     
     // 获取当前使用的RPC URL用于错误信息
     let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
-        rpc_config.get_random_rpc().to_string()
+        match rpc_config.get_random_rpc() {
+            Ok(url) => url.to_string(),
+            Err(e) => {
+                return Err(format!("获取RPC地址失败: {}", e).into());
+            }
+        }
     } else {
-        "未知RPC".to_string()
+        return Err(format!(
+            "无法获取链 '{}' 的RPC配置。请在RPC管理中至少启用一个RPC节点。",
+            config.chain
+        ).into());
     };
     
     // 预检查余额是否充足（避免RPC调用后才发现余额不足）
@@ -1098,17 +1138,17 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                 .unwrap_or(0.0);
             
             let (safety_margins, search_ranges, max_iterations, amount_type): (Vec<i32>, Vec<i32>, usize, &str) = if balance_eth > 0.1 {
-                // 大金额：4轮，每轮25次迭代
-                (vec![104, 103, 102, 101], vec![97, 98, 99, 99], 25, "大金额")
+                // 大金额：3轮优化，大幅减少迭代次数提升速度
+                (vec![103, 102, 101], vec![97, 98, 99], 12, "大金额")
             } else if balance_eth > 0.01 {
-                // 中型金额：3轮，每轮20次迭代
-                (vec![103, 102, 101], vec![98, 99, 99], 20, "中型金额")
+                // 中型金额：2轮优化
+                (vec![102, 101], vec![98, 99], 10, "中型金额")
             } else if balance_eth > 0.001 {
-                // 小型金额：2轮，每轮15次迭代
-                (vec![102, 101], vec![98, 99], 15, "小型金额")
+                // 小型金额：2轮优化
+                (vec![102, 101], vec![98, 99], 8, "小型金额")
             } else {
-                // 极简金额：1轮，10次迭代
-                (vec![101], vec![99], 10, "极简金额")
+                // 极简金额：1轮快速计算
+                (vec![101], vec![99], 6, "极简金额")
             };
             
             println!("序号：{}, 开始多轮二分法优化，余额: {} ETH ({})", index, balance_eth, amount_type);
@@ -1138,6 +1178,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                 let mut best_gas_limit = final_gas_limit;
                 
                 // 使用动态迭代次数
+                let mut cached_gas_limit = gas_limit; // 缓存gas limit减少RPC调用
                 for iteration in 0..max_iterations {
                     if high <= low {
                         break;
@@ -1148,8 +1189,13 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                         break;
                     }
                     
+                    // 优化：只在关键迭代位置进行gas估算，其他时候使用缓存值
+                    let should_estimate_gas = iteration == 0 || // 第一次迭代
+                                             iteration % 4 == 0 || // 每4次迭代
+                                             iteration == max_iterations - 1; // 最后一次迭代
+                    
                     // 估算这个转账金额需要的gas limit
-                    let estimated_gas_limit = if config.limit_type == "1" {
+                    let estimated_gas_limit = if config.limit_type == "1" && should_estimate_gas {
                         let provider_for_gas_estimation = get_random_provider(&config.chain).await?;
                         match TransferUtils::get_gas_limit(
                             &config,
@@ -1160,7 +1206,9 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                         ).await {
                             Ok(gas) => {
                                 // 使用当前轮次的安全边际
-                                gas * U256::from(margin) / U256::from(100)
+                                let gas_with_margin = gas * U256::from(margin) / U256::from(100);
+                                cached_gas_limit = gas_with_margin; // 更新缓存
+                                gas_with_margin
                             }
                             Err(_) => {
                                 // 估算失败，使用默认值加安全边际
@@ -1168,8 +1216,12 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                             }
                         }
                     } else {
-                        // 非自动估算模式，使用配置的gas limit加安全边际
-                        gas_limit * U256::from(margin) / U256::from(100)
+                        // 非自动估算模式或使用缓存值
+                        if config.limit_type == "1" {
+                            cached_gas_limit // 使用缓存的gas limit
+                        } else {
+                            gas_limit * U256::from(margin) / U256::from(100)
+                        }
                     };
                     
                     let total_cost = mid + (gas_price * estimated_gas_limit);
@@ -1226,28 +1278,42 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                     println!("序号：{}, 第{}轮无改进，连续无改进次数: {}", index, round + 1, no_improvement_count);
                 }
                 
-                // 收敛检测：连续3次无改进时提前退出
-                if no_improvement_count >= 3 {
+                // 收敛检测：连续2次无改进时提前退出（优化速度）
+                if no_improvement_count >= 2 {
                     println!("序号：{}, 连续{}次无改进，提前结束优化", index, no_improvement_count);
                     break;
                 }
+                
+                // 改进幅度检测：如果改进幅度小于0.1%，提前退出
+                if final_transfer_amount > U256::zero() && last_best_amount > U256::zero() {
+                    let improvement_ratio = ((final_transfer_amount - last_best_amount).as_u128() as f64) / (last_best_amount.as_u128() as f64);
+                    if improvement_ratio < 0.001 { // 0.1%
+                        println!("序号：{}, 改进幅度 {:.4}% 小于阈值，提前结束优化", index, improvement_ratio * 100.0);
+                        break;
+                    }
+                }
             }
             
-            // 最终微调优化：尝试在当前结果基础上增加小额度
+            // 最终微调优化：当剩余金额超过0.0001 ETH时才执行，否则跳过节省时间
             if final_transfer_amount > U256::zero() {
-                // 发送最终微调状态到前端
-                let _ = app_handle.emit("transfer_status_update", serde_json::json!({
-                    "index": index - 1,
-                    "error_msg": "最终微调优化中...",
-                    "exec_status": "1"
-                }));
-                
-                println!("序号：{}, 开始最终微调优化", index);
                 let current_cost = final_transfer_amount + (gas_price * final_gas_limit);
                 let remaining = balance - current_cost;
+                let remaining_eth = ethers::utils::format_units(remaining, 18)
+                    .unwrap_or_default()
+                    .parse::<f64>()
+                    .unwrap_or(0.0);
                 
-                // 尝试将剩余金额的90%加到转账金额中
-                if remaining > U256::zero() {
+                // 只有当剩余金额 > 0.0001 ETH 时才进行微调，节省RPC调用
+                if remaining_eth > 0.0001 {
+                    // 发送最终微调状态到前端
+                    let _ = app_handle.emit("transfer_status_update", serde_json::json!({
+                        "index": index - 1,
+                        "error_msg": "最终微调优化中...",
+                        "exec_status": "1"
+                    }));
+                    
+                    println!("序号：{}, 开始最终微调优化，剩余 {} ETH", index, remaining_eth);
+                    
                     let additional = remaining * U256::from(90) / U256::from(100);
                     let new_transfer_amount = final_transfer_amount + additional;
                     
@@ -1271,6 +1337,8 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                             }
                         }
                     }
+                } else {
+                    println!("序号：{}, 剩余金额 {} ETH 太小，跳过最终微调优化", index, remaining_eth);
                 }
             }
             
@@ -1481,7 +1549,10 @@ async fn query_balance_internal(
              // 获取当前使用的RPC URL
              let error_msg = e.to_string();
              let rpc_url = if let Some(rpc_config) = get_rpc_config(&chain).await {
-                 rpc_config.get_random_rpc().to_string()
+                 match rpc_config.get_random_rpc() {
+                     Ok(url) => url.to_string(),
+                     Err(e) => format!("获取RPC地址失败: {}", e)
+                 }
              } else {
                  "未知RPC".to_string()
              };
@@ -1562,7 +1633,10 @@ async fn check_wallet_recent_transfers_internal(
              // 获取当前使用的RPC URL
              let error_msg = e.to_string();
              let rpc_url = if let Some(rpc_config) = get_rpc_config(&chain).await {
-                 rpc_config.get_random_rpc().to_string()
+                 match rpc_config.get_random_rpc() {
+                     Ok(url) => url.to_string(),
+                     Err(e) => format!("获取RPC地址失败: {}", e)
+                 }
              } else {
                  "未知RPC".to_string()
              };

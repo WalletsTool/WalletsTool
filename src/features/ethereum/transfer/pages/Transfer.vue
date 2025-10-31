@@ -3327,18 +3327,25 @@ async function iterTransfer(accountData) {
 
         // 如果找到下一条待执行的数据，在其error_msg字段显示倒计时
         if (nextPendingIndex !== -1) {
+          // 只有在待执行状态(exec_status = "0")时才保存和恢复error_msg
+          // 避免影响已执行(exec_status = "1"/"2"/"3")钱包的状态信息
           const originalErrorMsg = data.value[nextPendingIndex].error_msg;
           let remainingTime = Math.ceil(randomDelay / 1000);
 
           // 每秒更新倒计时，同时每100ms检查stopFlag以提高响应速度
           const countdownInterval = setInterval(() => {
-            data.value[nextPendingIndex].error_msg = `等待中...${remainingTime}秒`;
+            // 只在待执行状态时更新倒计时
+            if (data.value[nextPendingIndex] && data.value[nextPendingIndex].exec_status === '0') {
+              data.value[nextPendingIndex].error_msg = `等待中...${remainingTime}秒`;
+            }
             remainingTime--;
 
             if (remainingTime < 0) {
               clearInterval(countdownInterval);
-              // 恢复原始错误信息
-              data.value[nextPendingIndex].error_msg = originalErrorMsg;
+              // 只在待执行状态时恢复原始错误信息
+              if (data.value[nextPendingIndex] && data.value[nextPendingIndex].exec_status === '0') {
+                data.value[nextPendingIndex].error_msg = originalErrorMsg;
+              }
             }
           }, 1000);
 
@@ -3347,8 +3354,10 @@ async function iterTransfer(accountData) {
             if (stopFlag.value) {
               clearInterval(countdownInterval);
               clearInterval(stopCheckInterval);
-              // 恢复原始错误信息
-              data.value[nextPendingIndex].error_msg = originalErrorMsg;
+              // 只在待执行状态时恢复原始错误信息
+              if (data.value[nextPendingIndex] && data.value[nextPendingIndex].exec_status === '0') {
+                data.value[nextPendingIndex].error_msg = originalErrorMsg;
+              }
               return;
             }
           }, 100);
@@ -3357,8 +3366,8 @@ async function iterTransfer(accountData) {
             const timeoutId = setTimeout(() => {
               clearInterval(countdownInterval);
               clearInterval(stopCheckInterval);
-              // 确保恢复原始错误信息
-              if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
+              // 确保恢复原始错误信息，但只在待执行状态时
+              if (nextPendingIndex !== -1 && data.value[nextPendingIndex] && data.value[nextPendingIndex].exec_status === '0') {
                 data.value[nextPendingIndex].error_msg = originalErrorMsg;
               }
               resolve();
@@ -3370,8 +3379,8 @@ async function iterTransfer(accountData) {
                 clearTimeout(timeoutId);
                 clearInterval(countdownInterval);
                 clearInterval(stopCheckInterval);
-                // 恢复原始错误信息
-                if (nextPendingIndex !== -1 && data.value[nextPendingIndex]) {
+                // 只在待执行状态时恢复原始错误信息
+                if (nextPendingIndex !== -1 && data.value[nextPendingIndex] && data.value[nextPendingIndex].exec_status === '0') {
                   data.value[nextPendingIndex].error_msg = originalErrorMsg;
                 }
                 resolve();

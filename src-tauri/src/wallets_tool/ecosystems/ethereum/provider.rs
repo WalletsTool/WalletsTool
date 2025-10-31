@@ -5,6 +5,7 @@ use ethers::{
     providers::{Http, Provider, Middleware},
     utils::format_units,
 };
+use url::Url;
 use std::sync::Arc;
 use crate::database::{get_database_manager, chain_service::ChainService};
 
@@ -62,23 +63,52 @@ impl ProviderUtils {
         let cfg = Self::get_chain_config(chain).await?;
         Ok(cfg.chain_id)
     }
-    // 获取指定链的Provider
-    pub async fn get_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn std::error::Error>> {
-        let configs = get_all_chain_configs().await?;
-        let config = configs.get(chain)
-            .ok_or(format!("不支持的链: {}", chain))?;
-        
-        // 随机选择一个RPC节点
+    
+    // 随机选择RPC URL
+    fn get_random_rpc_url(rpc_urls: &[String]) -> Result<&str, String> {
+        if rpc_urls.is_empty() {
+            return Err("没有可用的RPC URL".to_string());
+        }
         let mut rng = rand::thread_rng();
-        let rpc_url = &config.rpc_urls[rng.gen_range(0..config.rpc_urls.len())];
+        Ok(&rpc_urls[rng.gen_range(0..rpc_urls.len())])
+    }
+    // 获取指定链的Provider
+    pub async fn get_provider(chain: &str) -> Result<Provider<Http>, Box<dyn std::error::Error>> {
+        use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
         
-        let provider = Provider::<Http>::try_from(rpc_url)?;
-        Ok(Arc::new(provider))
+        println!("[DEBUG] get_provider - 开始获取链 '{}' 的Provider", chain);
+        
+        let chain_config = Self::get_chain_config(chain).await?;
+        println!("[DEBUG] get_provider - 获取到链配置，chain_id: {}, rpc_urls数量: {}", 
+                 chain_config.chain_id, chain_config.rpc_urls.len());
+        
+        let rpc_url = Self::get_random_rpc_url(&chain_config.rpc_urls)
+            .map_err(|e| format!("获取RPC URL失败: {}. 请检查链 '{}' 是否配置了RPC节点。", e, chain))?;
+        println!("[DEBUG] get_provider - 选择的RPC URL: {}", rpc_url);
+        
+        // 尝试使用代理客户端，如果没有代理则使用默认方式
+        let provider = if let Some(proxy_client) = PROXY_MANAGER.get_random_proxy_client() {
+            println!("[DEBUG] get_provider - 使用代理客户端创建Provider");
+            let url: Url = rpc_url.parse()
+                .map_err(|e| format!("Failed to parse RPC URL: {}", e))?;
+            let http_provider = Http::new_with_client(url, proxy_client);
+            Provider::new(http_provider)
+        } else {
+            println!("[DEBUG] get_provider - 使用默认方式创建Provider");
+            Provider::<Http>::try_from(rpc_url)
+                .map_err(|e| {
+                    println!("[ERROR] get_provider - Provider创建失败: {}", e);
+                    e
+                })?
+        };
+        
+        println!("[DEBUG] get_provider - Provider创建成功");
+        Ok(provider)
     }
     
     // 获取基础Gas Price
     pub async fn get_base_gas_price(chain: &str) -> Result<f64, Box<dyn std::error::Error>> {
-        let provider = Self::get_provider(chain).await?;
+        let provider = Arc::new(Self::get_provider(chain).await?);
         let gas_price = provider.get_gas_price().await?;
         let gas_price_gwei = format_units(gas_price, "gwei")?.parse::<f64>()?;
         Ok(gas_price_gwei)

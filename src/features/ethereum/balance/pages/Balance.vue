@@ -19,6 +19,7 @@ const ChainManagement = defineAsyncComponent(() => import('@/components/ChainMan
 const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagement.vue'))
 const TokenManagement = defineAsyncComponent(() => import('@/components/TokenManagement.vue'))
 const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vue'))
+const ProxyConfigModal = defineAsyncComponent(() => import('@/components/ProxyConfigModal.vue'))
 
 // table列名
 const columns = [
@@ -157,6 +158,12 @@ const chainManageRef = ref(null);
 const rpcManageRef = ref(null);
 // 代币管理组件引用
 const tokenManageRef = ref(null);
+// 代理配置相关变量
+const proxyConfigRef = ref(null);
+const proxyConfigVisible = ref(false);
+const proxyEnabled = ref(false);
+const proxyStatus = ref('未配置');
+const proxyCount = ref(0);
 // 高级筛选相关变量
 const advancedFilterVisible = ref(false);
 const filterForm = reactive({
@@ -343,6 +350,9 @@ onMounted(async () => {
       }
     }, 50);
   });
+
+  // 初始化代理状态
+  await initProxyStatus();
 })
 
 
@@ -1144,6 +1154,60 @@ function handleTokenUpdated() {
   chainChange();
 }
 
+// 代理配置相关函数
+async function openProxyConfig() {
+  proxyConfigVisible.value = true;
+}
+
+// 监听代理配置变化
+function handleProxyConfigChange(config) {
+  proxyEnabled.value = config.enabled;
+  proxyCount.value = config.proxies ? config.proxies.length : 0;
+  
+  // 只有在启用代理且有代理可用时才设置为'已配置'
+  if (config.enabled && proxyCount.value > 0) {
+    proxyStatus.value = '已配置';
+  } else {
+    proxyStatus.value = '未配置';
+  }
+  
+  // 调试日志
+  console.log('[代理状态更新]', {
+    enabled: proxyEnabled.value,
+    count: proxyCount.value,
+    status: proxyStatus.value
+  });
+}
+
+// 获取代理状态颜色
+const proxyStatusColor = computed(() => {
+  switch (proxyStatus.value) {
+    case '已配置':
+      return '#00b42a';
+    case '连接中':
+      return '#ff7d00';
+    case '已连接':
+      return '#00b42a';
+    case '连接失败':
+      return '#f53f3f';
+    default:
+      return '#86909c';
+  }
+});
+
+// 初始化代理状态
+async function initProxyStatus() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      const config = await invoke('get_proxy_config');
+      handleProxyConfigChange(config);
+    }
+  } catch (error) {
+    console.error('初始化代理状态失败:', error);
+  }
+}
+
 // 处理TitleBar的before-close事件
 async function handleBeforeClose() {
   try {
@@ -1208,6 +1272,16 @@ async function handleBeforeClose() {
           <Icon icon="mdi:delete" />
         </template>
         删除选中
+      </a-button>
+      <!-- 代理配置按钮 -->
+      <a-button type="outline" status="normal" style="margin-left: 10px" @click="openProxyConfig">
+        <template #icon>
+          <Icon icon="mdi:proxy" />
+        </template>
+        代理配置
+        <a-tag :color="proxyEnabled ? proxyStatusColor : '#86909c'" size="small" style="margin-left: 4px;">
+          {{ proxyEnabled ? proxyCount + '个' : '未启用' }}
+        </a-tag>
       </a-button>
       <a-divider direction="vertical" />
       <a-button type="primary" status="success" @click="debouncedExportAllToExcel">
@@ -1511,6 +1585,15 @@ async function handleBeforeClose() {
   <RpcManagement ref="rpcManageRef" :chain-value="chainValue" @rpc-updated="handleRpcUpdated" />
   <!-- 代币管理组件 -->
   <TokenManagement ref="tokenManageRef" :chain-value="chainValue" @token-updated="handleTokenUpdated" />
+  
+  <!-- 代理配置弹窗 -->
+  <ProxyConfigModal 
+    v-if="proxyConfigVisible" 
+    :visible="proxyConfigVisible" 
+    @update:visible="proxyConfigVisible = $event"
+    @config-change="handleProxyConfigChange"
+    ref="proxyConfigRef"
+  />
 </template>
 
 <style scoped lang="less">

@@ -83,5 +83,6 @@ playwright/.cache/
 # 优化后的图片源文件
 public/avatar/optimized/
 
-# 数据库文件（开发用）
-# data/wallets_tool.db
+# 数据库文件
+data/
+data/**

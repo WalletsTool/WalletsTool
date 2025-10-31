@@ -137,7 +137,7 @@ impl<'a> ChainService<'a> {
 
         // 添加RPC URLs
         if let Some(rpc_urls) = request.rpc_urls {
-            for (index, rpc_url) in rpc_urls.iter().enumerate() {
+            for rpc_url in rpc_urls.iter() {
                 if !rpc_url.trim().is_empty() {
                     sqlx::query(
                         r#"
@@ -148,7 +148,7 @@ impl<'a> ChainService<'a> {
                     )
                     .bind(chain_id)
                     .bind(rpc_url.trim())
-                    .bind((index + 1) as i32)
+                    .bind(100)
                     .bind(now)
                     .bind(now)
                     .execute(self.pool)
@@ -221,7 +221,7 @@ impl<'a> ChainService<'a> {
             .await?;
             
             // 添加新的RPC提供商
-            for (index, rpc_url) in rpc_urls.iter().enumerate() {
+            for rpc_url in rpc_urls.iter() {
                 sqlx::query(
                     r#"
                     INSERT INTO rpc_providers (
@@ -231,7 +231,7 @@ impl<'a> ChainService<'a> {
                 )
                 .bind(chain.id)
                 .bind(rpc_url)
-                .bind(index as i32 + 1)
+                .bind(100)
                 .bind(now)
                 .bind(now)
                 .execute(self.pool)
@@ -343,6 +343,41 @@ impl<'a> ChainService<'a> {
         .await?;
 
         Ok(token)
+    }
+
+    /// 根据链key和合约地址获取代币的decimals配置
+    pub async fn get_token_decimals_by_contract(&self, chain_key: &str, contract_address: &str) -> Result<Option<i32>> {
+        let decimals = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT t.decimals FROM tokens t
+            JOIN chains c ON t.chain_id = c.id
+            WHERE c.chain_key = ? AND t.contract_address = ?
+            "#
+        )
+        .bind(chain_key)
+        .bind(contract_address)
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(decimals)
+    }
+
+    /// 根据链key和token_key获取代币的decimals配置
+    #[allow(dead_code)]
+    pub async fn get_token_decimals_by_key(&self, chain_key: &str, token_key: &str) -> Result<Option<i32>> {
+        let decimals = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT t.decimals FROM tokens t
+            JOIN chains c ON t.chain_id = c.id
+            WHERE c.chain_key = ? AND t.token_key = ?
+            "#
+        )
+        .bind(chain_key)
+        .bind(token_key)
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(decimals)
     }
     
     /// 更新代币的ABI

@@ -24,6 +24,7 @@ const ChainManagement = defineAsyncComponent(() => import('@/components/ChainMan
 const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagement.vue'))
 const TokenManagement = defineAsyncComponent(() => import('@/components/TokenManagement.vue'))
 const WalletImportModal = defineAsyncComponent(() => import('@/components/WalletImportModal.vue'))
+const ProxyConfigModal = defineAsyncComponent(() => import('@/components/ProxyConfigModal.vue'))
 const router = useRouter();
 // 窗口标题
 const windowTitle = ref('批量转账');
@@ -177,6 +178,13 @@ const rpcManageRef = ref(null);
 const tokenManageRef = ref(null);
 // 钱包导入组件引用
 const walletImportRef = ref(null);
+// 代理配置组件引用
+const proxyConfigRef = ref(null);
+// 代理相关变量
+const proxyConfigVisible = ref(false);
+const proxyEnabled = ref(false);
+const proxyStatus = ref('未配置'); // 未配置、已配置、连接中、已连接、连接失败
+const proxyCount = ref(0);
 // 高级筛选相关变量
 const advancedFilterVisible = ref(false);
 const filterForm = reactive({
@@ -1082,8 +1090,8 @@ const shouldShowTipWalletStatus = computed(() => {
   return tipPrivateKey.value && tipPrivateKey.value.trim().length > 0;
 });
 
-// 获取gas
-const timer = setInterval(fetchGas, 5000);
+// 获取gas定时器（按需启动）
+let timer = null;
 
 // Gas价格监控函数
 async function startGasPriceMonitoring() {
@@ -1180,15 +1188,6 @@ async function resumeTransfer() {
 
 // 从指定索引继续转账
 async function continueTransferFromIndex(accountData, startIndex) {
-  // 判断是主币转账还是代币转账
-  let contract;
-  if (currentCoin.value.coin_type === "token") {
-    contract = new ethers.Contract(
-      currentCoin.value.contract_address,
-      currentCoin.value.abi
-    );
-  }
-
   // 从指定索引开始继续执行转账
   for (let index = startIndex; index < accountData.length; index++) {
     if (stopFlag.value) {
@@ -1303,8 +1302,8 @@ async function continueTransferFromIndex(accountData, startIndex) {
             item: item,
             config: {
               ...config,
-              contract_address: contract.address,
-              abi: contract.abi
+              contract_address: currentCoin.value.contract_address,
+              abi: currentCoin.value.abi
             }
           });
 
@@ -1580,6 +1579,8 @@ onMounted(async () => {
       // 获取当前窗口ID
       currentWindowId.value = currentWindow.label;
 
+      // 初始化代理配置状态
+      await initProxyStatus();
 
     } catch (error) {
       console.error('Error getting window title or setting close listener:', error);
@@ -1673,10 +1674,8 @@ onBeforeUnmount(async () => {
   // 停止gas价格监控
   stopGasPriceMonitoring();
 
-  // 清理所有定时器
-  if (timer) {
-    clearInterval(timer);
-  }
+  // 停止gas价格定时器
+  stopGasTimer();
   if (gasPriceTimer.value) {
     clearInterval(gasPriceTimer.value);
     gasPriceTimer.value = null;
@@ -2094,11 +2093,30 @@ async function chainChange() {
     currentChain.value.gas_price = "查询中...";
     // 查询gas
     fetchGas();
+    
+    // 启动gas价格定时器
+    startGasTimer();
 
     // 加载对应链的代币列表
     try {
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
       if (isTauri) {
+        // 检查是否有启用的RPC节点
+        try {
+          const rpcProviders = await invoke('get_rpc_providers', { chainKey: chainValue.value });
+          const activeRpcs = rpcProviders.filter(rpc => rpc.is_active);
+          
+          if (activeRpcs.length === 0) {
+            Notification.warning({
+              title: '注意：没有启用的RPC节点',
+              content: `当前链 "${currentChain.value.name}" 没有启用的RPC节点，无法执行查询和转账操作。请在"RPC管理"中至少启用一个RPC节点。`,
+              duration: 8000
+            });
+          }
+        } catch (err) {
+          console.error('检查RPC状态失败:', err);
+        }
+
         const tokenList = await invoke("get_coin_list", {
           chainKey: chainValue.value
         });
@@ -2169,6 +2187,9 @@ async function chainChange() {
     coinOptions.value = [];
     coinValue.value = '';
     currentCoin.value = null;
+    
+    // 停止gas价格定时器
+    stopGasTimer();
   }
 }
 
@@ -2206,6 +2227,25 @@ async function fetchGas() {
     if (currentChain.value) {
       currentChain.value.gas_price = "查询错误";
     }
+  }
+}
+
+// 启动gas价格定时器
+function startGasTimer() {
+  // 如果定时器已存在，先清理
+  if (timer) {
+    clearInterval(timer);
+  }
+  
+  // 启动新的定时器
+  timer = setInterval(fetchGas, 5000);
+}
+
+// 停止gas价格定时器
+function stopGasTimer() {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
   }
 }
 
@@ -2406,6 +2446,10 @@ function handleWalletImportConfirm(importData) {
   // 弹窗关闭现在由组件内部管理
 }
 
+// 处理钱包导入取消事件
+function handleWalletImportCancel() {
+  console.log('钱包导入已取消');
+}
 
 // 删除数据
 function deleteItem(item) {
@@ -2471,6 +2515,11 @@ async function queryBalance() {
     Notification.warning("请先导入私钥！");
     return;
   }
+  // 检查是否有启用的RPC节点
+  if (!currentChain.value || !chainValue.value) {
+    Notification.warning("请选择一个区块链网络！");
+    return;
+  }
   hasExecutedTransfer.value = false;
   transferTotal.value = data.value.length;
   transferCompleted.value = 0;
@@ -2511,6 +2560,7 @@ async function queryBalanceInBatches() {
   console.log(`开始分批查询余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
 
   try {
+    // 按照从上到下的顺序，串行执行每个批次
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       // 检查是否需要停止查询
       if (balanceStopFlag.value) {
@@ -2525,14 +2575,10 @@ async function queryBalanceInBatches() {
       const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
       const batchData = data.value.slice(startIndex, endIndex);
 
-      console.log(`处理第 ${batchIndex + 1}/${totalBatches} 批，索引 ${startIndex}-${endIndex - 1}`);
+      console.log(`执行第 ${batchIndex + 1}/${totalBatches} 批，索引 ${startIndex}-${endIndex - 1}`);
 
+      // 顺序执行批次查询
       await queryBalanceBatch(batchData, startIndex);
-
-      // 批次间添加短暂延迟，避免过于频繁的请求
-      if (batchIndex < totalBatches - 1) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
     }
 
     // 所有批次完成后的统计
@@ -2641,8 +2687,18 @@ async function queryBalanceBatch(batchData, startIndex) {
 
   } catch (error) {
     console.error('批次查询失败:', error);
-
-    // 设置批次项目为失败状态，保护私钥字段
+    
+    // 检查是否是RPC配置错误
+    const errorMsg = String(error);
+    if (errorMsg.includes('RPC配置') || errorMsg.includes('RPC节点') || errorMsg.includes('禁用')) {
+      Notification.error({
+        title: '查询失败',
+        content: errorMsg,
+        duration: 5000
+      });
+    } else {
+      Notification.error('查询失败：' + errorMsg);
+    }
     batchData.forEach((item, index) => {
       const dataIndex = startIndex + index;
       if (data.value[dataIndex]) {
@@ -2722,6 +2778,7 @@ async function queryToAddressBalanceInBatches() {
   console.log(`开始分批查询到账地址余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
 
   try {
+    // 按照从上到下的顺序，串行执行每个批次
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       // 检查是否需要停止查询
       if (balanceStopFlag.value) {
@@ -2736,14 +2793,10 @@ async function queryToAddressBalanceInBatches() {
       const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
       const batchData = itemsWithToAddr.slice(startIndex, endIndex);
 
-      console.log(`处理第 ${batchIndex + 1}/${totalBatches} 批到账地址，索引 ${startIndex}-${endIndex - 1}`);
+      console.log(`执行第 ${batchIndex + 1}/${totalBatches} 批到账地址，索引 ${startIndex}-${endIndex - 1}`);
 
+      // 顺序执行批次查询
       await queryToAddressBalanceBatch(batchData, startIndex);
-
-      // 批次间添加短暂延迟，避免过于频繁的请求
-      if (batchIndex < totalBatches - 1) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
     }
 
     // 所有批次完成后的统计
@@ -2858,6 +2911,16 @@ async function queryToAddressBalanceBatch(batchData, startIndex) {
 
   } catch (error) {
     console.error('批次查询到账地址失败:', error);
+
+    // 检查是否是RPC配置错误
+    const errorMsg = String(error);
+    if (errorMsg.includes('RPC配置') || errorMsg.includes('RPC节点') || errorMsg.includes('禁用')) {
+      Notification.error({
+        title: '查询失败',
+        content: errorMsg,
+        duration: 5000
+      });
+    }
 
     // 设置批次项目为失败状态，保护私钥字段
     batchData.forEach((item, index) => {
@@ -3099,15 +3162,6 @@ function executeTransfer(transferData, resetStatus = true) {
 
 // 执行转账 - 基于钱包地址的队列管理系统
 async function iterTransfer(accountData) {
-  // 判断是主币转账还是代币转账
-  let contract;
-  if (currentCoin.value.coin_type === "token") {
-    contract = new ethers.Contract(
-      currentCoin.value.contract_address,
-      currentCoin.value.abi
-    );
-  }
-
   // 如果线程数为1，则按照table中的顺序逐一执行，无需分组
   if (threadCount.value === 1) {
     for (let index = 0; index < accountData.length; index++) {
@@ -3208,8 +3262,8 @@ async function iterTransfer(accountData) {
               item: item,
               config: {
                 ...config,
-                contract_address: contract.address,
-                abi: contract.abi
+                contract_address: currentCoin.value.contract_address,
+                abi: currentCoin.value.abi
               }
             });
             console.log("token_transfer 返回信息:", res);
@@ -3468,8 +3522,8 @@ async function iterTransfer(accountData) {
               item: item,
               config: {
                 ...config,
-                contract_address: contract.address,
-                abi: contract.abi
+                contract_address: currentCoin.value.contract_address,
+                abi: currentCoin.value.abi
               }
             });
             console.log("token_transfer 返回信息:", res);
@@ -3518,31 +3572,44 @@ async function iterTransfer(accountData) {
     }
   };
 
-  // 使用Promise.all并发处理不同钱包组，但限制并发数量
+  // 真正的多线程并发控制 - 使用工作队列和信号量机制
+  const workQueue = [...walletGroupsArray];
+  const runningTasks = new Set();
   const maxConcurrency = Math.min(threadCount.value, walletGroupsArray.length);
-  const chunks = [];
 
-  // 将钱包组分批处理，每批最多threadCount个
-  for (let i = 0; i < walletGroupsArray.length; i += maxConcurrency) {
-    chunks.push(walletGroupsArray.slice(i, i + maxConcurrency));
-  }
+  // 启动工作任务的函数
+  const startWorkerTask = async () => {
+    while (workQueue.length > 0 && !stopFlag.value) {
+      const walletGroup = workQueue.shift();
+      if (!walletGroup) break;
 
-  // 逐批处理钱包组
-  for (const chunk of chunks) {
-    if (stopFlag.value) {
-      stopStatus.value = true;
-      return;
+      const taskPromise = processWalletGroup(walletGroup);
+      runningTasks.add(taskPromise);
+
+      // 任务完成后从运行集合中移除
+      taskPromise.finally(() => {
+        runningTasks.delete(taskPromise);
+      });
+
+      await taskPromise;
     }
+  };
 
-    // 并发处理当前批次的钱包组
-    await Promise.all(chunk.map(processWalletGroup));
+  // 启动指定数量的并发工作任务
+  const workers = [];
+  for (let i = 0; i < maxConcurrency; i++) {
+    workers.push(startWorkerTask());
   }
+
+  // 等待所有工作任务完成
+  await Promise.all(workers);
 }
 
 // 停止执行
 function stopTransfer() {
   startLoading.value = false;
   stopFlag.value = true;
+  stopStatus.value = true;
   // 隐藏进度条
   showProgress.value = false;
 }
@@ -4295,6 +4362,60 @@ function showChainManage() {
   }
 }
 
+// 代理配置相关函数
+function openProxyConfig() {
+  proxyConfigVisible.value = true;
+}
+
+// 监听代理配置变化
+function handleProxyConfigChange(config) {
+  proxyEnabled.value = config.enabled;
+  proxyCount.value = config.proxies ? config.proxies.length : 0;
+  
+  // 只有在启用代理且有代理可用时才设置为'已配置'
+  if (config.enabled && proxyCount.value > 0) {
+    proxyStatus.value = '已配置';
+  } else {
+    proxyStatus.value = '未配置';
+  }
+  
+  // 调试日志
+  console.log('[代理状态更新]', {
+    enabled: proxyEnabled.value,
+    count: proxyCount.value,
+    status: proxyStatus.value
+  });
+}
+
+// 获取代理状态颜色
+const proxyStatusColor = computed(() => {
+  switch (proxyStatus.value) {
+    case '已配置':
+      return '#00b42a';
+    case '连接中':
+      return '#ff7d00';
+    case '已连接':
+      return '#00b42a';
+    case '连接失败':
+      return '#f53f3f';
+    default:
+      return '#86909c';
+  }
+});
+
+// 初始化代理状态
+async function initProxyStatus() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      const config = await invoke('get_proxy_config');
+      handleProxyConfigChange(config);
+    }
+  } catch (error) {
+    console.error('初始化代理状态失败:', error);
+  }
+}
+
 // 处理TitleBar的before-close事件
 async function handleBeforeClose() {
   try {
@@ -4388,6 +4509,16 @@ async function handleBeforeClose() {
           <Icon icon="mdi:delete" />
         </template>
         删除选中
+      </a-button>
+      <!-- 代理配置按钮 -->
+      <a-button type="outline" status="normal" style="margin-left: 10px" @click="openProxyConfig">
+        <template #icon>
+          <Icon icon="mdi:shield-network" />
+        </template>
+        代理配置
+        <a-tag :color="proxyEnabled ? proxyStatusColor : '#86909c'" size="small" style="margin-left: 4px;">
+          {{ proxyEnabled ? proxyCount + '个' : '未启用' }}
+        </a-tag>
       </a-button>
       <a-button type="primary" status="danger" style="float: right; margin-right: 10px" @click="debouncedClearData">
         <template #icon>
@@ -5044,6 +5175,13 @@ async function handleBeforeClose() {
       </div>
     </template>
   </a-modal>
+
+  <!-- 代理配置弹窗 -->
+  <ProxyConfigModal 
+    v-model:modelValue="proxyConfigVisible"
+    @config-change="handleProxyConfigChange"
+    ref="proxyConfigRef"
+  />
 
   <!-- 全页面Loading覆盖层 -->
   <div v-if="pageLoading" class="page-loading-overlay" :class="{ 'with-progress': showImportProgress }">

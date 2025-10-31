@@ -8,6 +8,8 @@ pub mod ecosystems {
         pub mod provider;
         pub mod token_transfer;
         pub mod transfer;
+        pub mod proxy_manager;
+        pub mod proxy_commands;
     }
     pub mod solana;
 }

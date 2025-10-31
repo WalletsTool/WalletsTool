@@ -121,17 +121,55 @@ pub async fn delete_rpc_provider(
 pub async fn test_rpc_connection(
     rpc_url: String,
 ) -> Result<RpcTestResult, String> {
+    use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
+    
     println!("[RPC测试] 开始测试RPC连接: {}", rpc_url);
+    
+    // 检查代理状态
+    let proxy_config = PROXY_MANAGER.get_config();
+    let using_proxy = proxy_config.enabled && !proxy_config.proxies.is_empty();
+    
+    if using_proxy {
+        println!("[RPC测试] 代理已启用，使用代理进行测试 (代理数量: {})", proxy_config.proxies.len());
+    } else if proxy_config.enabled {
+        println!("[RPC测试] 代理已启用但无可用代理，使用直连模式");
+    } else {
+        println!("[RPC测试] 代理未启用，使用直连模式");
+    }
+    
     let start_time = std::time::Instant::now();
     
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| {
-            let error_msg = format!("创建 HTTP 客户端失败: {}", e);
-            println!("[RPC测试] {}", error_msg);
-            error_msg
-        })?;
+    // 尝试使用代理客户端，如果没有代理则创建默认客户端
+    let (client, proxy_info) = if using_proxy {
+        // 随机选择一个代理地址用于显示
+        use rand::Rng;
+        let selected_proxy = if !proxy_config.proxies.is_empty() {
+            let mut rng = rand::thread_rng();
+            let index = rng.gen_range(0..proxy_config.proxies.len());
+            proxy_config.proxies[index].clone()
+        } else {
+            "未知".to_string()
+        };
+        
+        if let Some(proxy_client) = PROXY_MANAGER.get_random_proxy_client() {
+            println!("[RPC测试] 使用代理客户端发送请求");
+            (proxy_client, format!("代理: {}", selected_proxy))
+        } else {
+            println!("[RPC测试] 代理客户端创建失败，使用直连模式");
+            let default_client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .expect("Failed to create default HTTP client");
+            (default_client, "直连模式".to_string())
+        }
+    } else {
+        println!("[RPC测试] 使用默认客户端发送请求（直连模式）");
+        let default_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .expect("Failed to create default HTTP client");
+        (default_client, "直连模式".to_string())
+    };
     
     let payload = serde_json::json!({
         "jsonrpc": "2.0",
@@ -140,7 +178,7 @@ pub async fn test_rpc_connection(
         "id": 1
     });
     
-    println!("[RPC测试] 发送请求到: {}, 请求体: {}", rpc_url, payload);
+    println!("[RPC测试] 发送请求到: {} [{}]", rpc_url, proxy_info);
     
     let success = match client.post(&rpc_url)
         .json(&payload)

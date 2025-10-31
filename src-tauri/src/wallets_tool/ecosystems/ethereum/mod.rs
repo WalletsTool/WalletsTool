@@ -4,3 +4,5 @@ pub mod provider;
 pub mod chain_config;
 pub mod rpc_management;
 pub mod simple_balance_query;
+pub mod proxy_manager;
+pub mod proxy_commands;

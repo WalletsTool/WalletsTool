@@ -129,8 +129,7 @@ const funcList = [
   },
   {
     title: "链上地址监控",
-    isBuilding: true,
-    desc: "支持多条链上的地址监控，实时追踪交易、代币转移、合约交互等活动，支持自定义告警规则和多渠道通知（建设中）",
+    desc: "监控钱包余额与Nonce变化（预览版）",
     picture: "avatar/optimized/monitor.webp",
     pageName: "monitor"
   },
@@ -138,7 +137,7 @@ const funcList = [
 
 // 跳转到批量转账
 function goPage(pageName) {
-  if (pageName === 'monitor' || pageName === 'distribution') {
+  if (pageName === 'distribution') {
     Notification.success('功能建设中，敬请期待')
     return
   }

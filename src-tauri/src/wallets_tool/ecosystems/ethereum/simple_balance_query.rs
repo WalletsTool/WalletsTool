@@ -50,6 +50,7 @@ pub struct QueryItem {
     pub plat_balance: Option<String>,
     pub coin_balance: Option<String>,
     pub nonce: Option<u64>,
+    pub last_transaction_time: Option<u64>, // 新增字段，Unix时间戳
     pub retry_flag: bool,
     pub exec_status: String, // "0"=未执行, "1"=执行中, "2"=成功, "3"=失败
     pub error_msg: Option<String>,
@@ -71,6 +72,8 @@ pub struct QueryParams {
     pub items: Vec<QueryItem>,
     pub only_coin_config: bool,
     pub thread_count: usize,
+    #[serde(default)]
+    pub query_last_transaction_time: bool,
 }
 
 // 查询结果
@@ -266,6 +269,73 @@ impl SimpleBalanceQueryService {
         Ok(())
     }
 
+    // 获取地址的最后交易时间
+    async fn get_last_transaction_time(&self, address: &str, chain: &str, window_id: &str) -> Result<Option<u64>> {
+        let rpc_url = self.get_rpc_url(chain).await?;
+        
+        // 获取当前区块号
+        let block_number_result = self.send_rpc_request(
+            &rpc_url,
+            "eth_blockNumber",
+            serde_json::json!([])
+        ).await?;
+        
+        if let Some(block_number_hex) = block_number_result.as_str() {
+            let current_block = u64::from_str_radix(&block_number_hex[2..], 16)
+                .map_err(|e| anyhow!("区块号转换失败: {}", e))?;
+            
+            // 从最新区块开始向前搜索，查找该地址的交易
+            let mut search_blocks = 1000; // 最多搜索1000个区块
+            let start_block = if current_block > search_blocks {
+                current_block - search_blocks
+            } else {
+                0
+            };
+            
+            for block_num in (start_block..=current_block).rev() {
+                if get_stop_flag(window_id) {
+                    return Ok(None);
+                }
+                
+                let block_hex = format!("0x{:x}", block_num);
+                
+                // 获取区块信息
+                let block_result = self.send_rpc_request(
+                    &rpc_url,
+                    "eth_getBlockByNumber",
+                    serde_json::json!([block_hex, true])
+                ).await?;
+                
+                if let Some(block) = block_result.as_object() {
+                    if let Some(transactions) = block.get("transactions").and_then(|t| t.as_array()) {
+                        for tx in transactions {
+                            if let Some(tx_obj) = tx.as_object() {
+                                let from = tx_obj.get("from").and_then(|f| f.as_str());
+                                let to = tx_obj.get("to").and_then(|t| t.as_str());
+                                
+                                if from == Some(address) || to == Some(address) {
+                                    // 找到该地址的交易，获取区块时间戳
+                                    if let Some(timestamp_hex) = block.get("timestamp").and_then(|t| t.as_str()) {
+                                        let timestamp = u64::from_str_radix(&timestamp_hex[2..], 16)
+                                            .map_err(|e| anyhow!("时间戳转换失败: {}", e))?;
+                                        return Ok(Some(timestamp));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // 避免请求过于频繁
+                if block_num % 10 == 0 {
+                    sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
+        
+        Ok(None) // 未找到交易记录
+    }
+
     // 查询代币余额
     async fn query_token_balance(&self, item: &mut QueryItem, chain: &str, contract_address: &str) -> Result<()> {
         let rpc_url = self.get_rpc_url(chain).await?;
@@ -450,6 +520,23 @@ impl SimpleBalanceQueryService {
             let query_timeout = Duration::from_secs(15);
             
             let result = tokio::time::timeout(query_timeout, async {
+                // 可配置：查询最后交易时间
+                if params.query_last_transaction_time {
+                    match self.get_last_transaction_time(&item.address, &params.chain, window_id).await {
+                        Ok(timestamp) => {
+                            item.last_transaction_time = timestamp;
+                            println!("[INFO] 地址 {} 的最后交易时间: {:?}", item.address, timestamp);
+                        }
+                        Err(e) => {
+                            println!("[WARN] 查询地址 {} 的最后交易时间失败: {}", item.address, e);
+                            item.last_transaction_time = None;
+                        }
+                    }
+                } else {
+                    // 未开启查询则保持为空
+                    item.last_transaction_time = None;
+                }
+                
                 if params.coin_config.coin_type == "base" {
                     self.query_base_balance(&mut item, &params.chain).await?;
                 } else if params.coin_config.coin_type == "token" {
@@ -654,6 +741,7 @@ impl SimpleBalanceQueryService {
                         plat_balance: None,
                         coin_balance: None,
                         nonce: None,
+                        last_transaction_time: None,
                         retry_flag: true,
                         exec_status: "3".to_string(),
                         error_msg: Some(format!("任务执行失败: {}", e)),

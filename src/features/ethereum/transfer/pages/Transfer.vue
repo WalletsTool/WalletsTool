@@ -3162,6 +3162,19 @@ function executeTransfer(transferData, resetStatus = true) {
 
 // 执行转账 - 基于钱包地址的队列管理系统
 async function iterTransfer(accountData) {
+  // ========== 狂暴模式：线程数 > 90 时激活 ==========
+  // 狂暴模式将提交交易与确认交易分开，最大化提交速度
+  const isFuryMode = threadCount.value > 90;
+  
+  if (isFuryMode) {
+    console.log('[狂暴模式] 已激活，线程数:', threadCount.value);
+    Notification.info('狂暴模式已激活：交易将快速批量提交，然后统一确认结果');
+    
+    await iterTransferFuryMode(accountData);
+    return;
+  }
+  
+  // ========== 普通模式 ==========
   // 如果线程数为1，则按照table中的顺序逐一执行，无需分组
   if (threadCount.value === 1) {
     for (let index = 0; index < accountData.length; index++) {
@@ -3612,6 +3625,218 @@ async function iterTransfer(accountData) {
 
   // 等待所有工作任务完成
   await Promise.all(workers);
+}
+
+// ========== 狂暴模式转账实现 ==========
+// 将提交交易与确认交易分开，最大化提交速度
+async function iterTransferFuryMode(accountData) {
+  console.log('[狂暴模式] 开始执行，待处理数据数量:', accountData.length);
+  
+  // 预先构建索引映射
+  const keyToIndexMap = new Map();
+  data.value.forEach((dataItem, index) => {
+    keyToIndexMap.set(dataItem.key, index);
+  });
+  
+  // 第一阶段：快速提交所有交易
+  const pendingTransactions = []; // 存储待确认的交易信息
+  const submitPromises = [];
+  
+  // 按钱包地址分组，避免nonce冲突
+  const walletGroups = new Map();
+  accountData.forEach((item, index) => {
+    const walletAddress = item.address || item.private_key;
+    if (!walletGroups.has(walletAddress)) {
+      walletGroups.set(walletAddress, []);
+    }
+    const realIndex = keyToIndexMap.get(item.key) ?? -1;
+    walletGroups.get(walletAddress).push({ ...item, originalIndex: index, realIndex });
+  });
+  
+  const walletGroupsArray = Array.from(walletGroups.values());
+  const maxConcurrency = Math.min(threadCount.value, walletGroupsArray.length);
+  
+  console.log('[狂暴模式] 钱包分组数:', walletGroupsArray.length, '并发数:', maxConcurrency);
+  
+  // 快速提交交易的处理函数
+  const submitWalletGroupTransactions = async (walletTransactions) => {
+    for (const item of walletTransactions) {
+      if (stopFlag.value) return;
+      
+      if (item.exec_status !== '0') continue;
+      
+      const realIndex = item.realIndex;
+      if (realIndex === -1) {
+        console.error('[狂暴模式] 无法找到对应的数据项');
+        continue;
+      }
+      
+      const config = {
+        ...transferConfig.value,
+        transfer_amount: form.amount_from === '1' ? (item.amount && item.amount.trim() !== '' ? Number(item.amount) : 0) : (form.send_count && form.send_count.trim() !== '' ? Number(form.send_count) : 0),
+      };
+      
+      try {
+        // 设置状态为执行中
+        data.value[realIndex].exec_status = "1";
+        data.value[realIndex].error_msg = "正在提交交易...";
+        
+        let res;
+        if (currentCoin.value.coin_type === "base") {
+          res = await invoke("base_coin_transfer_fast", {
+            index: realIndex + 1,
+            item: item,
+            config: config
+          });
+        } else if (currentCoin.value.coin_type === "token") {
+          res = await invoke("token_transfer_fast", {
+            index: realIndex + 1,
+            item: item,
+            config: {
+              ...config,
+              contract_address: currentCoin.value.contract_address,
+              abi: currentCoin.value.abi
+            }
+          });
+        } else {
+          throw new Error("未知币种类型");
+        }
+        
+        if (res && res.success && res.tx_hash) {
+          // 交易提交成功，存储待确认信息
+          data.value[realIndex].error_msg = `已提交，等待确认: ${res.tx_hash.substring(0, 15)}...`;
+          pendingTransactions.push({
+            key: item.key,
+            realIndex: realIndex,
+            txHash: res.tx_hash,
+            item: item,
+            config: config
+          });
+          console.log(`[狂暴模式] 交易已提交: ${realIndex + 1}, hash: ${res.tx_hash}`);
+        } else {
+          // 提交失败
+          data.value[realIndex].exec_status = "3";
+          data.value[realIndex].error_msg = res?.error || '提交失败';
+          data.value[realIndex].retry_flag = true;
+          updateTransferProgress();
+        }
+      } catch (err) {
+        console.error(`[狂暴模式] 提交失败: ${realIndex + 1}`, err);
+        data.value[realIndex].exec_status = "3";
+        data.value[realIndex].error_msg = String(err);
+        data.value[realIndex].retry_flag = true;
+        updateTransferProgress();
+      }
+    }
+  };
+  
+  // 并发提交所有钱包组的交易
+  const workQueue = [...walletGroupsArray];
+  const workers = [];
+  
+  const startSubmitWorker = async () => {
+    while (workQueue.length > 0 && !stopFlag.value) {
+      const walletGroup = workQueue.shift();
+      if (!walletGroup) break;
+      await submitWalletGroupTransactions(walletGroup);
+    }
+  };
+  
+  for (let i = 0; i < maxConcurrency; i++) {
+    workers.push(startSubmitWorker());
+  }
+  
+  await Promise.all(workers);
+  
+  console.log(`[狂暴模式] 提交阶段完成，待确认交易数: ${pendingTransactions.length}`);
+  
+  if (stopFlag.value) {
+    console.log('[狂暴模式] 用户停止，中断执行');
+    return;
+  }
+  
+  // 第二阶段：统一确认所有交易结果
+  if (pendingTransactions.length > 0) {
+    Notification.info(`开始确认 ${pendingTransactions.length} 笔交易结果...`);
+    
+    // 并发查询交易状态，使用批量处理
+    const confirmBatchSize = 50; // 每批确认50个
+    const maxRetries = 30; // 最大重试次数（约30秒）
+    let retryCount = 0;
+    
+    while (pendingTransactions.length > 0 && retryCount < maxRetries && !stopFlag.value) {
+      retryCount++;
+      console.log(`[狂暴模式] 确认轮次: ${retryCount}, 待确认: ${pendingTransactions.length}`);
+      
+      const confirmedIndices = [];
+      
+      // 分批确认
+      for (let batchStart = 0; batchStart < pendingTransactions.length; batchStart += confirmBatchSize) {
+        if (stopFlag.value) break;
+        
+        const batch = pendingTransactions.slice(batchStart, batchStart + confirmBatchSize);
+        
+        const confirmPromises = batch.map(async (txInfo, batchIdx) => {
+          const globalIdx = batchStart + batchIdx;
+          try {
+            const statusResult = await invoke("check_transaction_status", {
+              chain: chainValue.value,
+              txHash: txInfo.txHash
+            });
+            
+            if (statusResult.confirmed) {
+              if (statusResult.success === true) {
+                // 交易成功
+                data.value[txInfo.realIndex].exec_status = "2";
+                data.value[txInfo.realIndex].error_msg = txInfo.txHash;
+                data.value[txInfo.realIndex].retry_flag = false;
+                confirmedIndices.push(globalIdx);
+              } else {
+                // 交易失败
+                data.value[txInfo.realIndex].exec_status = "3";
+                data.value[txInfo.realIndex].error_msg = statusResult.error || '交易执行失败';
+                data.value[txInfo.realIndex].retry_flag = true;
+                confirmedIndices.push(globalIdx);
+              }
+              updateTransferProgress();
+            } else {
+              // 还在pending，更新状态显示
+              data.value[txInfo.realIndex].error_msg = `确认中...(${retryCount}/${maxRetries}) ${txInfo.txHash.substring(0, 15)}...`;
+            }
+          } catch (err) {
+            console.error(`[狂暴模式] 查询交易状态失败:`, err);
+            // 查询失败不移除，继续重试
+          }
+        });
+        
+        await Promise.all(confirmPromises);
+      }
+      
+      // 从待确认列表中移除已确认的交易（从后往前删除以避免索引问题）
+      confirmedIndices.sort((a, b) => b - a);
+      for (const idx of confirmedIndices) {
+        pendingTransactions.splice(idx, 1);
+      }
+      
+      // 如果还有待确认的交易，等待1秒后继续查询
+      if (pendingTransactions.length > 0 && retryCount < maxRetries && !stopFlag.value) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    // 处理超时未确认的交易
+    if (pendingTransactions.length > 0) {
+      console.log(`[狂暴模式] ${pendingTransactions.length} 笔交易确认超时`);
+      for (const txInfo of pendingTransactions) {
+        data.value[txInfo.realIndex].exec_status = "3";
+        data.value[txInfo.realIndex].error_msg = `确认超时: ${txInfo.txHash.substring(0, 20)}...`;
+        data.value[txInfo.realIndex].retry_flag = true;
+        updateTransferProgress();
+      }
+    }
+  }
+  
+  console.log('[狂暴模式] 执行完成');
 }
 
 // 停止执行
@@ -4780,8 +5005,9 @@ async function handleBeforeClose() {
             <span style="padding: 0 5px">至</span>
             <a-input v-model="form.max_interval" :disabled="threadCount > 1" />
           </a-form-item>
-          <a-form-item field="thread_count" label="线程数" style="width: 130px;" tooltip="同时执行的钱包数量">
-            <a-input-number v-model="threadCount" :min="1" :max="99" :step="1" :default-value="1" mode="button" />
+          <a-form-item field="thread_count" label="线程数" style="width: 180px;" tooltip="同时执行的钱包数量。线程数>90时开启狂暴模式：将提交交易与确认交易分开进行，最大化转账速度">
+            <a-input-number v-model="threadCount" :min="1" :max="999" :step="1" :default-value="1" mode="button" />
+            <a-tag v-if="threadCount > 90" color="#ff4d4f" style="padding: 4px; font-size: 10px;width: 35px">狂暴</a-tag>
           </a-form-item>
           <a-form-item field="error_retry" label="失败自动重试" style="width: 125px;" tooltip="转账失败时是否自动重试">
             <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0" />

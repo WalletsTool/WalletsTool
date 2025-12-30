@@ -9,7 +9,7 @@ use ethers::{
 use std::sync::Arc;
 use rand::Rng;
 use tauri::Emitter;
-use super::transfer::{TransferConfig, TransferItem, TransferResult, create_provider, get_rpc_config, TransferUtils};
+use super::transfer::{TransferConfig, TransferItem, TransferResult, FastTransferResult, create_provider, get_rpc_config, TransferUtils};
 use crate::database::{get_database_manager, chain_service::ChainService};
 
 // ERC20 ABI (简化版，只包含必要的函数)
@@ -601,6 +601,191 @@ async fn token_transfer_internal<R: tauri::Runtime>(
             Err(error_msg.into())
         }
     }
+}
+
+// Tauri命令：快速代币转账（狂暴模式 - 只提交不等待确认）
+#[tauri::command]
+pub async fn token_transfer_fast<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    index: usize,
+    item: TransferItem,
+    config: TokenTransferConfig,
+) -> Result<FastTransferResult, String> {
+    match token_transfer_fast_internal(app_handle, index, item, config).await {
+        Ok(tx_hash) => Ok(FastTransferResult {
+            success: true,
+            tx_hash: Some(tx_hash),
+            error: None,
+        }),
+        Err(e) => Ok(FastTransferResult {
+            success: false,
+            tx_hash: None,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+// 内部快速代币转账实现（只提交交易，不等待确认）
+async fn token_transfer_fast_internal<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    index: usize,
+    mut item: TransferItem,
+    config: TokenTransferConfig,
+) -> Result<String, Box<dyn std::error::Error>> {
+    item.retry_flag = false;
+    
+    // 从数据库获取代币的decimals配置
+    let db_manager = get_database_manager();
+    let chain_service = ChainService::new(db_manager.get_pool());
+    
+    let db_decimals = chain_service.get_token_decimals_by_contract(&config.chain, &config.contract_address).await?;
+    
+    // 创建Provider
+    let provider = create_provider(&config.chain).await?;
+    
+    // 创建钱包
+    if item.private_key.trim().is_empty() {
+        return Err("私钥不能为空！".into());
+    }
+    
+    let private_key = if item.private_key.starts_with("0x") || item.private_key.starts_with("0X") {
+        item.private_key[2..].to_string()
+    } else {
+        item.private_key.clone()
+    };
+    
+    let wallet = private_key.parse::<LocalWallet>()?;
+    let wallet = wallet.with_chain_id(get_rpc_config(&config.chain).await.unwrap().chain_id);
+    let wallet_address = wallet.address();
+    
+    // 解析地址
+    let contract_address: Address = config.contract_address.parse()?;
+    let to_address: Address = item.to_addr.parse()?;
+    
+    // 创建合约实例
+    let abi: ethers::abi::Abi = serde_json::from_str(ERC20_ABI)?;
+    let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_address, abi, provider.clone());
+    
+    // 获取代币余额
+    let balance: U256 = contract.method("balanceOf", wallet_address)?.call().await?;
+    
+    // 获取decimals
+    let decimals = if let Some(db_decimals) = db_decimals {
+        db_decimals as u8
+    } else {
+        contract.method::<_, u8>("decimals", ())?.call().await?
+    };
+    
+    if balance.is_zero() {
+        return Err("代币余额不足！".into());
+    }
+    
+    // 获取Gas Price
+    let transfer_config = TransferConfig {
+        chain: config.chain.clone(),
+        delay: config.delay,
+        transfer_type: config.transfer_type.clone(),
+        transfer_amount: config.transfer_amount,
+        transfer_amount_list: config.transfer_amount_list,
+        left_amount_list: config.left_amount_list,
+        amount_precision: config.amount_precision,
+        limit_type: config.limit_type.clone(),
+        limit_count: config.limit_count,
+        limit_count_list: config.limit_count_list,
+        gas_price_type: config.gas_price_type.clone(),
+        gas_price: config.gas_price,
+        gas_price_rate: config.gas_price_rate,
+        max_gas_price: config.max_gas_price,
+        error_retry: config.error_retry.clone(),
+        error_count_limit: config.error_count_limit,
+    };
+    
+    let gas_price = TransferUtils::get_gas_price(&transfer_config, provider.clone()).await?;
+    
+    // 计算转账金额（简化版本）
+    let transfer_amount = match config.transfer_type.as_str() {
+        "1" => balance, // 全部转账
+        "2" => {
+            let amount: U256 = parse_units(config.transfer_amount, decimals as u32)?.into();
+            if amount >= balance {
+                return Err("余额不足".into());
+            }
+            amount
+        }
+        "3" => {
+            let mut rng = rand::thread_rng();
+            let random_amount = rng.gen_range(config.transfer_amount_list[0]..=config.transfer_amount_list[1]);
+            let formatted = format!("{:.precision$}", random_amount, precision = config.amount_precision as usize);
+            let precise: f64 = formatted.parse()?;
+            let amount: U256 = parse_units(precise, decimals as u32)?.into();
+            if amount >= balance {
+                return Err("余额不足".into());
+            }
+            amount
+        }
+        "4" => {
+            let balance_f64: f64 = format_units(balance, decimals as u32)?.parse()?;
+            if balance_f64 <= config.left_amount_list[1] {
+                return Err("余额不足".into());
+            }
+            let mut rng = rand::thread_rng();
+            let left = rng.gen_range(config.left_amount_list[0]..=config.left_amount_list[1]);
+            let transfer_f64 = balance_f64 - left;
+            if transfer_f64 <= 0.0 {
+                return Err("计算转账金额为负".into());
+            }
+            let formatted = format!("{:.precision$}", transfer_f64, precision = config.amount_precision as usize);
+            let precise: f64 = formatted.parse()?;
+            parse_units(precise, decimals as u32)?.into()
+        }
+        _ => return Err("无效的转账类型".into()),
+    };
+    
+    // 获取Gas Limit
+    let gas_limit = TokenTransferUtils::get_contract_gas_limit(
+        &config,
+        provider.clone(),
+        contract_address,
+        wallet_address,
+        to_address,
+        transfer_amount,
+    ).await?;
+    
+    // 发送状态更新
+    let _ = app_handle.emit("transfer_status_update", serde_json::json!({
+        "index": index - 1,
+        "error_msg": "发送交易中...",
+        "exec_status": "1"
+    }));
+    
+    // 构建并发送交易
+    let client = SignerMiddleware::new(provider.clone(), wallet);
+    let contract_with_signer: Contract<Arc<SignerMiddleware<Arc<Provider<Http>>, LocalWallet>>> = 
+        Contract::new(contract_address, contract.abi().clone(), Arc::new(client));
+    
+    let call = contract_with_signer
+        .method::<_, bool>("transfer", (to_address, transfer_amount))?
+        .gas_price(gas_price)
+        .gas(gas_limit);
+    
+    let pending_tx = call.send().await.map_err(|e| {
+        format!("发送交易失败: {}", e)
+    })?;
+    
+    let tx_hash = pending_tx.tx_hash();
+    let tx_hash_str = format!("{:?}", tx_hash);
+    
+    println!("[狂暴模式] 序号：{}, 代币交易已提交，hash: {}", index, tx_hash_str);
+    
+    // 发送状态更新
+    let _ = app_handle.emit("transfer_status_update", serde_json::json!({
+        "index": index - 1,
+        "error_msg": format!("已提交，等待确认: {}", &tx_hash_str[..20]),
+        "exec_status": "1"
+    }));
+    
+    // 不等待确认，直接返回交易哈希
+    Ok(tx_hash_str)
 }
 
 // Tauri命令：查询代币余额

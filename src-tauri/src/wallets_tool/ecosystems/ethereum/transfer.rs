@@ -1565,6 +1565,279 @@ async fn query_balance_internal(
     Ok(balance_str)
 }
 
+// ========== 狂暴模式相关结构和方法 ==========
+
+// 快速转账结果（只返回交易哈希，不等待确认）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FastTransferResult {
+    pub success: bool,
+    pub tx_hash: Option<String>,
+    pub error: Option<String>,
+}
+
+// 交易状态检查结果
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransactionStatusResult {
+    pub confirmed: bool,
+    pub success: Option<bool>,  // None表示还在pending，Some(true)表示成功，Some(false)表示失败
+    pub error: Option<String>,
+}
+
+// Tauri命令：快速基础币转账（狂暴模式 - 只提交不等待确认）
+#[tauri::command]
+pub async fn base_coin_transfer_fast<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    index: usize,
+    item: TransferItem,
+    config: TransferConfig,
+) -> Result<FastTransferResult, String> {
+    match base_coin_transfer_fast_internal(app_handle, index, item, config).await {
+        Ok(tx_hash) => Ok(FastTransferResult {
+            success: true,
+            tx_hash: Some(tx_hash),
+            error: None,
+        }),
+        Err(e) => Ok(FastTransferResult {
+            success: false,
+            tx_hash: None,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+// 内部快速基础币转账实现（只提交交易，不等待确认）
+async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    index: usize,
+    mut item: TransferItem,
+    config: TransferConfig,
+) -> Result<String, Box<dyn std::error::Error>> {
+    item.retry_flag = false;
+    
+    // 创建钱包
+    if item.private_key.trim().is_empty() {
+        return Err("私钥不能为空！".into());
+    }
+    
+    // 处理私钥格式
+    let private_key = if item.private_key.starts_with("0x") || item.private_key.starts_with("0X") {
+        item.private_key[2..].to_string()
+    } else {
+        item.private_key.clone()
+    };
+    
+    let wallet = private_key.parse::<LocalWallet>().map_err(|e| {
+        format!("私钥格式错误: {}", e)
+    })?;
+    
+    // 获取链ID
+    let chain_id = match ProviderUtils::get_chain_id(&config.chain).await {
+        Ok(id) => id,
+        Err(_) => {
+            match get_rpc_config(&config.chain).await {
+                Some(c) => c.chain_id,
+                None => {
+                    return Err(format!(
+                        "无法获取链 '{}' 的配置信息",
+                        config.chain
+                    ).into());
+                }
+            }
+        }
+    };
+    let wallet = wallet.with_chain_id(chain_id);
+    let wallet_address = wallet.address();
+    
+    // 解析目标地址
+    if item.to_addr.trim().is_empty() {
+        return Err("目标地址不能为空！".into());
+    }
+    let to_address: Address = item.to_addr.parse().map_err(|e| {
+        format!("目标地址格式错误: {}", e)
+    })?;
+    
+    // 获取余额
+    let provider_for_balance = get_random_provider(&config.chain).await?;
+    let balance = provider_for_balance.get_balance(wallet_address, None).await.map_err(|e| {
+        format!("获取余额失败: {}", e)
+    })?;
+    
+    if balance.is_zero() {
+        return Err("当前余额为0，无法进行转账操作！".into());
+    }
+    
+    // 获取Gas Price
+    let provider_for_gas_price = get_random_provider(&config.chain).await?;
+    let gas_price = TransferUtils::get_gas_price(&config, provider_for_gas_price.clone()).await?;
+    
+    if gas_price.is_zero() {
+        return Err("获取到的 gas price 为0".into());
+    }
+    
+    // 获取Gas Limit
+    let gas_limit = match config.limit_type.as_str() {
+        "1" => {
+            let estimate_amount = parse_ether(0.000003)?;
+            let provider_for_gas_limit = get_random_provider(&config.chain).await?;
+            TransferUtils::get_gas_limit(
+                &config,
+                provider_for_gas_limit.clone(),
+                wallet_address,
+                to_address,
+                estimate_amount,
+            ).await.map_err(|e| format!("获取gas limit失败: {}", e))?
+        }
+        "2" => U256::from(config.limit_count),
+        "3" => {
+            let mut rng = rand::thread_rng();
+            let random_limit = rng.gen_range(config.limit_count_list[0]..=config.limit_count_list[1]);
+            U256::from(random_limit)
+        }
+        _ => U256::from(21000),
+    };
+    
+    // 计算转账金额（简化版本，不做复杂的二分法优化以提高速度）
+    let transfer_amount = match config.transfer_type.as_str() {
+        "1" => {
+            // 全部转账 - 快速计算
+            let gas_fee = gas_price * gas_limit;
+            let safety_margin = gas_fee * U256::from(10) / U256::from(100); // 10%安全边际
+            if balance <= gas_fee + safety_margin {
+                return Err("余额不足支付Gas费用".into());
+            }
+            balance - gas_fee - safety_margin
+        }
+        "2" => {
+            let amount = parse_ether(config.transfer_amount)?;
+            if amount >= balance {
+                return Err("余额不足".into());
+            }
+            amount
+        }
+        "3" => {
+            let mut rng = rand::thread_rng();
+            let random_amount = rng.gen_range(config.transfer_amount_list[0]..=config.transfer_amount_list[1]);
+            let formatted_amount = format!("{:.precision$}", random_amount, precision = config.amount_precision as usize);
+            let precise_amount: f64 = formatted_amount.parse()?;
+            let amount = parse_ether(precise_amount)?;
+            if amount >= balance {
+                return Err("余额不足".into());
+            }
+            amount
+        }
+        "4" => {
+            let balance_f64: f64 = format_units(balance, 18)?.parse()?;
+            let gas_fee = gas_price * gas_limit;
+            let gas_fee_ether: f64 = format_units(gas_fee, 18)?.parse()?;
+            let available_balance = balance_f64 - gas_fee_ether;
+            
+            if available_balance <= config.left_amount_list[1] {
+                return Err("余额不足".into());
+            }
+            
+            let mut rng = rand::thread_rng();
+            let left_amount = rng.gen_range(config.left_amount_list[0]..=config.left_amount_list[1]);
+            let transfer_amount_f64 = available_balance - left_amount;
+            
+            if transfer_amount_f64 <= 0.0 {
+                return Err("计算转账金额为负数或零".into());
+            }
+            
+            let formatted_amount = format!("{:.precision$}", transfer_amount_f64, precision = config.amount_precision as usize);
+            let precise_amount: f64 = formatted_amount.parse()?;
+            parse_ether(precise_amount)?
+        }
+        _ => return Err("无效的转账类型".into()),
+    };
+    
+    // 发送状态更新
+    let _ = app_handle.emit("transfer_status_update", serde_json::json!({
+        "index": index - 1,
+        "error_msg": "发送交易中...",
+        "exec_status": "1"
+    }));
+    
+    // 构建并发送交易
+    let tx = TransactionRequest::new()
+        .from(wallet_address)
+        .to(to_address)
+        .value(transfer_amount)
+        .gas_price(gas_price)
+        .gas(gas_limit);
+    
+    let provider_for_transaction = get_random_provider(&config.chain).await?;
+    let client = SignerMiddleware::new(provider_for_transaction.clone(), wallet);
+    let pending_tx = client.send_transaction(tx, None).await.map_err(|e| {
+        format!("发送交易失败: {}", e)
+    })?;
+    
+    let tx_hash = pending_tx.tx_hash();
+    let tx_hash_str = format!("{:?}", tx_hash);
+    
+    println!("[狂暴模式] 序号：{}, 交易已提交，hash: {}", index, tx_hash_str);
+    
+    // 发送状态更新 - 交易已提交，等待确认
+    let _ = app_handle.emit("transfer_status_update", serde_json::json!({
+        "index": index - 1,
+        "error_msg": format!("已提交，等待确认: {}", &tx_hash_str[..20]),
+        "exec_status": "1"
+    }));
+    
+    // 不等待确认，直接返回交易哈希
+    Ok(tx_hash_str)
+}
+
+// Tauri命令：检查交易状态
+#[tauri::command]
+pub async fn check_transaction_status(
+    chain: String,
+    tx_hash: String,
+) -> Result<TransactionStatusResult, String> {
+    match check_transaction_status_internal(chain, tx_hash).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+// 内部检查交易状态实现
+async fn check_transaction_status_internal(
+    chain: String,
+    tx_hash: String,
+) -> Result<TransactionStatusResult, Box<dyn std::error::Error>> {
+    let provider = get_random_provider(&chain).await?;
+    
+    // 解析交易哈希
+    let hash: ethers::types::H256 = tx_hash.parse().map_err(|e| {
+        format!("交易哈希格式错误: {}", e)
+    })?;
+    
+    // 获取交易回执
+    match provider.get_transaction_receipt(hash).await {
+        Ok(Some(receipt)) => {
+            // 交易已确认
+            let success = receipt.status == Some(U64::from(1));
+            Ok(TransactionStatusResult {
+                confirmed: true,
+                success: Some(success),
+                error: if success { None } else { Some("交易执行失败".to_string()) },
+            })
+        }
+        Ok(None) => {
+            // 交易还在pending
+            Ok(TransactionStatusResult {
+                confirmed: false,
+                success: None,
+                error: None,
+            })
+        }
+        Err(e) => {
+            Err(format!("查询交易状态失败: {}", e).into())
+        }
+    }
+}
+
+// ========== 原有代码 ==========
+
 // 检查钱包最近转账记录的结果结构
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RecentTransferResult {

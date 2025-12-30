@@ -309,10 +309,13 @@ async fn main() {
             database::export_database_to_init_sql,
             // transfer functions
             wallets_tool::transfer::base_coin_transfer,
+            wallets_tool::transfer::base_coin_transfer_fast,
+            wallets_tool::transfer::check_transaction_status,
             wallets_tool::transfer::query_balance,
             wallets_tool::transfer::check_wallet_recent_transfers,
             // token transfer functions
             wallets_tool::token_transfer::token_transfer,
+            wallets_tool::token_transfer::token_transfer_fast,
             wallets_tool::token_transfer::query_token_balance,
             wallets_tool::token_transfer::get_token_info,
             // provider functions

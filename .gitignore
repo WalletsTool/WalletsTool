@@ -27,9 +27,11 @@ dist-ssr
 
 # Tauri generated files
 src-tauri/gen/
+src-tauri/target/
 package-lock.json
 
 # Python scripts - private keys
 scripts/wallets.txt
 *.pyc
 __pycache__/
+/target/

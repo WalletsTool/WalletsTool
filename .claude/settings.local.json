@@ -10,7 +10,8 @@
       "Bash(yarn tauri-dev:*)",
       "Bash(where link)",
       "Bash(where cl)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Edit"
     ],
     "deny": [],
     "ask": []

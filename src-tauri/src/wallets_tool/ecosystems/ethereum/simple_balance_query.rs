@@ -618,28 +618,29 @@ impl SimpleBalanceQueryService {
     pub async fn query_balances(&self, params: QueryParams) -> QueryResult {
         let thread_count = params.thread_count.max(1).min(99); // 限制线程数在1-99之间
         let semaphore = Arc::new(Semaphore::new(thread_count));
-        
+
         println!("开始批量查询余额，线程数: {}, 总任务数: {}", thread_count, params.items.len());
-        
+
         let items = params.items.clone();
         let tasks: Vec<_> = items.into_iter().map(|item| {
             let semaphore = semaphore.clone();
             let params = params.clone();
             let service = self;
-            
+
             async move {
                 let _permit = semaphore.acquire().await.unwrap();
-                
-                // 添加随机延迟，避免速率限制（300-800ms）
-                let delay = Duration::from_millis(300 + (rand::random::<u64>() % 500));
+
+                // 添加轻微随机延迟（50-150ms），避免所有请求同时发送导致RPC限流
+                // 移除原来的300-800ms延迟，改为真正的并发
+                let delay = Duration::from_millis(50 + (rand::random::<u64>() % 100));
                 sleep(delay).await;
-                
+
                 service.query_single_item(item, &params, "default").await
             }
         }).collect();
 
         let results = join_all(tasks).await;
-        
+
         let success = results.iter().all(|item| item.exec_status == "2");
         let error_msg = if success {
             None
@@ -648,7 +649,7 @@ impl SimpleBalanceQueryService {
         };
 
         println!("查询完成，成功: {}", success);
-        
+
         QueryResult {
             success,
             items: results,
@@ -681,25 +682,26 @@ impl SimpleBalanceQueryService {
             let service = service.clone();
             let app_handle = app_handle.clone();
             let window_id = window_id.clone();
-            
+
             // 使用tokio::spawn创建真正的独立任务
             tokio::spawn(async move {
                 // 在获取信号量前检查停止标志
                 if get_stop_flag(&window_id) {
                     return item.clone();
                 }
-                
+
                 let _permit = semaphore.acquire().await.unwrap();
-                
+
                 // 获取信号量后再次检查停止标志
                 if get_stop_flag(&window_id) {
                     return item.clone();
                 }
-                
-                // 添加随机延迟，避免速率限制（300-800ms）
-                let delay = Duration::from_millis(300 + (rand::random::<u64>() % 500));
+
+                // 添加轻微随机延迟（50-150ms），避免所有请求同时发送导致RPC限流
+                // 移除原来的300-800ms延迟，改为真正的并发
+                let delay = Duration::from_millis(50 + (rand::random::<u64>() % 100));
                 sleep(delay).await;
-                
+
                 // 通知前端该项目开始执行
                 let mut updating_item = item.clone();
                 updating_item.exec_status = "1".to_string();
@@ -710,9 +712,9 @@ impl SimpleBalanceQueryService {
                 })) {
                     println!("发送开始执行事件失败: {}", e);
                 }
-                
+
                 let result = service.query_single_item(item, &params, &window_id).await;
-                
+
                 // 通知前端该项目查询完成
                 if let Err(e) = app_handle.emit("balance_item_update", serde_json::json!({
                     "index": index,
@@ -721,7 +723,7 @@ impl SimpleBalanceQueryService {
                 })) {
                     println!("发送查询完成事件失败: {}", e);
                 }
-                
+
                 result
             })
         }).collect();

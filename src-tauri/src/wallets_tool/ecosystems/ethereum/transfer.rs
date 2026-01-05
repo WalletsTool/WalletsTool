@@ -211,8 +211,9 @@ use tokio::time::{sleep, Duration};
 
 // 添加随机延迟，防止RPC请求过于密集
 async fn add_rpc_delay() {
-    // 生成300-800ms随机延迟，立即使用，不跨await持有rng
-    let delay_ms = rand::thread_rng().gen_range(300..800);
+    // 生成50-150ms随机延迟，避免所有请求同时发送导致RPC限流
+    // 移除原来的300-800ms延迟，提升并发性能
+    let delay_ms = rand::thread_rng().gen_range(50..150);
     sleep(Duration::from_millis(delay_ms)).await;
 }
 

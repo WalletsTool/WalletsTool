@@ -11,7 +11,8 @@
       "Bash(where link)",
       "Bash(where cl)",
       "Bash(grep:*)",
-      "Edit"
+      "Edit",
+      "Bash(cd:*)"
     ],
     "deny": [],
     "ask": []

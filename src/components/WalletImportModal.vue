@@ -278,7 +278,7 @@ defineExpose({
       </div>
       
       <!-- 左侧：私钥输入 -->
-      <div style="width: 660px; height: 100%; display: flex; flex-direction: column;">
+      <div style="width: 640px; height: 100%; display: flex; flex-direction: column;">
         <div class="input-label" style="margin-bottom: 8px; font-weight: 500;">发送方私钥</div>
         <CodeEditor 
           ref="privateKeyEditorRef"
@@ -293,7 +293,7 @@ defineExpose({
       </div>
 
       <!-- 右侧：接收地址输入 -->
-      <div style="width: 430px; height: 100%; display: flex; flex-direction: column;">
+      <div style="width: 450px; height: 100%; display: flex; flex-direction: column;">
         <div class="input-label" style="margin-bottom: 8px; font-weight: 500;">接收地址</div>
         <CodeEditor 
           ref="addressEditorRef"

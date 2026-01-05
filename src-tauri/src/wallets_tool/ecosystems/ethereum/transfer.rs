@@ -328,6 +328,97 @@ pub async fn get_random_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box
     Err(format!("获取Provider失败，已重试{}次: {}", max_retries, last_error).into())
 }
 
+/// 根据链ID和用户配置获取缓冲参数
+/// 返回: (gas_price_buffer_factor, gas_limit_buffer_factor, min_gas_limit)
+/// - gas_price_buffer_factor: Gas Price缓冲百分比（如150表示1.5倍）
+/// - gas_limit_buffer_factor: Gas Limit缓冲百分比（如110表示1.1倍）
+/// - min_gas_limit: 最小Gas Limit值
+fn get_chain_buffer_params_with_user_config(chain_id: u64, config: &TransferConfig) -> (u32, u32, u64) {
+    // 获取链的基础参数
+    let (base_price_buffer, base_limit_buffer, min_gas_limit, _) = get_chain_base_params(chain_id);
+
+    // 根据用户配置的 limit_type 调整缓冲
+    // 如果用户使用固定/随机 Gas Limit，说明用户对 Gas Limit 有明确控制，可以减少缓冲
+    let (gas_price_buffer_factor, gas_limit_buffer_factor) = match config.limit_type.as_str() {
+        "2" | "3" => {
+            // 固定/随机 Gas Limit 模式 - 用户指定了具体值，使用更小的缓冲
+            (base_price_buffer, 105) // 仅 5% 缓冲
+        }
+        _ => {
+            // 自动估算模式 - 使用链基础缓冲
+            (base_price_buffer, base_limit_buffer)
+        }
+    };
+
+    (gas_price_buffer_factor, gas_limit_buffer_factor, min_gas_limit)
+}
+
+/// 获取链的基础参数（不涉及用户配置）
+fn get_chain_base_params(chain_id: u64) -> (u32, u32, u64, bool) {
+    match chain_id {
+        // Ethereum Mainnet & Testnets (EIP-1559)
+        1 | 5 | 11155111 => (150, 110, 21000, true),
+
+        // Polygon (EIP-1559)
+        137 | 80001 => (150, 110, 21000, true),
+
+        // Arbitrum (EIP-1559)
+        42161 | 421613 => (150, 115, 25000, true),
+
+        // Optimism (EIP-1559)
+        10 | 420 => (150, 115, 25000, true),
+
+        // BSC (非EIP-1559，传统Gas Price)
+        56 | 97 => (150, 110, 21000, false),
+
+        // Avalanche (EIP-1559)
+        43114 | 43113 => (150, 110, 21000, true),
+
+        // Base (EIP-1559)
+        8453 | 84531 => (150, 110, 21000, true),
+
+        // Linea (EIP-1559)
+        59144 | 59140 => (150, 110, 21000, true),
+
+        // zkSync Era (EIP-1559)
+        324 | 280 => (150, 120, 30000, true),
+
+        // Mantle (EIP-1559)
+        5000 | 5001 => (150, 115, 25000, true),
+
+        // Metis (非EIP-1559)
+        1088 | 599 => (150, 115, 25000, false),
+
+        // 其他链使用默认保守参数
+        _ => (160, 120, 25000, true),
+    }
+}
+
+/// 检查 estimate_gas 返回值是否合理
+/// 简单 ETH 转账的实际 gas 应该在合理范围内
+fn validate_estimated_gas(estimated: U256, chain_id: u64, default_min: u64) -> U256 {
+    // 简单 ETH 转账（EOA -> EOA，无 data）的理论最小值
+    const THEORETICAL_MIN: u64 = 21000;
+    // 异常上限：100万 gas（任何简单转账都不应该需要这么多）
+    const MAX_REASONABLE: u64 = 1_000_000;
+
+    // 如果估计值低于理论最小值，使用理论最小值
+    if estimated < U256::from(THEORETICAL_MIN) {
+        println!("[WARN] 链{}的estimate_gas返回{}，低于理论最小值{}，使用默认值",
+            chain_id, estimated, THEORETICAL_MIN);
+        return U256::from(default_min);
+    }
+
+    // 如果估计值超过上限，认为是异常值
+    if estimated > U256::from(MAX_REASONABLE) {
+        println!("[WARN] 链{}的estimate_gas返回{}，超过上限{}，使用默认值",
+            chain_id, estimated, MAX_REASONABLE);
+        return U256::from(default_min);
+    }
+
+    estimated
+}
+
 // 转账工具函数
 pub struct TransferUtils;
 
@@ -1121,254 +1212,108 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     // 计算转账金额
     let transfer_amount = match config.transfer_type.as_str() {
         "1" => {
-            // 全部转账 - 使用多轮优化的二分法精确计算最大可转账金额
-            let mut final_transfer_amount = U256::zero();
-            let mut final_gas_limit = gas_limit;
-            
-            // 发送计算开始状态到前端
+            // 全部转账 - 一次性计算最大可转走金额
+            // 核心公式: max_transfer = balance - reserved_gas
+            // 关键：根据用户配置和链类型设置差异化缓冲策略
+
+            // 发送状态到前端
             let _ = app_handle.emit("transfer_status_update", serde_json::json!({
                 "index": index - 1,
-                "error_msg": "计算转账金额中...",
+                "error_msg": "计算最大转账金额...",
                 "exec_status": "1"
             }));
-            
-            // 根据金额大小动态调整优化策略
-            let balance_eth = ethers::utils::format_units(balance, 18)
-                .unwrap_or_default()
-                .parse::<f64>()
-                .unwrap_or(0.0);
-            
-            let (safety_margins, search_ranges, max_iterations, amount_type): (Vec<i32>, Vec<i32>, usize, &str) = if balance_eth > 0.1 {
-                // 大金额：3轮优化，大幅减少迭代次数提升速度
-                (vec![103, 102, 101], vec![97, 98, 99], 12, "大金额")
-            } else if balance_eth > 0.01 {
-                // 中型金额：2轮优化
-                (vec![102, 101], vec![98, 99], 10, "中型金额")
-            } else if balance_eth > 0.001 {
-                // 小型金额：2轮优化
-                (vec![102, 101], vec![98, 99], 8, "小型金额")
-            } else {
-                // 极简金额：1轮快速计算
-                (vec![101], vec![99], 6, "极简金额")
+
+            // 获取链ID用于确定链类型
+            let chain_id = match ProviderUtils::get_chain_id(&config.chain).await {
+                Ok(id) => id,
+                Err(_) => 1, // 默认为 Ethereum
             };
-            
-            println!("序号：{}, 开始多轮二分法优化，余额: {} ETH ({})", index, balance_eth, amount_type);
-            
-            let mut no_improvement_count = 0; // 连续无改进计数器
-            let mut last_best_amount = final_transfer_amount;
-            
-            for (round, (&margin, &range)) in safety_margins.iter().zip(search_ranges.iter()).enumerate() {
-                // 发送当前轮次状态到前端
-                let status_msg = match round {
-                    0 => "转账金额第一轮优化中...",
-                    1 => "转账金额第二轮优化中...", 
-                    2 => "转账金额最终优化中...",
-                    _ => "计算转账金额中..."
-                };
-                let _ = app_handle.emit("transfer_status_update", serde_json::json!({
-                    "index": index - 1,
-                    "error_msg": status_msg,
-                    "exec_status": "1"
-                }));
-                
-                println!("序号：{}, 第{}轮优化: 安全边际{}%, 搜索范围{}%", index, round + 1, margin - 100, range);
-                
-                let mut low = if round == 0 { U256::zero() } else { final_transfer_amount }; // 后续轮次从上一轮结果开始
-                let mut high = balance * U256::from(range) / U256::from(100);
-                let mut best_amount = final_transfer_amount;
-                let mut best_gas_limit = final_gas_limit;
-                
-                // 使用动态迭代次数
-                let mut cached_gas_limit = gas_limit; // 缓存gas limit减少RPC调用
-                for iteration in 0..max_iterations {
-                    if high <= low {
-                        break;
-                    }
-                    
-                    let mid = (low + high) / U256::from(2);
-                    if mid == U256::zero() || mid <= best_amount {
-                        break;
-                    }
-                    
-                    // 优化：只在关键迭代位置进行gas估算，其他时候使用缓存值
-                    let should_estimate_gas = iteration == 0 || // 第一次迭代
-                                             iteration % 4 == 0 || // 每4次迭代
-                                             iteration == max_iterations - 1; // 最后一次迭代
-                    
-                    // 估算这个转账金额需要的gas limit
-                    let estimated_gas_limit = if config.limit_type == "1" && should_estimate_gas {
-                        let provider_for_gas_estimation = get_random_provider(&config.chain).await?;
-                        match TransferUtils::get_gas_limit(
-                            &config,
-                            provider_for_gas_estimation.clone(),
-                            wallet_address,
-                            to_address,
-                            mid,
-                        ).await {
-                            Ok(gas) => {
-                                // 使用当前轮次的安全边际
-                                let gas_with_margin = gas * U256::from(margin) / U256::from(100);
-                                cached_gas_limit = gas_with_margin; // 更新缓存
-                                gas_with_margin
-                            }
-                            Err(_) => {
-                                // 估算失败，使用默认值加安全边际
-                                gas_limit * U256::from(margin) / U256::from(100)
-                            }
-                        }
-                    } else {
-                        // 非自动估算模式或使用缓存值
-                        if config.limit_type == "1" {
-                            cached_gas_limit // 使用缓存的gas limit
-                        } else {
-                            gas_limit * U256::from(margin) / U256::from(100)
-                        }
-                    };
-                    
-                    let total_cost = mid + (gas_price * estimated_gas_limit);
-                    
-                    if iteration % 5 == 0 || iteration < 3 {
-                        println!("序号：{}, 第{}轮迭代{}: 尝试转账={}, gas_limit={}, 总成本={}", 
-                            index, round + 1, iteration + 1, mid, estimated_gas_limit, total_cost);
-                    }
-                    
-                    if total_cost <= balance {
-                        // 这个金额可行，尝试更大的金额
-                        best_amount = mid;
-                        best_gas_limit = estimated_gas_limit;
-                        low = mid + U256::from(1);
-                    } else {
-                        // 这个金额太大，尝试更小的金额
-                        high = mid - U256::from(1);
-                    }
+
+            // 根据链类型和用户配置获取缓冲参数
+            // 如果用户使用固定 Gas Price/Gas Limit，缓冲可以小一些
+            let (gas_price_buffer_factor, gas_limit_buffer_factor, min_gas_limit) =
+                get_chain_buffer_params_with_user_config(chain_id, &config);
+
+            println!("序号：{}, 链ID={}, GasPrice缓冲={}%, GasLimit缓冲={}%, 最小GasLimit={}, 用户GasPriceType={}, 用户LimitType={}",
+                index, chain_id, gas_price_buffer_factor, gas_limit_buffer_factor, min_gas_limit, config.gas_price_type, config.limit_type);
+
+            // 计算Gas Price缓冲
+            let gas_price_buffer = gas_price * U256::from(gas_price_buffer_factor) / U256::from(100);
+
+            // 估算Gas Limit
+            // 根据用户配置的 limit_type 决定如何处理
+            let final_gas_limit: U256 = match config.limit_type.as_str() {
+                "1" => {
+                    // 自动估算模式
+                    let provider = get_random_provider(&config.chain).await?;
+                    let estimate_amount = balance * U256::from(90) / U256::from(100);
+                    let estimated_gas_limit = TransferUtils::get_gas_limit(
+                        &config,
+                        provider.clone(),
+                        wallet_address,
+                        to_address,
+                        estimate_amount,
+                    ).await.unwrap_or(U256::from(min_gas_limit));
+
+                    // 验证 estimate_gas 返回值是否合理
+                    let validated_gas = validate_estimated_gas(estimated_gas_limit, chain_id, min_gas_limit);
+                    println!("序号：{}, estimate_gas原始值={}, 验证后={}", index, estimated_gas_limit, validated_gas);
+
+                    // 添加链特定的缓冲（应对Gas Used波动）
+                    let gas_limit_with_buffer = validated_gas * U256::from(gas_limit_buffer_factor) / U256::from(100);
+                    std::cmp::max(gas_limit_with_buffer, U256::from(min_gas_limit))
                 }
-                
-                // 如果这一轮找到了更好的结果
-                if best_amount > final_transfer_amount {
-                    // 发送验证状态到前端
-                    let _ = app_handle.emit("transfer_status_update", serde_json::json!({
-                        "index": index - 1,
-                        "error_msg": "验证计算结果...",
-                        "exec_status": "1"
-                    }));
-                    
-                    // 进行精确验证
-                    let verification_cost = best_amount + (gas_price * best_gas_limit);
-                    if verification_cost <= balance {
-                        final_transfer_amount = best_amount;
-                        final_gas_limit = best_gas_limit;
-                        println!("序号：{}, 第{}轮成功: 转账金额={}, gas_limit={}, 剩余={}", 
-                            index, round + 1, final_transfer_amount, final_gas_limit, 
-                            balance - verification_cost);
-                        
-                        // 检查是否有显著改进
-                        if final_transfer_amount > last_best_amount {
-                            no_improvement_count = 0; // 重置计数器
-                            last_best_amount = final_transfer_amount;
-                        } else {
-                            no_improvement_count += 1;
-                        }
-                    } else {
-                        println!("序号：{}, 第{}轮验证失败，保持上一轮结果", index, round + 1);
-                        no_improvement_count += 1;
-                        println!("序号：{}, 第{}轮验证失败，连续无改进次数: {}", index, round + 1, no_improvement_count);
-                        break; // 验证失败，停止更激进的尝试
-                    }
-                } else {
-                    no_improvement_count += 1;
-                    println!("序号：{}, 第{}轮无改进，连续无改进次数: {}", index, round + 1, no_improvement_count);
+                "2" => {
+                    // 固定Gas Limit模式 - 直接使用用户配置值
+                    // 添加小量缓冲（5%）以应对可能的Gas Used波动
+                    let user_gas_limit = U256::from(config.limit_count);
+                    let gas_limit_with_buffer = user_gas_limit * U256::from(105) / U256::from(100);
+                    std::cmp::max(gas_limit_with_buffer, U256::from(min_gas_limit))
                 }
-                
-                // 收敛检测：连续2次无改进时提前退出（优化速度）
-                if no_improvement_count >= 2 {
-                    println!("序号：{}, 连续{}次无改进，提前结束优化", index, no_improvement_count);
-                    break;
+                "3" => {
+                    // 随机Gas Limit模式 - 使用用户配置范围的平均值
+                    let avg_limit = (config.limit_count_list[0] + config.limit_count_list[1]) / 2;
+                    let gas_limit_with_buffer = U256::from(avg_limit) * U256::from(105) / U256::from(100);
+                    std::cmp::max(gas_limit_with_buffer, U256::from(min_gas_limit))
                 }
-                
-                // 改进幅度检测：如果改进幅度小于0.1%，提前退出
-                if final_transfer_amount > U256::zero() && last_best_amount > U256::zero() {
-                    let improvement_ratio = ((final_transfer_amount - last_best_amount).as_u128() as f64) / (last_best_amount.as_u128() as f64);
-                    if improvement_ratio < 0.001 { // 0.1%
-                        println!("序号：{}, 改进幅度 {:.4}% 小于阈值，提前结束优化", index, improvement_ratio * 100.0);
-                        break;
-                    }
-                }
+                _ => U256::from(min_gas_limit),
+            };
+
+            // 计算预留的Gas费用
+            let reserved_gas_fee = gas_price_buffer * final_gas_limit;
+
+            // 直接计算最大可转走金额
+            if reserved_gas_fee >= balance {
+                return Err(format!(
+                    "余额不足支付Gas费用！当前余额: {} ETH，预留Gas: {} ETH",
+                    format_units(balance, 18)?,
+                    format_units(reserved_gas_fee, 18)?
+                ).into());
             }
-            
-            // 最终微调优化：当剩余金额超过0.0001 ETH时才执行，否则跳过节省时间
-            if final_transfer_amount > U256::zero() {
-                let current_cost = final_transfer_amount + (gas_price * final_gas_limit);
-                let remaining = balance - current_cost;
-                let remaining_eth = ethers::utils::format_units(remaining, 18)
-                    .unwrap_or_default()
-                    .parse::<f64>()
-                    .unwrap_or(0.0);
-                
-                // 只有当剩余金额 > 0.0001 ETH 时才进行微调，节省RPC调用
-                if remaining_eth > 0.0001 {
-                    // 发送最终微调状态到前端
-                    let _ = app_handle.emit("transfer_status_update", serde_json::json!({
-                        "index": index - 1,
-                        "error_msg": "最终微调优化中...",
-                        "exec_status": "1"
-                    }));
-                    
-                    println!("序号：{}, 开始最终微调优化，剩余 {} ETH", index, remaining_eth);
-                    
-                    let additional = remaining * U256::from(90) / U256::from(100);
-                    let new_transfer_amount = final_transfer_amount + additional;
-                    
-                    // 重新估算gas limit
-                    if config.limit_type == "1" {
-                        let provider_for_final_gas = get_random_provider(&config.chain).await?;
-                        if let Ok(new_gas_limit) = TransferUtils::get_gas_limit(
-                            &config,
-                            provider_for_final_gas.clone(),
-                            wallet_address,
-                            to_address,
-                            new_transfer_amount,
-                        ).await {
-                            let new_gas_with_margin = new_gas_limit * U256::from(101) / U256::from(100); // 1%安全边际
-                            let new_total_cost = new_transfer_amount + (gas_price * new_gas_with_margin);
-                            
-                            if new_total_cost <= balance {
-                                final_transfer_amount = new_transfer_amount;
-                                final_gas_limit = new_gas_with_margin;
-                                println!("序号：{}, 微调成功: 增加转账金额={}", index, additional);
-                            }
-                        }
-                    }
-                } else {
-                    println!("序号：{}, 剩余金额 {} ETH 太小，跳过最终微调优化", index, remaining_eth);
-                }
-            }
-            
-            // 如果所有优化都失败，使用保守估算
-            if final_transfer_amount == U256::zero() {
-                println!("序号：{}, 所有优化失败，使用保守估算", index);
-                let conservative_gas_fee = parse_ether(0.001).unwrap_or(U256::from(1000000000000000u64)); // 0.001 ETH
-                if conservative_gas_fee >= balance {
-                    return Err("当前余额不足支付Gas费用，不做转账操作！".into());
-                }
-                final_transfer_amount = balance - conservative_gas_fee;
-                final_gas_limit = conservative_gas_fee / gas_price;
-            }
-            
-            let final_gas_fee = gas_price * final_gas_limit;
-            let final_remaining = balance - final_transfer_amount - final_gas_fee;
-            println!("序号：{}, 最终优化结果: balance={}, transfer_amount={}, gas_fee={}, remaining={}", 
-                index, balance, final_transfer_amount, final_gas_fee, final_remaining);
-            
-            // 发送计算完成状态到前端
+
+            let max_transfer_amount = balance - reserved_gas_fee;
+            let max_transfer_eth = ethers::utils::format_units(max_transfer_amount, 18)
+                .unwrap_or_default();
+
+            println!("序号：{}, 全部转账: balance={}, max_transfer={} ETH, reserved_gas={} WEI, gas_limit={}",
+                index, balance, max_transfer_eth, reserved_gas_fee, final_gas_limit);
+
+            // 更新gas_limit
+            gas_limit = final_gas_limit;
+
+            // 发送计算完成状态
             let _ = app_handle.emit("transfer_status_update", serde_json::json!({
                 "index": index - 1,
-                "error_msg": "转账金额计算完成",
+                "error_msg": "计算完成",
                 "exec_status": "1"
             }));
-            
-            // 更新gas_limit为最终计算的值
-            gas_limit = final_gas_limit;
-            final_transfer_amount
+
+            let actual_gas_fee = gas_price * gas_limit;
+            let final_remaining = balance - max_transfer_amount - actual_gas_fee;
+            println!("序号：{}, 最终: transfer={} ETH, gas_fee={}, remaining={} WEI",
+                index, max_transfer_eth, actual_gas_fee, final_remaining);
+
+            max_transfer_amount
         }
         "2" => {
             // 转账固定数量

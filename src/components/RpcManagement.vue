@@ -119,6 +119,7 @@
             placeholder="请每行输入一个RPC地址&#10;例如：&#10;https://mainnet.infura.io/v3/your-key&#10;https://eth-mainnet.alchemyapi.io/v2/your-key&#10;https://rpc.ankr.com/eth&#10;&#10;系统将自动校验和去重"
             rows="12"
             style="width: 100%;"
+            @paste="handleBatchRpcPaste"
           />
         </a-form-item>
         
@@ -141,7 +142,7 @@
         <!-- 校验结果显示 -->
         <div v-if="batchRpcValidation.length > 0" style="margin-bottom: 16px;">
           <div style="margin-bottom: 8px; font-weight: 500;">校验结果：</div>
-          <div style="max-height: 200px; overflow-y: auto; border: 1px solid #e5e5e5; border-radius: 4px; padding: 8px;">
+          <div style="max-height: 100px; overflow-y: auto; border: 1px solid #e5e5e5; border-radius: 4px; padding: 8px;">
             <div v-for="(item, index) in batchRpcValidation" :key="index" 
                  :style="{color: item.valid ? '#52c41a' : '#ff4d4f', fontSize: '12px', marginBottom: '4px'}">
               {{ item.url }} - {{ item.message }}
@@ -150,7 +151,7 @@
         </div>
         
         <!-- 统计信息 -->
-        <div v-if="batchRpcStats.total > 0" style="background: #f6f8fa; padding: 12px; border-radius: 4px; font-size: 14px;">
+        <div v-if="batchRpcStats.total > 0" style="background: #f6f8fa; padding: 12px; border-radius: 4px; font-size: 14px;display: flex;justify-content:space-between">
           <div>总计：{{ batchRpcStats.total }} 个地址</div>
           <div style="color: #52c41a;">有效：{{ batchRpcStats.valid }} 个</div>
           <div style="color: #ff4d4f;">无效：{{ batchRpcStats.invalid }} 个</div>
@@ -362,6 +363,33 @@ function validateBatchRpcInput() {
 watch(batchRpcText, () => {
   validateBatchRpcInput()
 }, { immediate: true })
+
+// 处理批量RPC粘贴事件，自动识别URL并换行
+function handleBatchRpcPaste(event) {
+  event.preventDefault()
+  const clipboardData = event.clipboardData || window.clipboardData
+  const pastedText = clipboardData.getData('text')
+
+  // 由于URL可能直接连接在一起，需要特殊处理
+  // 使用前瞻来正确分割URL：匹配URL直到遇到下一个协议开头或文本结束
+  const urlPattern = /(?:https?|wss?):\/\/(?:[a-zA-Z0-9][-a-zA-Z0-9]*\.)+[a-zA-Z0-9][-a-zA-Z0-9]*(?=\s*(?:https?|wss?):\/\/|$)/g
+  const urls = pastedText.match(urlPattern)
+
+  if (urls && urls.length > 0) {
+    // 获取当前文本，如果非空则添加换行
+    const currentText = batchRpcText.value.trim()
+    const separator = currentText ? '\n' : ''
+    batchRpcText.value = currentText + separator + urls.join('\n')
+  } else {
+    // 如果没有识别到URL，直接插入粘贴的文本
+    const textarea = event.target
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const currentText = batchRpcText.value
+    const newText = currentText.slice(0, start) + pastedText + currentText.slice(end)
+    batchRpcText.value = newText
+  }
+}
 
 // RPC数据排序函数
 function sortRpcData(data) {
@@ -708,5 +736,6 @@ defineExpose({
 /* 批量RPC地址输入框高度 */
 .batch-rpc-textarea :deep(textarea) {
   min-height: 180px !important;
+  max-height: 250px !important;
 }
 </style>

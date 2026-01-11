@@ -208,7 +208,7 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     // 创建合约实例
     let abi: ethers::abi::Abi = serde_json::from_str(ERC20_ABI)?;
-    let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_address, abi, provider.clone());
+    let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_address, abi, provider.clone().into());
     
     // 获取当前使用的RPC URL
     let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
@@ -437,7 +437,7 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     // 构建转账交易
     let client = SignerMiddleware::new(provider.clone(), wallet);
-    let contract_with_signer: Contract<Arc<SignerMiddleware<Arc<Provider<Http>>, LocalWallet>>> = Contract::new(contract_address, contract.abi().clone(), Arc::new(client));
+    let contract_with_signer: Contract<Arc<SignerMiddleware<Arc<Provider<Http>>, LocalWallet>>> = Contract::new(contract_address, contract.abi().clone(), Arc::new(client).into());
     
     item.error_msg = "发送交易...".to_string();
     // 发送状态更新事件到前端
@@ -664,7 +664,7 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     
     // 创建合约实例
     let abi: ethers::abi::Abi = serde_json::from_str(ERC20_ABI)?;
-    let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_address, abi, provider.clone());
+    let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_address, abi, provider.clone().into());
     
     // 获取代币余额
     let balance: U256 = contract.method("balanceOf", wallet_address)?.call().await?;
@@ -760,8 +760,8 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     
     // 构建并发送交易
     let client = SignerMiddleware::new(provider.clone(), wallet);
-    let contract_with_signer: Contract<Arc<SignerMiddleware<Arc<Provider<Http>>, LocalWallet>>> = 
-        Contract::new(contract_address, contract.abi().clone(), Arc::new(client));
+    let contract_with_signer: Contract<Arc<SignerMiddleware<Arc<Provider<Http>>, LocalWallet>>> =
+        Contract::new(contract_address, contract.abi().clone(), Arc::new(client).into());
     
     let call = contract_with_signer
         .method::<_, bool>("transfer", (to_address, transfer_amount))?
@@ -850,7 +850,7 @@ async fn query_token_balance_internal(
     // 创建合约实例
     println!("[DEBUG] 正在创建合约实例...");
     let abi: ethers::abi::Abi = serde_json::from_str(ERC20_ABI)?;
-    let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_addr, abi, provider);
+    let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_addr, abi, provider.into());
     println!("[DEBUG] 合约实例创建成功");
     
     // 获取代币信息
@@ -942,7 +942,7 @@ async fn get_token_info_internal(
     
     // 创建合约实例
     let abi: ethers::abi::Abi = serde_json::from_str(ERC20_ABI)?;
-    let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_addr, abi, provider);
+    let contract: Contract<Arc<Provider<Http>>> = Contract::new(contract_addr, abi, provider.into());
     
     // 获取代币信息
     let decimals: u8 = contract.method("decimals", ())?.call().await?;

@@ -659,46 +659,50 @@ impl SimpleBalanceQueryService {
 
     // 批量查询余额（带实时更新）
     pub async fn query_balances_with_updates<R: tauri::Runtime>(
-        &self, 
-        params: QueryParams, 
+        &self,
+        params: QueryParams,
         app_handle: tauri::AppHandle<R>,
         window_id: String
     ) -> QueryResult {
         // 重置停止标志
         reset_stop_flag(&window_id);
-        
+
         let thread_count = params.thread_count.max(1).min(99); // 限制线程数在1-99之间
         let semaphore = Arc::new(Semaphore::new(thread_count));
-        
+
         println!("开始批量查询余额（实时更新），线程数: {}, 总任务数: {}", thread_count, params.items.len());
-        
-        let items = params.items.clone();
-        // 使用Arc包装service，使其能在tokio::spawn中使用
+
+        let total_items = params.items.len();
         let service = Arc::new(SimpleBalanceQueryService::new());
-        
-        let tasks: Vec<_> = items.into_iter().enumerate().map(|(index, item)| {
+
+        // 创建结果数组，使用索引映射确保按原始顺序返回
+        // results[original_index] = Some(result) 或 None（如果任务失败）
+        let results: Arc<Mutex<Vec<Option<QueryItem>>>> = Arc::new(Mutex::new(vec![None; total_items]));
+
+        // 创建任务，每个任务保留其原始索引
+        let tasks: Vec<_> = params.items.clone().into_iter().enumerate().map(|(original_index, item)| {
             let semaphore = semaphore.clone();
             let params = params.clone();
             let service = service.clone();
             let app_handle = app_handle.clone();
             let window_id = window_id.clone();
+            let results = results.clone();
 
             // 使用tokio::spawn创建真正的独立任务
             tokio::spawn(async move {
                 // 在获取信号量前检查停止标志
                 if get_stop_flag(&window_id) {
-                    return item.clone();
+                    return original_index;
                 }
 
                 let _permit = semaphore.acquire().await.unwrap();
 
                 // 获取信号量后再次检查停止标志
                 if get_stop_flag(&window_id) {
-                    return item.clone();
+                    return original_index;
                 }
 
                 // 添加轻微随机延迟（50-150ms），避免所有请求同时发送导致RPC限流
-                // 移除原来的300-800ms延迟，改为真正的并发
                 let delay = Duration::from_millis(50 + (rand::random::<u64>() % 100));
                 sleep(delay).await;
 
@@ -706,7 +710,7 @@ impl SimpleBalanceQueryService {
                 let mut updating_item = item.clone();
                 updating_item.exec_status = "1".to_string();
                 if let Err(e) = app_handle.emit("balance_item_update", serde_json::json!({
-                    "index": index,
+                    "index": original_index,
                     "item": updating_item,
                     "window_id": window_id
                 })) {
@@ -715,45 +719,64 @@ impl SimpleBalanceQueryService {
 
                 let result = service.query_single_item(item, &params, &window_id).await;
 
+                // 将结果存入对应索引位置
+                let mut results_guard = results.lock().unwrap();
+                results_guard[original_index] = Some(result.clone());
+                let result_for_emit = result.clone();
+                drop(results_guard);
+
                 // 通知前端该项目查询完成
                 if let Err(e) = app_handle.emit("balance_item_update", serde_json::json!({
-                    "index": index,
-                    "item": result.clone(),
+                    "index": original_index,
+                    "item": result_for_emit,
                     "window_id": window_id
                 })) {
                     println!("发送查询完成事件失败: {}", e);
                 }
 
-                result
+                original_index
             })
         }).collect();
 
         // 等待所有tokio任务完成
-        let mut results = Vec::new();
+        let mut join_errors = 0;
         for task in tasks {
             match task.await {
-                Ok(result) => results.push(result),
+                Ok(_) => {
+                    // 任务正常完成，结果已在results中
+                }
                 Err(e) => {
                     println!("[ERROR] 任务执行失败: {}", e);
-                    // 对于失败的任务，创建一个错误结果
-                    let error_item = QueryItem {
-                        key: String::new(),
-                        address: String::new(),
-                        private_key: None,
-                        plat_balance: None,
-                        coin_balance: None,
-                        nonce: None,
-                        last_transaction_time: None,
-                        retry_flag: true,
-                        exec_status: "3".to_string(),
-                        error_msg: Some(format!("任务执行失败: {}", e)),
-                    };
-                    results.push(error_item);
+                    join_errors += 1;
                 }
             }
         }
-        
-        let success = results.iter().all(|item| item.exec_status == "2");
+
+        // 按原始顺序收集结果
+        let mut ordered_results = Vec::with_capacity(total_items);
+        let results_guard = results.lock().unwrap();
+        for i in 0..total_items {
+            if let Some(item) = results_guard[i].clone() {
+                ordered_results.push(item);
+            } else {
+                // 创建错误结果
+                let error_item = QueryItem {
+                    key: String::new(),
+                    address: String::new(),
+                    private_key: None,
+                    plat_balance: None,
+                    coin_balance: None,
+                    nonce: None,
+                    last_transaction_time: None,
+                    retry_flag: true,
+                    exec_status: "3".to_string(),
+                    error_msg: Some(format!("任务执行失败{}", if join_errors > 0 { format!("（{}个任务异常）", join_errors) } else { String::new() })),
+                };
+                ordered_results.push(error_item);
+            }
+        }
+
+        let success = ordered_results.iter().all(|item| item.exec_status == "2");
         let error_msg = if success {
             None
         } else {
@@ -761,10 +784,10 @@ impl SimpleBalanceQueryService {
         };
 
         println!("查询完成，成功: {}", success);
-        
+
         QueryResult {
             success,
-            items: results,
+            items: ordered_results,
             error_msg,
         }
     }

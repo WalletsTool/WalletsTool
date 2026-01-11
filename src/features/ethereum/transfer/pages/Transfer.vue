@@ -2507,9 +2507,21 @@ async function queryBalance() {
     Notification.warning("请停止或等待执行完成后再查询余额！");
     return;
   }
+  // 如果上一个查询还没有完全停止，先发送停止信号并等待
   if (!balanceStopStatus.value) {
-    Notification.warning("请停止或等待查询完成后再查询余额！");
-    return;
+    console.log('上一个查询尚未完全停止，先发送停止信号');
+    try {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        await invoke('stop_balance_query', {
+          windowId: currentWindowId.value
+        });
+      }
+      // 等待100ms让后端停止
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      console.error('停止上一个查询失败:', error);
+    }
   }
   if (data.value.length === 0) {
     Notification.warning("请先导入私钥！");
@@ -2720,9 +2732,21 @@ async function queryToAddressBalance() {
     Notification.warning("请停止或等待执行完成后再查询余额！");
     return;
   }
+  // 如果上一个查询还没有完全停止，先发送停止信号并等待
   if (!balanceStopStatus.value) {
-    Notification.warning("请停止或等待查询完成后再查询余额！");
-    return;
+    console.log('上一个查询尚未完全停止，先发送停止信号');
+    try {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        await invoke('stop_balance_query', {
+          windowId: currentWindowId.value
+        });
+      }
+      // 等待100ms让后端停止
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      console.error('停止上一个查询失败:', error);
+    }
   }
   if (data.value.length === 0) {
     Notification.warning("请先导入地址！");

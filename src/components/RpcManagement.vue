@@ -17,17 +17,22 @@
 
     <a-table :data="rpcManageData" :loading="rpcTableLoading" :pagination="false" :scroll="{ y: 400 }">
       <template #columns>
-        <a-table-column title="ID" data-index="id" :width="70" />
+        <a-table-column title="序号" :width="60" align="center">
+          <template #cell="{ rowIndex }">
+            {{ rowIndex + 1 }}
+          </template>
+        </a-table-column>
+        <a-table-column title="ID" data-index="id" :width="50" />
         <a-table-column title="RPC地址" data-index="rpc_url" :width="300" :ellipsis="true" :tooltip="true" />
         <a-table-column title="优先级" data-index="priority" :width="65" align="center" />
-        <a-table-column title="状态" :width="60" align="center">
+        <a-table-column title="状态" :width="55" align="center">
           <template #cell="{ record }">
             <a-tag :color="record.is_active ? 'green' : 'red'">
               {{ record.is_active ? '启用' : '禁用' }}
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column title="响应时间(ms)" data-index="response_time" :width="100" align="center">
+        <a-table-column title="响应时间(ms)" data-index="response_time" :width="105" align="center">
           <template #cell="{ record }">
             <span
               :style="{ color: record.response_time > 200 ? '#f53f3f' : record.response_time > 100 ? '#ff7d00' : '#00b42a' }">
@@ -35,7 +40,7 @@
             </span>
           </template>
         </a-table-column>
-        <a-table-column title="成功率(%)" data-index="success_rate" :width="90" align="center">
+        <a-table-column title="成功率(%)" data-index="success_rate" :width="85" align="center">
           <template #cell="{ record }">
             <span
               :style="{ color: record.success_rate < 95 ? '#f53f3f' : record.success_rate < 98 ? '#ff7d00' : '#00b42a' }">
@@ -58,7 +63,6 @@
             </a-button>
             <a-popconfirm content="确定要删除这个RPC节点吗？" @ok="deleteRpcFromManage(record.id)">
               <a-button type="text" status="danger" size="small">
-                <icon-delete />
                 删除
               </a-button>
             </a-popconfirm>

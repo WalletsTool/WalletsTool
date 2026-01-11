@@ -1,5 +1,5 @@
 <script setup name="wallet-import-modal">
-import { ref, reactive, computed, nextTick } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { ethers } from 'ethers';
 import CodeEditor from './CodeEditor.vue';
 

@@ -22,7 +22,6 @@ dependencies = [
  "dirs 5.0.1",
  "ethers",
  "futures",
- "hex",
  "lazy_static",
  "rand 0.8.5",
  "reqwest 0.11.27",
@@ -34,7 +33,6 @@ dependencies = [
  "tauri-plugin-shell",
  "tokio",
  "url",
- "uuid 1.17.0",
 ]
 
 [[package]]

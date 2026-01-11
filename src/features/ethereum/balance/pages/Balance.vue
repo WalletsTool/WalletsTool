@@ -614,7 +614,7 @@ function validateAddress(address) {
       return false;
     }
     // 使用ethers.js进行最终验证
-    return ethers.utils.isAddress(trimmedAddress);
+    return ethers.isAddress(trimmedAddress);
   } catch (error) {
     return false;
   }

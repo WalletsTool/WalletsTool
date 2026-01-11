@@ -64,7 +64,7 @@ function validateAddress(address) {
     if (!trimmed.startsWith('0x') || trimmed.length !== 42) return false
     const hexPart = trimmed.slice(2)
     if (!/^[0-9a-fA-F]{40}$/.test(hexPart)) return false
-    return ethers.utils.isAddress(trimmed)
+    return ethers.isAddress(trimmed)
   } catch { return false }
 }
 

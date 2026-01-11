@@ -1604,6 +1604,11 @@ onMounted(async () => {
       if (window_id && window_id !== currentWindowId.value) {
         return; // 不是本窗口的事件，直接返回
       }
+      // 如果用户手动停止了查询，忽略状态更新
+      // 防止停止后后端仍推送的状态更新导致显示"任务失败"
+      if (balanceStopFlag.value) {
+        return;
+      }
       // 使用address查找对应的数据项，而不是使用index
       const targetIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
       if (targetIndex !== -1) {
@@ -1755,7 +1760,7 @@ function validateAddress(address) {
     }
 
     // 使用ethers.js进行最终验证
-    return ethers.utils.isAddress(trimmedAddress);
+    return ethers.isAddress(trimmedAddress);
   } catch (error) {
     return false;
   }
@@ -2517,8 +2522,8 @@ async function queryBalance() {
           windowId: currentWindowId.value
         });
       }
-      // 等待100ms让后端停止
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // 等待200ms让后端停止
+      await new Promise(resolve => setTimeout(resolve, 200));
     } catch (error) {
       console.error('停止上一个查询失败:', error);
     }
@@ -2538,6 +2543,7 @@ async function queryBalance() {
   transferProgress.value = 0;
   if (currentCoin.value.coin_type === "base" || currentCoin.value.coin_type === "token") {
     balanceLoading.value = true;
+    // 先重置状态，确保从头开始查询
     balanceStopFlag.value = false;
     balanceStopStatus.value = false;
 
@@ -2548,7 +2554,7 @@ async function queryBalance() {
     balanceProgress.value = 0;
     showBalanceProgress.value = totalItems > 0;
 
-    // 重置所有项目状态
+    // 重置所有项目状态 - 每次查询都从头开始
     data.value.forEach((item) => {
       item.plat_balance = "";
       item.coin_balance = "";
@@ -2571,26 +2577,30 @@ async function queryBalanceInBatches() {
 
   console.log(`开始分批查询余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
 
+  let stoppedMidway = false; // 标记是否中途停止
+
   try {
     // 按照从上到下的顺序，串行执行每个批次
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-      // 检查是否需要停止查询
-      if (balanceStopFlag.value) {
-        balanceLoading.value = false;
-        balanceStopStatus.value = true;
-        // 隐藏查出账地址进度条
-        showBalanceProgress.value = false;
-        return;
-      }
+      // 记录开始时的停止标志状态
+      const shouldStopAtStart = balanceStopFlag.value;
 
       const startIndex = batchIndex * BATCH_SIZE;
       const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
-      const batchData = data.value.slice(startIndex, endIndex);
+      // 使用深拷贝避免响应式引用导致的数据错乱
+      const batchData = JSON.parse(JSON.stringify(data.value.slice(startIndex, endIndex)));
 
       console.log(`执行第 ${batchIndex + 1}/${totalBatches} 批，索引 ${startIndex}-${endIndex - 1}`);
 
       // 顺序执行批次查询
       await queryBalanceBatch(batchData, startIndex);
+
+      // 如果在批次查询过程中停止标志被设置为true，则停止后续批次
+      if (balanceStopFlag.value && !shouldStopAtStart) {
+        console.log(`第 ${batchIndex + 1} 批完成后检测到停止信号，停止后续查询`);
+        stoppedMidway = true;
+        break;
+      }
     }
 
     // 所有批次完成后的统计
@@ -2598,7 +2608,9 @@ async function queryBalanceInBatches() {
     const failCount = data.value.filter(item => item.exec_status === '3').length;
     const totalCount = data.value.length;
 
-    if (successCount === totalCount) {
+    if (stoppedMidway) {
+      // 如果是手动停止，不显示通知
+    } else if (successCount === totalCount) {
       Notification.success('查询成功！');
     } else if (successCount > 0) {
       Notification.warning(`查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
@@ -2610,6 +2622,18 @@ async function queryBalanceInBatches() {
     console.error('分批查询失败:', error);
     Notification.error('查询失败：' + error.message);
   } finally {
+    // 只重置执行中或失败的项目，保持已成功查询的项目状态不变
+    // 这样用户手动停止后，已查询成功的账号保持"执行成功"状态
+    if (balanceStopFlag.value) {
+      data.value.forEach((item) => {
+        if (item.exec_status === '1' || item.exec_status === '3') {
+          item.exec_status = '0';
+          item.error_msg = '';
+        }
+        // 保持 exec_status === '2'（成功）的项目状态不变
+      });
+    }
+
     balanceLoading.value = false;
     balanceStopStatus.value = true;
     // 隐藏查出账地址进度条
@@ -2619,19 +2643,27 @@ async function queryBalanceInBatches() {
 
 // 查询单个批次的余额
 async function queryBalanceBatch(batchData, startIndex) {
+  // 记录开始时的停止标志状态，确保当前批次能完成
+  const shouldStopAtStart = balanceStopFlag.value;
+
+  // 如果开始时就已经要求停止，直接返回
+  if (shouldStopAtStart) {
+    return;
+  }
+
   try {
     // 使用窗口感知的余额查询
     const params = {
       chain: chainValue.value,
       coin_config: {
         coin_type: currentCoin.value.coin_type,
-        contract_address: currentCoin.value.contract_address || null,
-        abi: currentCoin.value.abi || null
+        contract_address: currentCoin.value.contract_address || "",
+        abi: currentCoin.value.abi || ""
       },
       items: batchData.map(item => ({
         key: item.key,
-        address: item.address || null,
-        private_key: item.private_key || null,
+        address: item.address || "",
+        private_key: item.private_key || "",
         plat_balance: null,
         coin_balance: null,
         nonce: null,
@@ -2642,11 +2674,6 @@ async function queryBalanceBatch(batchData, startIndex) {
       only_coin_config: false,
       thread_count: Number(threadCount.value)
     };
-
-    // 检查是否需要停止查询
-    if (balanceStopFlag.value) {
-      return;
-    }
 
     let result;
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
@@ -2670,6 +2697,12 @@ async function queryBalanceBatch(batchData, startIndex) {
       };
     }
 
+    // 如果在查询过程中用户要求停止，不更新数据
+    if (balanceStopFlag.value && !shouldStopAtStart) {
+      console.log('批次查询完成后检测到停止信号，跳过数据更新');
+      return;
+    }
+
     if (result.success || result.items) {
       // 更新数据 - 无论总体是否成功，都要更新单条记录的状态
       result.items.forEach((resultItem, index) => {
@@ -2684,33 +2717,29 @@ async function queryBalanceBatch(batchData, startIndex) {
       });
     } else {
       // 只有在没有返回任何结果时才设置批次项目为失败状态
-      batchData.forEach((item, index) => {
-        const dataIndex = startIndex + index;
-        if (data.value[dataIndex]) {
-          // 保护私钥字段，只更新状态相关字段
-          data.value[dataIndex].exec_status = '3';
-          data.value[dataIndex].error_msg = result.error_msg || '查询失败！';
-        }
-      });
+      // 但如果是因为手动停止导致的，不设置失败状态
+      if (!balanceStopFlag.value) {
+        batchData.forEach((item, index) => {
+          const dataIndex = startIndex + index;
+          if (data.value[dataIndex]) {
+            // 保护私钥字段，只更新状态相关字段
+            data.value[dataIndex].exec_status = '3';
+            data.value[dataIndex].error_msg = result.error_msg || '查询失败！';
+          }
+        });
+      }
     }
 
     // 更新余额查询进度
     updateBalanceProgress();
-
   } catch (error) {
-    console.error('批次查询失败:', error);
-    
-    // 检查是否是RPC配置错误
-    const errorMsg = String(error);
-    if (errorMsg.includes('RPC配置') || errorMsg.includes('RPC节点') || errorMsg.includes('禁用')) {
-      Notification.error({
-        title: '查询失败',
-        content: errorMsg,
-        duration: 5000
-      });
-    } else {
-      Notification.error('查询失败：' + errorMsg);
+    // 如果开始时就已经要求停止或者是查询过程中要求停止，不处理错误
+    if (shouldStopAtStart || balanceStopFlag.value) {
+      return;
     }
+    console.error('批次查询失败:', error);
+
+    // 设置批次项目为失败状态
     batchData.forEach((item, index) => {
       const dataIndex = startIndex + index;
       if (data.value[dataIndex]) {
@@ -2801,26 +2830,30 @@ async function queryToAddressBalanceInBatches() {
 
   console.log(`开始分批查询到账地址余额，总数: ${totalItems}, 批次数: ${totalBatches}, 每批大小: ${BATCH_SIZE}`);
 
+  let stoppedMidway = false; // 标记是否中途停止
+
   try {
     // 按照从上到下的顺序，串行执行每个批次
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-      // 检查是否需要停止查询
-      if (balanceStopFlag.value) {
-        balanceLoading.value = false;
-        balanceStopStatus.value = true;
-        // 隐藏查到账地址进度条
-        showToAddressBalanceProgress.value = false;
-        return;
-      }
+      // 记录开始时的停止标志状态
+      const shouldStopAtStart = balanceStopFlag.value;
 
       const startIndex = batchIndex * BATCH_SIZE;
       const endIndex = Math.min(startIndex + BATCH_SIZE, totalItems);
-      const batchData = itemsWithToAddr.slice(startIndex, endIndex);
+      // 使用深拷贝避免响应式引用导致的数据错乱
+      const batchData = JSON.parse(JSON.stringify(itemsWithToAddr.slice(startIndex, endIndex)));
 
       console.log(`执行第 ${batchIndex + 1}/${totalBatches} 批到账地址，索引 ${startIndex}-${endIndex - 1}`);
 
       // 顺序执行批次查询
       await queryToAddressBalanceBatch(batchData, startIndex);
+
+      // 如果在批次查询过程中停止标志被设置为true，则停止后续批次
+      if (balanceStopFlag.value && !shouldStopAtStart) {
+        console.log(`第 ${batchIndex + 1} 批到账地址查询完成后检测到停止信号，停止后续查询`);
+        stoppedMidway = true;
+        break;
+      }
     }
 
     // 所有批次完成后的统计
@@ -2828,7 +2861,9 @@ async function queryToAddressBalanceInBatches() {
     const failCount = data.value.filter(item => item.exec_status === '3').length;
     const totalCount = itemsWithToAddr.length;
 
-    if (successCount === totalCount) {
+    if (stoppedMidway) {
+      // 如果是手动停止，不显示通知
+    } else if (successCount === totalCount) {
       Notification.success(`到账地址余额查询成功！共查询 ${totalCount} 个地址`);
     } else if (successCount > 0) {
       Notification.warning(`到账地址余额查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
@@ -2840,6 +2875,18 @@ async function queryToAddressBalanceInBatches() {
     console.error('分批查询到账地址失败:', error);
     Notification.error('到账地址余额查询失败：' + error.message);
   } finally {
+    // 只重置执行中或失败的项目，保持已成功查询的项目状态不变
+    // 这样用户手动停止后，已查询成功的账号保持"执行成功"状态
+    if (balanceStopFlag.value) {
+      data.value.forEach((item) => {
+        if (item.exec_status === '1' || item.exec_status === '3') {
+          item.exec_status = '0';
+          item.error_msg = '';
+        }
+        // 保持 exec_status === '2'（成功）的项目状态不变
+      });
+    }
+
     balanceLoading.value = false;
     balanceStopStatus.value = true;
     // 隐藏查到账地址进度条
@@ -2849,12 +2896,20 @@ async function queryToAddressBalanceInBatches() {
 
 // 查询单个批次的到账地址余额
 async function queryToAddressBalanceBatch(batchData, startIndex) {
+  // 记录开始时的停止标志状态，确保当前批次能完成
+  const shouldStopAtStart = balanceStopFlag.value;
+
+  // 如果开始时就已经要求停止，直接返回
+  if (shouldStopAtStart) {
+    return;
+  }
+
   try {
     // 创建独立的查询数据，避免影响原始数据
     const queryItems = batchData.map(item => ({
       key: item.key,
       address: item.to_addr, // 使用到账地址而不是发送地址
-      private_key: null, // 到账地址不需要私钥
+      private_key: "", // 到账地址不需要私钥
       plat_balance: null,
       coin_balance: null,
       nonce: null,
@@ -2868,18 +2923,13 @@ async function queryToAddressBalanceBatch(batchData, startIndex) {
       chain: chainValue.value,
       coin_config: {
         coin_type: currentCoin.value.coin_type,
-        contract_address: currentCoin.value.contract_address || null,
-        abi: currentCoin.value.abi || null
+        contract_address: currentCoin.value.contract_address || "",
+        abi: currentCoin.value.abi || ""
       },
       items: queryItems,
       only_coin_config: false,
       thread_count: Number(threadCount.value)
     };
-
-    // 检查是否需要停止查询
-    if (balanceStopFlag.value) {
-      return;
-    }
 
     let result;
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
@@ -2903,6 +2953,12 @@ async function queryToAddressBalanceBatch(batchData, startIndex) {
       };
     }
 
+    // 如果在查询过程中用户要求停止，不更新数据
+    if (balanceStopFlag.value && !shouldStopAtStart) {
+      console.log('到账地址批次查询完成后检测到停止信号，跳过数据更新');
+      return;
+    }
+
     if (result.success || result.items) {
       // 更新数据 - 根据key匹配原始数据项
       result.items.forEach((resultItem, index) => {
@@ -2920,20 +2976,27 @@ async function queryToAddressBalanceBatch(batchData, startIndex) {
       });
     } else {
       // 只有在没有返回任何结果时才设置批次项目为失败状态
-      batchData.forEach((item, index) => {
-        const dataIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
-        if (dataIndex !== -1) {
-          // 保护私钥字段，只更新状态相关字段
-          data.value[dataIndex].exec_status = '3';
-          data.value[dataIndex].error_msg = result.error_msg || '查询失败！';
-        }
-      });
+      // 但如果是因为手动停止导致的，不设置失败状态
+      if (!balanceStopFlag.value) {
+        batchData.forEach((item, index) => {
+          const dataIndex = data.value.findIndex(dataItem => dataItem.key === item.key);
+          if (dataIndex !== -1) {
+            // 保护私钥字段，只更新状态相关字段
+            data.value[dataIndex].exec_status = '3';
+            data.value[dataIndex].error_msg = result.error_msg || '查询失败！';
+          }
+        });
+      }
     }
 
     // 更新查到账地址余额查询进度
     updateToAddressBalanceProgress();
 
   } catch (error) {
+    // 如果开始时就已经要求停止或者是查询过程中要求停止，不处理错误
+    if (shouldStopAtStart || balanceStopFlag.value) {
+      return;
+    }
     console.error('批次查询到账地址失败:', error);
 
     // 检查是否是RPC配置错误
@@ -3984,6 +4047,10 @@ async function resetDataStatusAsync() {
 // 停止查询余额
 async function stopBalanceQuery() {
   console.log('stopBalanceQuery方法被调用');
+
+  // 立即设置停止标志，防止停止后再收到状态更新
+  balanceStopFlag.value = true;
+
   try {
     // 调用后端停止接口
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
@@ -3997,8 +4064,17 @@ async function stopBalanceQuery() {
     console.error('停止查询请求失败:', error);
   }
 
+  // 只重置执行中或失败的项目，保持已成功查询的项目状态不变
+  // 这样用户手动停止后，已查询成功的账号保持"执行成功"状态
+  data.value.forEach((item) => {
+    if (item.exec_status === '1' || item.exec_status === '3') {
+      item.exec_status = '0';
+      item.error_msg = '';
+    }
+    // 保持 exec_status === '2'（成功）的项目状态不变
+  });
+
   balanceLoading.value = false;
-  balanceStopFlag.value = true;
   balanceStopStatus.value = true;
   // 隐藏两个进度条
   showBalanceProgress.value = false;

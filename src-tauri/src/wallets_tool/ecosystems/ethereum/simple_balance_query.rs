@@ -285,7 +285,7 @@ impl SimpleBalanceQueryService {
                 .map_err(|e| anyhow!("区块号转换失败: {}", e))?;
             
             // 从最新区块开始向前搜索，查找该地址的交易
-            let mut search_blocks = 1000; // 最多搜索1000个区块
+            let search_blocks = 1000; // 最多搜索1000个区块
             let start_block = if current_block > search_blocks {
                 current_block - search_blocks
             } else {

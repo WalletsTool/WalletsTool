@@ -113,13 +113,11 @@
       <!-- 批量添加模式 -->
       <div v-if="rpcInputMode === 'batch'">
         <a-form-item label="批量RPC地址" required>
-          <div style="margin-bottom: 8px; color: #666; font-size: 14px;">
-            请每行输入一个RPC地址，系统将自动校验和去重：
-          </div>
-          <a-textarea 
-            v-model="batchRpcText" 
-            placeholder="https://mainnet.infura.io/v3/your-key&#10;https://eth-mainnet.alchemyapi.io/v2/your-key&#10;https://rpc.ankr.com/eth"
-            :rows="8"
+          <a-textarea
+            v-model="batchRpcText"
+            class="batch-rpc-textarea"
+            placeholder="请每行输入一个RPC地址&#10;例如：&#10;https://mainnet.infura.io/v3/your-key&#10;https://eth-mainnet.alchemyapi.io/v2/your-key&#10;https://rpc.ankr.com/eth&#10;&#10;系统将自动校验和去重"
+            rows="12"
             style="width: 100%;"
           />
         </a-form-item>
@@ -707,5 +705,8 @@ defineExpose({
 </script>
 
 <style scoped>
-/* 组件特定样式 */
+/* 批量RPC地址输入框高度 */
+.batch-rpc-textarea :deep(textarea) {
+  min-height: 180px !important;
+}
 </style>

@@ -56,19 +56,10 @@ export default defineConfig({
             output: {
                 // 合并小chunk以减少HTTP请求数量
                 experimentalMinChunkSize: 20000,
-                // 重新启用手动分块，使用更安全的分块策略
+                // 手动分块策略
                 manualChunks: (id) => {
-                    // 第三方库分块
+                    // 第三方库分块 - 将所有node_modules合并到一个chunk避免循环依赖
                     if (id.includes('node_modules')) {
-                        // Vue 相关库单独分块
-                        if (id.includes('vue') || id.includes('@vue')) {
-                            return 'vue-vendor';
-                        }
-                        // Arco Design 组件库单独分块
-                        if (id.includes('@arco-design')) {
-                            return 'arco-vendor';
-                        }
-                        // ethers和其他第三方库合并到vendor包中避免循环依赖
                         return 'vendor';
                     }
                     // 页面组件分块（兼容新结构）
@@ -159,8 +150,8 @@ export default defineConfig({
         },
         // produce sourcemaps for debug builds
         sourcemap: !!process.env.TAURI_DEBUG,
-        // 设置chunk大小警告限制
-        chunkSizeWarningLimit: 1000,
+        // 设置chunk大小警告限制（桌面应用无需过度拆分）
+        chunkSizeWarningLimit: 2000,
         // 小于4KB的资源将被内联为base64
         assetsInlineLimit: 4096,
         // 启用CSS代码分割

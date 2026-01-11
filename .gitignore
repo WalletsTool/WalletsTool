@@ -1,3 +1,6 @@
+# Vite cache directory
+node_modules/.vite-cache
+
 # Logs
 logs
 *.log

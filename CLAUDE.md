@@ -108,7 +108,7 @@ Register in `main.rs` invoke_handler via `#[tauri::generate_handler!]` macro and
 - Database utilities (reload_database, check_database_schema)
 
 ### Window Management
-- Main window: "WalletsTool" 
+- Main window: "main" 
 - Dynamic child windows for different functions (transfer, balance, etc.)
 - Tray integration allows opening function windows independently
 - Custom close handling prevents accidental app termination
@@ -177,7 +177,7 @@ Register in `main.rs` invoke_handler via `#[tauri::generate_handler!]` macro and
 - **Background tasks**: Async operations with proper cancellation support
 
 ### Multi-Window Architecture
-- Main window ("WalletsTool") serves as primary interface
+- Main window ("main") serves as primary interface
 - Child windows open independently for specific functions (transfer, balance, etc.)
 - Event-driven coordination between windows via Tauri events
 - System tray integration allows opening function windows without main window

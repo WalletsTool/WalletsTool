@@ -13,7 +13,7 @@
     "windows": [
       {
         "title": "WalletsTool",
-        "label": "WalletsTool",
+        "label": "main",
         "width": 350,
         "height": 750,
         "resizable": false,
@@ -27,7 +27,8 @@
         "minHeight": 730,
         "maximized": false,
         "visible": true,
-        "focus": true
+        "focus": true,
+        "url": "/"
       }
     ],
     "security": {

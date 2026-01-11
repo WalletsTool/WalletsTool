@@ -51,8 +51,34 @@ const preloadResources = () => {
   fontLink.type = 'font/woff2';
   fontLink.crossOrigin = 'anonymous';
   document.head.appendChild(fontLink);
-  
+
   // CSS已通过import语句正确导入，无需预加载
+};
+
+// 路由预加载 - 首屏加载后预加载常用页面
+const setupRoutePreloading = () => {
+  // 路由准备好后预加载常用页面
+  router.isReady().then(() => {
+    // 预加载余额查询页面（高频使用）
+    router.prefetchRouteMeta('eth-balance');
+    // 预加载转账页面
+    router.prefetchRouteMeta('eth-transfer');
+  });
+
+  // 用户空闲时预加载其他页面
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(() => {
+      router.prefetchRouteMeta('sol-balance');
+      router.prefetchRouteMeta('sol-transfer');
+      router.prefetchRouteMeta('eth-monitor');
+    });
+  } else {
+    setTimeout(() => {
+      router.prefetchRouteMeta('sol-balance');
+      router.prefetchRouteMeta('sol-transfer');
+      router.prefetchRouteMeta('eth-monitor');
+    }, 3000);
+  }
 };
 
 // 优化字体加载
@@ -128,6 +154,7 @@ app.use(pinia)
 // 执行预加载和优化
 preloadResources();
 optimizeFonts();
+setupRoutePreloading();
 
 // 禁用右键菜单
 document.addEventListener('contextmenu', function(e) {

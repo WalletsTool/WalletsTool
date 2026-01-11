@@ -21,7 +21,19 @@ export default defineConfig({
         ]
     },
     optimizeDeps: {
-        include: ['ethers', 'vue', 'vue-router'],
+        // 预构建依赖项，加速开发启动
+        include: [
+            'ethers',
+            'vue',
+            'vue-router',
+            'pinia',
+            '@arco-design/web-vue',
+            'primevue',
+            '@primevue/themes'
+        ],
+        // 依赖预构建后的缓存目录
+        cacheDir: 'node_modules/.vite-cache',
+        // esbuild 优化选项
         esbuildOptions: {
             // Node.js global to browser globalThis
             define: {
@@ -44,7 +56,26 @@ export default defineConfig({
     server: {
         port: 1422,
         strictPort: false,
+        // 允许访问项目根目录外的文件（用于Tauri）
+        fs: {
+            allow: ['.', '..'],
+        },
+        // 启用热更新优化
+        hmr: {
+            overlay: true,
+        },
+        // 开发服务器优化
+        warmup: {
+            // 预热常用的 transformed 文件
+            transformedFiles: [
+                '/src/main.js',
+                '/src/App.vue',
+                '/src/router/index.js'
+            ]
+        }
     },
+    // 缓存配置
+    cache: true,
     // to make use of `TAURI_DEBUG` and other env variables
     // https://tauri.studio/v1/api/config#buildconfig.beforedevcommand
     envPrefix: ["VITE_", "TAURI_"],
@@ -56,10 +87,23 @@ export default defineConfig({
             output: {
                 // 合并小chunk以减少HTTP请求数量
                 experimentalMinChunkSize: 20000,
-                // 手动分块策略
+                // 手动分块策略 - 优化首屏加载
                 manualChunks: (id) => {
-                    // 第三方库分块 - 将所有node_modules合并到一个chunk避免循环依赖
+                    // 第三方库分块 - 按功能模块分组
                     if (id.includes('node_modules')) {
+                        // 分离ethers.js（体积大但核心）
+                        if (id.includes('ethers')) {
+                            return 'vendor-ethers';
+                        }
+                        // 分离Vue核心（高频访问）
+                        if (id.includes('vue') || id.includes('vue-router') || id.includes('pinia')) {
+                            return 'vendor-vue';
+                        }
+                        // 分离UI框架
+                        if (id.includes('@arco-design') || id.includes('primevue')) {
+                            return 'vendor-ui';
+                        }
+                        // 其他node_modules合并
                         return 'vendor';
                     }
                     // 页面组件分块（兼容新结构）
@@ -146,15 +190,24 @@ export default defineConfig({
                 reduce_vars: true,
                 // 移除重复代码
                 collapse_vars: true
+            },
+            mangle: {
+                // 保留特定名称
+                reserved: ['require', 'exports', 'module', 'define']
             }
         },
         // produce sourcemaps for debug builds
         sourcemap: !!process.env.TAURI_DEBUG,
         // 设置chunk大小警告限制（桌面应用无需过度拆分）
         chunkSizeWarningLimit: 2000,
-        // 小于4KB的资源将被内联为base64
-        assetsInlineLimit: 4096,
+        // 增大内联限制，减少HTTP请求
+        assetsInlineLimit: 8192,
         // 启用CSS代码分割
-        cssCodeSplit: true
+        cssCodeSplit: true,
+        // 禁用未使用的导出检测（加速构建）
+        treeshake: {
+            moduleSideEffects: false,
+            propertyReadSideEffects: false
+        }
     }
 });

@@ -2,7 +2,7 @@
 import { useRouter } from 'vue-router'
 import { useEcosystemStore } from '@/stores/ecosystem'
 import { Notification, Modal } from "@arco-design/web-vue";
-import { onMounted, onBeforeUnmount, ref, h, computed, nextTick } from "vue";
+import { onMounted, onBeforeUnmount, ref, h, computed } from "vue";
 import party from "party-js";
 import { confettiStore, useThemeStore } from '@/stores'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
@@ -76,24 +76,8 @@ onMounted(async () => {
     console.error('Failed to listen for close event:', error)
   }
 
-  // 页面加载完成后显示主窗口
-  nextTick(() => {
-    // 延迟显示主窗口，确保所有组件都已渲染
-    setTimeout(() => {
-      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-      if (isTauri) {
-        try {
-          const currentWindow = getCurrentWindow();
-          // 显示主窗口
-          currentWindow.show();
-          // 发送页面加载完成事件
-          currentWindow.emit('page-loaded');
-        } catch (error) {
-          console.error('窗口操作错误:', error)
-        }
-      }
-    }, 100);
-  });
+  // 注意：主窗口的显示由 SplashScreen 组件控制，这里不需要再次调用 show()
+  // 启动窗口会在加载完成后自动显示主窗口并关闭自己
 })
 
 // 组件卸载时清理事件监听器
@@ -477,7 +461,7 @@ async function handleMainWindowCloseRequest() {
 
     // 先获取所有子窗口
     const childWindows = await invoke('get_all_child_windows', {
-      mainWindowLabel: 'WalletsTool'
+      mainWindowLabel: 'main'
     })
 
     // 获取子窗口列表
@@ -514,7 +498,7 @@ async function handleMainWindowCloseRequest() {
             if (childWindows && childWindows.length > 0) {
               // 正在关闭子窗口
               await invoke('close_all_child_windows', {
-                mainWindowLabel: 'WalletsTool'
+                mainWindowLabel: 'main'
               })
               // 已关闭子窗口
 

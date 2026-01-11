@@ -14,11 +14,11 @@ use tauri::{WindowEvent, Manager, AppHandle, Runtime, Emitter, tray::TrayIconBui
 #[tauri::command]
 async fn close_all_child_windows<R: Runtime>(app: AppHandle<R>, main_window_label: String) -> Result<Vec<String>, String> {
     let mut closed_windows = Vec::new();
-    
+
     let windows = app.webview_windows();
-    
+
     for (label, window) in windows {
-        if label != main_window_label {
+        if label != main_window_label {  // 只排除主窗口
             match window.close() {
                 Ok(_) => {
                     closed_windows.push(label);
@@ -29,7 +29,7 @@ async fn close_all_child_windows<R: Runtime>(app: AppHandle<R>, main_window_labe
             }
         }
     }
-    
+
     Ok(closed_windows)
 }
 
@@ -55,10 +55,10 @@ async fn force_close_main_window<R: Runtime>(_app: AppHandle<R>) -> Result<(), S
 // Tauri 命令：显示主窗口
 #[tauri::command]
 async fn show_main_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("WalletsTool") {
+    if let Some(window) = app.get_webview_window("main") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
-        
+
         // 在Windows系统中强制窗口置顶，然后立即取消置顶状态
         // 这样可以确保窗口弹出到最上层而不会一直保持在最上层
         window.set_always_on_top(true).map_err(|e| e.to_string())?;
@@ -136,6 +136,8 @@ async fn main() {
         .plugin(tauri_plugin_shell::init())
         .manage(chain_service)
         .setup(|app| {
+            // 主窗口直接显示
+
             // 构建托盘菜单
             let show_main = MenuItemBuilder::new("显示主窗口").id("show_main").build(app)?;
             let separator1 = tauri::menu::PredefinedMenuItem::separator(app)?;
@@ -190,9 +192,9 @@ async fn main() {
                                 if let Err(e) = show_main_window(app_handle.clone()).await {
                                     eprintln!("显示主窗口失败: {}", e);
                                 }
-                                
+
                                 // 发送退出确认事件到前端
-                                if let Some(window) = app_handle.get_webview_window("WalletsTool") {
+                                if let Some(window) = app_handle.get_webview_window("main") {
                                     if let Err(e) = window.emit("tray-quit-requested", ()) {
                                         eprintln!("发送托盘退出事件失败: {}", e);
                                     }
@@ -235,8 +237,8 @@ async fn main() {
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
                     let window_label = window.label().to_string();
-                    
-                    if window_label == "WalletsTool" {
+
+                    if window_label == "main" {
                         // 阻止默认的关闭行为
                         api.prevent_close();
                         

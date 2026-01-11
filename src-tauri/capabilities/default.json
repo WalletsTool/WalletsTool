@@ -3,7 +3,7 @@
   "identifier": "default",
   "description": "Default permissions for the application",
   "context": "local",
-  "windows": ["*"],
+  "windows": ["main", "splashscreen", "*"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",

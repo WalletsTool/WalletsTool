@@ -52,6 +52,8 @@ codegen-units = 1
 strip = true
 # 优化panic处理，使用abort而不是unwind
 panic = "abort"
+# 注意：trim-paths 需要 nightly Rust，如需使用请取消注释以下行：
+# trim-paths = "all"
 
 [features]
 # by default Tauri runs in production mode
@@ -63,4 +65,16 @@ custom-protocol = ["tauri/custom-protocol"]
 
 # 禁用增量编译，减少缓存
 [profile.dev]
-incremental = false
+incremental = true
+# 优化级别为0以加快编译速度
+opt-level = 0
+# 禁用调试信息以加速编译
+debug = false
+
+# 为特定依赖项设置优化级别（加快第三方库编译）
+[profile.dev.package."*"]
+opt-level = 2
+
+# 优化生产构建的依赖项
+[profile.release.package."*"]
+opt-level = 3

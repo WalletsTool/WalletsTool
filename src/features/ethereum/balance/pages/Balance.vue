@@ -174,8 +174,10 @@ const chainManageRef = ref(null);
 const rpcManageRef = ref(null);
 // 代币管理组件引用
 const tokenManageRef = ref(null);
-// 代理配置相关变量
+// 代理配置组件引用
 const proxyConfigRef = ref(null);
+// 文件上传输入框引用
+const uploadInputRef = ref(null);
 const proxyConfigVisible = ref(false);
 const proxyEnabled = ref(false);
 const proxyStatus = ref('未配置');
@@ -669,6 +671,26 @@ function handleCancel() {
   addressErrorLines.value = []
 }
 
+// 手动录入钱包
+function handleManualImport() {
+  visible.value = true;
+}
+
+// 上传文件导入
+function handleFileUpload() {
+  uploadInputRef.value.click();
+}
+
+// 下载模板
+function downloadTemplate() {
+  let a = document.createElement("a");
+  a.href = `/template/import_model.xlsx`;
+  a.download = "导入模板.xlsx";
+  a.click();
+}
+
+// 处理文件变化
+
 // 导入弹窗保存事件
 const handleBeforeOk = async () => {
   // 验证数据
@@ -770,6 +792,56 @@ const handleBeforeOk = async () => {
     // 结束loading
     importLoading.value = false;
   }
+}
+
+// 处理文件变化
+function handleFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = xlUtils.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = xlUtils.sheet_to_json(firstSheet, { header: 1 });
+
+      const addresses = [];
+      jsonData.forEach((row, index) => {
+        if (row && row[0]) {
+          const addr = String(row[0]).trim();
+          if (validateAddress(addr)) {
+            addresses.push(addr);
+          }
+        }
+      });
+
+      if (addresses.length > 0) {
+        importText.value = addresses.join('\n');
+        validateImportData();
+        visible.value = true;
+        Notification.success({
+          content: `成功解析 ${addresses.length} 个地址`,
+          position: 'topLeft',
+        });
+      } else {
+        Notification.error({
+          content: '未在文件中找到有效的地址数据',
+          position: 'topLeft',
+        });
+      }
+    } catch (error) {
+      console.error('解析文件失败:', error);
+      Notification.error({
+        content: '解析文件失败，请确保文件格式正确',
+        position: 'topLeft',
+      });
+    } finally {
+      event.target.value = '';
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 // 删除数据
@@ -1369,8 +1441,13 @@ async function handleBeforeClose() {
         :selected-keys="selectedKeys"
         @row-click="rowClick"
         @update:selected-keys="selectedKeys = $event"
+        @open-manual-import="handleManualImport"
+        @open-file-upload="handleFileUpload"
+        @download-template="downloadTemplate"
         row-key="address"
         height="100%"
+        page-type="balance"
+        :empty-data="filteredData.length === 0"
       >
 
         <template #exec_status="{ record }">
@@ -1652,6 +1729,15 @@ async function handleBeforeClose() {
     @update:visible="proxyConfigVisible = $event"
     @config-change="handleProxyConfigChange"
     ref="proxyConfigRef"
+  />
+
+  <!-- 隐藏的文件输入框 -->
+  <input
+    type="file"
+    ref="uploadInputRef"
+    accept=".xlsx,.xls,.csv"
+    style="display: none"
+    @change="handleFileChange"
   />
 </template>
 

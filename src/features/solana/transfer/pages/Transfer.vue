@@ -98,6 +98,7 @@ const chainManageRef = ref(null);
 const rpcManageRef = ref(null);
 const tokenManageRef = ref(null);
 const walletImportRef = ref(null);
+const uploadInputRef = ref(null);
 
 // 进度相关
 const transferProgress = ref(0);
@@ -353,6 +354,78 @@ onBeforeMount(async () => {
 // 防抖函数
 const debouncedQueryBalance = customDebounce(queryBalance, 500);
 const debouncedStartTransfer = customDebounce(startTransfer, 800);
+
+// Solana 钱包导入处理
+function handleWalletImportConfirm(importData) {
+  const { privateKeys, addresses } = importData;
+
+  const newData = [];
+  let successCount = 0;
+
+  for (let i = 0; i < privateKeys.length; i++) {
+    const privateKey = privateKeys[i];
+    const toAddress = addresses[i];
+
+    newData.push({
+      key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      private_key: privateKey,
+      to_addr: toAddress,
+      amount: "",
+      plat_balance: "",
+      coin_balance: "",
+      exec_status: "0",
+      error_msg: "",
+    });
+    successCount++;
+  }
+
+  data.value.push(...newData);
+
+  Notification.success({
+    title: "导入成功！",
+    content: `成功导入 ${successCount} 条数据`,
+    position: "topLeft",
+  });
+}
+
+function handleWalletImportCancel() {
+  console.log("钱包导入已取消");
+}
+
+// 手动录入钱包
+function handleManualImport() {
+  if (walletImportRef.value) {
+    walletImportRef.value.show();
+  }
+}
+
+// 上传文件导入
+function handleFileUpload() {
+  uploadInputRef.value.click();
+}
+
+// 下载模板
+function downloadTemplate() {
+  let a = document.createElement("a");
+  a.href = `/template/import_model.xlsx`;
+  a.download = "导入模板.xlsx";
+  a.click();
+}
+
+// 处理文件变化
+function handleFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // 这里可以添加文件处理逻辑，或者复用 Ethereum 的处理方式
+  Notification.info({
+    content: "文件上传功能待实现",
+    position: "topLeft",
+  });
+
+  // 清空输入框，允许再次选择相同文件
+  event.target.value = "";
+}
 </script>
 
 <template>
@@ -447,7 +520,11 @@ const debouncedStartTransfer = customDebounce(startTransfer, 800);
           :loading="tableLoading"
           :scroll="{ y: 'calc(100vh - 350px)' }"
           @row-click="rowClick"
+          @open-manual-import="handleManualImport"
+          @open-file-upload="handleFileUpload"
+          @download-template="downloadTemplate"
           row-key="key"
+          :empty-data="data.length === 0"
         >
           <template #index="{ record, rowIndex }">
             {{ rowIndex + 1 }}
@@ -577,6 +654,22 @@ const debouncedStartTransfer = customDebounce(startTransfer, 800);
       </div>
     </div>
   </div>
+
+  <!-- 钱包信息录入弹窗 -->
+  <WalletImportModal
+    ref="walletImportRef"
+    @confirm="handleWalletImportConfirm"
+    @cancel="handleWalletImportCancel"
+  />
+
+  <!-- 隐藏的文件输入框 -->
+  <input
+    type="file"
+    ref="uploadInputRef"
+    accept=".xlsx,.xls,.csv"
+    style="display: none"
+    @change="handleFileChange"
+  />
 </template>
 
 <style scoped>

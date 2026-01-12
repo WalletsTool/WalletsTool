@@ -2875,6 +2875,27 @@ function handleWalletImportCancel() {
   console.log("钱包导入已取消");
 }
 
+// 手动录入钱包
+function handleManualImport() {
+  if (walletImportRef.value) {
+    walletImportRef.value.show();
+  }
+}
+
+// 上传文件导入
+function handleFileUpload() {
+  uploadInputRef.value.click();
+}
+
+// 下载模板
+function downloadTemplate() {
+  console.log("下载模板文件");
+  let a = document.createElement("a");
+  a.href = `/template/import_model.xlsx`;
+  a.download = "导入模板.xlsx";
+  a.click();
+}
+
 // 删除数据
 function deleteItem(item) {
   if (startLoading.value) {
@@ -6047,8 +6068,12 @@ async function handleBeforeClose() {
           :selected-keys="selectedKeys"
           @row-click="rowClick"
           @update:selected-keys="selectedKeys = $event"
+          @open-manual-import="handleManualImport"
+          @open-file-upload="handleFileUpload"
+          @download-template="downloadTemplate"
           row-key="key"
           height="100%"
+          :empty-data="data.length === 0"
           :hover-keys="
                     Object.keys(rowHoverStates).filter(
                         (key) => rowHoverStates[key],
@@ -7275,7 +7300,7 @@ async function handleBeforeClose() {
   <a-modal
       v-model:visible="selectionModalVisible"
       title="选择区块链和代币"
-      :width="600"
+      :width="400"
       @ok="handleSelectionModalOk"
       @cancel="handleSelectionModalCancel"
   >

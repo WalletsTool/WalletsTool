@@ -28,13 +28,74 @@
     <!-- 虚拟滚动内容 -->
     <div class="table-body" :style="{ height: `calc(${height} - 40px)` }">
       <!-- 空数据提示 -->
-      <div v-if="!loading && data.length === 0" class="empty-data">
-        <div class="empty-icon">
-          <Icon icon="icon-park-outline:table-file" :size="32" />
-        </div>
-        <div class="empty-text">暂无数据</div>
+      <div v-if="showEmptyData" class="empty-data">
+        <template v-if="pageType === 'balance'">
+          <div class="empty-icon">
+            <Icon icon="icon-park-outline:wallet" style="width: 64px; height: 64px;"/>
+          </div>
+          <div class="empty-text">还没有钱包数据</div>
+          <div class="empty-text-second">请先导入钱包开始查询余额</div>
+          <div>
+            <a-button
+              type="primary"
+              style="margin-top: 12px"
+              @click="$emit('open-manual-import')"
+            >
+              <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
+              手动录入钱包
+            </a-button>
+          </div>
+        </template>
+        <template v-else-if="pageType === 'monitor'">
+          <div class="empty-icon">
+            <Icon icon="icon-park-outline:wallet" style="width: 64px; height: 64px;"/>
+          </div>
+          <div class="empty-text">还没有监控数据</div>
+        </template>
+        <template v-else>
+          <div class="empty-icon">
+            <Icon icon="icon-park-outline:wallet" style="width: 64px; height: 64px;" />
+          </div>
+          <div class="empty-text">还没有转账数据</div>
+          <div class="empty-text-second">请先录入钱包或者上传文件开始批量转账</div>
+          <div>
+            <a-button
+              type="primary"
+              style="margin-top: 12px"
+              @click="$emit('open-manual-import')"
+            >
+              <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
+              手动录入钱包
+            </a-button>
+            <a-button
+              type="primary"
+              style="margin-top: 12px;margin-left: 20px"
+              status="success"
+              @click="$emit('open-file-upload')"
+            >
+              <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
+              上传文件导入
+            </a-button>
+          </div>
+          <div style="margin-top: 15px; display: flex; align-items: center; justify-content: center;">
+            <Icon
+              icon="mdi:info"
+              :size="12"
+              style="margin-right: 4px;"/>
+            <span class="empty-text-second">
+              支持CSV、XLSX格式文件，下载
+              <a
+                href="#"
+                @click.prevent="$emit('download-template')"
+                style="color: #a2beff;"
+              >
+                导入模板
+              </a>
+            </span>
+          </div>
+        </template>
       </div>
-      
+
       <VirtualScroller
         v-else
         :items="data"
@@ -45,11 +106,11 @@
         <template #item="{ item, options }">
           <div
             class="table-row"
-            :class="{ 
-              'selected': isRowSelected(item), 
+            :class="{
+              selected: isRowSelected(item),
               'row-hovered': isRowHovered(item),
-              'clickable': true,
-              'zebra-stripe': getItemIndex(item) % 2 === 1
+              clickable: true,
+              'zebra-stripe': getItemIndex(item) % 2 === 1,
             }"
             @click="handleRowClick(item, getItemIndex(item))"
           >
@@ -69,12 +130,19 @@
               :key="column.dataIndex || column.slotName"
               class="table-cell"
               :class="{ 'copyable-cell': isCopyableColumn(column) }"
-              :style="{ ...getContentColumnStyle(column), textAlign: column.align || 'left' }"
+              :style="{
+                ...getContentColumnStyle(column),
+                textAlign: column.align || 'left',
+              }"
               :title="getTooltipText(column, item)"
               @dblclick="handleCellDoubleClick($event, column, item)"
             >
               <!-- 可复制列使用Tooltip包装 -->
-              <Tooltip v-if="isCopyableColumn(column)" content="双击可复制" position="top">
+              <Tooltip
+                v-if="isCopyableColumn(column)"
+                content="双击可复制"
+                position="top"
+              >
                 <!-- 插槽内容 -->
                 <template v-if="column.slotName">
                   <!-- 自动处理序号列 -->
@@ -92,7 +160,7 @@
                   </slot>
                 </template>
                 <!-- 普通内容 -->
-                <span v-else :class="{ 'ellipsis': column.ellipsis }">
+                <span v-else :class="{ ellipsis: column.ellipsis }">
                   {{ getDisplayText(column, item) }}
                 </span>
               </Tooltip>
@@ -115,7 +183,7 @@
                   </slot>
                 </template>
                 <!-- 普通内容 -->
-                <span v-else :class="{ 'ellipsis': column.ellipsis }">
+                <span v-else :class="{ ellipsis: column.ellipsis }">
                   {{ getDisplayText(column, item) }}
                 </span>
               </template>
@@ -130,230 +198,246 @@
       <div class="loading-spinner"></div>
       <div class="loading-text">加载中...</div>
     </div>
-
-
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import VirtualScroller from 'primevue/virtualscroller'
-import { Icon } from '@iconify/vue'
-import { Message, Tooltip } from '@arco-design/web-vue'
+import { computed, ref, watch } from "vue";
+import VirtualScroller from "primevue/virtualscroller";
+import { Icon } from "@iconify/vue";
+import { Message, Tooltip } from "@arco-design/web-vue";
 
 // Props
 const props = defineProps({
   columns: {
     type: Array,
-    required: true
+    required: true,
   },
   data: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   rowKey: {
     type: String,
-    default: 'id'
+    default: "id",
   },
   rowSelection: {
     type: Object,
-    default: null
+    default: null,
   },
   selectedKeys: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   loading: {
     type: Boolean,
-    default: false
+    default: false,
   },
   height: {
     type: String,
-    default: '100%'
+    default: "100%",
   },
   hoverKeys: {
     type: Array,
-    default: () => []
-  }
-})
+    default: () => [],
+  },
+  pageType: {
+    type: String,
+    default: "transfer", // transfer | balance | monitor
+  },
+  emptyData: {
+    type: Boolean,
+    default: null, // null 表示自动根据 data.length 判断
+  },
+});
 
 // Emits
-const emit = defineEmits(['row-click', 'update:selectedKeys'])
+const emit = defineEmits(["row-click", "update:selectedKeys", "open-manual-import", "open-file-upload", "download-template"]);
 
 // 计算属性
 const isAllSelected = computed(() => {
-  if (!props.rowSelection || props.data.length === 0) return false
-  return props.data.every(item => props.selectedKeys.includes(getRowKey(item)))
-})
+  if (!props.rowSelection || props.data.length === 0) return false;
+  return props.data.every((item) => props.selectedKeys.includes(getRowKey(item)));
+});
 
 const isIndeterminate = computed(() => {
-  if (!props.rowSelection || props.data.length === 0) return false
-  const selectedCount = props.data.filter(item => props.selectedKeys.includes(getRowKey(item))).length
-  return selectedCount > 0 && selectedCount < props.data.length
-})
+  if (!props.rowSelection || props.data.length === 0) return false;
+  const selectedCount = props.data.filter((item) =>
+    props.selectedKeys.includes(getRowKey(item))
+  ).length;
+  return selectedCount > 0 && selectedCount < props.data.length;
+});
 
 // 重新排序列，将optional列放在最右端
 const sortedColumns = computed(() => {
-  const regularColumns = props.columns.filter(col => col.slotName !== 'optional')
-  const optionalColumns = props.columns.filter(col => col.slotName === 'optional')
-  return [...regularColumns, ...optionalColumns]
-})
+  const regularColumns = props.columns.filter((col) => col.slotName !== "optional");
+  const optionalColumns = props.columns.filter((col) => col.slotName === "optional");
+  return [...regularColumns, ...optionalColumns];
+});
+
+// 判断是否显示空数据提示
+const showEmptyData = computed(() => {
+  if (props.emptyData !== null) {
+    return props.emptyData;
+  }
+  return !props.loading && props.data.length === 0;
+});
 
 // 检测是否会产生滚动条
 const hasScrollbar = computed(() => {
-  if (!props.data.length || !props.height) return false
-  
+  if (!props.data.length || !props.height) return false;
+
   // 计算容器高度（减去表头高度40px）
-  const containerHeight = props.height === '100%' ? 400 : parseInt(props.height) - 40
-  
+  const containerHeight = props.height === "100%" ? 400 : parseInt(props.height) - 40;
+
   // 计算内容总高度（数据项数量 * 行高35px）
-  const contentHeight = props.data.length * 35
-  
-  return contentHeight > containerHeight
-})
+  const contentHeight = props.data.length * 35;
+
+  return contentHeight > containerHeight;
+});
 
 // 计算表头列宽度（保持原始设置不变）
 const getHeaderColumnStyle = (column) => {
   if (column.width) {
-    return { width: column.width + 'px', flexShrink: 0 }
+    return { width: column.width + "px", flexShrink: 0 };
   }
   // 没有设置宽度的列使用flex: 1来占满剩余空间
-  return { flex: 1, minWidth: '100px' }
-}
+  return { flex: 1, minWidth: "100px" };
+};
 
 // 计算虚拟滚动内容列宽度（只在optional列检测到滚动条时调整）
 const getContentColumnStyle = (column) => {
   if (column.width) {
-    let width = column.width
+    let width = column.width;
     // 如果是optional列且有滚动条，减少10px宽度来补偿滚动条占用的空间
-    if (column.slotName === 'optional' && hasScrollbar.value) {
-      width = Math.max(width - 15, 30) // 最小宽度30px
+    if (column.slotName === "optional" && hasScrollbar.value) {
+      width = Math.max(width - 15, 30); // 最小宽度30px
     }
-    return { width: width + 'px', flexShrink: 0 }
+    return { width: width + "px", flexShrink: 0 };
   }
   // 没有设置宽度的列使用flex: 1来占满剩余空间
-  return { flex: 1, minWidth: '100px' }
-}
+  return { flex: 1, minWidth: "100px" };
+};
 
 // 方法
 const getRowKey = (item) => {
-  return item[props.rowKey]
-}
+  return item[props.rowKey];
+};
 
 const getItemIndex = (item) => {
-  return props.data.findIndex(dataItem => getRowKey(dataItem) === getRowKey(item))
-}
+  return props.data.findIndex((dataItem) => getRowKey(dataItem) === getRowKey(item));
+};
 
 const isRowSelected = (item) => {
-  if (!props.rowSelection) return false
-  return props.selectedKeys.includes(getRowKey(item))
-}
+  if (!props.rowSelection) return false;
+  return props.selectedKeys.includes(getRowKey(item));
+};
 
 const isRowHovered = (item) => {
-  return props.hoverKeys.includes(getRowKey(item))
-}
+  return props.hoverKeys.includes(getRowKey(item));
+};
 
 const handleRowClick = (item, index) => {
-  emit('row-click', item, { index })
-}
+  emit("row-click", item, { index });
+};
 
 const toggleRowSelection = (item) => {
-  if (!props.rowSelection) return
-  
-  const key = getRowKey(item)
-  const newSelectedKeys = [...props.selectedKeys]
-  const index = newSelectedKeys.indexOf(key)
-  
+  if (!props.rowSelection) return;
+
+  const key = getRowKey(item);
+  const newSelectedKeys = [...props.selectedKeys];
+  const index = newSelectedKeys.indexOf(key);
+
   if (index >= 0) {
-    newSelectedKeys.splice(index, 1)
+    newSelectedKeys.splice(index, 1);
   } else {
-    newSelectedKeys.push(key)
+    newSelectedKeys.push(key);
   }
-  
-  emit('update:selectedKeys', newSelectedKeys)
-}
+
+  emit("update:selectedKeys", newSelectedKeys);
+};
 
 const toggleSelectAll = () => {
-  if (!props.rowSelection) return
-  
-  let newSelectedKeys
+  if (!props.rowSelection) return;
+
+  let newSelectedKeys;
   if (isAllSelected.value) {
     // 取消全选
-    const currentPageKeys = props.data.map(item => getRowKey(item))
-    newSelectedKeys = props.selectedKeys.filter(key => !currentPageKeys.includes(key))
+    const currentPageKeys = props.data.map((item) => getRowKey(item));
+    newSelectedKeys = props.selectedKeys.filter((key) => !currentPageKeys.includes(key));
   } else {
     // 全选
-    const currentPageKeys = props.data.map(item => getRowKey(item))
-    newSelectedKeys = [...new Set([...props.selectedKeys, ...currentPageKeys])]
+    const currentPageKeys = props.data.map((item) => getRowKey(item));
+    newSelectedKeys = [...new Set([...props.selectedKeys, ...currentPageKeys])];
   }
-  
-  emit('update:selectedKeys', newSelectedKeys)
-}
+
+  emit("update:selectedKeys", newSelectedKeys);
+};
 
 // 获取显示文本
 const getDisplayText = (column, item) => {
-  const value = item[column.dataIndex]
-  if (!value) return ''
-  
+  const value = item[column.dataIndex];
+  if (!value) return "";
+
   // 特殊处理error_msg字段，只显示前20个字符
-  if (column.dataIndex === 'error_msg' && value.length > 25) {
-    return value.substring(0, 25) + '...'
+  if (column.dataIndex === "error_msg" && value.length > 25) {
+    return value.substring(0, 25) + "...";
   }
-  
-  return value
-}
+
+  return value;
+};
 
 // 获取tooltip文本
 const getTooltipText = (column, item) => {
-  const value = item[column.dataIndex]
-  if (!value) return ''
-  
+  const value = item[column.dataIndex];
+  if (!value) return "";
+
   // 如果设置了ellipsis或者是error_msg字段，显示完整内容作为tooltip
-  if (column.ellipsis || column.dataIndex === 'error_msg') {
-    return value
+  if (column.ellipsis || column.dataIndex === "error_msg") {
+    return value;
   }
-  
+
   // 如果设置了tooltip属性，显示完整内容
   if (column.tooltip) {
-    return value
+    return value;
   }
-  
-  return ''
-}
+
+  return "";
+};
 
 // 检查是否为可复制的列
 const isCopyableColumn = (column) => {
-  const copyableColumns = ['private_key', 'address', 'to_addr', 'error_msg']
-  return copyableColumns.includes(column.dataIndex)
-}
+  const copyableColumns = ["private_key", "address", "to_addr", "error_msg"];
+  return copyableColumns.includes(column.dataIndex);
+};
 
 // 处理单元格双击事件
 const handleCellDoubleClick = async (event, column, item) => {
   // 阻止事件冒泡和默认行为，避免触发行选择
-  event.stopPropagation()
-  event.preventDefault()
-  
-  if (!isCopyableColumn(column)) return
-  
-  const value = item[column.dataIndex]
-  if (!value) return
-  
+  event.stopPropagation();
+  event.preventDefault();
+
+  if (!isCopyableColumn(column)) return;
+
+  const value = item[column.dataIndex];
+  if (!value) return;
+
   try {
-    await navigator.clipboard.writeText(value)
+    await navigator.clipboard.writeText(value);
     Message.success({
-      content: '已复制',
-      position: 'top',
-      offset: 500
-    })
+      content: "已复制",
+      position: "top",
+      offset: 500,
+    });
   } catch (error) {
-    console.error('复制失败:', error)
+    console.error("复制失败:", error);
     Message.error({
-      content: '复制失败',
-      position: 'top',
-      offset: 500
-    })
+      content: "复制失败",
+      position: "top",
+      offset: 500,
+    });
   }
-}
+};
 </script>
 
 <style scoped>
@@ -450,7 +534,6 @@ const handleCellDoubleClick = async (event, column, item) => {
   position: relative;
 }
 
-
 .checkbox-cell {
   width: 50px;
   justify-content: center;
@@ -493,8 +576,12 @@ const handleCellDoubleClick = async (event, column, item) => {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .loading-text {
@@ -508,8 +595,8 @@ const handleCellDoubleClick = async (event, column, item) => {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  height: 200px;
-  color: #c3c3c3;
+  height: 500px;
+  color: #888888ff;
 }
 
 .empty-icon {
@@ -522,5 +609,8 @@ const handleCellDoubleClick = async (event, column, item) => {
   font-size: 14px;
 }
 
-
+.empty-text-second {
+  font-size: 12px;
+  color: rgba(134, 144, 156, 0.41);
+}
 </style>

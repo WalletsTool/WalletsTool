@@ -6,6 +6,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import TitleBar from '@/components/TitleBar.vue'
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import { ethers } from 'ethers'
+import { utils as xlUtils, read as xlRead } from 'xlsx'
 
 // 懒加载组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -14,6 +15,7 @@ const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vu
 
 const chainManageRef = ref(null)
 const rpcManageRef = ref(null)
+const uploadInputRef = ref(null)
 
 // 表格列
 const columns = [
@@ -108,6 +110,74 @@ async function confirmImport() {
     Notification.error({ content: '导入失败：' + (e.message || e), position: 'topLeft' })
     return false
   } finally { importLoading.value = false }
+}
+
+// 手动录入地址
+function handleManualImport() {
+  importVisible.value = true;
+}
+
+// 上传文件导入
+function handleFileUpload() {
+  uploadInputRef.value.click();
+}
+
+// 下载模板
+function downloadTemplate() {
+  let a = document.createElement("a");
+  a.href = `/template/import_model.xlsx`;
+  a.download = "导入模板.xlsx";
+  a.click();
+}
+
+// 处理文件变化
+function handleFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = xlRead(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = xlUtils.sheet_to_json(firstSheet, { header: 1 });
+
+      const addresses = [];
+      jsonData.forEach((row, index) => {
+        if (row && row[0]) {
+          const addr = String(row[0]).trim();
+          if (validateAddress(addr)) {
+            addresses.push(addr);
+          }
+        }
+      });
+
+      if (addresses.length > 0) {
+        importText.value = addresses.join('\n');
+        validateImportData();
+        importVisible.value = true;
+        Notification.success({
+          content: `成功解析 ${addresses.length} 个地址`,
+          position: 'topLeft',
+        });
+      } else {
+        Notification.error({
+          content: '未在文件中找到有效的地址数据',
+          position: 'topLeft',
+        });
+      }
+    } catch (error) {
+      console.error('解析文件失败:', error);
+      Notification.error({
+        content: '解析文件失败，请确保文件格式正确',
+        position: 'topLeft',
+      });
+    } finally {
+      event.target.value = '';
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 // 链切换
@@ -250,7 +320,19 @@ const statistics = computed(() => {
     </div>
 
     <div class="mainTable" style="flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0;">
-      <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :selected-keys="selectedKeys" row-key="address" height="100%">
+      <VirtualScrollerTable 
+        :columns="columns" 
+        :data="data" 
+        :row-selection="rowSelection" 
+        :selected-keys="selectedKeys" 
+        row-key="address" 
+        height="100%"
+        page-type="monitor"
+        :empty-data="data.length === 0"
+        @open-manual-import="handleManualImport"
+        @open-file-upload="handleFileUpload"
+        @download-template="downloadTemplate"
+      >
         <template #optional="{ record }">
           <a-button type="text" size="small" status="danger" @click.stop="data = data.filter(i => i.address !== record.address)">删除</a-button>
         </template>
@@ -281,6 +363,15 @@ const statistics = computed(() => {
   <!-- 管理弹窗 -->
   <ChainManagement ref="chainManageRef" />
   <RpcManagement ref="rpcManageRef" :chain-value="chainValue" />
+
+  <!-- 隐藏的文件输入框 -->
+  <input
+    type="file"
+    ref="uploadInputRef"
+    accept=".xlsx,.xls,.csv"
+    style="display: none"
+    @change="handleFileChange"
+  />
 </template>
 
 <style scoped>

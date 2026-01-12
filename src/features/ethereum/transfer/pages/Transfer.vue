@@ -5060,6 +5060,66 @@ async function handleBeforeClose() {
         下载模板
       </a-button>
     </div>
+    <!-- 底部核心操作区 -->
+    <div style="position: fixed; bottom: 20px; right: 50px; display: flex; gap: 20px; z-index: 100;">
+      <a-dropdown v-if="!balanceLoading && balanceStopStatus">
+        <a-button type="primary" class="core-action-btn primary-btn">
+          <template #icon>
+            <Icon icon="mdi:magnify" />
+          </template>
+          查询余额
+        </a-button>
+        <template #content>
+          <a-doption @click="debouncedQueryBalance">
+            <Icon icon="mdi:export" style="margin-right: 8px;margin-bottom: -2px;" />
+            查出账地址
+          </a-doption>
+          <a-doption @click="debouncedQueryToAddressBalance">
+            <Icon icon="mdi:import" style="margin-right: 8px;margin-bottom: -2px;" />
+            查到账地址
+          </a-doption>
+        </template>
+      </a-dropdown>
+      <a-tooltip v-else content="点击可以提前停止查询">
+        <div @click="debouncedStopBalanceQuery">
+          <a-button v-if="!balanceStopFlag" class="core-action-btn primary-btn executing" loading>
+            <template #icon>
+              <Icon icon="mdi:stop" />
+            </template>
+            查询中...
+          </a-button>
+        </div>
+      </a-tooltip>
+      <a-button v-if="balanceStopFlag && !balanceStopStatus" class="core-action-btn primary-btn stopping" loading>
+        <template #icon>
+          <Icon icon="mdi:stop" />
+        </template>
+        正在停止...
+      </a-button>
+
+      <a-button v-if="!startLoading && stopStatus" type="success" class="core-action-btn success-btn" @click="debouncedStartTransfer">
+        <template #icon>
+          <Icon icon="mdi:play" />
+        </template>
+        执行转账
+      </a-button>
+      <a-tooltip v-else content="点击可以提前停止执行">
+        <div @click="debouncedStopTransfer">
+          <a-button v-if="!stopFlag" class="core-action-btn success-btn executing" loading>
+            <template #icon>
+              <Icon icon="mdi:stop" />
+            </template>
+            执行中...
+          </a-button>
+          <a-button v-if="stopFlag && !stopStatus" class="core-action-btn success-btn stopping" loading>
+            <template #icon>
+              <icon-stop />
+            </template>
+            正在停止...
+          </a-button>
+        </div>
+      </a-tooltip>
+    </div>
     <!-- 操作账号表格 -->
     <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
       <!-- 骨架屏 -->
@@ -5415,82 +5475,6 @@ async function handleBeforeClose() {
           </a-form-item>
         </a-row>
       </a-form>
-    </div>
-    <!-- 核心操作区 -->
-    <div
-      style="display: flex; align-items: center; padding: 10px 20px; margin-top: 5px; justify-content: center; gap: 30px; flex-shrink: 0;">
-      <!-- 左侧区域 -->
-      <div style="display: flex; align-items: center; gap: 20px;">
-
-
-        <!-- 查询余额 -->
-        <a-dropdown v-if="!balanceLoading && balanceStopStatus">
-          <a-button type="primary" :style="{ width: '130px', height: '40px', fontSize: '14px' }">
-            <template #icon>
-              <Icon icon="mdi:magnify" />
-            </template>
-            查询余额
-          </a-button>
-          <template #content>
-            <a-doption @click="debouncedQueryBalance">
-              <Icon icon="mdi:export" style="margin-right: 8px;margin-bottom: -2px;" />
-              查出账地址
-            </a-doption>
-            <a-doption @click="debouncedQueryToAddressBalance">
-              <Icon icon="mdi:import" style="margin-right: 8px;margin-bottom: -2px;" />
-              查到账地址
-            </a-doption>
-          </template>
-        </a-dropdown>
-        <a-tooltip v-else content="点击可以提前停止查询">
-          <div @click="debouncedStopBalanceQuery">
-            <a-button v-if="!balanceStopFlag" class="execute-btn executing" loading
-              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
-              <template #icon>
-                <Icon icon="mdi:stop" />
-              </template>
-              查询中...
-            </a-button>
-          </div>
-        </a-tooltip>
-        <a-button v-if="balanceStopFlag && !balanceStopStatus" class="execute-btn stopping" loading
-          :style="{ width: '130px', height: '40px', fontSize: '14px' }">
-          <template #icon>
-            <Icon icon="mdi:stop" />
-          </template>
-          正在停止...
-        </a-button>
-      </div>
-
-      <!-- 右侧区域 -->
-      <div style="display: flex; align-items: center; gap: 20px;">
-        <!-- 执行转账按钮 -->
-        <a-button v-if="!startLoading && stopStatus" type="success" class="execute-btn" @click="debouncedStartTransfer"
-          :style="{ width: '130px', height: '40px', fontSize: '14px' }">
-          <template #icon>
-            <Icon icon="mdi:play" />
-          </template>
-          执行转账
-        </a-button>
-        <a-tooltip v-else content="点击可以提前停止执行">
-          <div @click="debouncedStopTransfer">
-            <a-button v-if="!stopFlag" class="execute-btn executing" loading
-              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
-              <template #icon>
-                <Icon icon="mdi:stop" />
-              </template>
-              执行中...
-            </a-button>
-            <a-button v-if="stopFlag && !stopStatus" class="execute-btn stopping" loading
-              :style="{ width: '130px', height: '40px', fontSize: '14px' }">
-              <template #icon>
-                <icon-stop />
-              </template>
-              正在停止...
-            </a-button>
-          </div>
-        </a-tooltip>
-      </div>
     </div>
   </div>
   <!-- 钱包信息录入弹窗 -->
@@ -5854,6 +5838,65 @@ async function handleBeforeClose() {
   color: #ffffff;
   background-color: #fc0934;
   border: none;
+}
+
+/* 核心功能按钮样式 */
+.core-action-btn {
+  width: 120px;
+  height: 38px;
+  font-size: 14px;
+  color: #ffffff;
+  border: none;
+  will-change: transform, background-color;
+}
+
+.core-action-btn:hover {
+  color: #ffffff;
+}
+
+.core-action-btn.executing,
+.core-action-btn.stopping {
+  color: #ffffff;
+}
+
+.core-action-btn.primary-btn {
+  background-color: #165DFF;
+}
+
+.core-action-btn.primary-btn:hover {
+  background-color: #4086FF;
+}
+
+.core-action-btn.executing.primary-btn {
+  background-color: #4086FF;
+}
+
+.core-action-btn.executing.primary-btn:hover {
+  background-color: #fc0934;
+}
+
+.core-action-btn.stopping.primary-btn {
+  background-color: #FF8F00;
+}
+
+.core-action-btn.success-btn {
+  background-color: #0FA962;
+}
+
+.core-action-btn.success-btn:hover {
+  background-color: #11c06f;
+}
+
+.core-action-btn.executing.success-btn {
+  background-color: #11c06f;
+}
+
+.core-action-btn.executing.success-btn:hover {
+  background-color: #fc0934;
+}
+
+.core-action-btn.stopping.success-btn {
+  background-color: rgb(255, 125, 0);
 }
 
 /* 执行转账按钮样式 */
@@ -6549,6 +6592,7 @@ async function handleBeforeClose() {
   background: #4ade80 !important;
   color: #fff !important;
   transform: scale(0.95);
+  will-change: transform;
 }
 
 .action-btn-clicked .arco-icon {

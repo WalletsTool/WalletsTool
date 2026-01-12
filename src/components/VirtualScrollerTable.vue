@@ -47,6 +47,7 @@
             class="table-row"
             :class="{ 
               'selected': isRowSelected(item), 
+              'row-hovered': isRowHovered(item),
               'clickable': true,
               'zebra-stripe': getItemIndex(item) % 2 === 1
             }"
@@ -169,6 +170,10 @@ const props = defineProps({
   height: {
     type: String,
     default: '100%'
+  },
+  hoverKeys: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -242,6 +247,10 @@ const getItemIndex = (item) => {
 const isRowSelected = (item) => {
   if (!props.rowSelection) return false
   return props.selectedKeys.includes(getRowKey(item))
+}
+
+const isRowHovered = (item) => {
+  return props.hoverKeys.includes(getRowKey(item))
 }
 
 const handleRowClick = (item, index) => {
@@ -406,11 +415,17 @@ const handleCellDoubleClick = async (event, column, item) => {
 }
 
 .table-row:hover {
-  background-color: var(--table-hover-bg, #f7f8fa) !important;
+  background-color: var(--table-hover-bg, #fff9e6) !important;
 }
 
-.table-row.selected {
-  background-color: var(--table-selected-bg, #e8f4ff) !important;
+.table-row.row-hovered {
+  background-color: var(--table-hover-bg, #fff9e6) !important;
+}
+
+/* 暗黑主题 */
+:root[data-theme="dark"] .table-row:hover,
+:root[data-theme="dark"] .table-row.row-hovered {
+  background-color: var(--table-hover-bg, #4a4520) !important;
 }
 
 .table-row.clickable {

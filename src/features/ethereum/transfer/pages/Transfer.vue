@@ -325,6 +325,24 @@ const toAddressBalanceTotal = ref(0); // 查到账地址总查询数量
 const toAddressBalanceCompleted = ref(0); // 查到账地址已完成查询数量
 const showToAddressBalanceProgress = ref(false); // 是否显示查到账地址余额查询进度条
 
+// 状态列操作按钮点击动画状态
+const actionClickStates = ref({}); // 记录每个record的操作按钮点击状态
+const rowHoverStates = ref({}); // 记录每个row的hover状态
+
+// 设置操作按钮点击动画状态
+const setActionClickState = (record, actionType) => {
+  const key = record.key;
+  if (!actionClickStates.value[key]) {
+    actionClickStates.value[key] = {};
+  }
+  actionClickStates.value[key][actionType] = true;
+  setTimeout(() => {
+    if (actionClickStates.value[key]) {
+      actionClickStates.value[key][actionType] = false;
+    }
+  }, 500);
+};
+
 // 计算属性：缓存转账配置
 const transferConfig = computed(() => {
   return {
@@ -5050,26 +5068,62 @@ async function handleBeforeClose() {
       <!-- 正常表格 -->
       <VirtualScrollerTable v-else-if="tableBool" :columns="columns" :data="data" :row-selection="rowSelection"
         :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick"
-        @update:selected-keys="selectedKeys = $event" row-key="key" height="100%">
+        @update:selected-keys="selectedKeys = $event" row-key="key" height="100%"
+        :hover-keys="Object.keys(rowHoverStates).filter(key => rowHoverStates[key])">
 
         <template #exec_status="{ record }">
-          <a-tooltip content="" trigger="hover" :popup-style="{ padding: 0 }">
-            <template #content>
-              <div class="exec-actions">
-                <div class="action-btn" @click="queryFromAddressBalance(record)">出账</div>
-                <div class="action-btn" @click="queryToAddressBalanceRow(record)">到账</div>
-                <div class="action-btn warning" @click="resendTransaction(record)">重发</div>
-              </div>
-            </template>
-            <a-tag v-if="record.exec_status === '0'" color="#86909c">等待执行
-            </a-tag>
-            <a-tag v-if="record.exec_status === '1'" color="#ff7d00">执行中
-            </a-tag>
-            <a-tag v-if="record.exec_status === '2'" color="#00b42a">执行成功
-            </a-tag>
-            <a-tag v-if="record.exec_status === '3'" color="#f53f3f">执行失败
-            </a-tag>
-          </a-tooltip>
+          <div 
+            class="exec-status-wrapper"
+            @mouseenter="rowHoverStates[record.key] = true"
+            @mouseleave="rowHoverStates[record.key] = false"
+          >
+            <a-tooltip 
+              content="" 
+              trigger="hover" 
+              :popup-style="{ padding: 0, pointerEvents: 'auto' }"
+            >
+              <template #content>
+                <div 
+                  class="exec-actions"
+                  @mouseenter="rowHoverStates[record.key] = true"
+                  @mouseleave="rowHoverStates[record.key] = false"
+                >
+                  <div 
+                    class="action-btn" 
+                    :class="{ 'action-btn-clicked': actionClickStates[record.key]?.queryFrom }"
+                    @click="queryFromAddressBalance(record); setActionClickState(record, 'queryFrom')"
+                  >
+                    <Icon :icon="actionClickStates[record.key]?.queryFrom ? 'mdi:check' : 'mdi:arrow-up'" />
+                    查出账余额
+                  </div>
+                  <div 
+                    class="action-btn" 
+                    :class="{ 'action-btn-clicked': actionClickStates[record.key]?.queryTo }"
+                    @click="queryToAddressBalanceRow(record); setActionClickState(record, 'queryTo')"
+                  >
+                    <Icon :icon="actionClickStates[record.key]?.queryTo ? 'mdi:check' : 'mdi:arrow-down'" />
+                    查到账余额
+                  </div>
+                  <div 
+                    class="action-btn danger" 
+                    :class="{ 'action-btn-clicked': actionClickStates[record.key]?.resend }"
+                    @click="resendTransaction(record); setActionClickState(record, 'resend')"
+                  >
+                    <Icon :icon="actionClickStates[record.key]?.resend ? 'mdi:check' : 'mdi:refresh'" />
+                    重新转账
+                  </div>
+                </div>
+              </template>
+              <a-tag v-if="record.exec_status === '0'" color="#86909c">等待执行
+              </a-tag>
+              <a-tag v-if="record.exec_status === '1'" color="#ff7d00">执行中
+              </a-tag>
+              <a-tag v-if="record.exec_status === '2'" color="#00b42a">执行成功
+              </a-tag>
+              <a-tag v-if="record.exec_status === '3'" color="#f53f3f">执行失败
+              </a-tag>
+            </a-tooltip>
+          </div>
         </template>
         <template #optional="{ record }">
           <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger">
@@ -6476,8 +6530,34 @@ async function handleBeforeClose() {
   color: #ff9d00;
 }
 
+.action-btn.danger {
+  color: #f53f3f;
+}
+
 .action-btn.warning:hover {
   background: #3d3d3d;
   color: #ffb732;
+}
+
+.action-btn.danger:hover {
+  background: #3d3d3d;
+  color: #f53f3f;
+}
+
+/* 操作按钮点击动画 */
+.action-btn-clicked {
+  background: #4ade80 !important;
+  color: #fff !important;
+  transform: scale(0.95);
+}
+
+.action-btn-clicked .arco-icon {
+  animation: icon-bounce 0.3s ease;
+}
+
+@keyframes icon-bounce {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
 }
 </style>

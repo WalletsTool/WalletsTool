@@ -5781,6 +5781,10 @@ async function handleBeforeClose() {
             <template #icon><Icon icon="mdi:swap-horizontal" /></template>
             重新选择区块链
           </a-doption>
+          <a-doption @click="showTokenManage" :disabled="!chainValue">
+            <template #icon><Icon icon="mdi:coin" /></template>
+            代币管理
+          </a-doption>
           <a-doption @click="showRpcManage" :disabled="!chainValue">
             <template #icon><Icon icon="mdi:link" /></template>
             RPC管理
@@ -5788,10 +5792,6 @@ async function handleBeforeClose() {
           <a-doption @click="showChainManage">
             <template #icon><Icon icon="mdi:web" /></template>
             区块链管理
-          </a-doption>
-          <a-doption @click="showTokenManage" :disabled="!chainValue">
-            <template #icon><Icon icon="mdi:coin" /></template>
-            代币管理
           </a-doption>
         </template>
       </a-dropdown>

@@ -602,10 +602,18 @@ onMounted(() => {
   padding-right: 8px;
 }
 
+:root[data-theme="dark"] .config-label {
+  color: #e5e6eb;
+}
+
 .switch-text {
   margin-left: 8px;
   color: #86909c;
   font-size: 14px;
+}
+
+:root[data-theme="dark"] .switch-text {
+  color: #c9cdd4;
 }
 
 .proxy-textarea {
@@ -632,6 +640,14 @@ onMounted(() => {
   margin-left: 8px;
   color: #c9cdd4;
   font-size: 11px;
+}
+
+:root[data-theme="dark"] .proxy-count {
+  color: #a3a6ad;
+}
+
+:root[data-theme="dark"] .proxy-count-detail {
+  color: #8c8f93;
 }
 
 /* 测试控制区域样式 */
@@ -664,6 +680,14 @@ onMounted(() => {
   color: #86909c;
 }
 
+:root[data-theme="dark"] .thread-label {
+  color: #c9cdd4;
+}
+
+:root[data-theme="dark"] .thread-hint {
+  color: #a3a6ad;
+}
+
 /* 测试进度区域样式 */
 .test-progress {
   margin-top: 16px;
@@ -681,6 +705,10 @@ onMounted(() => {
   color: #86909c;
 }
 
+:root[data-theme="dark"] .progress-details {
+  color: #a3a6ad;
+}
+
 .test-summary {
   display: flex;
   justify-content: space-between;
@@ -689,6 +717,29 @@ onMounted(() => {
   background-color: #f7f8fa;
   border-radius: 4px;
   font-size: 14px;
+}
+
+.test-duration {
+  color: #4e5969;
+  font-size: 12px;
+}
+
+.test-info {
+  margin-left: 12px;
+  color: #86909c;
+  font-size: 14px;
+}
+
+:root[data-theme="dark"] .test-summary {
+  background-color: #2a2d32;
+}
+
+:root[data-theme="dark"] .test-duration {
+  color: #c9cdd4;
+}
+
+:root[data-theme="dark"] .test-info {
+  color: #a3a6ad;
 }
 
 .success-count {
@@ -727,6 +778,10 @@ onMounted(() => {
   color: #1d2129;
   font-size: 14px;
   font-weight: 500;
+}
+
+:root[data-theme="dark"] .test-results h4 {
+  color: #e5e6eb;
 }
 
 .result-list {
@@ -786,6 +841,84 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+:root[data-theme="dark"] .result-item.success {
+  background-color: #1d3a1d;
+}
+
+:root[data-theme="dark"] .result-item.failure {
+  background-color: #3d1d1d;
+}
+
+:root[data-theme="dark"] .proxy-url {
+  color: #c9cdd4;
+}
+
+:root[data-theme="dark"] .result-list {
+  border-color: #3c3c3c;
+}
+
+:root[data-theme="dark"] .stats-list {
+  border-color: #3c3c3c;
+}
+
+:root[data-theme="dark"] .stats-item {
+  border-bottom-color: #3c3c3c;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f2f3f5;
+}
+
+.result-item:last-child {
+  border-bottom: none;
+}
+
+.result-item.success {
+  background-color: #f6ffed;
+}
+
+.result-item.failure {
+  background-color: #fff2f0;
+}
+
+.proxy-url {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  color: #4e5969;
+  flex: 1;
+  margin-right: 12px;
+  word-break: break-all;
+}
+
+:root[data-theme="dark"] .proxy-url {
+  color: #c9cdd4;
+}
+
+.result-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.latency {
+  color: #00b42a;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.error-msg {
+  color: #f53f3f;
+  font-size: 12px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .proxy-stats {
   margin-top: 16px;
 }
@@ -795,6 +928,10 @@ onMounted(() => {
   color: #1d2129;
   font-size: 14px;
   font-weight: 500;
+}
+
+:root[data-theme="dark"] .proxy-stats h4 {
+  color: #e5e6eb;
 }
 
 .stats-list {
@@ -823,5 +960,9 @@ onMounted(() => {
 .stat {
   color: #86909c;
   font-size: 12px;
+}
+
+:root[data-theme="dark"] .stat {
+  color: #a3a6ad;
 }
 </style>

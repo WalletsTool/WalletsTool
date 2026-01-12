@@ -203,7 +203,7 @@ async function chainChange() {
       }
     } catch (error) {
       console.error('获取代币列表失败:', error);
-      Notification.error('获取代币列表失败');
+      Notification.error({ content: '获取代币列表失败', position: 'topLeft' });
     }
   }
 }
@@ -221,7 +221,7 @@ function coinChange() {
 // 查询余额
 async function queryBalance() {
   if (data.value.length === 0) {
-    Notification.error('请先导入转账数据');
+    Notification.error({ content: '请先导入转账数据', position: 'topLeft' });
     return;
   }
 
@@ -251,7 +251,7 @@ async function queryBalance() {
     const result = await invoke('query_balances', { params });
     
     if (result && result.success) {
-      Notification.success('余额查询完成');
+      Notification.success({ content: '余额查询完成', position: 'topLeft' });
     } else {
       Notification.error('余额查询失败: ' + (result?.error || '未知错误'));
     }
@@ -267,7 +267,7 @@ async function queryBalance() {
 // 开始转账
 async function startTransfer() {
   if (data.value.length === 0) {
-    Notification.error('请先导入转账数据');
+    Notification.error({ content: '请先导入转账数据', position: 'topLeft' });
     return;
   }
 
@@ -276,7 +276,7 @@ async function startTransfer() {
   );
 
   if (validData.length === 0) {
-    Notification.warning('没有可执行的转账数据');
+    Notification.warning({ content: '没有可执行的转账数据', position: 'topLeft' });
     return;
   }
 
@@ -308,7 +308,7 @@ async function startTransfer() {
 
     if (result && result.success) {
       const stats = transferStatistics.value;
-      Notification.success(`转账执行完成！成功: ${stats.succeeded}, 失败: ${stats.failed}`);
+      Notification.success({ content: `转账执行完成！成功: ${stats.succeeded}, 失败: ${stats.failed}`, position: 'topLeft' });
     } else {
       Notification.error('转账执行失败: ' + (result?.error || '未知错误'));
     }

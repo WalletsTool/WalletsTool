@@ -122,7 +122,7 @@ const funcList = [
 // 跳转到批量转账
 function goPage(pageName) {
   if (pageName === 'distribution') {
-    Notification.success('功能建设中，敬请期待')
+    Notification.success({ content: '功能建设中，敬请期待', position: 'topLeft' })
     return
   }
 
@@ -198,9 +198,9 @@ function goPage(pageName) {
 function toggleDebugMode() {
   debugMode.value = !debugMode.value
   if (debugMode.value) {
-    Notification.success('调试模式开启')
+    Notification.success({ content: '调试模式开启', position: 'topLeft' })
   } else {
-    Notification.error('调试模式关闭')
+    Notification.error({ content: '调试模式关闭', position: 'topLeft' })
   }
 }
 
@@ -208,9 +208,9 @@ function toggleDebugMode() {
 function toggleTheme() {
   themeStore.toggleTheme()
   // if (isDarkTheme.value) {
-  //   Notification.success('已切换到暗黑主题')
+  //   Notification.success({ content: '已切换到暗黑主题', position: 'topLeft' })
   // } else {
-  //   Notification.success('已切换到明亮主题')
+  //   Notification.success({ content: '已切换到明亮主题', position: 'topLeft' })
   // }
 }
 
@@ -264,20 +264,20 @@ async function checkDatabaseStatus() {
     databaseStatus.value = statusText
 
     if (notificationType === 'success') {
-      Notification.success({
+      Notification.success({ 
         title: '数据库状态检查完成',
         content: statusText
-      })
+      , position: 'topLeft' })
     } else if (notificationType === 'warning') {
-      Notification.warning({
+      Notification.warning({ 
         title: '数据库状态检查完成',
         content: statusText
-      })
+      , position: 'topLeft' })
     } else {
-      Notification.error({
+      Notification.error({ 
         title: '数据库状态检查完成',
         content: statusText
-      })
+      , position: 'topLeft' })
     }
 
     // 数据库状态检查完成
@@ -285,10 +285,10 @@ async function checkDatabaseStatus() {
     console.error('检查数据库状态失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
     databaseStatus.value = '检查失败: ' + errorText
-    Notification.error({
+    Notification.error({ 
       title: '检查数据库状态失败',
       content: errorText
-    })
+    , position: 'topLeft' })
   } finally {
     databaseLoading.value = false
   }
@@ -310,10 +310,10 @@ async function reloadDatabase() {
     // 确保result是字符串格式
     const resultText = typeof result === 'string' ? result : JSON.stringify(result)
 
-    Notification.success({
+    Notification.success({ 
       title: '数据库重载完成',
       content: resultText
-    })
+    , position: 'topLeft' })
 
     // 重新检查数据库状态
     setTimeout(async () => {
@@ -323,10 +323,10 @@ async function reloadDatabase() {
   } catch (error) {
     console.error('重载数据库失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
-    Notification.error({
+    Notification.error({ 
       title: '重载数据库失败',
       content: errorText
-    })
+    , position: 'topLeft' })
   } finally {
     databaseLoading.value = false
   }
@@ -344,10 +344,10 @@ async function refreshPageData() {
     // 重置数据库状态
     databaseStatus.value = null
 
-    Notification.success({
+    Notification.success({ 
       title: '页面数据已刷新',
       content: '所有状态已重置'
-    })
+    , position: 'topLeft' })
 
     // 自动重新检查数据库状态
     setTimeout(async () => {
@@ -357,10 +357,10 @@ async function refreshPageData() {
   } catch (error) {
     console.error('刷新页面数据失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
-    Notification.error({
+    Notification.error({ 
       title: '刷新页面数据失败',
       content: errorText
-    })
+    , position: 'topLeft' })
   }
 }
 
@@ -380,20 +380,20 @@ async function exportDatabaseToInitSql() {
     // 确保result是字符串格式
     const resultText = typeof result === 'string' ? result : JSON.stringify(result)
 
-    Notification.success({
+    Notification.success({ 
       title: '数据库导出完成',
       content: resultText
-    })
+    , position: 'topLeft' })
 
     // 数据库导出完成
 
   } catch (error) {
     console.error('导出数据库失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
-    Notification.error({
+    Notification.error({ 
       title: '导出数据库失败',
       content: errorText
-    })
+    , position: 'topLeft' })
   } finally {
     databaseLoading.value = false
   }
@@ -516,10 +516,10 @@ async function handleMainWindowCloseRequest() {
             // 发生错误时重置标记位
             closeConfirmed.value = false
             isConfirmModalVisible.value = false
-            Notification.error({
+            Notification.error({ 
               title: '错误',
               content: '关闭窗口时发生错误，请重试'
-            })
+            , position: 'topLeft' })
             reject(false) // 操作失败
           } finally {
             // 无论成功还是失败，都重置弹窗状态
@@ -560,10 +560,10 @@ async function handleMainWindowCloseRequest() {
             resolve(true) // 操作成功
           } catch (closeError) {
             console.error('强制关闭窗口时发生错误:', closeError)
-            Notification.error({
+            Notification.error({ 
               title: '错误',
               content: '强制关闭窗口时发生错误，请重试'
-            })
+            , position: 'topLeft' })
             reject(false) // 操作失败
           } finally {
             // 无论成功还是失败，都重置弹窗状态

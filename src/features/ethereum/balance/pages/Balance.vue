@@ -421,35 +421,35 @@ async function coinChange(value) {
 // 删除代币方法
 function deleteToken() {
   if (chainValue.value === 'starknet') {
-    Notification.warning(' StarkNet 暂不支持删除代币！');
+    Notification.warning({ content: ' StarkNet 暂不支持删除代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'okt') {
-    Notification.warning(' OKT Chain 暂不支持删除代币！');
+    Notification.warning({ content: ' OKT Chain 暂不支持删除代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === "evmos") {
-    Notification.warning(" EVMOS Chain 暂不支持删除代币！");
+    Notification.warning({ content: " EVMOS Chain 暂不支持删除代币！", position: 'topLeft' });
     return;
   }
   if (chainValue.value === 'geth') {
-    Notification.warning(' Goerli Ethereum 暂不支持删除代币！');
+    Notification.warning({ content: ' Goerli Ethereum 暂不支持删除代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'sepolia') {
-    Notification.warning(' Sepolia Ethereum 暂不支持删除代币！');
+    Notification.warning({ content: ' Sepolia Ethereum 暂不支持删除代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'scroll') {
-    Notification.warning(' Scroll Alpha TestNet 暂不支持删除代币！');
+    Notification.warning({ content: ' Scroll Alpha TestNet 暂不支持删除代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'linea') {
-    Notification.warning(' Linea MainNet 暂不支持删除代币！');
+    Notification.warning({ content: ' Linea MainNet 暂不支持删除代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'base') {
-    Notification.warning(' Base MainNet 暂不支持删除代币！');
+    Notification.warning({ content: ' Base MainNet 暂不支持删除代币！', position: 'topLeft' });
     return
   }
   deleteTokenVisible.value = true
@@ -464,46 +464,46 @@ function deleteTokenCancel() {
 async function deleteTokenConfirm() {
   deleteTokenVisible.value = false
   await invoke("remove_coin", { chain: chainValue.value, key: currentCoin.value.key }).then(() => {
-    Notification.success('删除成功！');
+    Notification.success({ content: '删除成功！', position: 'topLeft' });
     // 删除成功后重新获取代币列表
     chainChange()
   }).catch(() => {
-    Notification.error('删除失败！');
+    Notification.error({ content: '删除失败！', position: 'topLeft' });
   })
 }
 
 // 导入事件触发
 function handleAddCoinClick() {
   if (chainValue.value === 'starknet') {
-    Notification.warning(' StarkNet 暂不支持添加代币！');
+    Notification.warning({ content: ' StarkNet 暂不支持添加代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'okt') {
-    Notification.warning(' OKT Chain 暂不支持添加代币！');
+    Notification.warning({ content: ' OKT Chain 暂不支持添加代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === "evmos") {
-    Notification.warning(" EVMOS Chain 暂不支持添加代币！");
+    Notification.warning({ content: " EVMOS Chain 暂不支持添加代币！", position: 'topLeft' });
     return;
   }
   if (chainValue.value === 'geth') {
-    Notification.warning(' Goerli Ethereum 暂不支持添加代币！');
+    Notification.warning({ content: ' Goerli Ethereum 暂不支持添加代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'sepolia') {
-    Notification.warning(' Sepolia Ethereum 暂不支持添加代币！');
+    Notification.warning({ content: ' Sepolia Ethereum 暂不支持添加代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'scroll') {
-    Notification.warning(' Scroll Alpha TestNet 暂不支持添加代币！');
+    Notification.warning({ content: ' Scroll Alpha TestNet 暂不支持添加代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'linea') {
-    Notification.warning(' Linea MainNet 暂不支持添加代币！');
+    Notification.warning({ content: ' Linea MainNet 暂不支持添加代币！', position: 'topLeft' });
     return
   }
   if (chainValue.value === 'base') {
-    Notification.warning(' Base MainNet 暂不支持添加代币！');
+    Notification.warning({ content: ' Base MainNet 暂不支持添加代币！', position: 'topLeft' });
     return
   }
   addCoinVisible.value = true
@@ -552,12 +552,12 @@ function addCoinFunc() {
 const handleAddCoinBeforeOk = async () => {
   coinAddress.value = coinAddress.value.trim()
   if (!coinAddress.value) {
-    Notification.warning('请输入代币地址！');
+    Notification.warning({ content: '请输入代币地址！', position: 'topLeft' });
     return false
   }
   let flag = false
   await addCoinFunc().then(() => {
-    Notification.success('添加代币成功！');
+    Notification.success({ content: '添加代币成功！', position: 'topLeft' });
     flag = true
   }).catch(err => {
     Notification.error(err);
@@ -570,11 +570,11 @@ const handleAddCoinBeforeOk = async () => {
 // 清空列表
 function clearData() {
   if (balanceLoading.value) {
-    Notification.warning('请停止或等待查询完成后再清空列表！');
+    Notification.warning({ content: '请停止或等待查询完成后再清空列表！', position: 'topLeft' });
     return;
   }
    if(data.value.length === 0){
-    Notification.warning('当前列表无数据！');
+    Notification.warning({ content: '当前列表无数据！', position: 'topLeft' });
     return;
   }
   Modal.confirm({
@@ -582,7 +582,7 @@ function clearData() {
     content: '确定要清空所有列表数据吗？此操作不可撤销。',
     onOk: () => {
       data.value = [];
-      Notification.success('清空列表成功！');
+      Notification.success({ content: '清空列表成功！', position: 'topLeft' });
     }
   });
 }
@@ -657,7 +657,7 @@ const displayedErrors = computed(() => {
 function handleCancel() {
   // 如果正在导入，不允许关闭
   if (importLoading.value) {
-    Notification.warning('正在导入数据，请稍候...');
+    Notification.warning({ content: '正在导入数据，请稍候...', position: 'topLeft' });
     return false;
   }
   
@@ -744,10 +744,10 @@ const handleBeforeOk = async () => {
         message += `，已过滤：${details.join('、')}`
       }
       
-      Notification.warning({
+      Notification.warning({ 
         title: '导入完成！',
-        content: message,
-      })
+        content: message
+      , position: 'topLeft' })
     } else {
       Notification.success({
         title: '导入成功！',
@@ -775,7 +775,7 @@ const handleBeforeOk = async () => {
 // 删除数据
 function deleteItem(item) {
   if (balanceLoading.value) {
-    Notification.warning('请停止或等待查询完成后再删除数据！');
+    Notification.warning({ content: '请停止或等待查询完成后再删除数据！', position: 'topLeft' });
     return
   }
   // 删除确认
@@ -797,7 +797,7 @@ function deleteItemCancel() {
 async function deleteItemConfirm() {
   deleteItemVisible.value = false
   data.value = data.value.filter(obj => currentItemKey.value !== obj.address)
-  Notification.success('删除成功！');
+  Notification.success({ content: '删除成功！', position: 'topLeft' });
 }
 
 // 更新余额查询进度
@@ -820,15 +820,15 @@ const debouncedDeleteItemConfirm = debounce(deleteItemConfirm, 400);
 // 查询余额（改为使用Rust后端）
 async function queryBalance() {
   if (data.value.length === 0) {
-    Notification.warning('请先导入地址！');
+    Notification.warning({ content: '请先导入地址！', position: 'topLeft' });
     return
   }
   if (!chainValue.value) {
-    Notification.warning('请先选择区块链！');
+    Notification.warning({ content: '请先选择区块链！', position: 'topLeft' });
     return
   }
   if (!coinValue.value) {
-    Notification.warning('请先选择代币！');
+    Notification.warning({ content: '请先选择代币！', position: 'topLeft' });
     return
   }
 
@@ -862,7 +862,7 @@ async function executeBalanceQuery(queryData) {
     // 分批处理大数据集
     await queryBalanceInBatches()
   } else {
-    Notification.warning('查询 coin 类型错误！');
+    Notification.warning({ content: '查询 coin 类型错误！', position: 'topLeft' });
   }
 }
 
@@ -914,11 +914,11 @@ async function queryBalanceInBatches() {
     }, 3000); // 3秒后隐藏进度条
     
     if (successCount === totalCount) {
-      Notification.success('查询成功！');
+      Notification.success({ content: '查询成功！', position: 'topLeft' });
     } else if (successCount > 0) {
-      Notification.warning(`查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+      Notification.warning({ content: `查询完成！成功 ${successCount} 条，失败 ${failCount} 条`, position: 'topLeft' });
     } else {
-      Notification.error('查询失败：所有记录都查询失败');
+      Notification.error({ content: '查询失败：所有记录都查询失败', position: 'topLeft' });
     }
     
   } catch (error) {
@@ -1074,16 +1074,16 @@ function applyAdvancedFilter() {
   selectedKeys.value = filteredItems;
   advancedFilterVisible.value = false;
   
-  Notification.success(`已筛选并选中 ${filteredItems.length} 条数据`);
+  Notification.success({ content: `已筛选并选中 ${filteredItems.length} 条数据`, position: 'topLeft' });
 }
 
 function deleteSelected() {
   if (balanceLoading.value) {
-    Notification.warning('请停止或等待查询完成后再删除数据！');
+    Notification.warning({ content: '请停止或等待查询完成后再删除数据！', position: 'topLeft' });
     return
   }
   data.value = data.value.filter(item => !selectedKeys.value.includes(item.address))
-  Notification.success('删除成功')
+  Notification.success({ content: '删除成功', position: 'topLeft' })
 }
 
 function exportAllToExcel() {
@@ -1097,7 +1097,7 @@ function exportSelectToExcel() {
 
 function exportExcel(target_data) {
   if (target_data.length === 0) {
-    Notification.warning('无法导出空列表！');
+    Notification.warning({ content: '无法导出空列表！', position: 'topLeft' });
     return
   }
   let export_data = [['地址', 'Nonce', '平台余额', '代币余额', '查询状态', '错误信息', '最后交易时间']]
@@ -1126,7 +1126,7 @@ function showChainManage() {
 // 显示RPC管理弹窗
 function showRpcManage() {
   if (!chainValue.value) {
-    Notification.warning("请先选择区块链！");
+    Notification.warning({ content: "请先选择区块链！", position: 'topLeft' });
     return;
   }
   rpcManageRef.value?.show();
@@ -1135,7 +1135,7 @@ function showRpcManage() {
 // 显示代币管理弹窗
 function showTokenManage() {
   if (!chainValue.value) {
-    Notification.warning("请先选择区块链！");
+    Notification.warning({ content: "请先选择区块链！", position: 'topLeft' });
     return;
   }
   tokenManageRef.value?.show();
@@ -1144,7 +1144,7 @@ function showTokenManage() {
 // 打开区块链浏览器
 function openBlockchainScan() {
   if (!currentChain.value?.scan_url) {
-    Notification.warning('当前链没有配置区块链浏览器地址');
+    Notification.warning({ content: '当前链没有配置区块链浏览器地址', position: 'topLeft' });
     return;
   }
 
@@ -1155,7 +1155,7 @@ function openBlockchainScan() {
       open(currentChain.value.scan_url);
     }).catch(error => {
       console.error('打开浏览器失败:', error);
-      Notification.error('打开浏览器失败');
+      Notification.error({ content: '打开浏览器失败', position: 'topLeft' });
     });
   } else {
     // 在浏览器环境中直接打开新窗口

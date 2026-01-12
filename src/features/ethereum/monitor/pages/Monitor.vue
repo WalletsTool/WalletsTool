@@ -98,14 +98,14 @@ async function confirmImport() {
     data.value.push(...list.map(a => ({
       address: a, nonce: '', plat_balance: '', change_desc: '', last_change_at: '', error_msg: '', exec_status: '0'
     })))
-    Notification.success(`成功导入 ${list.length} 条地址`)
+    Notification.success({ content: `成功导入 ${list.length} 条地址`, position: 'topLeft' })
     importVisible.value = false
     importText.value = ''
     validationErrors.value = []
     addressErrorLines.value = []
     return true
   } catch (e) {
-    Notification.error('导入失败：' + (e.message || e))
+    Notification.error({ content: '导入失败：' + (e.message || e), position: 'topLeft' })
     return false
   } finally { importLoading.value = false }
 }
@@ -162,15 +162,15 @@ async function pollOnce() {
 }
 
 async function startMonitoring() {
-  if (data.value.length === 0) { Notification.warning('请先导入地址'); return }
-  if (!chainValue.value) { Notification.warning('请先选择区块链'); return }
+  if (data.value.length === 0) { Notification.warning({ content: '请先导入地址', position: 'topLeft' }); return }
+  if (!chainValue.value) { Notification.warning({ content: '请先选择区块链', position: 'topLeft' }); return }
   if (monitoring.value) return
   monitoring.value = true
   showProgress.value = true
   await pollOnce()
   const sec = Number(intervalSec.value) > 0 ? Number(intervalSec.value) : 15
   timer = setInterval(pollOnce, sec * 1000)
-  Notification.success('已开始监控')
+  Notification.success({ content: '已开始监控', position: 'topLeft' })
 }
 
 function stopMonitoring() {
@@ -178,13 +178,13 @@ function stopMonitoring() {
   monitoring.value = false
   showProgress.value = false
   if (timer) { clearInterval(timer); timer = null }
-  Notification.info('已停止监控')
+  Notification.info({ content: '已停止监控', position: 'topLeft' })
 }
 
 function deleteSelected() {
-  if (monitoring.value) { Notification.warning('请先停止监控后再删除'); return }
+  if (monitoring.value) { Notification.warning({ content: '请先停止监控后再删除', position: 'topLeft' }); return }
   data.value = data.value.filter(i => !selectedKeys.value.includes(i.address))
-  Notification.success('删除成功')
+  Notification.success({ content: '删除成功', position: 'topLeft' })
 }
 
 function clearAll() {

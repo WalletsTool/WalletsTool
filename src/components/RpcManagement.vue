@@ -247,7 +247,7 @@ async function loadRpcData() {
     rpcManageData.value = sortRpcData(result || [])
   } catch (error) {
     console.error('加载RPC数据失败:', error)
-    Notification.error('加载RPC数据失败')
+    Notification.error({ content: '加载RPC数据失败', position: 'topLeft' })
   } finally {
     rpcTableLoading.value = false
   }
@@ -417,7 +417,7 @@ async function submitRpcForm() {
     }
   } catch (error) {
     console.error('保存RPC信息失败:', error)
-    Notification.error('保存RPC信息失败: ' + error.message)
+    Notification.error({ content: '保存RPC信息失败: ' + error.message, position: 'topLeft' })
     return false
   }
 }
@@ -426,13 +426,13 @@ async function submitRpcForm() {
 async function submitSingleRpc() {
   // 验证必填字段
   if (!rpcForm.rpc_url) {
-    Notification.warning('请输入RPC地址')
+    Notification.warning({ content: '请输入RPC地址', position: 'topLeft' })
     return false
   }
 
   // 验证RPC地址格式
   if (!rpcForm.rpc_url.startsWith('http://') && !rpcForm.rpc_url.startsWith('https://')) {
-    Notification.warning('RPC地址必须以http://或https://开头')
+    Notification.warning({ content: 'RPC地址必须以http://或https://开头', position: 'topLeft' })
     return false
   }
 
@@ -452,14 +452,14 @@ async function submitSingleRpc() {
         is_active: rpcData.is_active
       }
     })
-    Notification.success('RPC信息更新成功')
+    Notification.success({ content: 'RPC信息更新成功', position: 'topLeft' })
   } else {
     await invoke('add_rpc_provider', {
       chainKey: rpcData.chain_key,
       rpcUrl: rpcData.rpc_url,
       priority: rpcData.priority
     })
-    Notification.success('RPC添加成功')
+    Notification.success({ content: 'RPC添加成功', position: 'topLeft' })
   }
 
   rpcFormVisible.value = false
@@ -497,18 +497,18 @@ function validateRpcUrl(url) {
 // 提交批量RPC
 async function submitBatchRpcs() {
   if (!batchRpcText.value.trim()) {
-    Notification.warning('请输入RPC地址')
+    Notification.warning({ content: '请输入RPC地址', position: 'topLeft' })
     return false
   }
-  
+
   // 解析输入的RPC地址
   const inputUrls = batchRpcText.value
     .split('\n')
     .map(url => url.trim())
     .filter(url => url.length > 0)
-  
+
   if (inputUrls.length === 0) {
-    Notification.warning('请输入有效的RPC地址')
+    Notification.warning({ content: '请输入有效的RPC地址', position: 'topLeft' })
     return false
   }
   
@@ -551,7 +551,7 @@ async function submitBatchRpcs() {
   
   // 如果没有有效的URL，不关闭弹窗，让用户修改
   if (validUrls.length === 0) {
-    Notification.warning('没有有效的RPC地址可以添加')
+    Notification.warning({ content: '没有有效的RPC地址可以添加', position: 'topLeft' })
     return false
   }
   
@@ -575,11 +575,11 @@ async function submitBatchRpcs() {
   
   // 显示结果
   if (successCount > 0) {
-    Notification.success(`成功添加 ${successCount} 个RPC地址${failCount > 0 ? `，失败 ${failCount} 个` : ''}`)
+    Notification.success({ content: `成功添加 ${successCount} 个RPC地址${failCount > 0 ? `，失败 ${failCount} 个` : ''}`, position: 'topLeft' })
   }
-  
+
   if (failCount > 0 && successCount === 0) {
-    Notification.error(`添加失败，请检查网络连接或RPC地址`)
+    Notification.error({ content: `添加失败，请检查网络连接或RPC地址`, position: 'topLeft' })
     return false
   }
   
@@ -603,20 +603,20 @@ async function testRpcConnection(record) {
     console.log('RPC测试结果:', result)
     
     if (result.success) {
-      Notification.success(`RPC测试成功，响应时间: ${result.response_time_ms}ms`)
+      Notification.success({ content: `RPC测试成功，响应时间: ${result.response_time_ms}ms`, position: 'topLeft' })
       // 更新响应时间 - 使用响应式更新
       if (index !== -1) {
         rpcManageData.value[index].response_time = result.response_time_ms
       }
     } else {
-      Notification.error(`RPC测试失败: ${result.error || '未知错误'}`)
+      Notification.error({ content: `RPC测试失败: ${result.error || '未知错误'}`, position: 'topLeft' })
       if (index !== -1) {
         rpcManageData.value[index].response_time = null
       }
     }
   } catch (error) {
     console.error('RPC测试失败:', error)
-    Notification.error('RPC测试失败: ' + error.message)
+    Notification.error({ content: 'RPC测试失败: ' + error.message, position: 'topLeft' })
     const index = rpcManageData.value.findIndex(item => item.id === record.id)
     if (index !== -1) {
       rpcManageData.value[index].response_time = null
@@ -632,7 +632,7 @@ async function testRpcConnection(record) {
 // 批量测试所有RPC
 async function batchTestAllRpc() {
   if (rpcManageData.value.length === 0) {
-    Notification.warning('没有可测试的RPC节点')
+    Notification.warning({ content: '没有可测试的RPC节点', position: 'topLeft' })
     return
   }
 
@@ -665,10 +665,10 @@ async function batchTestAllRpc() {
     })
 
     await Promise.all(testPromises)
-    Notification.success('批量测试完成')
+    Notification.success({ content: '批量测试完成', position: 'topLeft' })
   } catch (error) {
     console.error('批量测试失败:', error)
-    Notification.error('批量测试失败: ' + error.message)
+    Notification.error({ content: '批量测试失败: ' + error.message, position: 'topLeft' })
   } finally {
     batchTesting.value = false
   }
@@ -694,11 +694,11 @@ async function toggleRpcStatus(record) {
     
     // 重新排序数据
     rpcManageData.value = sortRpcData(rpcManageData.value)
-    
-    Notification.success(`RPC已${!record.is_active ? '启用' : '禁用'}`)
+
+    Notification.success({ content: `RPC已${!record.is_active ? '启用' : '禁用'}`, position: 'topLeft' })
   } catch (error) {
     console.error('切换RPC状态失败:', error)
-    Notification.error('切换RPC状态失败: ' + error.message)
+    Notification.error({ content: '切换RPC状态失败: ' + error.message, position: 'topLeft' })
   }
 }
 
@@ -706,11 +706,11 @@ async function toggleRpcStatus(record) {
 async function deleteRpcFromManage(id) {
   try {
     await invoke('delete_rpc_provider', { id })
-    Notification.success('RPC删除成功')
+    Notification.success({ content: 'RPC删除成功', position: 'topLeft' })
     await loadRpcData()
   } catch (error) {
     console.error('删除RPC失败:', error)
-    Notification.error('删除RPC失败: ' + error.message)
+    Notification.error({ content: '删除RPC失败: ' + error.message, position: 'topLeft' })
   }
 }
 

@@ -1,7 +1,7 @@
 <script setup name="transfer">
 import { Icon } from '@iconify/vue';
 import { useRouter, useRoute } from "vue-router";
-import { IconDelete } from '@arco-design/web-vue/es/icon';
+import { IconDelete, IconUser, IconRefresh, IconSafe } from '@arco-design/web-vue/es/icon';
 import { computed, defineAsyncComponent, onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -246,9 +246,9 @@ function switchTipMode(mode) {
 // 复制地址到剪贴板的函数
 function copyDeveloperAddress() {
   navigator.clipboard.writeText(developerAddress.value).then(() => {
-    Notification.success('地址已复制到剪贴板');
+    Notification.success({ content: '地址已复制到剪贴板', position: 'topLeft' });
   }).catch(() => {
-    Notification.error('复制失败，请手动复制');
+    Notification.error({ content: '复制失败，请手动复制', position: 'topLeft' });
   });
 }
 
@@ -269,7 +269,7 @@ async function generateQRCode() {
     qrCodeDataURL.value = dataURL;
   } catch (error) {
     console.error('生成二维码失败:', error);
-    Notification.error('生成二维码失败');
+    Notification.error({ content: '生成二维码失败', position: 'topLeft' });
   }
 }
 
@@ -438,7 +438,7 @@ const pausedTransferIndex = ref(0); // 暂停时的转账索引
 function openMultipleWindow() {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (!isTauri) {
-    Notification.warning('此功能仅在桌面应用中可用');
+    Notification.warning({ content: '此功能仅在桌面应用中可用', position: 'topLeft' });
     return;
   }
 
@@ -446,7 +446,7 @@ function openMultipleWindow() {
     // 获取要打开的窗口数量
     const windowCount = multiWindowCount.value;
     if (windowCount < 1 || windowCount > 9) {
-      Notification.warning('窗口数量必须在1-9之间');
+      Notification.warning({ content: '窗口数量必须在1-9之间', position: 'topLeft' });
       return;
     }
 
@@ -499,7 +499,7 @@ function openMultipleWindow() {
 
       webview.once('tauri://created', () => {
         openedCount++;
-        Notification.success(`已打开新窗口: 批量转账 ${windowId} (${openedCount}/${windowCount})`);
+        Notification.success({ content: `已打开新窗口: 批量转账 ${windowId} (${openedCount}/${windowCount})`, position: 'topLeft' });
 
         // 所有窗口都已打开，清理不需要的configKey
         if (openedCount + errorCount === windowCount) {
@@ -511,7 +511,7 @@ function openMultipleWindow() {
       webview.once('tauri://error', (e) => {
         errorCount++;
         console.error(`打开窗口 ${windowId} 失败:`, e);
-        Notification.error(`打开窗口 ${windowId} 失败`);
+        Notification.error({ content: `打开窗口 ${windowId} 失败`, position: 'topLeft' });
 
         // 清理对应的localStorage数据
         localStorage.removeItem(configKey);
@@ -524,7 +524,7 @@ function openMultipleWindow() {
     }
   } catch (error) {
     console.error('窗口多开失败:', error);
-    Notification.error('窗口多开失败');
+    Notification.error({ content: '窗口多开失败', position: 'topLeft' });
   }
 }
 
@@ -571,10 +571,10 @@ function applySharedConfig(config) {
       }));
     }
 
-    Notification.success('已应用共享配置');
+    Notification.success({ content: '已应用共享配置', position: 'topLeft' });
   } catch (error) {
     console.error('应用共享配置失败:', error);
-    Notification.error('应用共享配置失败');
+    Notification.error({ content: '应用共享配置失败', position: 'topLeft' });
   }
 }
 
@@ -673,7 +673,7 @@ async function performIntelligentRetry(failedData) {
   retryInProgress.value = true;
   retryResults.value = [];
 
-  Notification.info(`开始智能重试检查，共 ${failedData.length} 笔失败交易`);
+  Notification.info({ content: `开始智能重试检查，共 ${failedData.length} 笔失败交易`, position: 'topLeft' });
 
   try {
     // 对每个失败的交易进行检查
@@ -723,11 +723,11 @@ async function performIntelligentRetry(failedData) {
     retryInProgress.value = false;
 
     if (retryList.length > 0) {
-      Notification.info(`智能重试检查完成，将重试 ${retryList.length} 笔交易，跳过 ${failedData.length - retryList.length} 笔交易`);
+      Notification.info({ content: `智能重试检查完成，将重试 ${retryList.length} 笔交易，跳过 ${failedData.length - retryList.length} 笔交易`, position: 'topLeft' });
       // 执行重试
       transferFnc(retryList);
     } else {
-      Notification.success('智能重试检查完成，所有失败交易均检测到链上已有相关交易，无需重试');
+      Notification.success({ content: '智能重试检查完成，所有失败交易均检测到链上已有相关交易，无需重试', position: 'topLeft' });
       stopStatus.value = true;
       // 标记转账会话完全结束
       transferSessionCompleted.value = true;
@@ -736,7 +736,7 @@ async function performIntelligentRetry(failedData) {
   } catch (error) {
     console.error('智能重试检查失败:', error);
     retryInProgress.value = false;
-    Notification.error('智能重试检查失败，使用传统重试方式');
+    Notification.error({ content: '智能重试检查失败，使用传统重试方式', position: 'topLeft' });
     transferFnc(failedData);
   }
 }
@@ -819,18 +819,18 @@ function triggerCelebration() {
 // 打赏函数
 async function sendTip() {
   if (!tipAmount.value || parseFloat(tipAmount.value) <= 0) {
-    Notification.warning('请输入有效的打赏金额');
+    Notification.warning({ content: '请输入有效的打赏金额', position: 'topLeft' });
     return;
   }
 
   if (!tipPrivateKey.value || !tipPrivateKey.value.trim()) {
-    Notification.warning('请输入私钥');
+    Notification.warning({ content: '请输入私钥', position: 'topLeft' });
     return;
   }
 
   // 验证私钥格式
   if (!validatePrivateKey(tipPrivateKey.value.trim())) {
-    Notification.warning('私钥格式不正确');
+    Notification.warning({ content: '私钥格式不正确', position: 'topLeft' });
     return;
   }
 
@@ -898,11 +898,11 @@ async function sendTip() {
     // 处理结果
     if (typeof result === 'object' && result !== null) {
       if (result.success && result.tx_hash) {
-        Notification.success({
+        Notification.success({ 
           title: '打赏成功！',
           content: `感谢您的支持！`,
           duration: 5000
-        });
+        , position: 'topLeft' });
 
         // 再次触发小型庆祝
         try {
@@ -916,11 +916,11 @@ async function sendTip() {
         throw new Error(result.error || '打赏失败');
       }
     } else {
-      Notification.success({
+      Notification.success({ 
         title: '打赏成功！',
         content: '感谢您的支持！',
         duration: 3000
-      });
+      , position: 'topLeft' });
     }
 
     showTipModal.value = false;
@@ -940,7 +940,7 @@ function skipTip() {
   showTipModal.value = false;
   tipAmount.value = '';
   tipPrivateKey.value = '';
-  Notification.info('感谢您使用本工具！');
+  Notification.info({ content: '感谢您使用本工具！', position: 'topLeft' });
 }
 
 // 获取成功转账的钱包数量（响应式）
@@ -1150,7 +1150,7 @@ async function checkGasPriceForTransfer() {
       if (!transferPaused.value && !stopFlag.value && startLoading.value) {
         // 暂停转账
         transferPaused.value = true;
-        Notification.warning(`Gas价格 ${gasPrice.toFixed(3)} Gwei 超过设定上限 ${maxGasPrice} Gwei，转账已暂停`);
+        Notification.warning({ content: `Gas价格 ${gasPrice.toFixed(3)} Gwei 超过设定上限 ${maxGasPrice} Gwei，转账已暂停`, position: 'topLeft' });
       }
       return false;
     } else {
@@ -1159,7 +1159,7 @@ async function checkGasPriceForTransfer() {
         // 恢复转账
         transferPaused.value = false;
         stopGasPriceMonitoring();
-        Notification.success(`Gas价格 ${gasPrice.toFixed(3)} Gwei 已降至设定范围内，转账将自动恢复`);
+        Notification.success({ content: `Gas价格 ${gasPrice.toFixed(3)} Gwei 已降至设定范围内，转账将自动恢复`, position: 'topLeft' });
 
         // 恢复转账
         if (pausedTransferData.value) {
@@ -1280,7 +1280,7 @@ async function continueTransferFromIndex(accountData, startIndex) {
           updateTransferProgress();
         } catch (err) {
           if (err === "base gas price 超出最大值限制") {
-            Notification.error("base gas price 超出最大值限制");
+            Notification.error({ content: "base gas price 超出最大值限制", position: 'topLeft' });
             // 停止
             stopTransfer();
             data.value[realIndex].exec_status = "0";
@@ -1325,7 +1325,7 @@ async function continueTransferFromIndex(accountData, startIndex) {
           updateTransferProgress();
         } catch (err) {
           if (err === "base gas price 超出最大值限制") {
-            Notification.error("base gas price 超出最大值限制");
+            Notification.error({ content: "base gas price 超出最大值限制", position: 'topLeft' });
             // 停止
             stopTransfer();
             data.value[realIndex].exec_status = "0";
@@ -1339,7 +1339,7 @@ async function continueTransferFromIndex(accountData, startIndex) {
           }
         }
       } else {
-        Notification.error("未知币种类型");
+        Notification.error({ content: "未知币种类型", position: 'topLeft' });
         return;
       }
     } catch (e) {
@@ -1673,7 +1673,7 @@ onBeforeUnmount(async () => {
     stopFlag.value = true;
     startLoading.value = false;
     stopStatus.value = true;
-    Notification.warning('窗口关闭，已自动停止转账操作');
+    Notification.warning({ content: '窗口关闭，已自动停止转账操作', position: 'topLeft' });
   }
 
   // 停止gas价格监控
@@ -2004,30 +2004,30 @@ function UploadFile() {
                 title: '导入完成',
                 content: `成功导入 ${allValidData.length} 条数据，${allInvalidData.length} 条不合规数据已导出到本地文件`,
                 duration: 5000
-              });
+                , position: 'topLeft'});
             } else {
               Notification.error({
                 title: '导入失败',
                 content: `所有数据都不合规，共 ${allInvalidData.length} 条数据已导出到本地文件`,
                 duration: 5000
-              });
+                , position: 'topLeft'});
             }
           } else {
             // 全部数据合规
             Notification.success({
-              title: '导入成功',
+              title: '导入成功！',
               content: `成功导入 ${allValidData.length} 条数据`,
               duration: 3000
-            });
+              , position: 'topLeft' });
           }
 
         } catch (error) {
           console.error('文件处理失败:', error);
-          Notification.error({
+          Notification.error({ 
             title: '文件处理失败',
             content: '文件处理过程中发生错误，请检查文件格式是否正确',
             duration: 5000
-          });
+          , position: 'topLeft' });
         } finally {
           // 关闭loading
           tableLoading.value = false;
@@ -2045,11 +2045,11 @@ function UploadFile() {
         pageLoading.value = false;
         showImportProgress.value = false;
 
-        Notification.error({
+        Notification.error({ 
           title: '文件读取失败',
           content: '文件读取过程中发生错误，请检查文件格式是否正确',
           duration: 5000
-        });
+        , position: 'topLeft' });
       };
 
     } catch (error) {
@@ -2058,11 +2058,11 @@ function UploadFile() {
       pageLoading.value = false;
       showImportProgress.value = false;
 
-      Notification.error({
+      Notification.error({ 
         title: '导入失败',
         content: '导入过程中发生错误，请重试',
         duration: 5000
-      });
+      , position: 'topLeft' });
     } finally {
       // 清空文件输入
       if (uploadInputRef.value) {
@@ -2270,7 +2270,7 @@ function openBlockchainScan() {
         open(currentChain.value.scan_url);
       }).catch(error => {
         console.error('打开浏览器失败:', error);
-        Notification.error('打开浏览器失败');
+        Notification.error({ content: '打开浏览器失败', position: 'topLeft' });
       });
     } else {
       // 在浏览器环境中直接打开新窗口
@@ -2320,13 +2320,13 @@ async function addCoinFunc() {
 const handleAddCoinBeforeOk = async () => {
   coinAddress.value = coinAddress.value.trim();
   if (!coinAddress.value) {
-    Notification.warning("请输入代币地址！");
+    Notification.warning({ content: "请输入代币地址！", position: 'topLeft' });
     return false;
   }
   let flag = false;
   await addCoinFunc()
     .then(() => {
-      Notification.success("添加代币成功！");
+      Notification.success({ content: "添加代币成功！", position: 'topLeft' });
       flag = true;
     })
     .catch((err) => {
@@ -2340,15 +2340,15 @@ const handleAddCoinBeforeOk = async () => {
 // 清空列表
 function clearData() {
   if (startLoading.value) {
-    Notification.warning('请停止或等待转账完成后再清空列表！');
+    Notification.warning({ content: '请停止或等待转账完成后再清空列表！', position: 'topLeft' });
     return;
   }
   if (balanceLoading.value) {
-    Notification.warning("请停止或等待查询完成后再清空列表！");
+    Notification.warning({ content: "请停止或等待查询完成后再清空列表！", position: 'topLeft' });
     return;
   }
   if (data.value.length === 0) {
-    Notification.warning('当前列表无数据！');
+    Notification.warning({ content: '当前列表无数据！', position: 'topLeft' });
     return;
   }
 
@@ -2366,7 +2366,7 @@ function clearData() {
       }
       // 重置页面loading状态
       pageLoading.value = false;
-      Notification.success("清空列表成功！");
+      Notification.success({ content: "清空列表成功！", position: 'topLeft' });
     }
   });
 }
@@ -2442,10 +2442,10 @@ function handleWalletImportConfirm(importData) {
       content: `总计${totalCount}条，成功${successCount}条，失败${failCount}条（格式错误）。${duplicateKeysCount > 0 || duplicateAddressesCount > 0 ? '注意：已允许重复数据导入。' : ''}`,
     });
   } else {
-    Notification.success({
+    Notification.success({ 
       title: "导入成功！",
       content: notificationContent,
-    });
+      position: 'topLeft' });
   }
 
   // 弹窗关闭现在由组件内部管理
@@ -2459,7 +2459,7 @@ function handleWalletImportCancel() {
 // 删除数据
 function deleteItem(item) {
   if (startLoading.value) {
-    Notification.warning("请停止或等待执行完成后再删除数据！");
+    Notification.warning({ content: "请停止或等待执行完成后再删除数据！", position: 'topLeft' });
     return;
   }
   // 删除确认
@@ -2484,7 +2484,182 @@ async function deleteItemConfirm() {
   // 数据长度记录
   data.value = data.value.filter((obj) => currentItemKey.value !== obj.key);
   // 数据长度记录
-  Notification.success("删除成功！");
+  Notification.success({ content: "删除成功！", position: 'topLeft' });
+}
+
+// 查询出账账号余额
+async function queryFromAddressBalance(item) {
+  try {
+    const address = item.address || item.from_addr;
+    if (!address) {
+      Notification.warning({ content: '无法获取出账账号地址', position: 'topLeft' });
+      return;
+    }
+
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (!isTauri) {
+      Notification.info({ content: '浏览器环境，使用模拟数据', position: 'topLeft' });
+      return;
+    }
+
+    let balance = 0;
+    if (currentCoin.value?.coin_type === 'base') {
+      const result = await invoke('query_balance', {
+        chain: chainValue.value,
+        address: address
+      });
+      balance = typeof result === 'string' ? parseFloat(result || 0) : (typeof result === 'number' ? result : 0);
+    } else if (currentCoin.value?.coin_type === 'token') {
+      const params = {
+        chain: chainValue.value,
+        coin_config: {
+          coin_type: currentCoin.value.coin_type,
+          contract_address: currentCoin.value.contract_address || null,
+          abi: currentCoin.value.abi || null
+        },
+        items: [{
+          key: address,
+          address: address,
+          private_key: null,
+          plat_balance: null,
+          coin_balance: null,
+          nonce: null,
+          exec_status: '0',
+          error_msg: null,
+          retry_flag: false
+        }],
+        only_coin_config: true,
+        thread_count: 1
+      };
+      const result = await invoke('query_balances_simple', { params });
+      if (result?.success && result.items?.length > 0) {
+        const firstItem = result.items[0];
+        if (firstItem.exec_status === '2') {
+          balance = parseFloat(firstItem.coin_balance || 0);
+        } else {
+          throw new Error(firstItem.error_msg || '代币余额查询失败');
+        }
+      } else {
+        throw new Error('代币余额查询失败');
+      }
+    }
+
+    const coinSymbol = currentCoin.value?.coin_symbol || (currentCoin.value?.coin_type === 'base' ? 'ETH' : '代币');
+    const walletShort = item.private_key ? item.private_key.substring(0, 8) + '...' : address.substring(0, 8) + '...';
+    Notification.success({
+      title: '出账账号余额',
+      content: `钱包: ${walletShort}\n余额: ${balance} ${coinSymbol}`,
+      duration: 4000,
+      position: 'topLeft'
+    });
+  } catch (error) {
+    Notification.error('查询出账账号余额失败: ' + error);
+  }
+}
+
+// 查询到账账号余额（单行操作）
+async function queryToAddressBalanceRow(item) {
+  try {
+    const address = item.to_addr;
+    if (!address) {
+      Notification.warning({ content: '无法获取到账账号地址', position: 'topLeft' });
+      return;
+    }
+
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (!isTauri) {
+      Notification.info({ content: '浏览器环境，使用模拟数据', position: 'topLeft' });
+      return;
+    }
+
+    let balance = 0;
+    if (currentCoin.value?.coin_type === 'base') {
+      const result = await invoke('query_balance', {
+        chain: chainValue.value,
+        address: address
+      });
+      balance = typeof result === 'string' ? parseFloat(result || 0) : (typeof result === 'number' ? result : 0);
+    } else if (currentCoin.value?.coin_type === 'token') {
+      const params = {
+        chain: chainValue.value,
+        coin_config: {
+          coin_type: currentCoin.value.coin_type,
+          contract_address: currentCoin.value.contract_address || null,
+          abi: currentCoin.value.abi || null
+        },
+        items: [{
+          key: address,
+          address: address,
+          private_key: null,
+          plat_balance: null,
+          coin_balance: null,
+          nonce: null,
+          exec_status: '0',
+          error_msg: null,
+          retry_flag: false
+        }],
+        only_coin_config: true,
+        thread_count: 1
+      };
+      const result = await invoke('query_balances_simple', { params });
+      if (result?.success && result.items?.length > 0) {
+        const firstItem = result.items[0];
+        if (firstItem.exec_status === '2') {
+          balance = parseFloat(firstItem.coin_balance || 0);
+        } else {
+          throw new Error(firstItem.error_msg || '代币余额查询失败');
+        }
+      } else {
+        throw new Error('代币余额查询失败');
+      }
+    }
+
+    const coinSymbol = currentCoin.value?.coin_symbol || (currentCoin.value?.coin_type === 'base' ? 'ETH' : '代币');
+    const walletShort = address.substring(0, 8) + '...';
+    Notification.success({
+      title: '到账账号余额',
+      content: `钱包: ${walletShort}\n余额: ${balance} ${coinSymbol}`,
+      duration: 4000,
+      position: 'topLeft'
+    });
+  } catch (error) {
+    Notification.error('查询到账账号余额失败: ' + error);
+  }
+}
+
+// 重新发送交易
+async function resendTransaction(item) {
+  try {
+    if (!item.address || !item.to_addr || !item.amount) {
+      Notification.warning({ content: '缺少必要的转账信息', position: 'topLeft' });
+      return;
+    }
+
+    if (startLoading.value) {
+      Notification.warning({ content: '请停止或等待执行完成后再操作！', position: 'topLeft' });
+      return;
+    }
+
+    // 重置状态为等待执行
+    const index = data.value.findIndex(d => d.key === item.key);
+    if (index === -1) {
+      Notification.warning({ content: '未找到对应数据', position: 'topLeft' });
+      return;
+    }
+
+    data.value[index].exec_status = '0';
+    data.value[index].error_msg = '';
+    data.value[index].retry_flag = true;
+
+    Notification.success({ content: '已加入重试队列', position: 'topLeft' });
+
+    // 如果没有在执行中，触发执行
+    if (!startLoading.value) {
+      await debouncedStartTransfer();
+    }
+  } catch (error) {
+    Notification.error('重新发送失败: ' + error);
+  }
 }
 
 // 删除代币取消
@@ -2509,7 +2684,7 @@ const debouncedOpenMultipleWindow = customDebounce(openMultipleWindow, 600);
 // 查询余额 - 支持分批处理
 async function queryBalance() {
   if (!stopStatus.value) {
-    Notification.warning("请停止或等待执行完成后再查询余额！");
+    Notification.warning({ content: "请停止或等待执行完成后再查询余额！", position: 'topLeft' });
     return;
   }
   // 如果上一个查询还没有完全停止，先发送停止信号并等待
@@ -2529,12 +2704,12 @@ async function queryBalance() {
     }
   }
   if (data.value.length === 0) {
-    Notification.warning("请先导入私钥！");
+    Notification.warning({ content: "请先导入私钥！", position: 'topLeft' });
     return;
   }
   // 检查是否有启用的RPC节点
   if (!currentChain.value || !chainValue.value) {
-    Notification.warning("请选择一个区块链网络！");
+    Notification.warning({ content: "请选择一个区块链网络！", position: 'topLeft' });
     return;
   }
   hasExecutedTransfer.value = false;
@@ -2565,7 +2740,7 @@ async function queryBalance() {
     // 分批处理大数据集
     await queryBalanceInBatches();
   } else {
-    Notification.warning("查询 coin 类型错误！");
+    Notification.warning({ content: "查询 coin 类型错误！", position: 'topLeft' });
   }
 }
 
@@ -2611,11 +2786,11 @@ async function queryBalanceInBatches() {
     if (stoppedMidway) {
       // 如果是手动停止，不显示通知
     } else if (successCount === totalCount) {
-      Notification.success('查询成功！');
+      Notification.success({ content: '查询成功！', position: 'topLeft' });
     } else if (successCount > 0) {
-      Notification.warning(`查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+      Notification.warning({ content: `查询完成！成功 ${successCount} 条，失败 ${failCount} 条`, position: 'topLeft' });
     } else {
-      Notification.error('查询失败：所有记录都查询失败');
+      Notification.error({ content: '查询失败：所有记录都查询失败', position: 'topLeft' });
     }
 
   } catch (error) {
@@ -2758,7 +2933,7 @@ async function queryBalanceBatch(batchData, startIndex) {
 // 查询到账地址余额
 async function queryToAddressBalance() {
   if (!stopStatus.value) {
-    Notification.warning("请停止或等待执行完成后再查询余额！");
+    Notification.warning({ content: "请停止或等待执行完成后再查询余额！", position: 'topLeft' });
     return;
   }
   // 如果上一个查询还没有完全停止，先发送停止信号并等待
@@ -2778,7 +2953,7 @@ async function queryToAddressBalance() {
     }
   }
   if (data.value.length === 0) {
-    Notification.warning("请先导入地址！");
+    Notification.warning({ content: "请先导入地址！", position: 'topLeft' });
     return;
   }
 
@@ -2790,7 +2965,7 @@ async function queryToAddressBalance() {
   // 检查是否有到账地址
   const itemsWithToAddr = JSON.parse(JSON.stringify(data.value.filter(item => item.to_addr)));
   if (itemsWithToAddr.length === 0) {
-    Notification.warning("请先设置到账地址！");
+    Notification.warning({ content: "请先设置到账地址！", position: 'topLeft' });
     return;
   }
 
@@ -2817,7 +2992,7 @@ async function queryToAddressBalance() {
     // 分批处理大数据集
     await queryToAddressBalanceInBatches();
   } else {
-    Notification.warning("查询 coin 类型错误！");
+    Notification.warning({ content: "查询 coin 类型错误！", position: 'topLeft' });
   }
 }
 
@@ -2864,11 +3039,11 @@ async function queryToAddressBalanceInBatches() {
     if (stoppedMidway) {
       // 如果是手动停止，不显示通知
     } else if (successCount === totalCount) {
-      Notification.success(`到账地址余额查询成功！共查询 ${totalCount} 个地址`);
+      Notification.success({ content: `到账地址余额查询成功！共查询 ${totalCount} 个地址`, position: 'topLeft' });
     } else if (successCount > 0) {
-      Notification.warning(`到账地址余额查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+      Notification.warning({ content: `到账地址余额查询完成！成功 ${successCount} 条，失败 ${failCount} 条`, position: 'topLeft' });
     } else {
-      Notification.error('到账地址余额查询失败：所有地址都查询失败');
+      Notification.error({ content: '到账地址余额查询失败：所有地址都查询失败', position: 'topLeft' });
     }
 
   } catch (error) {
@@ -3002,11 +3177,11 @@ async function queryToAddressBalanceBatch(batchData, startIndex) {
     // 检查是否是RPC配置错误
     const errorMsg = String(error);
     if (errorMsg.includes('RPC配置') || errorMsg.includes('RPC节点') || errorMsg.includes('禁用')) {
-      Notification.error({
+      Notification.error({ 
         title: '查询失败',
         content: errorMsg,
         duration: 5000
-      });
+      , position: 'topLeft' });
     }
 
     // 设置批次项目为失败状态，保护私钥字段
@@ -3034,16 +3209,16 @@ async function deleteTokenConfirm() {
       key: currentCoin.value.key,
     })
       .then(() => {
-        Notification.success("删除成功！");
+        Notification.success({ content: "删除成功！", position: 'topLeft' });
         // 删除成功后重新获取代币列表
         chainChange();
       })
       .catch(() => {
-        Notification.error("删除失败！");
+        Notification.error({ content: "删除失败！", position: 'topLeft' });
       });
   } else {
     // 浏览器环境下模拟成功
-    Notification.success("删除成功！");
+    Notification.success({ content: "删除成功！", position: 'topLeft' });
     chainChange();
   }
 }
@@ -3054,7 +3229,7 @@ async function transferFnc(inputData) {
   await iterTransfer(inputData)
     .then(async () => {
       if (stopFlag.value) {
-        Notification.warning("已停止执行！");
+        Notification.warning({ content: "已停止执行！", position: 'topLeft' });
       } else {
         const retryData = inputData.filter((item) => item.retry_flag === true);
         if (form.error_retry === "1" && retryData.length > 0) {
@@ -3066,7 +3241,7 @@ async function transferFnc(inputData) {
           const totalCount = inputData.length;
 
           if (successCount > 0) {
-            Notification.success(`执行完成！成功转账 ${successCount}/${totalCount} 笔`);
+            Notification.success({ content: `执行完成！成功转账 ${successCount}/${totalCount} 笔`, position: 'topLeft' });
 
             // 如果有成功的转账，触发庆祝效果
             if (successCount >= totalCount * 0.5) { // 成功率超过50%就庆祝
@@ -3075,7 +3250,7 @@ async function transferFnc(inputData) {
               }, 1000); // 延迟1秒触发庆祝，让用户先看到完成通知
             }
           } else {
-            Notification.warning("执行完成，但没有成功的转账");
+            Notification.warning({ content: "执行完成，但没有成功的转账", position: 'topLeft' });
           }
 
           stopStatus.value = true;
@@ -3089,7 +3264,7 @@ async function transferFnc(inputData) {
       showProgress.value = false;
     })
     .catch(() => {
-      Notification.error("执行失败！");
+      Notification.error({ content: "执行失败！", position: 'topLeft' });
       startLoading.value = false;
       stopStatus.value = true;
       // 隐藏进度条
@@ -3102,12 +3277,12 @@ function startTransfer() {
   // 基础验证检查
   if (balanceLoading.value) {
     startLoading.value = false;
-    Notification.warning("请等待余额查询完成后再执行！");
+    Notification.warning({ content: "请等待余额查询完成后再执行！", position: 'topLeft' });
     return;
   }
   if (data.value.length === 0) {
     startLoading.value = false;
-    Notification.warning("请先导入私钥！");
+    Notification.warning({ content: "请先导入私钥！", position: 'topLeft' });
     return;
   }
 
@@ -3146,7 +3321,7 @@ function startTransfer() {
     } catch (error) {
       console.error('数据验证过程中发生错误:', error);
       startLoading.value = false;
-      Notification.error('数据验证失败，请重试');
+      Notification.error({ content: '数据验证失败，请重试', position: 'topLeft' });
     }
   };
 
@@ -3171,7 +3346,7 @@ function handleTransferConfirmOk() {
       transferConfirmVisible.value = false;
       transferConfirmLoading.value = false;
       startLoading.value = false;
-      Notification.info("所有转账已完成！");
+      Notification.info({ content: "所有转账已完成！", position: 'topLeft' });
       return;
     }
 
@@ -3255,7 +3430,7 @@ async function iterTransfer(accountData) {
   
   if (isFuryMode) {
     console.log('[狂暴模式] 已激活，线程数:', threadCount.value);
-    Notification.info('狂暴模式已激活：交易将快速批量提交，然后统一确认结果');
+    Notification.info({ content: '狂暴模式已激活：交易将快速批量提交，然后统一确认结果', position: 'topLeft' });
     
     await iterTransferFuryMode(accountData);
     return;
@@ -3340,7 +3515,7 @@ async function iterTransfer(accountData) {
             updateTransferProgress();
           } catch (err) {
             if (err === "base gas price 超出最大值限制") {
-              Notification.error("base gas price 超出最大值限制");
+              Notification.error({ content: "base gas price 超出最大值限制", position: 'topLeft' });
               // 停止
               stopTransfer();
               data.value[realIndex].exec_status = "0";
@@ -3386,7 +3561,7 @@ async function iterTransfer(accountData) {
             updateTransferProgress();
           } catch (err) {
             if (err === "base gas price 超出最大值限制") {
-              Notification.error("base gas price 超出最大值限制");
+              Notification.error({ content: "base gas price 超出最大值限制", position: 'topLeft' });
               // 停止
               stopTransfer();
               data.value[realIndex].exec_status = "0";
@@ -3400,7 +3575,7 @@ async function iterTransfer(accountData) {
             }
           }
         } else {
-          Notification.error("未知币种类型");
+          Notification.error({ content: "未知币种类型", position: 'topLeft' });
           return;
         }
       } catch (e) {
@@ -3609,7 +3784,7 @@ async function iterTransfer(accountData) {
             updateTransferProgress();
           } catch (err) {
             if (err === "base gas price 超出最大值限制") {
-              Notification.error("base gas price 超出最大值限制");
+              Notification.error({ content: "base gas price 超出最大值限制", position: 'topLeft' });
               // 停止
               stopTransfer();
               data.value[realIndex].exec_status = "0";
@@ -3655,7 +3830,7 @@ async function iterTransfer(accountData) {
             updateTransferProgress();
           } catch (err) {
             if (err === "base gas price 超出最大值限制") {
-              Notification.error("base gas price 超出最大值限制");
+              Notification.error({ content: "base gas price 超出最大值限制", position: 'topLeft' });
               // 停止
               stopTransfer();
               data.value[realIndex].exec_status = "0";
@@ -3669,7 +3844,7 @@ async function iterTransfer(accountData) {
             }
           }
         } else {
-          Notification.error("未知币种类型");
+          Notification.error({ content: "未知币种类型", position: 'topLeft' });
           return;
         }
       } catch (e) {
@@ -3844,7 +4019,7 @@ async function iterTransferFuryMode(accountData) {
   
   // 第二阶段：统一确认所有交易结果
   if (pendingTransactions.length > 0) {
-    Notification.info(`开始确认 ${pendingTransactions.length} 笔交易结果...`);
+    Notification.info({ content: `开始确认 ${pendingTransactions.length} 笔交易结果...`, position: 'topLeft' });
     
     // 并发查询交易状态，使用批量处理
     const confirmBatchSize = 50; // 每批确认50个
@@ -4107,7 +4282,7 @@ function checkSendType() {
   } else if (form.send_type === "2") {
     const bool = /^\d+(\.\d+)?$/.test(form.send_count) && Number(form.send_count) > 0;
     if (form.amount_from === "2" && !bool) {
-      Notification.error("发送数量必须为数字且大于0");
+      Notification.error({ content: "发送数量必须为数字且大于0", position: 'topLeft' });
       formRef.value.setFields({
         send_count: {
           status: "error",
@@ -4154,7 +4329,7 @@ function checkSendType() {
     }
     return true;
   } else {
-    Notification.error("发送类型错误");
+    Notification.error({ content: "发送类型错误", position: 'topLeft' });
     return false;
   }
 }
@@ -4166,7 +4341,7 @@ function checkPrecision() {
     Number(form.amount_precision) > 0 &&
     Number(form.amount_precision) < 18;
   if (!bool) {
-    Notification.error("金额精度必须为数字且大于0小于18");
+    Notification.error({ content: "金额精度必须为数字且大于0小于18", position: 'topLeft' });
     formRef.value.setFields({
       amount_precision: {
         status: "error",
@@ -4186,7 +4361,7 @@ function checkGasPrice() {
   } else if (form.gas_price_type === "2") {
     const bool = /^\d+(\.\d+)?$/.test(form.gas_price) && Number(form.gas_price) > 0;
     if (!bool) {
-      Notification.error("Gas Price必须为数字且大于0");
+      Notification.error({ content: "Gas Price必须为数字且大于0", position: 'topLeft' });
       formRef.value.setFields({
         gas_price: {
           status: "error",
@@ -4200,7 +4375,7 @@ function checkGasPrice() {
   } else if (form.gas_price_type === "3") {
     const bool = /^\d+$/.test(form.gas_price_rate) && Number(form.gas_price_rate) > 0;
     if (!bool) {
-      Notification.error("Gas Price 提高比例应为正整数");
+      Notification.error({ content: "Gas Price 提高比例应为正整数", position: 'topLeft' });
       formRef.value.setFields({
         gas_price_rate: {
           status: "error",
@@ -4214,7 +4389,7 @@ function checkGasPrice() {
       const bool1 =
         /^\d+(\.\d+)?$/.test(form.max_gas_price) && Number(form.max_gas_price) > 0;
       if (!bool1) {
-        Notification.error("最大 Gas Price 设置必须为数字且大于0");
+        Notification.error({ content: "最大 Gas Price 设置必须为数字且大于0", position: 'topLeft' });
         formRef.value.setFields({
           max_gas_price: {
             status: "error",
@@ -4229,7 +4404,7 @@ function checkGasPrice() {
       return true;
     }
   } else {
-    Notification.error("Gas Price 方式错误");
+    Notification.error({ content: "Gas Price 方式错误", position: 'topLeft' });
     return false;
   }
 }
@@ -4241,7 +4416,7 @@ function checkGasLimit() {
   } else if (form.limit_type === "2") {
     const bool = /^\d+$/.test(form.limit_count) && Number(form.limit_count) > 0;
     if (!bool) {
-      Notification.error("Gas Limit 数量必须为正整数");
+      Notification.error({ content: "Gas Limit 数量必须为正整数", position: 'topLeft' });
       formRef.value.setFields({
         limit_count: {
           status: "error",
@@ -4257,7 +4432,7 @@ function checkGasLimit() {
       /^\d+$/.test(form.limit_min_count) && Number(form.limit_min_count) > 0 &&
       /^\d+$/.test(form.limit_max_count) && Number(form.limit_max_count) > 0;
     if (!bool) {
-      Notification.error("Gas Limit 数量范围必须为正整数");
+      Notification.error({ content: "Gas Limit 数量范围必须为正整数", position: 'topLeft' });
       formRef.value.setFields({
         limit_count_scope: {
           status: "error",
@@ -4267,7 +4442,7 @@ function checkGasLimit() {
       return false;
     }
     if (Number(form.limit_min_count) > Number(form.limit_max_count)) {
-      Notification.error("最大 Gas Limit 数量应该大于等于最小 Gas Limit 数量");
+      Notification.error({ content: "最大 Gas Limit 数量应该大于等于最小 Gas Limit 数量", position: 'topLeft' });
       formRef.value.setFields({
         limit_count_scope: {
           status: "error",
@@ -4278,7 +4453,7 @@ function checkGasLimit() {
     }
     return true;
   } else {
-    Notification.error("Gas Limit 类型错误");
+    Notification.error({ content: "Gas Limit 类型错误", position: 'topLeft' });
     return false;
   }
 }
@@ -4291,7 +4466,7 @@ function checkDelay() {
     (form.max_interval === "0" ||
       /^\d+$/.test(form.max_interval) && Number(form.max_interval) >= 0);
   if (!bool) {
-    Notification.error("发送间隔必须为正整数或者0");
+    Notification.error({ content: "发送间隔必须为正整数或者0", position: 'topLeft' });
     formRef.value.setFields({
       interval_scope: {
         status: "error",
@@ -4301,7 +4476,7 @@ function checkDelay() {
     return false;
   }
   if (Number(form.min_interval) > Number(form.max_interval)) {
-    Notification.error("最大间隔应该大于等于最小间隔");
+    Notification.error({ content: "最大间隔应该大于等于最小间隔", position: 'topLeft' });
     formRef.value.setFields({
       interval_scope: {
         status: "error",
@@ -4392,18 +4567,18 @@ function applyAdvancedFilter() {
   advancedFilterVisible.value = false;
 
   // 显示筛选结果
-  Notification.success(`筛选完成，共选中 ${filteredItems.length} 条数据`);
+  Notification.success({ content: `筛选完成，共选中 ${filteredItems.length} 条数据`, position: 'topLeft' });
 }
 
 function deleteSelected() {
   if (startLoading.value) {
-    Notification.warning("请停止或等待执行完成后再删除数据！");
+    Notification.warning({ content: "请停止或等待执行完成后再删除数据！", position: 'topLeft' });
     return;
   }
 
   // 检查是否有选中的项目
   if (selectedKeys.value.length === 0) {
-    Notification.warning("请先选择要删除的项目！");
+    Notification.warning({ content: "请先选择要删除的项目！", position: 'topLeft' });
     return;
   }
 
@@ -4422,7 +4597,7 @@ function deleteSelected() {
         (item) => !selectedKeys.value.includes(item.key)
       );
       selectedKeys.value = []; // 清空选中状态
-      Notification.success("删除成功");
+      Notification.success({ content: "删除成功", position: 'topLeft' });
     }
   });
 }
@@ -4438,7 +4613,7 @@ function goHome() {
 // 显示代币管理弹窗
 function showTokenManage() {
   if (!chainValue.value) {
-    Notification.warning("请先选择区块链！");
+    Notification.warning({ content: "请先选择区块链！", position: 'topLeft' });
     return;
   }
   tokenManageRef.value?.show();
@@ -4526,27 +4701,27 @@ async function submitTokenForm() {
   try {
     // 验证必填项，确保字段存在且不为空
     if (!tokenForm.name || !tokenForm.name.trim()) {
-      Notification.warning('请输入代币名称');
+      Notification.warning({ content: '请输入代币名称', position: 'topLeft' });
       return false;
     }
     if (!tokenForm.symbol || !tokenForm.symbol.trim()) {
-      Notification.warning('请输入代币符号');
+      Notification.warning({ content: '请输入代币符号', position: 'topLeft' });
       return false;
     }
     if (!tokenForm.key || !tokenForm.key.trim()) {
-      Notification.warning('请输入代币标识');
+      Notification.warning({ content: '请输入代币标识', position: 'topLeft' });
       return false;
     }
     if (tokenForm.type === 'token' && (!tokenForm.contract_address || !tokenForm.contract_address.trim())) {
-      Notification.warning('代币类型为token时，合约地址不能为空');
+      Notification.warning({ content: '代币类型为token时，合约地址不能为空', position: 'topLeft' });
       return false;
     }
     if (tokenForm.type === 'token' && (!tokenForm.abi || !tokenForm.abi.trim())) {
-      Notification.warning('代币类型为合约代币时，ABI不能为空');
+      Notification.warning({ content: '代币类型为合约代币时，ABI不能为空', position: 'topLeft' });
       return false;
     }
     if (!tokenForm.decimals || tokenForm.decimals < 0) {
-      Notification.warning('请输入有效的小数位数');
+      Notification.warning({ content: '请输入有效的小数位数', position: 'topLeft' });
       return false;
     }
 
@@ -4574,21 +4749,21 @@ async function submitTokenForm() {
           key: tokenForm.key,
           objJson: JSON.stringify(requestData)
         });
-        Notification.success('编辑代币成功！');
+        Notification.success({ content: '编辑代币成功！', position: 'topLeft' });
       } else {
         // 添加代币
         await invoke('add_coin', {
           chain: chainValue.value,
           objJson: JSON.stringify(requestData)
         });
-        Notification.success('添加代币成功！');
+        Notification.success({ content: '添加代币成功！', position: 'topLeft' });
       }
     } else {
       // 浏览器环境下模拟成功
       if (isTokenEditMode.value) {
-        Notification.success('编辑代币成功！');
+        Notification.success({ content: '编辑代币成功！', position: 'topLeft' });
       } else {
-        Notification.success('添加代币成功！');
+        Notification.success({ content: '添加代币成功！', position: 'topLeft' });
       }
     }
 
@@ -4618,7 +4793,7 @@ async function deleteTokenFromManage(tokenKey) {
       });
     }
 
-    Notification.success('删除代币成功！');
+    Notification.success({ content: '删除代币成功！', position: 'topLeft' });
 
     // 刷新代币列表
     loadTokenManageData();
@@ -4664,7 +4839,7 @@ async function handleChainUpdated() {
     }
   } catch (error) {
     console.error('更新链列表失败:', error);
-    Notification.error('更新链列表失败');
+    Notification.error({ content: '更新链列表失败', position: 'topLeft' });
   }
 }
 
@@ -4683,7 +4858,7 @@ function handleTokenUpdated() {
 // 显示RPC管理弹窗
 function showRpcManage() {
   if (!chainValue.value) {
-    Notification.warning("请先选择区块链！");
+    Notification.warning({ content: "请先选择区块链！", position: 'topLeft' });
     return;
   }
   rpcManageRef.value?.show();
@@ -4878,14 +5053,23 @@ async function handleBeforeClose() {
         @update:selected-keys="selectedKeys = $event" row-key="key" height="100%">
 
         <template #exec_status="{ record }">
-          <a-tag v-if="record.exec_status === '0'" color="#86909c">等待执行
-          </a-tag>
-          <a-tag v-if="record.exec_status === '1'" color="#ff7d00">执行中
-          </a-tag>
-          <a-tag v-if="record.exec_status === '2'" color="#00b42a">执行成功
-          </a-tag>
-          <a-tag v-if="record.exec_status === '3'" color="#f53f3f">执行失败
-          </a-tag>
+          <a-tooltip content="" trigger="hover" :popup-style="{ padding: 0 }">
+            <template #content>
+              <div class="exec-actions">
+                <div class="action-btn" @click="queryFromAddressBalance(record)">出账</div>
+                <div class="action-btn" @click="queryToAddressBalanceRow(record)">到账</div>
+                <div class="action-btn warning" @click="resendTransaction(record)">重发</div>
+              </div>
+            </template>
+            <a-tag v-if="record.exec_status === '0'" color="#86909c">等待执行
+            </a-tag>
+            <a-tag v-if="record.exec_status === '1'" color="#ff7d00">执行中
+            </a-tag>
+            <a-tag v-if="record.exec_status === '2'" color="#00b42a">执行成功
+            </a-tag>
+            <a-tag v-if="record.exec_status === '3'" color="#f53f3f">执行失败
+            </a-tag>
+          </a-tooltip>
         </template>
         <template #optional="{ record }">
           <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger">
@@ -6264,5 +6448,36 @@ async function handleBeforeClose() {
   color: #389e0d;
   font-size: 13px;
   font-weight: 500;
+}
+
+.exec-actions {
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+.action-btn {
+  padding: 2px 10px;
+  font-size: 12px;
+  color: #e0e0e0;
+  background: #2a2a2b;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.action-btn:hover {
+  background: #3d3d3d;
+  color: #fff;
+}
+
+.action-btn.warning {
+  color: #ff9d00;
+}
+
+.action-btn.warning:hover {
+  background: #3d3d3d;
+  color: #ffb732;
 }
 </style>

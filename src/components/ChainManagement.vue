@@ -247,7 +247,7 @@ async function loadChainData() {
     chainManageData.value = result || []
   } catch (error) {
     console.error('加载链数据失败:', error)
-    Notification.error('加载链数据失败')
+    Notification.error({ content: '加载链数据失败', position: 'topLeft' })
   } finally {
     chainTableLoading.value = false
   }
@@ -389,18 +389,18 @@ function normalizeUrl(url) {
 // 批量添加RPC
 function addBatchRpcs() {
   if (!batchRpcText.value.trim()) {
-    Notification.warning('请输入RPC地址')
+    Notification.warning({ content: '请输入RPC地址', position: 'topLeft' })
     return
   }
-  
+
   // 解析输入的RPC地址
   const inputUrls = batchRpcText.value
     .split('\n')
     .map(url => url.trim())
     .filter(url => url.length > 0)
-  
+
   if (inputUrls.length === 0) {
-    Notification.warning('请输入有效的RPC地址')
+    Notification.warning({ content: '请输入有效的RPC地址', position: 'topLeft' })
     return
   }
   
@@ -447,15 +447,15 @@ function addBatchRpcs() {
     // 移除空的RPC URL
     const filteredRpcs = chainForm.rpc_urls.filter(url => url.trim())
     chainForm.rpc_urls = [...filteredRpcs, ...validUrls]
-    
-    Notification.success(`成功添加 ${validUrls.length} 个RPC地址`)
-    
+
+    Notification.success({ content: `成功添加 ${validUrls.length} 个RPC地址`, position: 'topLeft' })
+
     // 延迟关闭弹窗，让用户看到结果
     setTimeout(() => {
       closeBatchRpc()
     }, 2000)
   } else {
-    Notification.warning('没有有效的RPC地址可以添加')
+    Notification.warning({ content: '没有有效的RPC地址可以添加', position: 'topLeft' })
   }
 }
 
@@ -532,14 +532,14 @@ async function submitChainForm() {
   try {
     // 验证必填字段
     if (!chainForm.chain_key || !chainForm.chain_name || !chainForm.chain_id || !chainForm.native_currency_symbol) {
-      Notification.warning('请填写所有必填字段')
+      Notification.warning({ content: '请填写所有必填字段', position: 'topLeft' })
       return false
     }
 
     // 过滤空的RPC URLs
     const filteredRpcUrls = chainForm.rpc_urls.filter(url => url.trim() !== '')
     if (filteredRpcUrls.length === 0) {
-      Notification.warning('至少需要一个有效的RPC地址')
+      Notification.warning({ content: '至少需要一个有效的RPC地址', position: 'topLeft' })
       return false
     }
 
@@ -553,14 +553,14 @@ async function submitChainForm() {
     }
 
     if (isEditMode.value) {
-      await invoke('update_chain', { 
+      await invoke('update_chain', {
         chainKey: chainForm.chain_key,
-        requestJson: JSON.stringify(chainData) 
+        requestJson: JSON.stringify(chainData)
       })
-      Notification.success('链信息更新成功')
+      Notification.success({ content: '链信息更新成功', position: 'topLeft' })
     } else {
       await invoke('add_chain', { requestJson: JSON.stringify(chainData) })
-      Notification.success('链添加成功')
+      Notification.success({ content: '链添加成功', position: 'topLeft' })
     }
 
     chainFormVisible.value = false
@@ -570,7 +570,7 @@ async function submitChainForm() {
     return true
   } catch (error) {
     console.error('保存链信息失败:', error)
-    Notification.error('保存链信息失败: ' + error.message)
+    Notification.error({ content: '保存链信息失败: ' + error.message, position: 'topLeft' })
     return false
   }
 }
@@ -579,13 +579,13 @@ async function submitChainForm() {
 async function deleteChain(chainKey) {
   try {
     await invoke('remove_chain', { chainKey })
-    Notification.success('链删除成功')
+    Notification.success({ content: '链删除成功', position: 'topLeft' })
     await loadChainData()
     emit('refresh')
     emit('chain-updated')
   } catch (error) {
     console.error('删除链失败:', error)
-    Notification.error('删除链失败: ' + error.message)
+    Notification.error({ content: '删除链失败: ' + error.message, position: 'topLeft' })
   }
 }
 

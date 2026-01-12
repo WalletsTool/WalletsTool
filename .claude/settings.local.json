@@ -12,7 +12,8 @@
       "Bash(where cl)",
       "Bash(grep:*)",
       "Edit",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []

@@ -244,12 +244,31 @@ function switchTipMode(mode) {
 }
 
 // 复制地址到剪贴板的函数
-function copyDeveloperAddress() {
-  navigator.clipboard.writeText(developerAddress.value).then(() => {
-    Notification.success({ content: '地址已复制到剪贴板', position: 'topLeft' });
-  }).catch(() => {
-    Notification.error({ content: '复制失败，请手动复制', position: 'topLeft' });
+function copyAddressToClipboard(address) {
+  navigator.clipboard.writeText(address);
+  Notification.success({
+    title: '已复制',
+    content: '地址已复制到剪贴板',
   });
+}
+
+// 链和代币选择弹窗相关变量
+const selectionModalVisible = ref(false);
+
+function showSelectionModal() {
+  selectionModalVisible.value = true;
+}
+
+function handleSelectionModalOk() {
+  selectionModalVisible.value = false;
+}
+
+function handleSelectionModalCancel() {
+  selectionModalVisible.value = false;
+}
+
+function openChainExplorer() {
+  openBlockchainScan();
 }
 
 // 生成二维码的响应式变量
@@ -1584,6 +1603,9 @@ onBeforeMount(async () => {
 });
 
 onMounted(async () => {
+  // 进入页面时直接打开选择弹窗
+  selectionModalVisible.value = true;
+
   // 获取窗口标题和ID
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (isTauri) {
@@ -5061,7 +5083,7 @@ async function handleBeforeClose() {
       </a-button>
     </div>
     <!-- 底部核心操作区 -->
-    <div style="position: fixed; bottom: 20px; right: 50px; display: flex; gap: 20px; z-index: 100;">
+    <div style="position: fixed; bottom: 75px; right: 50px; display: flex; gap: 20px; z-index: 100;">
       <a-dropdown v-if="!balanceLoading && balanceStopStatus">
         <a-button type="primary" class="core-action-btn primary-btn">
           <template #icon>
@@ -5295,79 +5317,11 @@ async function handleBeforeClose() {
       </div>
     </div>
 
-    <!-- 管理代币按钮嵌入 -->
-    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
-      <!-- 链管理按钮 -->
-      <a-button type="primary" @click="showChainManage" style="white-space: nowrap;">
-        <template #icon>
-          <Icon icon="mdi:settings" />
-        </template>
-        区块链管理
-      </a-button>
-      <a-button type="primary" @click="showRpcManage" :disabled="!chainValue" style="white-space: nowrap;">
-        <template #icon>
-          <Icon icon="mdi:link" />
-        </template>
-        RPC管理
-      </a-button>
-      <!-- 链 选择器 -->
-      <a-select v-model="chainValue" :options="chainOptions" @change="chainChange" :field-names="chainFieldNames"
-        size="large" :style="{ width: '65%' }">
-        <template #label="{ data }">
-          <div style="
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            width: 100%;
-          ">
-            <span style="color: gray;">区块链：</span>
-            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
-              style="width: 20px; height: 20px;" />
-            <span style="margin-left: 10px">{{ data?.name }}</span>
-            <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
-            <span v-show="chainValue !== 'sol'" style="flex: 1; text-align: end; color: #00b42a">Gas Price: {{
-              data?.gas_price ?? "未知" }}</span>
-          </div>
-        </template>
-        <template #option="{ data }">
-          <div style="display: flex; flex-direction: row; align-items: center;height: 32px;">
-            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
-              style="width: 20px; height: 20px;" />
-            <span style="margin-left: 10px">{{ data?.name }}</span>
-            <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
-          </div>
-        </template>
-      </a-select>
-      <!-- 区块链浏览器跳转按钮 -->
-      <a-tooltip v-if="currentChain?.scan_url" content="在浏览器中打开区块链浏览器">
-        <a-button type="primary" @click="openBlockchainScan" shape="round" style="white-space: nowrap; padding: 0 8px;">
-          <Icon icon="mdi:open-in-new" />
-        </a-button>
-      </a-tooltip>
-      <a-button type="primary" @click="showTokenManage" :disabled="!chainValue" style="white-space: nowrap;">
-        <template #icon>
-          <Icon icon="mdi:coin" />
-        </template>
-        代币管理
-      </a-button>
-      <!-- 代币 选择器 -->
-      <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames" :style="{ width: '30%' }"
-        @change="coinChange">
-        <template #label="{ data }">
-          <span style="color: gray;">代币：</span>
-          <span style="margin-left: 10px">{{ data?.label }}</span>
-        </template>
-        <template #option="{ data }">
-          <span style="margin-left: 10px">{{ data?.label }}</span>
-        </template>
-      </a-select>
-    </div>
-
     <!-- 细节配置 -->
-    <div style="display: flex; padding-top: 5px; flex-shrink: 0;">
+    <div style="display: flex; padding-top: 20px; flex-shrink: 0;">
       <!-- 细节配置 -->
       <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="vertical">
-        <a-row style="height: 70px; display: flex;">
+        <a-row style="height: 90px; display: flex;">
           <a-form-item field="send_type" label="发送方式" style="width: 330px;">
             <a-radio-group v-model="form.send_type" type="button">
               <a-radio value="1">全部</a-radio>
@@ -5423,7 +5377,7 @@ async function handleBeforeClose() {
             </a-input-group>
           </a-form-item>
         </a-row>
-        <a-row v-show="chainValue !== 'sol'" style="height: 70px; display: flex;">
+        <a-row v-show="chainValue !== 'sol'" style="height: 90px; display: flex;">
           <a-form-item field="limit_type" label="Gas Limit" style="width: 245px;">
             <a-radio-group v-model="form.limit_type" type="button">
               <a-radio value="1">自动</a-radio>
@@ -5733,12 +5687,51 @@ async function handleBeforeClose() {
     </template>
   </a-modal>
 
-  <!-- 代理配置弹窗 -->
+<!-- 代理配置弹窗 -->
   <ProxyConfigModal 
     v-model:modelValue="proxyConfigVisible"
     @config-change="handleProxyConfigChange"
     ref="proxyConfigRef"
   />
+
+  <!-- 链和代币选择弹窗 -->
+  <a-modal v-model:visible="selectionModalVisible" title="选择区块链和代币" :width="600" @ok="handleSelectionModalOk" @cancel="handleSelectionModalCancel">
+    <div class="selection-modal-content">
+      <div class="selection-row">
+        <span class="selection-label">区块链：</span>
+        <a-select v-model="chainValue" :options="chainOptions" @change="chainChange" :field-names="chainFieldNames" class="selection-select" placeholder="请选择区块链">
+          <template #label="{ data }">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name" style="width: 20px; height: 20px;" />
+              <span>{{ data?.name }}</span>
+            </div>
+          </template>
+          <template #option="{ data }">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name" style="width: 20px; height: 20px;" />
+              <span>{{ data?.name }}</span>
+              <span style="color: #86909c; margin-left: auto;">{{ data?.scan_url }}</span>
+            </div>
+          </template>
+        </a-select>
+      </div>
+      <div class="selection-row">
+        <span class="selection-label">代币：</span>
+        <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames" class="selection-select" placeholder="请选择代币" :disabled="!chainValue" @change="coinChange">
+          <template #label="{ data }">
+            <span>{{ data?.label }}</span>
+          </template>
+          <template #option="{ data }">
+            <span>{{ data?.label }}</span>
+          </template>
+        </a-select>
+      </div>
+    </div>
+    <template #footer>
+      <a-button @click="handleSelectionModalCancel">取消</a-button>
+      <a-button type="primary" @click="handleSelectionModalOk">确定</a-button>
+    </template>
+  </a-modal>
 
   <!-- 全页面Loading覆盖层 -->
   <div v-if="pageLoading" class="page-loading-overlay" :class="{ 'with-progress': showImportProgress }">
@@ -5748,6 +5741,60 @@ async function handleBeforeClose() {
       <div v-if="showImportProgress" class="loading-hint">
         请查看页面顶部的进度条了解详细进度
       </div>
+    </div>
+  </div>
+
+  <!-- 状态栏 -->
+  <div class="status-bar">
+    <div class="status-bar-left">
+      <div class="status-group">
+        <div class="status-item status-chain" @click="showSelectionModal" title="点击切换区块链">
+          <ChainIcon v-if="currentChain?.key" :chain-key="currentChain?.key" :pic-data="currentChain?.pic_data" :alt="currentChain?.name" style="width: 14px; height: 14px;" />
+          <span class="status-label">{{ currentChain?.name || '未选择区块链' }}</span>
+          <a-tag v-if="currentChain?.scan_url" size="small" class="status-explorer-tag" @click.stop="openChainExplorer" title="打开区块链浏览器">
+            <Icon icon="mdi:open-in-new" />
+          </a-tag>
+        </div>
+        <div class="status-divider"></div>
+        <div class="status-item status-token" v-if="currentCoin?.label" @click="showSelectionModal" title="点击切换代币">
+          <Icon icon="mdi:coins" style="font-size: 14px;" />
+          <span class="status-label">{{ currentCoin?.label }}</span>
+        </div>
+        <div class="status-item status-empty" v-else>
+          <span class="status-placeholder">未选择代币</span>
+        </div>
+      </div>
+      <div class="status-divider-vertical"></div>
+      <div class="status-group status-gas-group" v-show="chainValue && chainValue !== 'sol'">
+        <Icon icon="mdi:gas-station" style="font-size: 14px; color: var(--text-color-tertiary, #c9cdd4);" />
+        <span class="status-gas-label">Gas:</span>
+        <span class="status-gas-value">{{ currentChain?.gas_price ?? '--' }} <span class="status-gas-unit">Gwei</span></span>
+      </div>
+    </div>
+    <div class="status-bar-right">
+      <a-dropdown>
+        <div class="status-settings-btn" title="设置">
+          <Icon icon="mdi:cog" style="font-size: 15px;" />
+        </div>
+        <template #content>
+          <a-doption @click="showSelectionModal">
+            <template #icon><Icon icon="mdi:swap-horizontal" /></template>
+            重新选择区块链
+          </a-doption>
+          <a-doption @click="showRpcManage" :disabled="!chainValue">
+            <template #icon><Icon icon="mdi:link" /></template>
+            RPC管理
+          </a-doption>
+          <a-doption @click="showChainManage">
+            <template #icon><Icon icon="mdi:web" /></template>
+            区块链管理
+          </a-doption>
+          <a-doption @click="showTokenManage" :disabled="!chainValue">
+            <template #icon><Icon icon="mdi:coin" /></template>
+            代币管理
+          </a-doption>
+        </template>
+      </a-dropdown>
     </div>
   </div>
 
@@ -6013,7 +6060,7 @@ async function handleBeforeClose() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: 20px;
+  padding-bottom: 45px;
 }
 
 /* 隐藏滚动条但保持滚动功能 */
@@ -6604,5 +6651,213 @@ async function handleBeforeClose() {
   0% { transform: scale(1); }
   50% { transform: scale(1.3); }
   100% { transform: scale(1); }
+}
+
+/* 状态栏样式 */
+.status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(to bottom, var(--color-bg-2, #ffffff), var(--color-bg-1, #f7f8fa));
+  border-top: 1px solid var(--color-border, #e5e6eb);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 1000;
+  font-size: 12px;
+}
+
+.status-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-gas-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--color-fill-1, #f2f3f5);
+  border-radius: 12px;
+  margin-left: 4px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-color-secondary, #6b778c);
+}
+
+.status-label {
+  font-weight: 500;
+  color: var(--text-color, #1d2129);
+}
+
+.status-placeholder {
+  color: var(--text-color-quaternary, #c9cdd4);
+  font-style: italic;
+}
+
+.status-explorer-tag {
+  margin-left: 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-fill-1, #f2f3f5);
+  border: 1px solid var(--color-border-2, #e5e6eb);
+  color: var(--text-color-tertiary, #8c8f94);
+  transition: all 0.2s ease;
+}
+
+.status-explorer-tag:hover {
+  background: var(--primary-1, #e8f1ff);
+  border-color: var(--primary-3, #94bfff);
+  color: var(--primary-6, #165dff);
+}
+
+.status-chain {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-chain:hover {
+  background: linear-gradient(135deg, var(--primary-1, #e8f1ff), var(--color-fill-2, #f2f3f5));
+}
+
+.status-chain:hover .status-label {
+  color: var(--primary-6, #165dff);
+}
+
+.status-chain:hover .status-explorer-tag {
+  background: var(--primary-1, #e8f1ff);
+  border-color: var(--primary-3, #94bfff);
+  color: var(--primary-6, #165dff);
+}
+
+.status-token {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-token:hover {
+  background: linear-gradient(135deg, var(--success-1, #e6fffb), var(--color-fill-2, #f2f3f5));
+}
+
+.status-token:hover .status-label {
+  color: var(--success-6, #0fa962);
+}
+
+.status-empty {
+  padding: 4px 8px;
+}
+
+.status-gas-label {
+  color: var(--text-color-tertiary, #8c8f94);
+  font-size: 11px;
+}
+
+.status-gas-value {
+  font-weight: 600;
+  color: var(--primary-6, #165dff);
+  font-size: 13px;
+}
+
+.status-gas-unit {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-color-tertiary, #8c8f94);
+}
+
+.status-divider {
+  width: 1px;
+  height: 18px;
+  background: linear-gradient(to bottom, transparent, var(--color-border, #e5e6eb) 30%, var(--color-border, #e5e6eb) 70%, transparent);
+  margin: 0 2px;
+}
+
+.status-divider-vertical {
+  width: 1px;
+  height: 24px;
+  background: linear-gradient(to bottom, transparent, var(--color-border-2, #d9d9d9) 30%, var(--color-border-2, #d9d9d9) 70%, transparent);
+  margin: 0 8px;
+}
+
+.status-settings-btn {
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color-secondary, #6b778c);
+}
+
+.status-settings-btn:hover {
+  background: var(--color-fill-2, #f2f3f5);
+  color: var(--primary-6, #165dff);
+  transform: rotate(90deg);
+}
+
+/* 选择弹窗样式 */
+.selection-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.selection-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.selection-label {
+  font-weight: 500;
+  color: var(--text-color, #1d2129);
+  min-width: 60px;
+}
+
+.selection-select {
+  flex: 1;
+}
+
+.selection-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 </style>

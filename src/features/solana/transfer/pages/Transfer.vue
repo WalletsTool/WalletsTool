@@ -471,21 +471,109 @@ const debouncedStartTransfer = customDebounce(startTransfer, 800);
         </VirtualScrollerTable>
       </div>
       
-      <!-- 操作按钮 -->
-      <div style="display: flex; justify-content: center; gap: 20px; padding: 15px;">
-        <a-button v-if="!balanceLoading" type="primary" @click="debouncedQueryBalance" style="width: 120px;">
-          查询余额
-        </a-button>
-        <a-button v-else loading style="width: 120px;">
-          查询中...
-        </a-button>
-        
-        <a-button v-if="!startLoading" type="success" @click="debouncedStartTransfer" style="width: 120px;">
-          执行转账
-        </a-button>
-        <a-button v-else loading style="width: 120px;">
-          执行中...
-        </a-button>
+      <!-- 功能配置区 -->
+      <div style="display: flex; padding-top: 15px; flex-shrink: 0;">
+        <a-form :model="form" :style="{ width: '100%' }" layout="horizontal" :label-col-props="{ span: 8 }" :wrapper-col-props="{ span: 16 }">
+          <a-row style="display: flex; gap: 20px;">
+            <!-- 第一列 -->
+            <div style="flex: 1;">
+              <a-form-item label="Solana网络">
+                <a-select v-model="chainValue" @change="chainChange" style="width: 100%;">
+                  <a-option v-for="chain in chainOptions" :key="chain.key" :value="chain.key">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <ChainIcon :chain="chain.key" :size="16" />
+                      <span>{{ chain.name }}</span>
+                    </div>
+                  </a-option>
+                </a-select>
+              </a-form-item>
+              <a-form-item label="代币">
+                <a-select v-model="coinValue" @change="coinChange" style="width: 100%;">
+                  <a-option v-for="coin in coinOptions" :key="coin.key" :value="coin.key">
+                    {{ coin.label }}
+                  </a-option>
+                </a-select>
+              </a-form-item>
+            </div>
+            <a-divider direction="vertical" style="height: 100%; margin: 0;" />
+            <!-- 第二列 -->
+            <div style="flex: 1;">
+              <a-form-item label="线程数">
+                <a-input-number v-model="threadCount" :min="1" :max="10" style="width: 100%;" />
+              </a-form-item>
+              <a-form-item label="转账类型">
+                <a-radio-group v-model="form.send_type" type="button">
+                  <a-radio value="2">指定数量</a-radio>
+                  <a-radio value="3">随机数量</a-radio>
+                </a-radio-group>
+              </a-form-item>
+              <a-form-item v-if="form.send_type === '3'" label="数量范围">
+                <a-space>
+                  <a-input v-model="form.send_min_count" placeholder="最小" style="width: 80px;" />
+                  <span>至</span>
+                  <a-input v-model="form.send_max_count" placeholder="最大" style="width: 80px;" />
+                </a-space>
+              </a-form-item>
+            </div>
+            <a-divider direction="vertical" style="height: 100%; margin: 0;" />
+            <!-- 第三列 -->
+            <div style="flex: 1;">
+              <a-form-item label="时间间隔">
+                <a-space>
+                  <a-input v-model="form.min_interval" placeholder="最小" style="width: 80px;" />
+                  <span>至</span>
+                  <a-input v-model="form.max_interval" placeholder="最大" style="width: 80px;" />
+                </a-space>
+              </a-form-item>
+              <a-form-item :label-col-props="{ span: 0 }" :wrapper-col-props="{ span: 24 }">
+                <div style="display: flex; gap: 20px; justify-content: center; align-items: center;">
+                  <a-button
+                      v-if="!balanceLoading"
+                      type="primary"
+                      class="core-action-btn primary-btn"
+                      @click="debouncedQueryBalance"
+                  >
+                    <template #icon>
+                      <Icon icon="mdi:magnify"/>
+                    </template>
+                    查询余额
+                  </a-button>
+                  <a-button
+                      v-else
+                      class="core-action-btn primary-btn executing"
+                      loading
+                  >
+                    <template #icon>
+                      <Icon icon="mdi:pause-circle"/>
+                    </template>
+                    查询中...
+                  </a-button>
+                  <a-button
+                      v-if="!startLoading"
+                      type="success"
+                      class="core-action-btn success-btn"
+                      @click="debouncedStartTransfer"
+                  >
+                    <template #icon>
+                      <Icon icon="mdi:rocket-launch"/>
+                    </template>
+                    执行转账
+                  </a-button>
+                  <a-button
+                      v-else
+                      class="core-action-btn success-btn executing"
+                      loading
+                  >
+                    <template #icon>
+                      <Icon icon="mdi:rocket-launch"/>
+                    </template>
+                    执行中...
+                  </a-button>
+                </div>
+              </a-form-item>
+            </div>
+          </a-row>
+        </a-form>
       </div>
     </div>
   </div>
@@ -520,5 +608,135 @@ const debouncedStartTransfer = customDebounce(startTransfer, 800);
 
 .stats-section {
   flex-shrink: 0;
+}
+
+.main-content :deep(.arco-form-item-label-col) {
+  margin-bottom: 0;
+}
+
+.main-content :deep(.arco-form-item-wrapper-col) {
+  flex: 1;
+}
+
+.main-content :deep(.arco-form-item) {
+  margin-bottom: 8px;
+  padding: 4px 10px;
+}
+
+.main-content :deep(.arco-form-item-label) {
+  line-height: 32px;
+}
+
+/* 核心功能按钮样式 */
+.core-action-btn {
+  width: 130px;
+  height: 48px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  border: none;
+  border-radius: 16px;
+  will-change: transform, background-color, box-shadow;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.core-action-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  transition: left 0.5s ease;
+}
+
+.core-action-btn:hover::before {
+  left: 100%;
+}
+
+.core-action-btn:hover {
+  color: #ffffff;
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.core-action-btn.primary-btn {
+  background: linear-gradient(135deg, #9945ff 0%, #14f195 100%);
+  box-shadow: 0 6px 20px rgba(153, 69, 255, 0.45), 0 2px 8px rgba(153, 69, 255, 0.2);
+}
+
+.core-action-btn.primary-btn:hover {
+  background: linear-gradient(135deg, #14f195 0%, #9945ff 100%);
+  box-shadow: 0 10px 30px rgba(153, 69, 255, 0.55), 0 4px 12px rgba(153, 69, 255, 0.3);
+}
+
+.core-action-btn.executing.primary-btn {
+  background: linear-gradient(135deg, #14f195 0%, #9945ff 100%);
+  box-shadow: 0 6px 20px rgba(153, 69, 255, 0.45), 0 2px 8px rgba(153, 69, 255, 0.2);
+  animation: pulse-solana 2s ease-in-out infinite;
+}
+
+@keyframes pulse-solana {
+  0%, 100% {
+    box-shadow: 0 6px 20px rgba(153, 69, 255, 0.45), 0 2px 8px rgba(153, 69, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 6px 35px rgba(153, 69, 255, 0.7), 0 3px 12px rgba(153, 69, 255, 0.35);
+  }
+}
+
+.core-action-btn.success-btn {
+  background: linear-gradient(135deg, #10a85c 0%, #12c47d 50%, #14e08e 100%);
+  box-shadow: 0 6px 20px rgba(16, 168, 92, 0.45), 0 2px 8px rgba(16, 168, 92, 0.2);
+}
+
+.core-action-btn.success-btn:hover {
+  background: linear-gradient(135deg, #12c47d 0%, #14e08e 50%, #16f89f 100%);
+  box-shadow: 0 10px 30px rgba(16, 168, 92, 0.55), 0 4px 12px rgba(16, 168, 92, 0.3);
+}
+
+.core-action-btn.executing.success-btn {
+  background: linear-gradient(135deg, #12c47d 0%, #14e08e 100%);
+  box-shadow: 0 6px 20px rgba(16, 168, 92, 0.45), 0 2px 8px rgba(16, 168, 92, 0.2);
+  animation: pulse-success-soft 2s ease-in-out infinite;
+}
+
+@keyframes pulse-success-soft {
+  0%, 100% {
+    box-shadow: 0 6px 20px rgba(16, 168, 92, 0.45), 0 2px 8px rgba(16, 168, 92, 0.2);
+  }
+  50% {
+    box-shadow: 0 6px 35px rgba(16, 168, 92, 0.7), 0 3px 12px rgba(16, 168, 92, 0.35);
+  }
+}
+
+/* Solana风格图标动画 */
+.core-action-btn .arco-icon {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+}
+
+.core-action-btn:hover .arco-icon {
+  transform: scale(1.15);
+}
+
+.core-action-btn.executing .arco-icon {
+  animation: icon-spin 1s linear infinite;
+}
+
+@keyframes icon-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 </style>

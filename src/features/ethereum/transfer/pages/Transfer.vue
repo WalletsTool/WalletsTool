@@ -5997,25 +5997,6 @@ async function handleBeforeClose() {
         </template>
         删除选中
       </a-button>
-      <!-- 代理配置按钮 -->
-      <a-button
-          type="outline"
-          status="normal"
-          style="margin-left: 10px"
-          @click="openProxyConfig"
-      >
-        <template #icon>
-          <Icon icon="mdi:shield-network"/>
-        </template>
-        代理配置
-        <a-tag
-            :color="proxyEnabled ? proxyStatusColor : '#86909c'"
-            size="small"
-            style="margin-left: 4px"
-        >
-          {{ proxyEnabled ? proxyCount + "个" : "未启用" }}
-        </a-tag>
-      </a-button>
       <a-button
           type="primary"
           status="danger"
@@ -7447,6 +7428,18 @@ async function handleBeforeClose() {
       </div>
     </div>
     <div class="status-bar-right">
+      <div
+          class="status-proxy-indicator"
+          :class="{ 'proxy-active': proxyEnabled }"
+          :style="{ color: proxyEnabled ? proxyStatusColor : 'var(--text-color-quaternary, #c9cdd4)' }"
+          title="代理状态"
+          @click="openProxyConfig"
+      >
+        <Icon icon="mdi:shield-network" style="font-size: 14px"/>
+        <span class="proxy-status-text">{{ proxyEnabled ? '已启用代理' : '未启动代理' }}</span>
+        <span class="proxy-count-text">({{ proxyCount }}个)</span>
+      </div>
+      <div class="status-divider-vertical"></div>
       <a-dropdown>
         <div class="status-settings-btn" title="设置">
           <Icon icon="mdi:cog" style="font-size: 15px"/>
@@ -7477,6 +7470,19 @@ async function handleBeforeClose() {
               <Icon icon="mdi:web"/>
             </template>
             区块链管理
+          </a-doption>
+          <a-doption @click="openProxyConfig">
+            <template #icon>
+              <Icon icon="mdi:shield-network"/>
+            </template>
+            代理配置
+            <a-tag
+                :color="proxyEnabled ? proxyStatusColor : '#86909c'"
+                size="small"
+                style="margin-left: 4px"
+            >
+              {{ proxyEnabled ? proxyCount + "个" : "未启用" }}
+            </a-tag>
           </a-doption>
         </template>
       </a-dropdown>
@@ -8689,6 +8695,39 @@ async function handleBeforeClose() {
   background: var(--color-fill-2, #f2f3f5);
   color: var(--primary-6, #165dff);
   transform: rotate(90deg);
+}
+
+.status-proxy-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: var(--color-fill-1, #f2f3f5);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.status-proxy-indicator:hover {
+  background: var(--color-fill-2, #e5e6eb);
+}
+
+.status-proxy-indicator.proxy-active {
+  background: var(--success-1, #e6fffb);
+}
+
+.status-proxy-indicator.proxy-active:hover {
+  background: var(--success-2, #b7f0e6);
+}
+
+.proxy-status-text {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.proxy-count-text {
+  font-size: 11px;
+  color: var(--text-color-tertiary, #8c8f94);
 }
 
 /* 选择弹窗样式 */

@@ -161,11 +161,83 @@ body.fonts-loaded {
   font-feature-settings: 'liga' 1, 'kern' 1;
 }
 
-/* 全局覆盖 */
-.arco-notification {
-  max-width: 300px !important;
-  width: 300px !important;
-  top: 20px !important; /* 向下移动20px避免遮挡窗口栏 */
+/* 全局覆盖 - Notification位置改为左上角 */
+.arco-notification-container,
+.arco-notification-wrapper,
+[class*="arco-notification-container"] {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.arco-notification,
+.arco-notification-list,
+[class*="arco-notification"],
+div[class*="notification"] {
+  top: 75px !important;
+  left: 10px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+
+/* 入场动画 */
+@keyframes notificationSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 覆盖 Arco Design 内置动画 */
+.arco-notification-fade-enter-active,
+.arco-notification-fade-leave-active {
+  animation: none !important;
+  transition: none !important;
+}
+
+.arco-notification-fade-enter-from,
+.arco-notification-fade-leave-to {
+  opacity: 0 !important;
+}
+
+/* 成功通知 - 绿色虚线边框 */
+.arco-notification-success {
+  border: 2px dashed #4ade80 !important;
+}
+
+/* 警告通知 - 黄色虚线边框 */
+.arco-notification-warning {
+  border: 2px dashed #fbbf24 !important;
+}
+
+/* 错误通知 - 红色虚线边框 */
+.arco-notification-error {
+  border: 2px dashed #f87171 !important;
+}
+
+/* 通知弹出动画容器 */
+.arco-notification-fade {
+  top: 75px !important;
+  left: 10px !important;
+  right: auto !important;
+  bottom: auto !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+/* 强制覆盖所有可能的通知位置 */
+body > div:last-child > div[class*="notification"],
+body > div[class*="notification"] {
+  top: 75px !important;
+  left: 10px !important;
+  right: auto !important;
+  bottom: auto !important;
+  animation: none !important;
+  transition: none !important;
 }
 
 /* 虚拟滚动容器滚动条样式 */

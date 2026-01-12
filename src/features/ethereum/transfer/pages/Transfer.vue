@@ -5755,7 +5755,7 @@ async function handleBeforeClose() {
 
 <style scoped>
 .container {
-  padding: 10px;
+  padding: 10px 10px 20px 10px;
   min-width: 1240px;
 }
 
@@ -6013,6 +6013,7 @@ async function handleBeforeClose() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-bottom: 20px;
 }
 
 /* 隐藏滚动条但保持滚动功能 */

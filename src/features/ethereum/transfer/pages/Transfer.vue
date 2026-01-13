@@ -2089,15 +2089,15 @@ onMounted(async () => {
 
   // 页面高度现在通过 CSS 自动调整，无需监听器
 
-  // 进入页面时自动展开区块链选择器，方便用户第一步选择
-  nextTick(() => {
-    setTimeout(() => {
-      chainSelectorExpanded.value = true;
-      nextTick(() => {
-        chainSearchInputRef.value?.focus();
-      });
-    }, 100);
-  });
+  // TODO: 进入页面时自动展开区块链选择器，方便用户第一步选择（暂时注释掉，等用到时放开）
+  // nextTick(() => {
+  //   setTimeout(() => {
+  //     chainSelectorExpanded.value = true;
+  //     nextTick(() => {
+  //       chainSearchInputRef.value?.focus();
+  //     });
+  //   }, 100);
+  // });
 
   // 监听余额查询更新事件
   const isTauriMounted =
@@ -6201,6 +6201,8 @@ async function handleBeforeClose() {
             <a-tooltip
                 content=""
                 trigger="hover"
+                :mouseEnterDelay="300"
+                :mouseLeaveDelay="100"
                 :popup-style="{ padding: 0, pointerEvents: 'auto' }"
             >
               <template #content>

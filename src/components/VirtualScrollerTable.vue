@@ -26,7 +26,11 @@
     </div>
 
     <!-- 虚拟滚动内容 -->
-    <div class="table-body" :style="{ height: `calc(${height} - 40px)` }">
+    <div
+      class="table-body"
+      :style="{ height: `calc(${height} - 40px)` }"
+      @wheel="handleWheel"
+    >
       <!-- 空数据提示 -->
       <div v-if="showEmptyData" class="empty-data">
         <template v-if="pageType === 'balance'">
@@ -143,6 +147,8 @@
                 v-if="isCopyableColumn(column)"
                 content="双击可复制"
                 position="top"
+                :mouseEnterDelay="0.3"
+                :mouseLeaveDelay="0.1"
               >
                 <!-- 插槽内容 -->
                 <template v-if="column.slotName">
@@ -203,7 +209,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch, onMounted, onUnmounted } from "vue";
 import VirtualScroller from "primevue/virtualscroller";
 import { Icon } from "@iconify/vue";
 import { Message, Tooltip } from "@arco-design/web-vue";
@@ -425,8 +431,9 @@ const getTooltipText = (column, item) => {
     return value;
   }
 
-  // 如果设置了tooltip属性，显示完整内容
-  if (column.tooltip) {
+  // 如果设置了tooltip属性且不是状态列，显示完整内容
+  // 状态列使用自定义的a-tooltip，不需要原生tooltip
+  if (column.tooltip && column.slotName !== "exec_status") {
     return value;
   }
 
@@ -465,6 +472,15 @@ const handleCellDoubleClick = async (event, column, item) => {
       offset: 500,
     });
   }
+};
+
+// 处理滚轮事件，滚动时隐藏所有tooltip
+const handleWheel = () => {
+  // 通过document.querySelector隐藏arco-tooltip-popup和arco-tooltip
+  const tooltips = document.querySelectorAll('.arco-tooltip-popup, .arco-tooltip');
+  tooltips.forEach((tooltip) => {
+    tooltip.style.display = 'none';
+  });
 };
 </script>
 

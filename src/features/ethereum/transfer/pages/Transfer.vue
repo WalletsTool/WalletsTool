@@ -81,7 +81,7 @@ const columns = [
     title: "转账数量",
     align: "center",
     dataIndex: "amount",
-    width: 95,
+    width: 85,
     ellipsis: true,
     tooltip: true,
   },
@@ -172,7 +172,7 @@ let balanceStopStatus = ref(true);
 // 详细配置
 const form = reactive({
   send_type: "3",
-  amount_from: "1",
+  amount_from: "2",
   send_count: "0",
   send_min_count: "1",
   send_max_count: "100",
@@ -2127,20 +2127,22 @@ onMounted(async () => {
     });
   }
 
-   // 页面加载完成后发送事件
-  nextTick(() => {
-    // 添加点击外部关闭选择器的监听
-    document.addEventListener('click', handleClickOutside);
-    
-    setTimeout(() => {
-      const isTauri =
-          typeof window !== "undefined" && window.__TAURI_INTERNALS__;
-      if (isTauri) {
-        const currentWindow = getCurrentWindow();
-        currentWindow.emit("page-loaded");
-      }
-    }, 50);
-  });
+    // 页面加载完成后发送事件
+   nextTick(() => {
+     // 添加点击外部关闭选择器的监听（延迟50ms，确保选择器展开动画完成）
+     setTimeout(() => {
+       document.addEventListener('click', handleClickOutside);
+     }, 50);
+     
+     setTimeout(() => {
+       const isTauri =
+           typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+       if (isTauri) {
+         const currentWindow = getCurrentWindow();
+         currentWindow.emit("page-loaded");
+       }
+     }, 100);
+   });
 });
 
 onBeforeUnmount(async () => {
@@ -2577,6 +2579,11 @@ const uploadInputRef = ref(null);
 // 点击上传文件
 function upload() {
   uploadInputRef.value.click();
+}
+
+// 触发文件上传（侧边栏按钮使用）
+function triggerFileUpload() {
+  upload();
 }
 
 // 下载模板文件
@@ -3017,12 +3024,17 @@ function handleFileUpload() {
 }
 
 // 下载模板
-function downloadTemplate() {
-  console.log("下载模板文件");
+async function downloadTemplate() {
   let a = document.createElement("a");
   a.href = `/template/import_model.xlsx`;
   a.download = "导入模板.xlsx";
   a.click();
+  
+  Notification.success({
+    content: "模板已下载至浏览器下载文件夹，请在 Downloads 文件夹中查找并打开编辑",
+    duration: 5000,
+    position: "topLeft",
+  });
 }
 
 // 删除数据
@@ -5481,12 +5493,26 @@ function checkDelay() {
 }
 
 function selectSucceeded() {
+  if (data.value.length === 0) {
+    Notification.warning({
+      content: "请先导入数据后再进行选择！",
+      position: "topLeft",
+    });
+    return;
+  }
   selectedKeys.value = data.value
       .filter((item) => item.exec_status === "2")
       .map((item) => item.key);
 }
 
 function selectFailed() {
+  if (data.value.length === 0) {
+    Notification.warning({
+      content: "请先导入数据后再进行选择！",
+      position: "topLeft",
+    });
+    return;
+  }
   selectedKeys.value = data.value
       .filter((item) => item.exec_status === "3")
       .map((item) => item.key);
@@ -5494,6 +5520,13 @@ function selectFailed() {
 
 // 反选
 function InvertSelection() {
+  if (data.value.length === 0) {
+    Notification.warning({
+      content: "请先导入数据后再进行选择！",
+      position: "topLeft",
+    });
+    return;
+  }
   selectedKeys.value = data.value
       .filter((item) => selectedKeys.value.indexOf(item.key) < 0)
       .map((item) => item.key);
@@ -6066,27 +6099,8 @@ async function handleBeforeClose() {
       @paste="handleGlobalPaste"
   >
     <!-- <span class="pageTitle">批量转账</span> -->
-    <!-- 工具栏 -->
-    <div class="toolBar" style="flex-shrink: 0">
-      <a-button type="primary" @click="debouncedHandleClick">
-        <template #icon>
-          <Icon icon="mdi:wallet"/>
-        </template>
-        钱包录入
-      </a-button>
-      <a-tooltip content="导入按照“模板文件”填写的文件" position="bottom">
-        <a-button
-            type="primary"
-            status="success"
-            style="margin-left: 10px"
-            @click="upload"
-        >
-          <template #icon>
-            <Icon icon="mdi:upload"/>
-          </template>
-          导入文件（推荐）
-        </a-button>
-      </a-tooltip>
+    <!-- 工具栏 - 已移至左侧功能区 -->
+    <div class="toolBar" style="flex-shrink: 0; height: 0; overflow: hidden; margin-top: 0;">
       <input
           type="file"
           ref="uploadInputRef"
@@ -6094,81 +6108,6 @@ async function handleBeforeClose() {
           id="btn_file"
           style="display: none"
       />
-      <a-divider direction="vertical"/>
-      <!-- 选择操作区按钮 -->
-      <a-button type="outline" status="success" @click="selectSucceeded">
-        <template #icon>
-          <Icon icon="mdi:check"/>
-        </template>
-        选中成功
-      </a-button>
-      <a-button
-          type="outline"
-          status="danger"
-          style="margin-left: 10px"
-          @click="selectFailed"
-      >
-        <template #icon>
-          <Icon icon="mdi:close"/>
-        </template>
-        选中失败
-      </a-button>
-      <a-button
-          type="outline"
-          status="normal"
-          style="margin-left: 10px"
-          @click="InvertSelection"
-      >
-        <template #icon>
-          <Icon icon="mdi:swap-horizontal"/>
-        </template>
-        反选
-      </a-button>
-      <!-- 高级筛选按钮 -->
-      <a-button
-          type="primary"
-          status="normal"
-          style="margin-left: 10px"
-          @click="showAdvancedFilter"
-      >
-        <template #icon>
-          <Icon icon="mdi:filter"/>
-        </template>
-        高级筛选
-      </a-button>
-      <a-button
-          type="primary"
-          status="danger"
-          style="margin-left: 10px"
-          @click="deleteSelected"
-      >
-        <template #icon>
-          <Icon icon="mdi:delete"/>
-        </template>
-        删除选中
-      </a-button>
-      <a-button
-          type="primary"
-          status="danger"
-          style="float: right; margin-right: 10px"
-          @click="debouncedClearData"
-      >
-        <template #icon>
-          <Icon icon="mdi:delete"/>
-        </template>
-        清空列表
-      </a-button>
-      <a-button
-          type="outline"
-          status="normal"
-          style="float: right; margin-right: 10px"
-          @click="downloadFile"
-      >
-        <template #icon>
-          <Icon icon="mdi:download"/>
-        </template>
-        下载模板
-      </a-button>
     </div>
 
     <!-- 操作账号表格 -->
@@ -6176,7 +6115,6 @@ async function handleBeforeClose() {
         class="mainTable"
         style="
                 flex: 1;
-                overflow: hidden;
                 display: flex;
                 flex-direction: column;
             "
@@ -6188,27 +6126,101 @@ async function handleBeforeClose() {
       />
 
       <!-- 正常表格 -->
-      <VirtualScrollerTable
-          v-else-if="tableBool"
-          :columns="columns"
-          :data="data"
-          :row-selection="rowSelection"
-          :loading="tableLoading"
-          :selected-keys="selectedKeys"
-          @row-click="rowClick"
-          @update:selected-keys="selectedKeys = $event"
-          @open-manual-import="handleManualImport"
-          @open-file-upload="handleFileUpload"
-          @download-template="downloadTemplate"
-          row-key="key"
-          height="100%"
-          :empty-data="data.length === 0"
-          :hover-keys="
-                    Object.keys(rowHoverStates).filter(
-                        (key) => rowHoverStates[key],
-                    )
-                "
-      >
+      <div class="table-container">
+        <!-- 右侧固定功能区 -->
+        <div class="side-actions-panel-fixed">
+          <div class="side-actions-content-fixed">
+            <a-tooltip content="钱包录入" position="left">
+              <a-button type="primary" size="mini" @click="handleManualImport">
+                <template #icon>
+                  <Icon icon="mdi:wallet" style="color: #165dff;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="导入文件" position="left">
+              <a-button type="primary" size="mini" @click="triggerFileUpload">
+                <template #icon>
+                  <Icon icon="mdi:upload" style="color: #00b42a;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="清空表格" position="left">
+              <a-button type="primary" status="danger" size="mini" @click="debouncedClearData">
+                <template #icon>
+                  <Icon icon="mdi:delete-sweep" style="color: #f53f3f;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="下载模板" position="left">
+              <a-button size="mini" @click="downloadTemplate">
+                <template #icon>
+                  <Icon icon="mdi:file-download" style="color: #4e5969;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <div class="side-actions-divider"></div>
+            <a-tooltip content="选中成功的数据" position="left">
+              <a-button type="outline" status="success" size="mini" @click="selectSucceeded">
+                <template #icon>
+                  <Icon icon="mdi:check-circle" style="color: #00b42a;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="选中失败的数据" position="left">
+              <a-button type="outline" status="danger" size="mini" @click="selectFailed">
+                <template #icon>
+                  <Icon icon="mdi:close-circle"  style="color: #f53f3f;font-size: 18px;"/>
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="反选" position="left">
+              <a-button type="outline" size="mini" @click="InvertSelection">
+                <template #icon>
+                  <Icon icon="mdi:swap-horizontal"  style="color: #165dff;font-size: 18px;"/>
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="高级筛选" position="left">
+              <a-button type="primary" size="mini" @click="showAdvancedFilter">
+                <template #icon>
+                  <Icon icon="mdi:filter" style="color: #165dff;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="删除选中" position="left">
+              <a-button type="outline" status="danger" size="mini" @click="deleteSelected">
+                <template #icon>
+                  <Icon icon="mdi:trash-can" style="color: #f53f3f;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <div class="side-actions-divider"></div>
+            
+          </div>
+        </div>
+        <!-- 表格 -->
+        <VirtualScrollerTable
+            v-if="tableBool"
+            :columns="columns"
+            :data="data"
+            :row-selection="rowSelection"
+            :loading="tableLoading"
+            :selected-keys="selectedKeys"
+            @row-click="rowClick"
+            @update:selected-keys="selectedKeys = $event"
+            @open-manual-import="handleManualImport"
+            @open-file-upload="triggerFileUpload"
+            @download-template="downloadTemplate"
+            row-key="key"
+            height="100%"
+            :empty-data="data.length === 0"
+            class="table-with-side-actions"
+            :hover-keys="
+                      Object.keys(rowHoverStates).filter(
+                          (key) => rowHoverStates[key],
+                      )
+                  "
+        >
         <template #exec_status="{ record }">
           <div
               class="exec-status-wrapper"
@@ -6343,6 +6355,7 @@ async function handleBeforeClose() {
           </a-button>
         </template>
       </VirtualScrollerTable>
+      </div>
     </div>
 
     <!-- 导入进度条 - 悬浮在页面顶部 -->
@@ -6555,22 +6568,22 @@ async function handleBeforeClose() {
           layout="horizontal"
           label-align="left"
       >
-        <a-row style="display: flex; gap: 20px">
+        <a-row style="display: flex; gap: 10px">
           <!-- 第一列 -->
-          <div style="flex: 1">
+          <div style="flex: 10">
             <a-form-item
                 field="send_type"
-                label="发送方式"
-                :label-col-props="{ span: 5 }"
+                label="发送模式"
+                :label-col-props="{ span: 6 }"
             >
               <a-radio-group
                   v-model="form.send_type"
                   type="button"
               >
                 <a-radio value="1">全部</a-radio>
-                <a-radio value="2">指定数量</a-radio>
+                <a-radio value="2">指定数值</a-radio>
                 <a-radio value="3">范围随机</a-radio>
-                <a-radio value="4">剩余数量</a-radio>
+                <a-radio value="4">剩余随机</a-radio>
               </a-radio-group>
             </a-form-item>
             <a-form-item
@@ -6585,7 +6598,7 @@ async function handleBeforeClose() {
                   type="button"
               >
                 <a-radio value="1">表格数据</a-radio>
-                <a-radio value="2">当前指定</a-radio>
+                <a-radio value="2">自定义</a-radio>
               </a-radio-group>
             </a-form-item>
             <a-form-item
@@ -6606,23 +6619,24 @@ async function handleBeforeClose() {
                 field="send_count_scope"
                 :label="
                                 form.send_type === '3'
-                                    ? '发送数量范围'
-                                    : '剩余数量范围'
+                                    ? '发送数量从'
+                                    : '剩余数量从'
                             "
-                :label-col-props="{ span: 7 }"
+                :label-col-props="{ span: 6 }"
             >
               <a-space>
                 <a-input
                     v-model="form.send_min_count"
                     placeholder="最小"
-                    style="width: 80px"
+                    style="width: 66px"
                 />
                 <span style="margin: 0 8px">至</span>
                 <a-input
                     v-model="form.send_max_count"
                     placeholder="最大"
-                    style="width: 80px"
+                    style="width: 85px"
                 />
+                <span style="margin-left: 10px">范围内随机生成</span>
               </a-space>
             </a-form-item>
             <a-form-item
@@ -6642,26 +6656,26 @@ async function handleBeforeClose() {
               style="height: 100%; margin: 0"
           />
           <!-- 第二列（Gas配置） -->
-          <div style="flex: 1">
+          <div style="flex: 9">
             <a-form-item
                 field="limit_type"
-                label="Gas Limit"
-                :label-col-props="{ span: 6 }"
+                label="Gas Limit 配置"
+                :label-col-props="{ span: 7 }"
             >
               <a-radio-group
                   v-model="form.limit_type"
                   type="button"
               >
-                <a-radio value="1">自动</a-radio>
-                <a-radio value="2">指定数量</a-radio>
+                <a-radio value="1">自动获取</a-radio>
+                <a-radio value="2">指定数值</a-radio>
                 <a-radio value="3">范围随机</a-radio>
               </a-radio-group>
             </a-form-item>
             <a-form-item
                 v-if="form.limit_type === '2'"
                 field="limit_count"
-                label="Gas Limit"
-                :label-col-props="{ span: 6 }"
+                label="Gas Limit 数量"
+                :label-col-props="{ span: 7 }"
             >
               <a-input v-model="form.limit_count"/>
             </a-form-item>
@@ -6669,33 +6683,33 @@ async function handleBeforeClose() {
                 v-if="form.limit_type === '3'"
                 field="limit_count_scope"
                 label="Gas Limit 范围"
-                :label-col-props="{ span: 8 }"
+                :label-col-props="{ span: 7 }"
             >
               <a-space>
                 <a-input
                     v-model="form.limit_min_count"
                     placeholder="最小"
-                    style="width: 80px"
+                    style="width: 90px"
                 />
                 <span style="margin: 0 8px">至</span>
                 <a-input
                     v-model="form.limit_max_count"
                     placeholder="最大"
-                    style="width: 80px"
+                    style="width: 90px"
                 />
               </a-space>
             </a-form-item>
             <a-form-item
                 field="gas_price_type"
                 label="Gas Price 方式"
-                :label-col-props="{ span: 8 }"
+                :label-col-props="{ span: 7 }"
             >
               <a-radio-group
                   v-model="form.gas_price_type"
                   type="button"
               >
-                <a-radio value="1">自动</a-radio>
-                <a-radio value="2">固定值</a-radio>
+                <a-radio value="1">自动获取</a-radio>
+                <a-radio value="2">指定数值</a-radio>
                 <a-radio value="3">加价抢跑</a-radio>
               </a-radio-group>
             </a-form-item>
@@ -6703,7 +6717,7 @@ async function handleBeforeClose() {
                 v-if="form.gas_price_type === '2'"
                 field="gas_price"
                 label="Gas Price"
-                :label-col-props="{ span: 6 }"
+                :label-col-props="{ span: 7 }"
             >
               <a-input v-model="form.gas_price"/>
             </a-form-item>
@@ -6711,7 +6725,7 @@ async function handleBeforeClose() {
                 v-if="form.gas_price_type === '3'"
                 field="gas_price_rate"
                 label="提高比例"
-                :label-col-props="{ span: 6 }"
+                :label-col-props="{ span: 7 }"
             >
               <a-input v-model="form.gas_price_rate">
                 <template #append>%</template>
@@ -6724,10 +6738,9 @@ async function handleBeforeClose() {
                             "
                 field="max_gas_price"
                 label="最大 Gas Price"
-                tooltip="为空时则不设置上限（单位：Gwei）"
-                :label-col-props="{ span: 9 }"
+                :label-col-props="{ span: 7 }"
             >
-              <a-input v-model="form.max_gas_price"/>
+              <a-input v-model="form.max_gas_price" placeholder="为空时则不设置上限（单位：Gwei）"/>
             </a-form-item>
           </div>
           <a-divider
@@ -6735,17 +6748,17 @@ async function handleBeforeClose() {
               style="height: 100%; margin: 0"
           />
           <!-- 第三列 -->
-          <div style="flex: 1">
+          <div style="flex: 8">
             <a-form-item
                 label=""
                 :label-col-props="{ span: 0 }"
             >
-              <a-space :size="8" align="center">
+              <a-space :size="8" align="center" style="display: flex;align-items: center">
                 <a-switch
                     v-model="enableMultiThread"
                     checked-value="1"
                     unchecked-value="0"
-                    style="margin-right: 20px"
+                    style="margin-right: 10px"
                 >
                   <template #checked>
                     多线程
@@ -6760,7 +6773,7 @@ async function handleBeforeClose() {
                                         enableMultiThread === true
                                     "
                 >
-                  线程数
+                  <span>线程数</span>
                   <a-input-number
                       v-model="threadCount"
                       :min="1"
@@ -6779,17 +6792,17 @@ async function handleBeforeClose() {
                   >
                 </template>
                 <template v-else>
-                  时间间隔
+                  <span>时间间隔</span>
                   <a-input
                       v-model="form.min_interval"
                       placeholder="最小"
-                      style="width: 60px;margin-left: 10px"
+                      style="width: 55px;margin-left: 10px"
                   />
                   <span style="margin: 0 8px">至</span>
                   <a-input
                       v-model="form.max_interval"
                       placeholder="最大"
-                      style="width: 60px;margin-right: 10px"
+                      style="width: 55px;margin-right: 10px"
                   />
                   秒
                 </template>
@@ -6824,7 +6837,7 @@ async function handleBeforeClose() {
                 <a-form-item
                     field="multi_window"
                     label="窗口多开"
-                    :label-col-props="{ span: 7 }"
+                    :label-col-props="{ span: 8 }"
                 >
                   <a-input-group style="width: 100%">
                     <a-input-number
@@ -6856,8 +6869,8 @@ async function handleBeforeClose() {
                   style="
                                     display: flex;
                                     flex: 1;
-                                    gap: 30px;
-                                    justify-content: center;
+                                    gap: 55px;
+                                    justify-content: flex-start;
                                 "
                 >
                   <a-dropdown
@@ -7772,7 +7785,6 @@ async function handleBeforeClose() {
 }
 
 .toolBar {
-  margin-top: 45px;
 }
 
 .goHome {
@@ -7785,7 +7797,7 @@ async function handleBeforeClose() {
 }
 
 .mainTable {
-  margin-top: 15px;
+  margin-top: 40px;
   min-height: 400px;
   height: 100%;
   display: flex;
@@ -9197,5 +9209,150 @@ async function handleBeforeClose() {
 .selector-slide-leave-from {
   opacity: 1;
   transform: translateY(0);
+}
+
+.side-actions {
+}
+
+.side-actions .arco-btn {
+}
+
+.side-actions .arco-btn > .arco-btn-icon {
+}
+
+/* 右侧固定功能区样式 */
+.side-actions-panel-fixed {
+    position: absolute;
+    right: 0;
+    width: 50px;
+    height: 100%;
+    background: linear-gradient(to left, rgba(255, 255, 255, 0.98) 0%, rgba(250, 251, 252, 0.98) 100%);
+    border: 1px solid rgb(221 221 221 / 63%);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+    pointer-events: none;
+    box-shadow: 3px 0px 6px 0px rgba(0, 0, 0, 0.06), -1px 0 4px rgba(0, 0, 0, 0.03);
+    z-index: 10;
+}
+
+.side-actions-content-fixed {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  opacity: 1;
+  pointer-events: auto;
+  height: 100%;
+}
+
+.side-actions-content-fixed .arco-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-light, #e2e4e8);
+  background: var(--color-fill-1, #f7f8fa);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.side-actions-content-fixed .arco-btn:hover {
+  background: var(--color-primary-light-1, #e8f0ff);
+  border-color: var(--color-primary-5, #4086ff);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(22, 93, 255, 0.15);
+}
+
+.side-actions-content-fixed .arco-btn > .arco-btn-icon {
+  margin: 0;
+  font-size: 20px;
+  color: #1a1a1a;
+  transition: color 0.2s ease;
+}
+
+.side-actions-content-fixed .arco-btn:hover > .arco-btn-icon {
+  color: var(--color-primary-6, #165dff);
+}
+
+.side-actions-content-fixed .arco-btn[type="primary"] {
+  background: linear-gradient(135deg, var(--color-primary-6, #165dff) 0%, var(--color-primary-5, #4086ff) 100%);
+  border-color: var(--color-primary-6, #165dff);
+  box-shadow: 0 2px 6px rgba(22, 93, 255, 0.25);
+}
+
+.side-actions-content-fixed .arco-btn[type="primary"] > .arco-btn-icon {
+  color: #ffffff;
+}
+
+.side-actions-content-fixed .arco-btn[type="primary"]:hover {
+  background: linear-gradient(135deg, var(--color-primary-5, #4086ff) 0%, var(--color-primary-6, #165dff) 100%);
+  box-shadow: 0 4px 12px rgba(22, 93, 255, 0.35);
+  transform: translateY(-2px);
+}
+
+.side-actions-content-fixed .arco-btn[type="primary"]:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(22, 93, 255, 0.2);
+}
+
+.side-actions-content-fixed .arco-btn[status="success"] {
+  background: linear-gradient(135deg, #0fa962 0%, #12b576 100%);
+  border-color: #0fa962;
+  box-shadow: 0 2px 6px rgba(15, 169, 98, 0.25);
+}
+
+.side-actions-content-fixed .arco-btn[status="success"] > .arco-btn-icon {
+  color: #ffffff;
+}
+
+.side-actions-content-fixed .arco-btn[status="success"]:hover {
+  background: linear-gradient(135deg, #12b576 0%, #0fa962 100%);
+  box-shadow: 0 4px 12px rgba(15, 169, 98, 0.35);
+  transform: translateY(-2px);
+}
+
+.side-actions-content-fixed .arco-btn[status="danger"] {
+  background: linear-gradient(135deg, #f53f3f 0%, #ff7d7d 100%);
+  border-color: #f53f3f;
+  box-shadow: 0 2px 6px rgba(245, 63, 63, 0.25);
+}
+
+.side-actions-content-fixed .arco-btn[status="danger"] > .arco-btn-icon {
+  color: #ffffff;
+}
+
+.side-actions-content-fixed .arco-btn[status="danger"]:hover {
+  background: linear-gradient(135deg, #ff7d7d 0%, #f53f3f 100%);
+  box-shadow: 0 4px 12px rgba(245, 63, 63, 0.35);
+  transform: translateY(-2px);
+}
+
+.side-actions-divider {
+  width: 24px;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--color-border, #e2e4e8), transparent);
+  margin: 13px 0;
+}
+
+/* 表格容器样式 */
+.table-container {
+  flex: 1;
+  display: flex;
+  position: relative;
+  /* overflow: hidden; */
+  width: 100%;
+}
+
+/* 为表格右侧留出功能区空间 */
+.table-with-side-actions {
+  margin-right: 58px;
+  margin-top: 0;
+  height: 100%;
 }
 </style>

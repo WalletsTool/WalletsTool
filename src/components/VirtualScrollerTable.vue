@@ -1,5 +1,5 @@
 <template>
-  <div class="virtual-scroller-table" :style="{ height: height }">
+  <div class="virtual-scroller-table" :style="{ height: height, width: '100%' }">
     <!-- 表头 -->
     <div class="table-header">
       <div class="header-row">
@@ -52,9 +52,9 @@
           </div>
           <div class="empty-text">还没有监控数据</div>
         </template>
-        <template v-else>
+        <template v-else-if="pageType === 'transfer'">
           <div class="empty-icon">
-            <Icon icon="icon-park-outline:wallet" style="width: 64px; height: 64px;" />
+            <Icon icon="icon-park-outline:wallet" :style="{ width: '64px', height: '64px' }" />
           </div>
           <div class="empty-text">还没有转账数据</div>
           <div class="empty-text-second">请先录入钱包或者上传文件开始批量转账</div>
@@ -62,7 +62,7 @@
             <a-button
               type="primary"
               style="margin-top: 12px"
-              @click="$emit('open-manual-import')"
+              @click="handleEmptyAction('manual')"
             >
               <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
               手动录入钱包
@@ -71,7 +71,7 @@
               type="primary"
               style="margin-top: 12px;margin-left: 20px"
               status="success"
-              @click="$emit('open-file-upload')"
+              @click="handleEmptyAction('upload')"
             >
               <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
               上传文件导入
@@ -86,7 +86,7 @@
               支持CSV、XLSX格式文件，下载
               <a
                 href="#"
-                @click.prevent="$emit('download-template')"
+                @click.prevent="handleEmptyAction('template')"
                 style="color: #a2beff;"
               >
                 导入模板
@@ -253,6 +253,21 @@ const props = defineProps({
 
 // Emits
 const emit = defineEmits(["row-click", "update:selectedKeys", "open-manual-import", "open-file-upload", "download-template"]);
+
+// 处理空数据页面按钮点击
+const handleEmptyAction = (type) => {
+  switch (type) {
+    case 'manual':
+      emit('open-manual-import');
+      break;
+    case 'upload':
+      emit('open-file-upload');
+      break;
+    case 'template':
+      emit('download-template');
+      break;
+  }
+};
 
 // 计算属性
 const isAllSelected = computed(() => {
@@ -448,6 +463,7 @@ const handleCellDoubleClick = async (event, column, item) => {
   border-radius: 6px;
   background: var(--table-bg, #ffffff);
   overflow: hidden;
+  width: 100%;
 }
 
 .table-header {
@@ -460,6 +476,7 @@ const handleCellDoubleClick = async (event, column, item) => {
   display: flex;
   height: 40px;
   align-items: center;
+  width: 100%;
 }
 
 .header-cell {
@@ -479,6 +496,7 @@ const handleCellDoubleClick = async (event, column, item) => {
   flex: 1;
   overflow: hidden;
   background: var(--table-bg, #ffffff);
+  width: 100%;
 }
 
 .virtual-scroller {
@@ -492,6 +510,7 @@ const handleCellDoubleClick = async (event, column, item) => {
   border-bottom: 1px solid var(--table-border-color, #f2f3f5);
   transition: background-color 0.2s;
   background: var(--table-bg, #ffffff);
+  width: 100%;
 }
 
 .table-row.zebra-stripe {

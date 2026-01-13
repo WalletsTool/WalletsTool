@@ -405,11 +405,17 @@ function handleFileUpload() {
 }
 
 // 下载模板
-function downloadTemplate() {
+async function downloadTemplate() {
   let a = document.createElement("a");
   a.href = `/template/import_model.xlsx`;
   a.download = "导入模板.xlsx";
   a.click();
+  
+  Notification.success({
+    content: "模板已下载至浏览器下载文件夹，请在 Downloads 文件夹中查找并打开编辑",
+    duration: 5000,
+    position: "topLeft",
+  });
 }
 
 // 处理文件变化
@@ -511,7 +517,7 @@ function handleFileChange(event) {
       </div>
       
       <!-- 数据表格 -->
-      <div style="flex: 1; min-height: 0;">
+      <div style="flex: 1; min-height: 0; width: 100%;">
         <VirtualScrollerTable
           :columns="columns"
           :data="data"

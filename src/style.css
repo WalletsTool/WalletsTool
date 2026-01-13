@@ -174,7 +174,7 @@ body.fonts-loaded {
 .arco-notification-list,
 [class*="arco-notification"],
 div[class*="notification"] {
-  top: 75px !important;
+  top: 50px !important;
   left: 10px !important;
   right: auto !important;
   bottom: auto !important;
@@ -221,7 +221,7 @@ div[class*="notification"] {
 
 /* 通知弹出动画容器 */
 .arco-notification-fade {
-  top: 75px !important;
+  top: 50px !important;
   left: 10px !important;
   right: auto !important;
   bottom: auto !important;
@@ -232,7 +232,7 @@ div[class*="notification"] {
 /* 强制覆盖所有可能的通知位置 */
 body > div:last-child > div[class*="notification"],
 body > div[class*="notification"] {
-  top: 75px !important;
+  top: 50px !important;
   left: 10px !important;
   right: auto !important;
   bottom: auto !important;

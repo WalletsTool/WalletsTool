@@ -264,6 +264,15 @@ const showPrivateKeyInput = computed(() => tipMode.value === "privatekey");
 // 右侧功能面板是否展开
 const isSidePanelExpanded = ref(true);
 
+// 悬浮操作按钮栏动态样式
+const floatingActionBarStyle = computed(() => {
+  // 右侧功能面板宽度（50px面板 + 10px右边距）
+  const sidePanelWidth = isSidePanelExpanded.value ? 60 : 0;
+  return {
+    "--side-panel-offset": `${sidePanelWidth}px`
+  };
+});
+
 // 展开右侧功能面板
 function expandSidePanel() {
   isSidePanelExpanded.value = true;
@@ -470,6 +479,13 @@ async function generateQRCode() {
 watch(showTipModal, (newValue) => {
   if (newValue && tipMode.value === "qrcode") {
     generateQRCode();
+  }
+});
+
+// 监听多线程开关切换，切换到单线程时重置线程数为1
+watch(enableMultiThread, (newValue) => {
+  if (newValue === "0" || newValue === false) {
+    threadCount.value = 1;
   }
 });
 
@@ -1940,10 +1956,16 @@ onBeforeMount(async () => {
           }));
         }
       } else {
-        // 没有共享配置时设置默认值
+        // 没有共享配置时设置默认值 - 优先选择eth链
         if (chainOptions.value.length > 0) {
-          chainValue.value = chainOptions.value[0].key;
-          currentChain.value = chainOptions.value[0];
+          const ethChain = chainOptions.value.find(c => c.key === 'eth');
+          if (ethChain) {
+            chainValue.value = 'eth';
+            currentChain.value = ethChain;
+          } else {
+            chainValue.value = chainOptions.value[0].key;
+            currentChain.value = chainOptions.value[0];
+          }
           // 获取对应的代币列表
           await chainChange();
         }
@@ -2020,9 +2042,15 @@ onBeforeMount(async () => {
         }));
       }
     } else {
-      // 没有共享配置时设置默认值
-      chainValue.value = chainOptions.value[0].key;
-      currentChain.value = chainOptions.value[0];
+      // 没有共享配置时设置默认值 - 优先选择eth链
+      const ethChain = chainOptions.value.find(c => c.key === 'eth');
+      if (ethChain) {
+        chainValue.value = 'eth';
+        currentChain.value = ethChain;
+      } else {
+        chainValue.value = chainOptions.value[0].key;
+        currentChain.value = chainOptions.value[0];
+      }
       // 获取rpc对应的代币列表
       await chainChange();
     }
@@ -3357,7 +3385,7 @@ async function queryBalance() {
   }
   if (data.value.length === 0) {
     Notification.warning({
-      content: "请先导入私钥！",
+      content: "请先导入钱包信息！",
       position: "topLeft",
     });
     return;
@@ -3643,7 +3671,7 @@ async function queryToAddressBalance() {
   }
   if (data.value.length === 0) {
     Notification.warning({
-      content: "请先导入地址！",
+      content: "请先导入钱包信息！",
       position: "topLeft",
     });
     return;
@@ -4041,7 +4069,7 @@ function startTransfer() {
   if (data.value.length === 0) {
     startLoading.value = false;
     Notification.warning({
-      content: "请先导入私钥！",
+      content: "请先导入钱包信息！",
       position: "topLeft",
     });
     return;
@@ -4211,8 +4239,9 @@ async function iterTransfer(accountData) {
   }
 
   // ========== 普通模式 ==========
-  // 如果线程数为1，则按照table中的顺序逐一执行，无需分组
-  if (threadCount.value === 1) {
+  // 如果未开启多线程模式，则按照table中的顺序逐一执行，无需分组
+  const isSingleThread = enableMultiThread === "0" || enableMultiThread === false;
+  if (isSingleThread) {
     for (let index = 0; index < accountData.length; index++) {
       if (stopFlag.value) {
         stopStatus.value = true;
@@ -6601,6 +6630,113 @@ async function handleBeforeClose() {
       </div>
     </div>
 
+    <!-- 悬浮操作按钮栏 -->
+    <div class="floating-action-bar" :style="floatingActionBarStyle">
+      <div class="floating-action-content">
+        <a-dropdown
+            v-if="!balanceLoading && balanceStopStatus"
+        >
+          <a-button
+              type="primary"
+              class="floating-btn primary-btn"
+          >
+            <template #icon>
+              <Icon icon="mdi:magnify" class="btn-icon"/>
+            </template>
+            <span class="btn-text">查询余额</span>
+          </a-button>
+          <template #content>
+            <a-doption
+                @click="debouncedQueryBalance"
+                class="dropdown-option"
+            >
+              <Icon
+                  icon="mdi:account-arrow-right"
+                  style="margin-right: 8px; margin-bottom: -2px;"
+              />
+              查出账地址
+            </a-doption>
+            <a-doption
+                @click="debouncedQueryToAddressBalance"
+                class="dropdown-option"
+            >
+              <Icon
+                  icon="mdi:account-arrow-left"
+                  style="margin-right: 8px; margin-bottom: -2px;"
+              />
+              查到账地址
+            </a-doption>
+          </template>
+        </a-dropdown>
+        <a-tooltip
+            v-else
+            content="点击可以提前停止查询"
+        >
+          <div @click="debouncedStopBalanceQuery" class="btn-wrapper">
+            <a-button
+                v-if="!balanceStopFlag"
+                class="floating-btn primary-btn executing"
+                loading
+            >
+              <template #icon>
+                <Icon icon="mdi:pause-circle"/>
+              </template>
+              查询中...
+            </a-button>
+          </div>
+        </a-tooltip>
+        <a-button
+            v-if="balanceStopFlag && !balanceStopStatus"
+            class="floating-btn primary-btn stopping"
+            loading
+        >
+          <template #icon>
+            <Icon icon="mdi:timer-sand"/>
+          </template>
+          正在停止...
+        </a-button>
+
+        <a-button
+            v-if="!startLoading && stopStatus"
+            type="success"
+            class="floating-btn success-btn"
+            @click="debouncedStartTransfer"
+        >
+          <template #icon>
+            <Icon icon="mdi:rocket-launch"/>
+          </template>
+          执行转账
+        </a-button>
+        <a-tooltip
+            v-else
+            content="点击可以提前停止执行"
+        >
+          <div @click="debouncedStopTransfer">
+            <a-button
+                v-if="!stopFlag"
+                class="floating-btn success-btn executing"
+                loading
+            >
+              <template #icon>
+                <Icon icon="mdi:rocket-launch"/>
+              </template>
+              执行中...
+            </a-button>
+            <a-button
+                v-if="stopFlag && !stopStatus"
+                class="floating-btn success-btn stopping"
+                loading
+            >
+              <template #icon>
+                <Icon icon="mdi:timer-sand"/>
+              </template>
+              正在停止...
+            </a-button>
+          </div>
+        </a-tooltip>
+      </div>
+    </div>
+
     <!-- 细节配置 -->
     <div style="display: flex; padding-top: 10px; flex-shrink: 0">
       <a-form
@@ -6850,63 +6986,60 @@ async function handleBeforeClose() {
                 </template>
               </a-space>
             </a-form-item>
-            <a-row style="display: flex">
-              <a-col style="flex: 1">
-                <a-form-item
-                    field="error_retry"
-                    label=""
-                    :label-col-props="{ span: 0  }"
-                >
-                  <a-tooltip
-                      content="开启自动重试有多次转账风险，谨慎使用！！"
-                  >
-                    <a-switch
-                        v-model="form.error_retry"
-                        checked-value="1"
-                        unchecked-value="0"
-                    >
-                      <template #checked>
-                        失败自动重试
-                      </template>
-                      <template #unchecked>
-                        失败不重试
-                      </template>
-                    </a-switch>
-                  </a-tooltip>
-                </a-form-item>
-              </a-col>
-              <a-col style="flex: 2">
-                <a-form-item
-                    field="multi_window"
-                    label="窗口多开"
-                    :label-col-props="{ span: 8 }"
-                >
-                  <a-input-group style="width: 100%">
-                    <a-input-number
-                        v-model="multiWindowCount"
-                        :min="1"
-                        :max="9"
-                        :step="1"
-                        :default-value="1"
-                        placeholder="窗口数"
-                        style="width: 50%"
-                    />
-                    <a-button
-                        status="success"
-                        @click="debouncedOpenMultipleWindow"
-                    >
-                      <template #icon>
-                        <Icon icon="mdi:content-copy"/>
-                      </template>
-                    </a-button>
-                  </a-input-group>
-                </a-form-item>
-              </a-col>
-            </a-row>
             <a-form-item
-                :label-col-props="{ span: 0 }"
-                :wrapper-col-props="{ span: 24 }"
+                field="error_retry"
+                label="失败自动重试"
+                tooltip="开启失败自动重试功能后，存在多次转账风险，请谨慎使用"
+                :label-col-props="{ span: 8 }"
+                :wrapper-col-props="{ span: 16 }"
             >
+              <a-switch
+                  v-model="form.error_retry"
+                  checked-value="1"
+                  unchecked-value="0"
+              >
+                <template #checked>
+                  开启
+                </template>
+                <template #unchecked>
+                  关闭
+                </template>
+              </a-switch>
+            </a-form-item>
+            <a-form-item
+                field="multi_window"
+                label="窗口多开"
+                tooltip="如果需要同时打开多个转账窗口，可设置窗口数量进行同配置窗口多开"
+                :label-col-props="{ span: 7 }"
+                :wrapper-col-props="{ span: 16 }"
+            >
+              <a-input-group style="width: 100%;">
+                <a-input-number
+                    v-model="multiWindowCount"
+                    :min="1"
+                    :max="9"
+                    :step="1"
+                    :default-value="1"
+                    placeholder="窗口数"
+                    style="width: 50%;"
+                />
+                <a-button
+                    status="success"
+                    @click="debouncedOpenMultipleWindow"
+                >
+                  <template #icon>
+                    <Icon icon="mdi:content-copy"/>
+                  </template>
+                </a-button>
+              </a-input-group>
+            </a-form-item>
+          </div>
+        </a-row>
+        <a-form-item
+            :label-col-props="{ span: 0 }"
+            :wrapper-col-props="{ span: 24 }"
+            v-if="false"
+        >
               <div
                   style="
                                     display: flex;
@@ -6914,78 +7047,78 @@ async function handleBeforeClose() {
                                     gap: 55px;
                                     justify-content: flex-start;
                                 "
+              >
+                <a-dropdown
+                    v-if="!balanceLoading && balanceStopStatus"
                 >
-                  <a-dropdown
-                      v-if="!balanceLoading && balanceStopStatus"
+                  <a-button
+                      type="primary"
+                      class="core-action-btn primary-btn enhanced-btn"
                   >
+                    <template #icon>
+                      <Icon icon="mdi:magnify" class="btn-icon"/>
+                    </template>
+                    <span class="btn-text">查询余额</span>
+                  </a-button>
+                  <template #content>
+                    <a-doption
+                        @click="debouncedQueryBalance"
+                        class="dropdown-option"
+                    >
+                      <Icon
+                          icon="mdi:account-arrow-right"
+                          style="margin-right: 8px; margin-bottom: -2px;"
+                      />
+                      查出账地址
+                    </a-doption>
+                    <a-doption
+                        @click="debouncedQueryToAddressBalance"
+                        class="dropdown-option"
+                    >
+                      <Icon
+                          icon="mdi:account-arrow-left"
+                          style="margin-right: 8px; margin-bottom: -2px;"
+                      />
+                      查到账地址
+                    </a-doption>
+                  </template>
+                </a-dropdown>
+                <a-tooltip
+                    v-else
+                    content="点击可以提前停止查询"
+                >
+                  <div @click="debouncedStopBalanceQuery" class="btn-wrapper">
                     <a-button
-                        type="primary"
-                        class="core-action-btn primary-btn enhanced-btn"
+                        v-if="!balanceStopFlag"
+                        class="core-action-btn primary-btn executing"
+                        loading
                     >
                       <template #icon>
-                        <Icon icon="mdi:magnify" class="btn-icon"/>
+                        <Icon icon="mdi:pause-circle"/>
                       </template>
-                      <span class="btn-text">查询余额</span>
+                      查询中...
                     </a-button>
-                    <template #content>
-                      <a-doption
-                          @click="debouncedQueryBalance"
-                          class="dropdown-option"
-                      >
-                        <Icon
-                            icon="mdi:account-arrow-right"
-                            style="margin-right: 8px; margin-bottom: -2px;"
-                        />
-                        查出账地址
-                      </a-doption>
-                      <a-doption
-                          @click="debouncedQueryToAddressBalance"
-                          class="dropdown-option"
-                      >
-                        <Icon
-                            icon="mdi:account-arrow-left"
-                            style="margin-right: 8px; margin-bottom: -2px;"
-                        />
-                        查到账地址
-                      </a-doption>
-                    </template>
-                  </a-dropdown>
-                  <a-tooltip
-                      v-else
-                      content="点击可以提前停止查询"
-                  >
-                    <div @click="debouncedStopBalanceQuery" class="btn-wrapper">
-                      <a-button
-                          v-if="!balanceStopFlag"
-                          class="core-action-btn primary-btn executing"
-                          loading
-                      >
-                        <template #icon>
-                          <Icon icon="mdi:pause-circle"/>
-                        </template>
-                        查询中...
-                      </a-button>
-                    </div>
-                  </a-tooltip>
-                  <a-button
-                      v-if="balanceStopFlag && !balanceStopStatus"
-                      class="core-action-btn primary-btn stopping"
-                      loading
-                  >
-                    <template #icon>
-                      <Icon icon="mdi:timer-sand"/>
-                    </template>
-                    正在停止...
-                  </a-button>
+                  </div>
+                </a-tooltip>
+                <a-button
+                    v-if="balanceStopFlag && !balanceStopStatus"
+                    class="core-action-btn primary-btn stopping"
+                    loading
+                >
+                  <template #icon>
+                    <Icon icon="mdi:timer-sand"/>
+                  </template>
+                  正在停止...
+                </a-button>
 
-                  <a-button
-                      v-if="!startLoading && stopStatus"
-                      type="success"
-                      class="core-action-btn success-btn"
-                      @click="debouncedStartTransfer"
-                  >
-                    <template #icon>
-                      <Icon icon="mdi:rocket-launch"/>
+                <a-button
+                    v-if="!startLoading && stopStatus"
+                    type="success"
+                    class="core-action-btn success-btn"
+                    @click="debouncedStartTransfer"
+                >
+                  <template #icon>
+                    <Icon icon="mdi:rocket-launch"/>
                   </template>
                   执行转账
                 </a-button>
@@ -7018,8 +7151,6 @@ async function handleBeforeClose() {
                 </a-tooltip>
               </div>
             </a-form-item>
-          </div>
-        </a-row>
       </a-form>
     </div>
   </div>
@@ -7907,6 +8038,93 @@ async function handleBeforeClose() {
   color: #ffffff;
   background-color: #fc0934;
   border: none;
+}
+
+/* 悬浮操作按钮栏样式 */
+.floating-action-bar {
+  position: relative;
+  z-index: 10;
+  width: calc(100% - var(--side-panel-offset, 60px));
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+  margin-top: -20px;
+  pointer-events: none;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.floating-action-content {
+  display: flex;
+  gap: 80px;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.floating-btn {
+  min-width: 120px;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.floating-btn.primary-btn {
+  background: linear-gradient(135deg, #165dff 0%, #0d42d6 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
+}
+
+.floating-btn.primary-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(22, 93, 255, 0.4);
+  background: linear-gradient(135deg, #2b6aff 0%, #165dff 100%);
+}
+
+.floating-btn.primary-btn.executing {
+  background: linear-gradient(135deg, #ff7d00 0%, #e66c00 100%);
+  box-shadow: 0 4px 12px rgba(255, 125, 0, 0.3);
+}
+
+.floating-btn.primary-btn.stopping {
+  background: linear-gradient(135deg, #86909c 0%, #6b7280 100%);
+  box-shadow: none;
+}
+
+.floating-btn.success-btn {
+  background: linear-gradient(135deg, #00b42a 0%, #009624 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 180, 42, 0.3);
+}
+
+.floating-btn.success-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 180, 42, 0.4);
+  background: linear-gradient(135deg, #00c732 0%, #00b42a 100%);
+}
+
+.floating-btn.success-btn.executing {
+  background: linear-gradient(135deg, #ff4d4f 0%, #e64547 100%);
+  box-shadow: 0 4px 12px rgba(255, 77, 79, 0.3);
+}
+
+.floating-btn.success-btn.stopping {
+  background: linear-gradient(135deg, #86909c 0%, #6b7280 100%);
+  box-shadow: none;
+}
+
+.floating-btn .btn-icon {
+  font-size: 18px;
+}
+
+.floating-btn .btn-text {
+  font-weight: 500;
 }
 
 /* 核心功能按钮样式 */
@@ -9012,9 +9230,48 @@ async function handleBeforeClose() {
   color: var(--primary-6, #165dff);
 }
 
+.status-menu-btn:hover .arco-icon,
+.status-menu-btn:hover .iconify {
+  animation: menu-icon-bounce 0.4s ease;
+}
+
+@keyframes menu-icon-bounce {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.2) rotate(-10deg);
+  }
+  50% {
+    transform: scale(1.1) rotate(5deg);
+  }
+  75% {
+    transform: scale(1.15) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
 .status-menu-btn.menu-btn-expanded {
   color: var(--primary-6, #165dff);
   background: var(--primary-1, #e8f1ff);
+}
+
+.status-menu-btn.menu-btn-expanded:hover .arco-icon,
+.status-menu-btn.menu-btn-expanded:hover .iconify {
+  animation: menu-icon-pulse 1s ease infinite;
+}
+
+@keyframes menu-icon-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(22, 93, 255, 0));
+  }
+  50% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 4px rgba(22, 93, 255, 0.5));
+  }
 }
 
 .status-settings-btn {
@@ -9500,6 +9757,6 @@ async function handleBeforeClose() {
 
 /* 面板收起时表格不需要右边距 */
 .mainTable:has(.side-actions-panel-fixed.side-actions-panel-collapsed) .table-with-side-actions {
-    margin-right: 10px;
+    margin-right: 0;
 }
 </style>

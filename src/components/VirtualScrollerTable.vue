@@ -403,8 +403,20 @@ const getDisplayText = (column, item) => {
   return value;
 };
 
+// 判断是否为最后一行
+const isLastRow = (item) => {
+  const index = getItemIndex(item);
+  return index === props.data.length - 1;
+};
+
 // 获取tooltip文本
 const getTooltipText = (column, item) => {
+  // 最后一行总是显示tooltip
+  if (isLastRow(item)) {
+    const value = item[column.dataIndex];
+    if (value) return value;
+  }
+
   const value = item[column.dataIndex];
   if (!value) return "";
 

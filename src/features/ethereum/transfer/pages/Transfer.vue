@@ -297,19 +297,135 @@ function handleGlobalPaste(event) {
   }
 }
 
-// 链和代币选择弹窗相关变量
-const selectionModalVisible = ref(false);
+// 链和代币选择展开状态
+const chainSelectorExpanded = ref(false);
+const tokenSelectorExpanded = ref(false);
+const chainSearchKeyword = ref("");
+const tokenSearchKeyword = ref("");
 
-function showSelectionModal() {
-  selectionModalVisible.value = true;
+const chainSearchInputRef = ref(null);
+const tokenSearchInputRef = ref(null);
+
+// 防止选择器在.dropdown菜单操作后立即关闭的标志
+let ignoreNextOutsideClick = false;
+
+const filteredChainOptions = computed(() => {
+  if (!chainSearchKeyword.value.trim()) {
+    return chainOptions.value;
+  }
+  const keyword = chainSearchKeyword.value.toLowerCase();
+  return chainOptions.value.filter(
+      (chain) =>
+          chain.name.toLowerCase().includes(keyword) ||
+          chain.key.toLowerCase().includes(keyword) ||
+          (chain.scan_url && chain.scan_url.toLowerCase().includes(keyword))
+  );
+});
+
+const filteredCoinOptions = computed(() => {
+  if (!tokenSearchKeyword.value.trim()) {
+    return coinOptions.value;
+  }
+  const keyword = tokenSearchKeyword.value.toLowerCase();
+  return coinOptions.value.filter(
+      (coin) =>
+          coin.label.toLowerCase().includes(keyword) ||
+          coin.symbol.toLowerCase().includes(keyword) ||
+          (coin.key && coin.key.toLowerCase().includes(keyword))
+  );
+});
+
+// 关闭所有选择器
+function closeAllSelectors() {
+  chainSelectorExpanded.value = false;
+  tokenSelectorExpanded.value = false;
+  chainSearchKeyword.value = "";
+  tokenSearchKeyword.value = "";
 }
 
-function handleSelectionModalOk() {
-  selectionModalVisible.value = false;
+// 切换区块链选择器
+function toggleChainSelector(event) {
+  if (event && event.type === 'click' && event.target.closest('.arco-dropdown')) {
+    ignoreNextOutsideClick = true;
+  }
+  
+  if (chainSelectorExpanded.value) {
+    chainSelectorExpanded.value = false;
+  } else {
+    chainSelectorExpanded.value = true;
+    tokenSelectorExpanded.value = false;
+    nextTick(() => {
+      chainSearchInputRef.value?.focus();
+    });
+  }
 }
 
-function handleSelectionModalCancel() {
-  selectionModalVisible.value = false;
+// 切换代币选择器
+function toggleTokenSelector() {
+  if (tokenSelectorExpanded.value) {
+    tokenSelectorExpanded.value = false;
+  } else {
+    if (!chainValue.value) {
+      Notification.warning({
+        content: "请先选择区块链",
+        position: "topLeft",
+      });
+      return;
+    }
+    tokenSelectorExpanded.value = true;
+    chainSelectorExpanded.value = false;
+    nextTick(() => {
+      tokenSearchInputRef.value?.focus();
+    });
+  }
+}
+
+// 选择区块链
+function handleChainSelect(chainKey) {
+  chainValue.value = chainKey;
+  chainChange();
+  chainSelectorExpanded.value = false;
+  nextTick(() => {
+    tokenSelectorExpanded.value = true;
+    nextTick(() => {
+      tokenSearchInputRef.value?.focus();
+    });
+  });
+}
+
+// 选择代币
+function handleTokenSelect(tokenKey) {
+  coinValue.value = tokenKey;
+  coinChange(tokenKey);
+  tokenSelectorExpanded.value = false;
+}
+
+// 点击外部关闭选择器
+function handleClickOutside(event) {
+  // 如果刚刚从.dropdown菜单操作触发，忽略这次点击
+  if (ignoreNextOutsideClick) {
+    ignoreNextOutsideClick = false;
+    return;
+  }
+  
+  // 如果点击在.dropdown内，忽略
+  if (event.target.closest('.arco-dropdown')) {
+    return;
+  }
+  
+  const chainSelector = document.querySelector('.chain-selector-container');
+  const tokenSelector = document.querySelector('.token-selector-container');
+  
+  // 检查点击是否在选择器容器内
+  const isInChainSelector = chainSelector && chainSelector.contains(event.target);
+  const isInTokenSelector = tokenSelector && tokenSelector.contains(event.target);
+  
+  if (!isInChainSelector) {
+    chainSelectorExpanded.value = false;
+  }
+  if (!isInTokenSelector) {
+    tokenSelectorExpanded.value = false;
+  }
 }
 
 function openChainExplorer() {
@@ -1901,9 +2017,6 @@ onBeforeMount(async () => {
 });
 
 onMounted(async () => {
-  // 进入页面时直接打开选择弹窗
-  selectionModalVisible.value = true;
-
   // 获取窗口标题和ID
   const isTauri = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   if (isTauri) {
@@ -1934,6 +2047,16 @@ onMounted(async () => {
   // 配置应用已经在onBeforeMount中完成，这里不再需要重复应用
 
   // 页面高度现在通过 CSS 自动调整，无需监听器
+
+  // 进入页面时自动展开区块链选择器，方便用户第一步选择
+  nextTick(() => {
+    setTimeout(() => {
+      chainSelectorExpanded.value = true;
+      nextTick(() => {
+        chainSearchInputRef.value?.focus();
+      });
+    }, 100);
+  });
 
   // 监听余额查询更新事件
   const isTauriMounted =
@@ -2004,8 +2127,11 @@ onMounted(async () => {
     });
   }
 
-  // 页面加载完成后发送事件
+   // 页面加载完成后发送事件
   nextTick(() => {
+    // 添加点击外部关闭选择器的监听
+    document.addEventListener('click', handleClickOutside);
+    
     setTimeout(() => {
       const isTauri =
           typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -2018,6 +2144,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(async () => {
+  // 移除点击外部关闭选择器的监听
+  document.removeEventListener('click', handleClickOutside);
+  
   // 停止转账操作
   if (startLoading.value) {
     stopFlag.value = true;
@@ -7394,43 +7523,145 @@ async function handleBeforeClose() {
   <div class="status-bar">
     <div class="status-bar-left">
       <div class="status-group">
-        <div
-            class="status-item status-chain"
-            @click="showSelectionModal"
-            title="点击切换区块链"
-        >
-          <ChainIcon
-              v-if="currentChain?.key"
-              :chain-key="currentChain?.key"
-              :pic-data="currentChain?.pic_data"
-              :alt="currentChain?.name"
-              style="width: 14px; height: 14px"
-          />
-          <span class="status-label">{{
-              currentChain?.name || "未选择区块链"
-            }}</span>
-          <a-tag
-              v-if="currentChain?.scan_url"
-              size="small"
-              class="status-explorer-tag"
-              @click.stop="openChainExplorer"
-              title="打开区块链浏览器"
+        <!-- 区块链选择器容器 -->
+        <div class="chain-selector-container" style="position: relative;">
+          <div
+              class="status-item status-chain"
+              :class="{ 'status-chain-active': chainSelectorExpanded }"
+              @click="toggleChainSelector"
+              title="点击切换区块链"
           >
-            <Icon icon="mdi:open-in-new"/>
-          </a-tag>
+            <ChainIcon
+                v-if="currentChain?.key"
+                :chain-key="currentChain?.key"
+                :pic-data="currentChain?.pic_data"
+                :alt="currentChain?.name"
+                style="width: 14px; height: 14px"
+            />
+            <span class="status-label">{{
+                currentChain?.name || "选择区块链"
+              }}</span>
+            <Icon 
+              icon="mdi:chevron-up" 
+              style="font-size: 12px; margin-left: 4px; transition: transform 0.2s;"
+              :style="{ transform: chainSelectorExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }"
+            />
+            <a-tag
+                v-if="currentChain?.scan_url"
+                size="small"
+                class="status-explorer-tag"
+                @click.stop="openChainExplorer"
+                title="打开区块链浏览器"
+            >
+              <Icon icon="mdi:open-in-new"/>
+            </a-tag>
+          </div>
+          
+          <!-- 区块链选择列表 - 向上展开 -->
+          <Transition name="selector-slide">
+            <div v-if="chainSelectorExpanded" class="selector-dropdown selector-dropdown-up">
+              <div class="selector-search">
+                <a-input
+                    ref="chainSearchInputRef"
+                    v-model="chainSearchKeyword"
+                    placeholder="搜索区块链..."
+                    size="small"
+                    allow-clear
+                >
+                  <template #prefix>
+                    <Icon icon="mdi:magnify" style="font-size: 14px; color: var(--text-color-quaternary, #c9cdd4);"/>
+                  </template>
+                </a-input>
+              </div>
+              <div class="selector-list">
+                <div
+                    v-for="chain in filteredChainOptions"
+                    :key="chain.key"
+                    class="selector-item"
+                    :class="{ 'selector-item-selected': chainValue === chain.key }"
+                    @click.stop="handleChainSelect(chain.key)"
+                >
+                  <ChainIcon
+                      :chain-key="chain.key"
+                      :pic-data="chain.pic_data"
+                      :alt="chain.name"
+                      style="width: 18px; height: 18px; flex-shrink: 0;"
+                  />
+                  <span class="selector-item-name">{{ chain.name }}</span>
+                  <span class="selector-item-url">{{ chain.scan_url }}</span>
+                  <Icon 
+                    v-if="chainValue === chain.key"
+                    icon="mdi:check" 
+                    style="font-size: 14px; color: var(--primary-6, #165dff); margin-left: auto;"
+                  />
+                </div>
+              </div>
+            </div>
+          </Transition>
         </div>
+
         <div class="status-divider"></div>
-        <div
-            class="status-item status-token"
-            v-if="currentCoin?.label"
-            @click="showSelectionModal"
-            title="点击切换代币"
-        >
-          <Icon icon="mdi:coins" style="font-size: 14px"/>
-          <span class="status-label">{{ currentCoin?.label }}</span>
-        </div>
-        <div class="status-item status-empty" v-else>
-          <span class="status-placeholder">未选择代币</span>
+
+        <!-- 代币选择器容器 -->
+        <div class="token-selector-container" style="position: relative;">
+          <div
+              class="status-item status-token"
+              :class="{ 'status-token-active': tokenSelectorExpanded }"
+              @click="toggleTokenSelector"
+              title="点击切换代币"
+          >
+            <Icon icon="mdi:coins" style="font-size: 14px"/>
+            <span class="status-label">{{ currentCoin?.label || "选择代币" }}</span>
+            <Icon 
+              icon="mdi:chevron-up" 
+              style="font-size: 12px; margin-left: 4px; transition: transform 0.2s;"
+              :style="{ transform: tokenSelectorExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }"
+            />
+          </div>
+
+          <!-- 代币选择列表 - 向上展开 -->
+          <Transition name="selector-slide">
+            <div v-if="tokenSelectorExpanded" class="selector-dropdown selector-dropdown-up">
+              <div class="selector-search">
+                <a-input
+                    ref="tokenSearchInputRef"
+                    v-model="tokenSearchKeyword"
+                    placeholder="搜索代币..."
+                    size="small"
+                    allow-clear
+                >
+                  <template #prefix>
+                    <Icon icon="mdi:magnify" style="font-size: 14px; color: var(--text-color-quaternary, #c9cdd4);"/>
+                  </template>
+                </a-input>
+              </div>
+              <div class="selector-list">
+                <div
+                    v-for="token in filteredCoinOptions"
+                    :key="token.key"
+                    class="selector-item"
+                    :class="{ 'selector-item-selected': coinValue === token.key }"
+                    @click.stop="handleTokenSelect(token.key)"
+                >
+                  <Icon 
+                    :icon="token.coin_type === 'base' ? 'mdi:circle-slice-8' : 'mdi:coin'"
+                    :style="{ 
+                      fontSize: '18px', 
+                      color: token.coin_type === 'base' ? 'var(--primary-6, #165dff)' : 'var(--success-6, #0fa962)',
+                      flexShrink: '0'
+                    }"
+                  />
+                  <span class="selector-item-name">{{ token.label }}</span>
+                  <span class="selector-item-symbol">({{ token.symbol }})</span>
+                  <Icon 
+                    v-if="coinValue === token.key"
+                    icon="mdi:check" 
+                    style="font-size: 14px; color: var(--primary-6, #165dff); margin-left: auto;"
+                  />
+                </div>
+              </div>
+            </div>
+          </Transition>
         </div>
       </div>
       <div class="status-divider-vertical"></div>
@@ -7462,7 +7693,7 @@ async function handleBeforeClose() {
       >
         <Icon icon="mdi:shield-network" style="font-size: 14px"/>
         <span class="proxy-status-text">{{ proxyEnabled ? '已启用代理' : '未启动代理' }}</span>
-        <span class="proxy-count-text">({{ proxyCount }}个)</span>
+        <span v-if="proxyEnabled" class="proxy-count-text">({{ proxyCount }}个)</span>
       </div>
       <div class="status-divider-vertical"></div>
       <a-dropdown>
@@ -7470,7 +7701,7 @@ async function handleBeforeClose() {
           <Icon icon="mdi:cog" style="font-size: 15px"/>
         </div>
         <template #content>
-          <a-doption @click="showSelectionModal">
+          <a-doption @click="toggleChainSelector">
             <template #icon
             >
               <Icon icon="mdi:swap-horizontal"
@@ -8564,7 +8795,7 @@ async function handleBeforeClose() {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
+  padding: 2px 10px;
   background: var(--color-fill-1, #f2f3f5);
   border-radius: 12px;
   margin-left: 4px;
@@ -8726,7 +8957,7 @@ async function handleBeforeClose() {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
+  padding: 2px 8px;
   border-radius: 12px;
   background: var(--color-fill-1, #f2f3f5);
   transition: all 0.2s ease;
@@ -8842,5 +9073,129 @@ async function handleBeforeClose() {
   100% {
     transform: rotate(360deg);
   }
+}
+
+/* 区块链/代币选择器样式 */
+.status-chain-active {
+  background: linear-gradient(
+      135deg,
+      var(--primary-1, #e8f1ff),
+      var(--color-fill-2, #f2f3f5)
+  ) !important;
+}
+
+.status-chain-active .status-label {
+  color: var(--primary-6, #165dff) !important;
+}
+
+.status-token-active {
+  background: linear-gradient(
+      135deg,
+      var(--success-1, #e6fffb),
+      var(--color-fill-2, #f2f3f5)
+  ) !important;
+}
+
+.status-token-active .status-label {
+  color: var(--success-6, #0fa962) !important;
+}
+
+/* 选择器下拉框样式 */
+.selector-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--color-border, #e5e6eb);
+  border-radius: 12px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15), 0 -2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 10000;
+  margin-bottom: 8px;
+  min-width: 360px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.selector-dropdown-up {
+  border-radius: 12px 12px 4px 4px;
+}
+
+.selector-search {
+  padding: 12px 12px 8px 12px;
+  border-bottom: 1px solid var(--color-border-2, #f0f0f0);
+  background: var(--color-fill-1, #f7f8fa);
+}
+
+.selector-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 240px;
+  padding: 8px;
+}
+
+.selector-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-bottom: 2px;
+}
+
+.selector-item:hover {
+  background: var(--color-fill-2, #f2f3f5);
+}
+
+.selector-item-selected {
+  background: var(--primary-1, #e8f1ff);
+}
+
+.selector-item-selected:hover {
+  background: var(--primary-2, #d4e4ff);
+}
+
+.selector-item-name {
+  font-weight: 500;
+  color: var(--text-color, #1d2129);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selector-item-url {
+  font-size: 11px;
+  color: var(--text-color-tertiary, #8c8f94);
+}
+
+.selector-item-symbol {
+  font-size: 11px;
+  color: var(--text-color-secondary, #6b778c);
+  margin-left: 4px;
+}
+
+/* 选择器动画 */
+.selector-slide-enter-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.selector-slide-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.selector-slide-enter-from,
+.selector-slide-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.selector-slide-enter-to,
+.selector-slide-leave-from {
+  opacity: 1;
+  transform: translateY(0);
 }
 </style>

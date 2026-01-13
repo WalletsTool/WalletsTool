@@ -6610,9 +6610,9 @@ async function handleBeforeClose() {
           layout="horizontal"
           label-align="left"
       >
-        <a-row style="display: flex; gap: 10px">
+        <a-row style="display: flex; gap: 5px">
           <!-- 第一列 -->
-          <div style="flex: 10">
+          <div style="flex: 9">
             <a-form-item
                 field="send_type"
                 label="发送模式"

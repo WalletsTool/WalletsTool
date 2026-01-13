@@ -6127,77 +6127,6 @@ async function handleBeforeClose() {
 
       <!-- 正常表格 -->
       <div class="table-container">
-        <!-- 右侧固定功能区 -->
-        <div class="side-actions-panel-fixed">
-          <div class="side-actions-content-fixed">
-            <a-tooltip content="钱包录入" position="left">
-              <a-button type="primary" size="mini" @click="handleManualImport">
-                <template #icon>
-                  <Icon icon="mdi:wallet" style="color: #165dff;font-size: 19px;" />
-                </template>
-              </a-button>
-            </a-tooltip>
-            <a-tooltip content="导入文件" position="left">
-              <a-button type="primary" size="mini" @click="triggerFileUpload">
-                <template #icon>
-                  <Icon icon="mdi:upload" style="color: #00b42a;font-size: 19px;" />
-                </template>
-              </a-button>
-            </a-tooltip>
-            <a-tooltip content="清空表格" position="left">
-              <a-button type="primary" status="danger" size="mini" @click="debouncedClearData">
-                <template #icon>
-                  <Icon icon="mdi:delete-sweep" style="color: #f53f3f;font-size: 19px;" />
-                </template>
-              </a-button>
-            </a-tooltip>
-            <a-tooltip content="下载模板" position="left">
-              <a-button size="mini" @click="downloadTemplate">
-                <template #icon>
-                  <Icon icon="mdi:file-download" style="color: #4e5969;font-size: 19px;" />
-                </template>
-              </a-button>
-            </a-tooltip>
-            <div class="side-actions-divider"></div>
-            <a-tooltip content="选中成功的数据" position="left">
-              <a-button type="outline" status="success" size="mini" @click="selectSucceeded">
-                <template #icon>
-                  <Icon icon="mdi:check-circle" style="color: #00b42a;font-size: 19px;" />
-                </template>
-              </a-button>
-            </a-tooltip>
-            <a-tooltip content="选中失败的数据" position="left">
-              <a-button type="outline" status="danger" size="mini" @click="selectFailed">
-                <template #icon>
-                  <Icon icon="mdi:close-circle"  style="color: #f53f3f;font-size: 18px;"/>
-                </template>
-              </a-button>
-            </a-tooltip>
-            <a-tooltip content="反选" position="left">
-              <a-button type="outline" size="mini" @click="InvertSelection">
-                <template #icon>
-                  <Icon icon="mdi:swap-horizontal"  style="color: #165dff;font-size: 18px;"/>
-                </template>
-              </a-button>
-            </a-tooltip>
-            <a-tooltip content="高级筛选" position="left">
-              <a-button type="primary" size="mini" @click="showAdvancedFilter">
-                <template #icon>
-                  <Icon icon="mdi:filter" style="color: #165dff;font-size: 19px;" />
-                </template>
-              </a-button>
-            </a-tooltip>
-            <a-tooltip content="删除选中" position="left">
-              <a-button type="outline" status="danger" size="mini" @click="deleteSelected">
-                <template #icon>
-                  <Icon icon="mdi:trash-can" style="color: #f53f3f;font-size: 19px;" />
-                </template>
-              </a-button>
-            </a-tooltip>
-            <div class="side-actions-divider"></div>
-            
-          </div>
-        </div>
         <!-- 表格 -->
         <VirtualScrollerTable
             v-if="tableBool"
@@ -6355,6 +6284,78 @@ async function handleBeforeClose() {
           </a-button>
         </template>
       </VirtualScrollerTable>
+      </div>
+      
+      <!-- 右侧固定功能区 -->
+      <div class="side-actions-panel-fixed">
+        <div class="side-actions-content-fixed">
+          <a-tooltip content="钱包录入" position="left">
+            <a-button type="primary" size="mini" @click="handleManualImport">
+              <template #icon>
+                <Icon icon="mdi:wallet" style="color: #165dff;font-size: 19px;" />
+              </template>
+            </a-button>
+          </a-tooltip>
+          <a-tooltip content="导入文件" position="left">
+            <a-button type="primary" size="mini" @click="triggerFileUpload">
+              <template #icon>
+                <Icon icon="mdi:upload" style="color: #00b42a;font-size: 19px;" />
+              </template>
+            </a-button>
+          </a-tooltip>
+          <a-tooltip content="清空表格" position="left">
+            <a-button type="primary" status="danger" size="mini" @click="debouncedClearData">
+              <template #icon>
+                <Icon icon="mdi:delete-sweep" style="color: #f53f3f;font-size: 19px;" />
+              </template>
+            </a-button>
+          </a-tooltip>
+          <a-tooltip content="下载模板" position="left">
+            <a-button size="mini" @click="downloadTemplate">
+              <template #icon>
+                <Icon icon="mdi:file-download" style="color: #4e5969;font-size: 19px;" />
+              </template>
+            </a-button>
+          </a-tooltip>
+          <div class="side-actions-divider"></div>
+          <a-tooltip content="选中成功的数据" position="left">
+            <a-button type="outline" status="success" size="mini" @click="selectSucceeded">
+              <template #icon>
+                <Icon icon="mdi:check-circle" style="color: #00b42a;font-size: 19px;" />
+              </template>
+            </a-button>
+          </a-tooltip>
+          <a-tooltip content="选中失败的数据" position="left">
+            <a-button type="outline" status="danger" size="mini" @click="selectFailed">
+              <template #icon>
+                <Icon icon="mdi:close-circle"  style="color: #f53f3f;font-size: 18px;"/>
+              </template>
+            </a-button>
+          </a-tooltip>
+          <a-tooltip content="反选" position="left">
+            <a-button type="outline" size="mini" @click="InvertSelection">
+              <template #icon>
+                <Icon icon="mdi:swap-horizontal"  style="color: #165dff;font-size: 18px;"/>
+              </template>
+            </a-button>
+          </a-tooltip>
+          <a-tooltip content="高级筛选" position="left">
+            <a-button type="primary" size="mini" @click="showAdvancedFilter">
+              <template #icon>
+                <Icon icon="mdi:filter" style="color: #165dff;font-size: 19px;" />
+              </template>
+            </a-button>
+          </a-tooltip>
+          <a-tooltip content="删除选中" position="left">
+            <a-button type="outline" status="danger" size="mini" @click="deleteSelected">
+              <template #icon>
+                <Icon icon="mdi:trash-can" style="color: #f53f3f;font-size: 19px;" />
+              </template>
+            </a-button>
+          </a-tooltip>
+          <div class="side-actions-divider"></div>
+          
+        </div>
       </div>
     </div>
 
@@ -6560,7 +6561,7 @@ async function handleBeforeClose() {
     </div>
 
     <!-- 细节配置 -->
-    <div style="display: flex; padding-top: 20px; flex-shrink: 0">
+    <div style="display: flex; padding-top: 10px; flex-shrink: 0">
       <a-form
           ref="formRef"
           :model="form"
@@ -7760,10 +7761,6 @@ async function handleBeforeClose() {
 </template>
 
 <style scoped>
-.container {
-  padding: 10px 10px 20px 10px;
-  min-width: 1240px;
-}
 
 .pageTitle {
   position: fixed;
@@ -7798,10 +7795,11 @@ async function handleBeforeClose() {
 
 .mainTable {
   margin-top: 40px;
-  min-height: 400px;
-  height: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
+  position: relative;
+  overflow: hidden;
 }
 
 .subTitle {
@@ -8158,11 +8156,12 @@ async function handleBeforeClose() {
 
 /* 调整容器以适应自定义标题栏 */
 .container {
-  height: calc(100vh - 30px);
+  height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: 45px;
+  padding: 10px 10px 50px 10px;
+  min-width: 1240px;
 }
 
 /* 隐藏滚动条但保持滚动功能 */
@@ -8205,7 +8204,7 @@ async function handleBeforeClose() {
 /* 悬浮进度条样式 */
 .floating-progress-bar {
   position: fixed;
-  top: 45px;
+  top: 50px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10000;
@@ -9222,10 +9221,11 @@ async function handleBeforeClose() {
 
 /* 右侧固定功能区样式 */
 .side-actions-panel-fixed {
-    position: absolute;
-    right: 0;
+    position: fixed;
+    right: 10px;
+    top: 50px;
+    bottom: 45px;
     width: 50px;
-    height: 100%;
     background: linear-gradient(to left, rgba(255, 255, 255, 0.98) 0%, rgba(250, 251, 252, 0.98) 100%);
     border: 1px solid rgb(221 221 221 / 63%);
     border-radius: 8px;
@@ -9345,7 +9345,7 @@ async function handleBeforeClose() {
   flex: 1;
   display: flex;
   position: relative;
-  /* overflow: hidden; */
+  overflow: hidden;
   width: 100%;
 }
 

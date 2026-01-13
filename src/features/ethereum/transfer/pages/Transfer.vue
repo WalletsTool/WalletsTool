@@ -261,6 +261,19 @@ const tipMode = ref("qrcode"); // 'qrcode' 或 'privatekey'
 const showQRCode = computed(() => tipMode.value === "qrcode");
 const showPrivateKeyInput = computed(() => tipMode.value === "privatekey");
 
+// 右侧功能面板是否展开
+const isSidePanelExpanded = ref(true);
+
+// 展开右侧功能面板
+function expandSidePanel() {
+  isSidePanelExpanded.value = true;
+}
+
+// 收起右侧功能面板
+function collapseSidePanel() {
+  isSidePanelExpanded.value = false;
+}
+
 // 切换打赏模式的函数
 function switchTipMode(mode) {
   tipMode.value = mode;
@@ -6286,76 +6299,104 @@ async function handleBeforeClose() {
       </VirtualScrollerTable>
       </div>
       
-      <!-- 右侧固定功能区 -->
-      <div class="side-actions-panel-fixed">
-        <div class="side-actions-content-fixed">
-          <a-tooltip content="钱包录入" position="left">
-            <a-button type="primary" size="mini" @click="handleManualImport">
+      <!-- 右侧功能面板 -->
+      <div
+          class="side-actions-panel-fixed"
+          :class="{ 'side-actions-panel-collapsed': !isSidePanelExpanded }"
+      >
+        <Transition name="panel-slide">
+          <div v-if="isSidePanelExpanded" class="side-actions-content-fixed">
+            <a-tooltip content="钱包录入" position="left">
+              <a-button type="primary" size="mini" @click="handleManualImport">
+                <template #icon>
+                  <Icon icon="mdi:wallet" style="color: #165dff;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="导入文件" position="left">
+              <a-button type="primary" size="mini" @click="triggerFileUpload">
+                <template #icon>
+                  <Icon icon="mdi:upload" style="color: #00b42a;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="清空表格" position="left">
+              <a-button type="primary" status="danger" size="mini" @click="debouncedClearData">
+                <template #icon>
+                  <Icon icon="mdi:delete-sweep" style="color: #f53f3f;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="下载模板" position="left">
+              <a-button size="mini" @click="downloadTemplate">
+                <template #icon>
+                  <Icon icon="mdi:file-download" style="color: #4e5969;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <div class="side-actions-divider"></div>
+            <a-tooltip content="选中成功的数据" position="left">
+              <a-button type="outline" status="success" size="mini" @click="selectSucceeded">
+                <template #icon>
+                  <Icon icon="mdi:check-circle" style="color: #00b42a;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="选中失败的数据" position="left">
+              <a-button type="outline" status="danger" size="mini" @click="selectFailed">
+                <template #icon>
+                  <Icon icon="mdi:close-circle"  style="color: #f53f3f;font-size: 18px;"/>
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="反选" position="left">
+              <a-button type="outline" size="mini" @click="InvertSelection">
+                <template #icon>
+                  <Icon icon="mdi:swap-horizontal"  style="color: #165dff;font-size: 18px;"/>
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="高级筛选" position="left">
+              <a-button type="primary" size="mini" @click="showAdvancedFilter">
+                <template #icon>
+                  <Icon icon="mdi:filter" style="color: #165dff;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="删除选中" position="left">
+              <a-button type="outline" status="danger" size="mini" @click="deleteSelected">
+                <template #icon>
+                  <Icon icon="mdi:trash-can" style="color: #f53f3f;font-size: 19px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <div class="side-actions-divider"></div>
+          </div>
+        </Transition>
+
+        <!-- 展开按钮（面板收起时显示）- 已移至状态栏 -->
+        <!-- <Transition name="expand-btn">
+          <div v-if="false" class="expand-toggle-btn" @click="expandSidePanel">
+            <a-tooltip content="展开功能菜单" position="left">
+              <a-button type="primary" size="mini" class="expand-btn-inner">
+                <template #icon>
+                  <Icon icon="mdi:menu" style="font-size: 20px;" />
+                </template>
+              </a-button>
+            </a-tooltip>
+          </div>
+        </Transition> -->
+
+        <!-- 收起按钮（面板展开时显示）- 已移至状态栏 -->
+        <!-- <div v-if="false" class="collapse-toggle-btn" @click="collapseSidePanel">
+          <a-tooltip content="收起功能菜单" position="left">
+            <a-button type="text" size="mini" class="collapse-btn-icon">
               <template #icon>
-                <Icon icon="mdi:wallet" style="color: #165dff;font-size: 19px;" />
+                <Icon icon="mdi:chevron-right" style="font-size: 22px;" />
               </template>
             </a-button>
           </a-tooltip>
-          <a-tooltip content="导入文件" position="left">
-            <a-button type="primary" size="mini" @click="triggerFileUpload">
-              <template #icon>
-                <Icon icon="mdi:upload" style="color: #00b42a;font-size: 19px;" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="清空表格" position="left">
-            <a-button type="primary" status="danger" size="mini" @click="debouncedClearData">
-              <template #icon>
-                <Icon icon="mdi:delete-sweep" style="color: #f53f3f;font-size: 19px;" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="下载模板" position="left">
-            <a-button size="mini" @click="downloadTemplate">
-              <template #icon>
-                <Icon icon="mdi:file-download" style="color: #4e5969;font-size: 19px;" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <div class="side-actions-divider"></div>
-          <a-tooltip content="选中成功的数据" position="left">
-            <a-button type="outline" status="success" size="mini" @click="selectSucceeded">
-              <template #icon>
-                <Icon icon="mdi:check-circle" style="color: #00b42a;font-size: 19px;" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="选中失败的数据" position="left">
-            <a-button type="outline" status="danger" size="mini" @click="selectFailed">
-              <template #icon>
-                <Icon icon="mdi:close-circle"  style="color: #f53f3f;font-size: 18px;"/>
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="反选" position="left">
-            <a-button type="outline" size="mini" @click="InvertSelection">
-              <template #icon>
-                <Icon icon="mdi:swap-horizontal"  style="color: #165dff;font-size: 18px;"/>
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="高级筛选" position="left">
-            <a-button type="primary" size="mini" @click="showAdvancedFilter">
-              <template #icon>
-                <Icon icon="mdi:filter" style="color: #165dff;font-size: 19px;" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="删除选中" position="left">
-            <a-button type="outline" status="danger" size="mini" @click="deleteSelected">
-              <template #icon>
-                <Icon icon="mdi:trash-can" style="color: #f53f3f;font-size: 19px;" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <div class="side-actions-divider"></div>
-          
-        </div>
+        </div> -->
       </div>
     </div>
 
@@ -7710,6 +7751,14 @@ async function handleBeforeClose() {
         <span v-if="proxyEnabled" class="proxy-count-text">({{ proxyCount }}个)</span>
       </div>
       <div class="status-divider-vertical"></div>
+      <div
+          class="status-menu-btn"
+          :class="{ 'menu-btn-expanded': isSidePanelExpanded }"
+          @click="isSidePanelExpanded ? collapseSidePanel() : expandSidePanel()"
+          :title="isSidePanelExpanded ? '关闭功能菜单' : '打开功能菜单'"
+      >
+        <Icon icon="mdi:menu" style="font-size: 15px"/>
+      </div>
       <a-dropdown>
         <div class="status-settings-btn" title="设置">
           <Icon icon="mdi:cog" style="font-size: 15px"/>
@@ -8947,6 +8996,27 @@ async function handleBeforeClose() {
   margin: 0 8px;
 }
 
+.status-menu-btn {
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color-secondary, #6b778c);
+}
+
+.status-menu-btn:hover {
+  background: var(--color-fill-2, #f2f3f5);
+  color: var(--primary-6, #165dff);
+}
+
+.status-menu-btn.menu-btn-expanded {
+  color: var(--primary-6, #165dff);
+  background: var(--primary-1, #e8f1ff);
+}
+
 .status-settings-btn {
   cursor: pointer;
   padding: 6px;
@@ -9226,8 +9296,8 @@ async function handleBeforeClose() {
     top: 50px;
     bottom: 45px;
     width: 50px;
-    background: linear-gradient(to left, rgba(255, 255, 255, 0.98) 0%, rgba(250, 251, 252, 0.98) 100%);
-    border: 1px solid rgb(221 221 221 / 63%);
+    background: var(--color-bg-2, #ffffff);
+    border: 1px solid var(--color-border, #e5e6eb);
     border-radius: 8px;
     display: flex;
     flex-direction: column;
@@ -9236,6 +9306,15 @@ async function handleBeforeClose() {
     pointer-events: none;
     box-shadow: 3px 0px 6px 0px rgba(0, 0, 0, 0.06), -1px 0 4px rgba(0, 0, 0, 0.03);
     z-index: 10;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.side-actions-panel-fixed.side-actions-panel-collapsed {
+    width: 50px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
 }
 
 .side-actions-content-fixed {
@@ -9246,7 +9325,69 @@ async function handleBeforeClose() {
   gap: 4px;
   opacity: 1;
   pointer-events: auto;
-  height: 100%;
+  flex: 1;
+}
+
+.expand-toggle-btn {
+    pointer-events: auto;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    padding-bottom: 4px;
+    flex: 1;
+}
+
+.expand-btn-inner {
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 50% !important;
+    box-shadow: 0 2px 8px rgba(22, 93, 255, 0.25);
+}
+
+.collapse-toggle-btn {
+    pointer-events: auto;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    padding-top: 8px;
+    margin-top: auto;
+}
+
+.collapse-btn-icon {
+    width: 36px !important;
+    height: 36px !important;
+    padding: 0 !important;
+    border-radius: 6px !important;
+    background: var(--color-fill-2, #f2f3f5) !important;
+    border: 1px solid var(--color-border-light, #e2e4e8) !important;
+}
+
+.collapse-btn-icon:hover {
+    background: var(--color-fill-3, #e5e6eb) !important;
+}
+
+/* 面板展开/收起动画 */
+.panel-slide-enter-active,
+.panel-slide-leave-active {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.panel-slide-enter-from,
+.panel-slide-leave-to {
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+.expand-btn-enter-active,
+.expand-btn-leave-active {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.expand-btn-enter-from,
+.expand-btn-leave-to {
+    opacity: 0;
+    transform: scale(0.8);
 }
 
 .side-actions-content-fixed .arco-btn {
@@ -9257,7 +9398,7 @@ async function handleBeforeClose() {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  border: 1px solid var(--color-border-light, #e2e4e8);
+  border: 1px solid var(--color-border, #e2e4e8);
   background: var(--color-fill-1, #f7f8fa);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -9272,7 +9413,7 @@ async function handleBeforeClose() {
 .side-actions-content-fixed .arco-btn > .arco-btn-icon {
   margin: 0;
   font-size: 20px;
-  color: #1a1a1a;
+  color: var(--text-color-secondary, #6b778c);
   transition: color 0.2s ease;
 }
 
@@ -9302,8 +9443,8 @@ async function handleBeforeClose() {
 }
 
 .side-actions-content-fixed .arco-btn[status="success"] {
-  background: linear-gradient(135deg, #0fa962 0%, #12b576 100%);
-  border-color: #0fa962;
+  background: linear-gradient(135deg, var(--color-success-6, #0fa962) 0%, var(--color-success-5, #12b576) 100%);
+  border-color: var(--color-success-6, #0fa962);
   box-shadow: 0 2px 6px rgba(15, 169, 98, 0.25);
 }
 
@@ -9312,14 +9453,14 @@ async function handleBeforeClose() {
 }
 
 .side-actions-content-fixed .arco-btn[status="success"]:hover {
-  background: linear-gradient(135deg, #12b576 0%, #0fa962 100%);
+  background: linear-gradient(135deg, var(--color-success-5, #12b576) 0%, var(--color-success-6, #0fa962) 100%);
   box-shadow: 0 4px 12px rgba(15, 169, 98, 0.35);
   transform: translateY(-2px);
 }
 
 .side-actions-content-fixed .arco-btn[status="danger"] {
-  background: linear-gradient(135deg, #f53f3f 0%, #ff7d7d 100%);
-  border-color: #f53f3f;
+  background: linear-gradient(135deg, var(--color-danger-6, #f53f3f) 0%, var(--color-danger-5, #ff7d7d) 100%);
+  border-color: var(--color-danger-6, #f53f3f);
   box-shadow: 0 2px 6px rgba(245, 63, 63, 0.25);
 }
 
@@ -9328,7 +9469,7 @@ async function handleBeforeClose() {
 }
 
 .side-actions-content-fixed .arco-btn[status="danger"]:hover {
-  background: linear-gradient(135deg, #ff7d7d 0%, #f53f3f 100%);
+  background: linear-gradient(135deg, var(--color-danger-5, #ff7d7d) 0%, var(--color-danger-6, #f53f3f) 100%);
   box-shadow: 0 4px 12px rgba(245, 63, 63, 0.35);
   transform: translateY(-2px);
 }
@@ -9354,5 +9495,11 @@ async function handleBeforeClose() {
   margin-right: 58px;
   margin-top: 0;
   height: 100%;
+  transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 面板收起时表格不需要右边距 */
+.mainTable:has(.side-actions-panel-fixed.side-actions-panel-collapsed) .table-with-side-actions {
+    margin-right: 10px;
 }
 </style>

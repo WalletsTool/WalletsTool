@@ -83,14 +83,15 @@
               :size="12"
               style="margin-right: 4px;"/>
             <span class="empty-text-second">
-              支持CSV、XLSX格式文件，下载
+              支持CSV、XLSX格式文件，
               <a
                 href="#"
                 @click.prevent="handleEmptyAction('template')"
                 style="color: #a2beff;"
               >
-                导入模板
+                下载
               </a>
+              导入模板
             </span>
           </div>
         </template>

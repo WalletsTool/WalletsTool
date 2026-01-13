@@ -1,153 +1,116 @@
-# AGENTS.md - WalletsTool Development Guide
+# WalletsTool Development Guide
 
-## Project Overview
+**Generated:** 2026-01-13
+**Commit:** d1f52e9 (dev branch)
 
-WalletsTool is a Web3 multi-chain wallet management desktop application built with Vue 3 + Tauri (Rust). It supports Ethereum and Solana ecosystems with features like batch wallet import, balance queries, batch transfers, RPC/token configuration, and Excel import/export with local SQLite storage.
+## OVERVIEW
 
-## Development Commands
+Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch import/transfer/balance, RPC/token config, Excel I/O, SQLite local storage (private keys in memory only).
 
-### Frontend (Vue 3 + Vite)
-- `yarn dev` - Start Vite development server only (port 1422)
-- `yarn build` - Build frontend for production
-- `yarn preview` - Preview production build
+## STRUCTURE
 
-### Tauri Desktop App
-- `yarn tauri-dev` - Start Tauri development server (combines frontend + backend)
-- `yarn tauri-build` - Build production desktop application
-
-### Utilities
-- `yarn start` or `yarn setup` - Auto-install dependencies and start dev environment
-- `node scripts/install-deps.cjs` - Manually run dependency installation
-- `yarn version:update <version>` - Update version across package.json and Cargo.toml
-
-### Running Tests
-This project uses Playwright for E2E tests:
-- `yarn playwright test` - Run all tests
-- `yarn playwright test --project=chromium` - Run tests in specific browser
-- `yarn playwright test <filename>` - Run specific test file
-
-## Code Style Guidelines
-
-### Vue 3 / JavaScript
-
-**Imports:**
-- Use `@/` alias for imports from `src/` directory: `import { useStore } from '@/stores/ecosystem'`
-- Third-party imports first, then local imports
-- Group imports by source (vue, @tauri-apps, @arco-design, local)
-
-**Naming Conventions:**
-- Components: PascalCase (`WalletImportModal.vue`)
-- Variables/functions: camelCase (`windowCount`, `checkDatabaseStatus()`)
-- Props: camelCase (consistent with JavaScript)
-- Constants: SCREAMING_SNAKE_CASE or camelCase for local consts
-- CSS classes: kebab-case (`.custom-titlebar`, `.func-card`)
-
-**Component Structure (script setup):**
-```vue
-<script setup name="ComponentName">
-// Imports
-// Props/Emits
-// Composables/Stores
-// Refs/Computed
-// Lifecycle hooks
-// Methods
-</script>
-
-<template>
-<!-- Template content -->
-</template>
-
-<style scoped>
-/* Component styles */
-</style>
+```
+./
+├── src/                      # Vue 3 frontend
+│   ├── features/{eth,sol}/   # Feature-based architecture
+│   ├── components/           # Shared components
+│   ├── stores/               # Pinia state
+│   └── router/               # Hash routing
+├── src-tauri/                # Tauri backend
+│   ├── src/wallets_tool/     # Business logic
+│   │   └── ecosystems/       # Chain implementations
+│   └── data/                 # SQLite DB + init.sql
+├── scripts/                  # Build utilities
+└── .github/workflows/        # CI (multi-platform)
 ```
 
-**Template Style:**
-- Use `v-for` with `:key` (prefer index only if no unique id)
-- Prefer composition API helpers (computed, ref, watch)
-- Use `async` for methods calling backend commands
-- Check Tauri environment with: `window.__TAURI_INTERNALS__`
+## WHERE TO LOOK
 
-### Rust / Tauri
+| Task | Location | Notes |
+|------|----------|-------|
+| Frontend entry | `src/main.js` | PrimeVue + Arco dual UI |
+| Backend entry | `src-tauri/src/main.rs` | 37+ Tauri commands |
+| Transfer logic | `src/features/ethereum/transfer/` | Composables-heavy |
+| Ethereum backend | `src-tauri/src/wallets_tool/ecosystems/ethereum/` | 8 specialized modules |
+| Database ops | `src-tauri/src/database/` | Service pattern (ChainService, RpcService) |
+| Configs | `src-tauri/Cargo.toml` | Rust deps + profiles |
+| Build | `vite.config.js` | 213 lines, manual chunk splitting |
 
-**Modules:**
-- Files: snake_case (`rpc_management.rs`, `simple_balance_query.rs`)
-- Modules: snake_case (defined in `mod.rs`)
+## CONVENTIONS (DEVIATIONS FROM STANDARD)
 
-**Naming Conventions:**
-- Structs/Enums/Traits: PascalCase (`TransactionRequest`, `ProviderState`)
-- Functions/Variables: snake_case (`get_balance`, `rpc_providers`)
-- Constants: SCREAMING_SNAKE_CASE
-- Macros: snake_case
+**JavaScript (not TypeScript):** Frontend uses `.js` despite 2025 project
 
-**Error Handling Pattern:**
-```rust
-#[tauri::command]
-async fn function_name(param: Type) -> Result<ReturnType, String> {
-    // Implementation
-}
-```
-- Return `Result<T, String>` for all public commands
-- Use `?` operator for early returns on errors
-- Convert errors to descriptive strings for frontend
+**Dual UI libraries:** PrimeVue (primary) + Arco Design (tabs/modals/tooltips)
 
-**Module Organization:**
-- Each ecosystem has its own module: `ecosystems/ethereum/`, `ecosystems/solana/`
-- Shared utilities in `wallets_tool/utils.rs`
-- Database operations in `database/` module
+**Deep nesting:** `src/features/{ecosystem}/{feature}/{pages,components,composables,styles}/`
 
-**Tauri Commands:**
-- Mark with `#[tauri::command]` attribute
-- Must be async
-- Register in `main.rs` via `invoke_handler!`
-- Bridge frontend via Tauri's `invoke()` API
+**2-space indentation:** JavaScript/Vue; Rust uses standard
 
-### General Guidelines
+**No comments:** "DO NOT ADD COMMENTS unless explicitly required"
 
-**Comments:**
-- DO NOT ADD COMMENTS unless explicitly required by task
-- Self-documenting code preferred
-- Complex logic may warrant brief inline comments
+**Semicolons:** Required in JavaScript
 
-**Formatting:**
-- 2-space indentation for JavaScript/Vue
-- Standard Rust formatting (run `cargo fmt` before committing)
-- No trailing whitespace
-- Use semicolons in JavaScript (consistent with codebase)
+## ANTI-PATTERNS (THIS PROJECT)
 
-**TypeScript/JavaScript:**
-- Use TypeScript types when adding new code
-- Prefer `const` over `let`
-- Use arrow functions for callbacks
-- Handle async/await with try-catch
-
-**Security:**
 - Never log or expose private keys
-- Sensitive operations only in memory, never persist
-- Validate all user inputs from frontend
+- Never persist private keys (memory-only)
+- Never remove `custom-protocol` feature from Cargo.toml
 
-**Database (SQLx):**
-- Use migrations in `data/init.sql`
-- Models in `database/models.rs`
-- Services handle business logic
+## UNIQUE STYLES
 
-**State Management (Pinia):**
-- Store files in `src/stores/`
-- Use composition API stores (`defineStore(id, () => {...})`)
-- Access stores via composable functions
+**Feature structure:**
+```
+features/{ecosystem}/{feature}/
+├── pages/          # Route targets
+├── components/     # Feature-local UI
+├── composables/    # Business logic (barrel exports)
+└── styles/         # Feature CSS (barrel exports)
+```
 
-**UI Components:**
-- Primary: PrimeVue for core components
-- Secondary: Arco Design for tabs, modals, tooltips
-- Custom components in `src/components/`
-- Use `<script setup>` with `name` attribute
+**Backend module organization:**
+```
+ecosystems/{chain}/
+├── mod.rs          # Module declarations
+├── chain_config.rs # Chain metadata
+├── provider.rs     # RPC provider mgmt
+├── transfer.rs     # Native coin transfer
+├── token_transfer.rs # ERC-20 transfers
+├── rpc_management.rs # RPC load balancing
+├── simple_balance_query.rs
+└── proxy_manager/proxy_commands # HTTP proxy
+```
 
-**File Organization:**
-- Feature-based structure: `src/features/{ecosystem}/{feature}/`
-- Shared components: `src/components/`
-- Ecosystem-specific components colocated with features
+**Tauri commands:** All async, return `Result<T, String>`
 
-**Git Commits:**
-- Use conventional commits format
-- Keep changes focused and minimal
-- Run linters before committing
+**Database:** SQLite at `data/wallets_tool.db`, hot-reload via `reload_database()` command
+
+## COMMANDS
+
+```bash
+yarn start          # Auto-install deps + tauri-dev
+yarn tauri-dev      # Full dev (frontend + backend)
+yarn tauri-build    # Production desktop build
+yarn version:update <version> # Bump all versions
+```
+
+## TESTING
+
+Playwright installed (`@playwright/test` v1.57.0) but **no test files found**.
+
+## CODE MAP
+
+| Symbol | Type | Location | Role |
+|--------|------|----------|------|
+| `useTransfer` | composable | `features/ethereum/transfer/composables/` | Batch transfer logic |
+| `ChainService` | struct | `database/chain_service.rs` | Chain CRUD |
+| `RpcService` | struct | `database/rpc_service.rs` | RPC CRUD |
+| `init_database` | fn | `database/mod.rs` | DB initialization |
+
+## NOTES
+
+- Database config in `package.json` (`config.database`) - unusual coupling
+- Multi-window support (main + child windows)
+- System tray integration
+- "Fury mode" for high-concurrency transfers (>90 threads)
+- Intelligent retry with on-chain tx detection
+- Proxy manager with HTTP/SOCKS5 support

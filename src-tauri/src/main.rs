@@ -72,11 +72,18 @@ async fn show_main_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
 async fn open_function_window<R: Runtime>(app: AppHandle<R>, page_name: String) -> Result<(), String> {
     use tauri::WebviewWindowBuilder;
     
-    let title = match page_name.as_str() {
-        "transfer" => "批量转账",
-        "balance" => "余额查询",
-        "monitor" => "链上地址监控",
-        _ => "未知功能"
+    let (title, icon) = match page_name.as_str() {
+        "transfer" => ("💸 批量转账", "transfer"),
+        "balance" => ("💰 余额查询", "balance"),
+        "monitor" => ("👁️ 链上监控", "monitor"),
+        _ => ("❓ 未知功能", "unknown")
+    };
+    
+    let display_icon = match icon {
+        "transfer" => "💸",
+        "balance" => "💰",
+        "monitor" => "👁️",
+        _ => ""
     };
     
     // 获取当前所有窗口的标签
@@ -100,11 +107,19 @@ async fn open_function_window<R: Runtime>(app: AppHandle<R>, page_name: String) 
             return Err("无法找到可用的窗口标签，已达到最大窗口数量限制".to_string());
         }
     };
-    let window_url = format!("/#/{}", page_name);
+    
+    let window_url = format!("/#/{}?count={}", page_name, window_count);
+    
+    // 生成窗口标题：统一格式为 "WalletsTool - {图标} {功能名} [{序号}]"
+    let window_title = if window_count > 1 {
+        format!("WalletsTool - {} {} [{}]", display_icon, title, window_count)
+    } else {
+        format!("WalletsTool - {} {}", display_icon, title)
+    };
     
     // 创建新窗口
     let webview = WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(window_url.into()))
-        .title(&format!("【托盘】{}-{}", title, window_count))
+        .title(&window_title)
         .inner_size(1350.0, 900.0)
         .resizable(true)
         .center()

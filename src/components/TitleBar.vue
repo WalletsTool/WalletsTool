@@ -3,8 +3,48 @@
   <div class="title-bar">
     <div class="title-bar-left">
       <img src="/app-icon.png" alt="Logo" class="title-bar-logo" />
-      <div class="title-bar-text">{{ title }}</div>
+      
+      <template v-if="isEditing">
+        <input
+          ref="editInputRef"
+          v-model="editTitle"
+          class="title-bar-input"
+          :placeholder="defaultTitle"
+          @blur="saveTitle"
+          @keydown="handleKeydown"
+          @click.stop
+        />
+      </template>
+      
+      <template v-else>
+        <div
+          class="title-wrapper"
+          @click="startEditing"
+          @mouseenter="isHovered = true"
+          @mouseleave="isHovered = false"
+        >
+          <div
+            class="title-bar-text"
+            :class="{ 'title-editable': true, 'title-hovered': isHovered && !isCustom }"
+            title="点击编辑窗口名称"
+          >
+            {{ displayTitle }}
+          </div>
+          
+          <span
+            v-if="isCustom && isHovered"
+            class="reset-button"
+            @click.stop="resetToDefault"
+            title="恢复默认名称"
+          >
+            ↺
+          </span>
+          
+          <span v-if="isCustom" class="custom-badge" title="已自定义名称">★</span>
+        </div>
+      </template>
     </div>
+    
     <div class="title-bar-controls">
       <!-- 主题切换开关 -->
       <div class="titlebar-center">
@@ -43,56 +83,175 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, nextTick, watch } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { Notification } from '@arco-design/web-vue'
 import { useThemeStore } from '@/stores'
+import { WINDOW_CONFIG } from '@/utils/windowNames'
 
-// 窗口状态管理
 const isMaximized = ref(false)
+const isEditing = ref(false)
+const isHovered = ref(false)
+const editTitle = ref('')
+const editInputRef = ref(null)
+const customTitle = ref(null)
 
-// Props
 const props = defineProps({
   title: {
     type: String,
-    default: 'Wallet Manager'
+    default: 'WalletsTool'
+  },
+  windowLabel: {
+    type: String,
+    default: ''
   }
 })
 
-// Emits
-const emit = defineEmits(['before-close'])
+const emit = defineEmits(['before-close', 'title-changed'])
 
-// 主题管理
 const themeStore = useThemeStore()
 const currentTheme = computed(() => themeStore.currentTheme)
 const isDarkTheme = computed({
   get: () => currentTheme.value === 'dark',
   set: (value) => {
-    // 这里不需要处理，因为change事件会调用toggleTheme
   }
 })
 
-// 主题切换方法
+const defaultTitle = computed(() => props.title || 'WalletsTool')
+
+const displayTitle = computed(() => {
+  if (customTitle.value) {
+    return customTitle.value
+  }
+  return defaultTitle.value
+})
+
+const isCustom = computed(() => {
+  return customTitle.value !== null
+})
+
 function toggleTheme() {
   themeStore.toggleTheme()
 }
 
-// 初始化主题和窗口状态
-onMounted(async () => {
-  themeStore.initTheme()
-  
-  // 初始化窗口最大化状态
-  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
-  if (isTauri) {
+function getWindowLabel() {
+  if (props.windowLabel) {
+    return props.windowLabel
+  }
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      return getCurrentWindow().label
+    }
+  } catch (e) {
+    console.error('获取窗口标签失败:', e)
+  }
+  return 'main'
+}
+
+async function loadCustomTitle() {
+  const label = getWindowLabel()
+  const saved = WINDOW_CONFIG.getCustomTitle(label)
+  if (saved) {
+    customTitle.value = saved
     try {
-      const currentWindow = getCurrentWindow()
-      isMaximized.value = await currentWindow.isMaximized()
-    } catch (error) {
-      console.error('Error getting window state:', error)
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+      if (isTauri) {
+        const currentWindow = getCurrentWindow()
+        await currentWindow.setTitle(saved)
+      }
+    } catch (e) {
+      console.error('设置窗口标题失败:', e)
     }
   }
-})
+}
 
-// 窗口控制方法
+async function startEditing() {
+  isEditing.value = true
+  editTitle.value = customTitle.value || defaultTitle.value
+  
+  await nextTick()
+  
+  if (editInputRef.value) {
+    editInputRef.value.focus()
+    editInputRef.value.select()
+  }
+}
+
+async function saveTitle() {
+  const trimmedTitle = editTitle.value.trim()
+  
+  if (!trimmedTitle) {
+    cancelEdit()
+    return
+  }
+  
+  if (trimmedTitle.length > 50) {
+    Notification.warning({
+      content: '窗口名称不能超过50个字符',
+      position: 'top'
+    })
+    editInputRef.value?.focus()
+    return
+  }
+  
+  const label = getWindowLabel()
+  const newTitle = trimmedTitle
+  
+  if (WINDOW_CONFIG.saveCustomTitle(label, newTitle)) {
+    customTitle.value = newTitle
+    
+    try {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+      if (isTauri) {
+        const currentWindow = getCurrentWindow()
+        await currentWindow.setTitle(newTitle)
+      }
+    } catch (e) {
+      console.error('设置窗口标题失败:', e)
+    }
+    
+    emit('title-changed', newTitle)
+  }
+  
+  isEditing.value = false
+}
+
+async function resetToDefault() {
+  const label = getWindowLabel()
+  
+  if (WINDOW_CONFIG.removeCustomTitle(label)) {
+    customTitle.value = null
+    
+    try {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+      if (isTauri) {
+        const currentWindow = getCurrentWindow()
+        await currentWindow.setTitle(defaultTitle.value)
+      }
+    } catch (e) {
+      console.error('恢复默认窗口标题失败:', e)
+    }
+    
+    emit('title-changed', defaultTitle.value)
+  }
+}
+
+function cancelEdit() {
+  editTitle.value = ''
+  isEditing.value = false
+}
+
+function handleKeydown(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    saveTitle()
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    cancelEdit()
+  }
+}
+
 async function minimizeWindow() {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
   if (isTauri) {
@@ -128,10 +287,9 @@ async function closeWindow() {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
   if (isTauri) {
     try {
-      console.log('TitleBar窗口关闭事件触发，正在通知父组件执行清理操作...');
+      console.log('TitleBar窗口关闭事件触发，正在通知父组件执行清理操作...')
       
-      // 触发before-close事件，让父组件有机会执行清理操作
-      await emit('before-close');
+      await emit('before-close')
       
       const currentWindow = getCurrentWindow()
       await currentWindow.destroy()
@@ -140,6 +298,27 @@ async function closeWindow() {
     }
   }
 }
+
+onMounted(async () => {
+  themeStore.initTheme()
+  
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow()
+      isMaximized.value = await currentWindow.isMaximized()
+      
+      await loadCustomTitle()
+    } catch (error) {
+      console.error('Error getting window state:', error)
+    }
+  }
+})
+
+watch(() => props.title, (newTitle) => {
+  if (!customTitle.value && newTitle) {
+  }
+})
 </script>
 
 <style scoped>
@@ -183,6 +362,96 @@ async function closeWindow() {
   font-size: 14px;
 }
 
+.title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.title-bar-input {
+  display: inline-block;
+  background: var(--color-bg-1, #1a1a1a);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+  outline: none;
+  line-height: 1.2;
+  width: auto;
+  min-width: 120px;
+  max-width: 300px;
+  -webkit-app-region: no-drag;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  position: relative;
+  z-index: 10;
+}
+
+.title-bar-input:focus {
+  border-color: rgba(66, 153, 225, 0.8);
+  background: var(--color-bg-1, #1a1a1a);
+  box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2);
+}
+
+.title-bar-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.custom-badge {
+  font-size: 10px;
+  color: #fbbf24;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.custom-badge:hover {
+  opacity: 1;
+}
+
+.reset-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: rgba(96, 165, 250, 0.8);
+  border-radius: 4px;
+  color: white;
+  font-size: 11px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: all 0.2s ease;
+  margin-left: 4px;
+}
+
+.reset-button:hover {
+  background: rgba(59, 130, 246, 0.9);
+  transform: scale(1.1);
+}
+
+.title-editable {
+  cursor: text;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.title-editable.title-hovered {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.title-editable.title-hovered:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
 .title-bar-controls {
   display: flex;
   align-items: center;
@@ -213,7 +482,7 @@ async function closeWindow() {
 }
 
 .title-bar-control.close:hover {
-  background-color: rgba(255, 96, 96, 0.8) !important;
+  background-color: rgba(96, 96, 96, 0.9) !important;
   color: white !important;
 }
 
@@ -240,17 +509,17 @@ async function closeWindow() {
 }
 
 .title-bar-control.close:hover {
-  background: rgba(255, 96, 96, 0.8);
+  background: rgba(96, 96, 96, 0.9);
   color: white;
 }
 
 .title-bar-control:first-of-type:hover {
-  background: rgba(255, 206, 84, 0.8);
+  background: rgba(206, 184, 136, 0.8);
   color: white;
 }
 
 .title-bar-control:nth-of-type(2):hover {
-  background: rgba(52, 152, 219, 0.8);
+  background: rgba(73, 152, 220, 0.8);
   color: white;
 }
 
@@ -287,7 +556,6 @@ async function closeWindow() {
   margin: 0 4px;
 }
 
-/* 图标样式统一处理 */
 .title-bar-control .iconify {
   opacity: 0.9;
   transition: opacity 0.2s ease;
@@ -317,16 +585,16 @@ async function closeWindow() {
   color: white;
 }
 
-:root[data-theme="light"] .theme-switch :deep(.arco-switch) {
+:root[data-theme="light"] .title-switch :deep(.arco-switch) {
   background-color: rgba(0, 0, 0, 0.1);
   border: 1px solid rgba(0, 0, 0, 0.2);
 }
 
-:root[data-theme="light"] .theme-switch :deep(.arco-switch-checked) {
+:root[data-theme="light"] .title-switch :deep(.arco-switch-checked) {
   background-color: rgba(0, 0, 0, 0.2);
 }
 
-:root[data-theme="light"] .theme-switch :deep(.arco-switch-dot) {
+:root[data-theme="light"] .title-switch :deep(.arco-switch-dot) {
   background-color: #4a5568;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
@@ -342,5 +610,30 @@ async function closeWindow() {
 
 :root[data-theme="light"] .theme-toggle-container:hover .theme-icon {
   color: rgba(0, 0, 0, 0.9);
+}
+
+:root[data-theme="light"] .title-bar-input {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.2);
+  color: #1a202c;
+}
+
+:root[data-theme="light"] .title-bar-input:focus {
+  border-color: rgba(66, 153, 225, 0.8);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .title-bar-input::placeholder {
+  color: rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="light"] .title-editable.title-hovered {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+:root[data-theme="light"] .title-editable.title-hovered:hover {
+  background: rgba(0, 0, 0, 0.12);
+  border-color: rgba(0, 0, 0, 0.25);
 }
 </style>

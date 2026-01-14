@@ -7,6 +7,7 @@ import TitleBar from '@/components/TitleBar.vue'
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import { ethers } from 'ethers'
 import { utils as xlUtils, read as xlRead } from 'xlsx'
+import { WINDOW_CONFIG } from '@/utils/windowNames'
 
 // 懒加载组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -44,7 +45,30 @@ const monitoring = ref(false)
 const intervalSec = ref(15)
 let timer = null
 const showProgress = ref(false)
-const windowTitle = ref('链上地址监控')
+
+// 窗口标题定义
+const windowTitle = ref('链上地址监控');
+
+// 窗口标题初始化
+function initMonitorWindowTitle() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      const windowLabel = getCurrentWindow().label
+      const saved = WINDOW_CONFIG.getCustomTitle(windowLabel)
+      if (saved) {
+        windowTitle.value = saved
+        return
+      }
+    }
+  } catch (e) {
+    console.error('初始化监控窗口标题失败:', e)
+  }
+  
+  // 不再设置默认标题，由后端或调用方设置
+}
+
+initMonitorWindowTitle()
 
 // 链配置
 const chainOptions = ref([])

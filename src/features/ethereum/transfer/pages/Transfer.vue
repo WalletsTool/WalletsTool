@@ -20,6 +20,7 @@ import { useBalanceQuery } from '../composables/useBalanceQuery';
 import { useValidation } from '../composables/useValidation';
 import { useDataOperations } from '../composables/useDataOperations';
 import { useTip } from '../composables/useTip';
+import { WINDOW_CONFIG } from '@/utils/windowNames';
 
 const TransferGuide = defineAsyncComponent(() => import('../components/TransferGuide.vue'));
 
@@ -33,6 +34,29 @@ const router = useRouter();
 const route = useRoute();
 
 const windowTitle = ref('批量转账');
+
+// 窗口标题初始化
+function initWindowTitle() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      const windowLabel = getCurrentWindow().label
+      const saved = WINDOW_CONFIG.getCustomTitle(windowLabel)
+      if (saved) {
+        windowTitle.value = saved
+        return
+      }
+    }
+  } catch (e) {
+    console.error('初始化窗口标题失败:', e)
+  }
+  
+  // 不再设置默认标题，由后端设置或页面多开功能设置
+  // 后端会设置正确格式的标题，前端无需覆盖
+}
+
+initWindowTitle()
+
 const columns = [
   { title: '序号', align: 'center', width: 55, slotName: 'index' },
   { title: '发送方私钥', align: 'center', width: 250, dataIndex: 'private_key', ellipsis: true, tooltip: true },
@@ -360,19 +384,53 @@ function openMultipleWindow() {
   const currentConfig = { chainValue: chainValue.value, coinValue: coinValue.value, form: { ...form }, threadCount: threadCount.value, data: data.value.map((item) => ({ ...item })) };
   const baseTimestamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 17);
   const configKeys = [];
+  
+  // 使用localStorage获取已使用的业务标签，避免跨窗口访问问题
+  let usedLabels = [];
+  try {
+    const storedLabels = localStorage.getItem('transfer_used_business_labels');
+    if (storedLabels) {
+      usedLabels = JSON.parse(storedLabels);
+    }
+  } catch (e) {
+    console.error('读取已使用的标签失败:', e);
+  }
+  
   for (let i = 0; i < windowCount; i++) {
     const windowId = baseTimestamp + i;
     const configKey = `transfer_config_${windowId}`;
-    configKeys.push({ configKey, windowId, windowLabel: `${getCurrentWindow().label}_multi_${windowId}` });
+    const windowLabel = `${getCurrentWindow().label}_multi_${windowId}`;
+    
+    // 为每个窗口生成唯一的业务标签
+    const businessLabel = WINDOW_CONFIG.suggestBusinessLabel('transfer', usedLabels);
+    if (businessLabel && !usedLabels.includes(businessLabel)) {
+      usedLabels.push(businessLabel);
+    }
+    
+    configKeys.push({ configKey, windowId, windowLabel, businessLabel });
     localStorage.setItem(configKey, JSON.stringify(currentConfig));
   }
+  
+  // 保存更新后的标签列表到localStorage
+  try {
+    localStorage.setItem('transfer_used_business_labels', JSON.stringify(usedLabels));
+  } catch (e) {
+    console.error('保存标签列表失败:', e);
+  }
+  
   let openedCount = 0;
   let errorCount = 0;
-  for (const { configKey, windowId, windowLabel } of configKeys) {
-    const windowUrl = `/#/transfer?configKey=${configKey}`;
+  
+  for (let i = 0; i < configKeys.length; i++) {
+    const { configKey, windowId, windowLabel, businessLabel } = configKeys[i];
+    const windowUrl = `/#/transfer?configKey=${configKey}&count=${i + 1}`;
+    
+    // 使用配置生成窗口标题：统一格式 "WalletsTool - {图标} {功能名} [{序号}]"
+    const windowTitle = `WalletsTool - 💸 批量转账 [${i + 1}]`;
+    
     const webview = new WebviewWindow(windowLabel, {
       url: windowUrl,
-      title: `（多开窗口）批量转账 ${windowId}`,
+      title: windowTitle,
       width: 1350,
       height: 900,
       resizable: true,
@@ -380,14 +438,15 @@ function openMultipleWindow() {
       backgroundColor: document.documentElement.getAttribute('data-theme') === 'light' ? '#FFFFFF' : '#2A2A2B',
       skipTaskbar: false,
     });
+    
     webview.once('tauri://created', () => {
       openedCount++;
-      Notification.success({ content: `已打开新窗口: 批量转账 ${windowId} (${openedCount}/${windowCount})`, position: 'topLeft' });
+      Notification.success({ content: `已打开新窗口: ${windowTitle} (${openedCount}/${windowCount})`, position: 'topLeft' });
     });
     webview.once('tauri://error', (e) => {
       errorCount++;
       console.error(`打开窗口 ${windowId} 失败:`, e);
-      Notification.error({ content: `打开窗口 ${windowId} 失败`, position: 'topLeft' });
+      Notification.error({ content: `打开窗口 ${windowTitle} 失败`, position: 'topLeft' });
       localStorage.removeItem(configKey);
     });
   }

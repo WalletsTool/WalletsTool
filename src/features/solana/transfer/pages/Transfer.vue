@@ -15,6 +15,7 @@ import TitleBar from '@/components/TitleBar.vue'
 import TableSkeleton from '@/components/TableSkeleton.vue'
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import * as party from 'party-js'
+import { WINDOW_CONFIG } from '@/utils/windowNames'
 
 // 懒加载组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -25,7 +26,29 @@ const WalletImportModal = defineAsyncComponent(() => import('@/components/Wallet
 const router = useRouter();
 const route = useRoute();
 
+// 窗口标题定义
 const windowTitle = ref('Solana 批量转账');
+
+// 窗口标题初始化
+function initSolanaTransferWindowTitle() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      const windowLabel = getCurrentWindow().label
+      const saved = WINDOW_CONFIG.getCustomTitle(windowLabel)
+      if (saved) {
+        windowTitle.value = saved
+        return
+      }
+    }
+  } catch (e) {
+    console.error('初始化Solana转账窗口标题失败:', e)
+  }
+  
+  // 不再设置默认标题，由后端或调用方设置
+}
+
+initSolanaTransferWindowTitle()
 
 // 表格列定义
 const columns = [

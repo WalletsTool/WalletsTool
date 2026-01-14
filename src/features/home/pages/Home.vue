@@ -9,6 +9,7 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { WINDOW_CONFIG } from '@/utils/windowNames'
 
 const router = useRouter()
 const ecoStore = useEcosystemStore()
@@ -138,24 +139,29 @@ function goPage(pageName) {
     // 正确实现多窗口
     const count = windowCount.value[pageName] ?? 0
     windowCount.value[pageName] = count + 1
+    const newCount = windowCount.value[pageName]
     if (!windowListObj.value[pageName]) {
       windowListObj.value[pageName] = new Map()
     }
-    const title = funcList.filter(item => item.pageName === pageName)[0].title
-    const windowLabel = pageName + windowCount.value[pageName]
-    const windowUrl = `/#/${ecoStore.currentEco}/${pageName}`
+    const windowLabel = WINDOW_CONFIG.generateLabel(pageName, newCount)
+    const windowUrl = `/#/${ecoStore.currentEco}/${pageName}?count=${newCount}`
+    
+    // 生成窗口标题：统一格式 "WalletsTool - {图标} {功能名} [{序号}]"
+    const moduleIcons = { transfer: '💸', balance: '💰', monitor: '👁️' }
+    const moduleNames = { transfer: '批量转账', balance: '余额查询', monitor: '链上监控' }
+    const title = newCount > 1 
+      ? `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName} [${newCount}]`
+      : `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName}`
 
     const webview = new WebviewWindow(windowLabel, {
       url: windowUrl,
       width: 1350,
       height: 900,
-      title: `${title}-${windowCount.value[pageName]}`,
+      title: title,
       resizable: true,
       center: true,
-      decorations: false,  // 移除Windows原生窗口边框
-      backgroundColor: document.documentElement.getAttribute('data-theme') === 'light' ? '#FFFFFF' : '#2A2A2B',  // 设置窗口背景色
-      // visible: false,  // 初始隐藏窗口
-      // skipTaskbar: false
+      decorations: false,
+      backgroundColor: document.documentElement.getAttribute('data-theme') === 'light' ? '#FFFFFF' : '#2A2A2B',
     })
 
     windowListObj.value[pageName].set(windowLabel, webview)

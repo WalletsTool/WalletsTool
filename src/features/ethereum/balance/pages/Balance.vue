@@ -8,11 +8,12 @@ import { ethers } from "ethers";
 import { Notification, Modal } from "@arco-design/web-vue";
 import { utils as xlUtils, writeFile } from "xlsx";
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import ChainIcon from '@/components/ChainIcon.vue';
+import ChainIcon from '@/components/ChainIcon.vue'
 import TitleBar from '@/components/TitleBar.vue'
 import TableSkeleton from '@/components/TableSkeleton.vue'
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import { debounce } from '@/utils/debounce.js'
+import { WINDOW_CONFIG } from '@/utils/windowNames'
 
 // 懒加载非关键组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -120,8 +121,31 @@ const showProgress = ref(false); // 是否显示进度条
 // 分页
 const pagination = ref(false);
 const scrollbar = ref(true);
-// 窗口标题
+
+// 窗口标题定义
 const windowTitle = ref('余额查询');
+
+// 窗口标题初始化
+function initBalanceWindowTitle() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      const windowLabel = getCurrentWindow().label
+      const saved = WINDOW_CONFIG.getCustomTitle(windowLabel)
+      if (saved) {
+        windowTitle.value = saved
+        return
+      }
+    }
+  } catch (e) {
+    console.error('初始化余额查询窗口标题失败:', e)
+  }
+  
+  // 不再设置默认标题，由后端或调用方设置
+}
+
+initBalanceWindowTitle()
+
 // chain默认值
 const chainValue = ref('');
 // 当前chain

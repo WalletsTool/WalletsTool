@@ -1271,7 +1271,7 @@ function handleClickOutside(event) {
           </a-form>
         </div>
       </div>
-      <div class="right-panel" style="width: 50px; flex-shrink: 0; display: flex; flex-direction: column; transition: width 0.3s ease; overflow: visible;" :style="{ width: isSidePanelExpanded ? '50px' : '0px' }">
+      <div class="right-panel" style="width: 50px; flex-shrink: 0; display: flex; flex-direction: column; transition: width 0.3s ease; overflow: visible;" :style="{ width: isSidePanelExpanded ? '50px' : '0', overflow: isSidePanelExpanded ? 'visible' : 'hidden'}">
         <div class="side-actions-panel-fixed" style="height: 100%">
           <div class="side-actions-content-fixed" style="height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 20px 0; min-width: 60px;">
             <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 19px" /></template></a-button></a-tooltip>

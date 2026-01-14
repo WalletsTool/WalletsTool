@@ -14,7 +14,6 @@ import TitleBar from '@/components/TitleBar.vue';
 import TableSkeleton from '@/components/TableSkeleton.vue';
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue';
 import ChainIcon from '@/components/ChainIcon.vue';
-import * as party from 'party-js';
 
 import { useTransfer } from '../composables/useTransfer';
 import { useBalanceQuery } from '../composables/useBalanceQuery';
@@ -1274,17 +1273,16 @@ function handleClickOutside(event) {
       <div class="right-panel" style="width: 50px; flex-shrink: 0; display: flex; flex-direction: column; transition: width 0.3s ease; overflow: visible;" :style="{ width: isSidePanelExpanded ? '50px' : '0', overflow: isSidePanelExpanded ? 'visible' : 'hidden'}">
         <div class="side-actions-panel-fixed" style="height: 100%">
           <div class="side-actions-content-fixed" style="height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 20px 0; min-width: 60px;">
-            <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 19px" /></template></a-button></a-tooltip>
-            <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 19px" /></template></a-button></a-tooltip>
-            <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 19px" /></template></a-button></a-tooltip>
-            <a-tooltip content="下载模板" position="left"><a-button size="mini" @click="downloadTemplateAction"><template #icon><Icon icon="mdi:file-download" style="color: #4e5969; font-size: 19px" /></template></a-button></a-tooltip>
+            <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="下载模板" position="left"><a-button size="mini" @click="downloadTemplateAction"><template #icon><Icon icon="mdi:file-download" style="color: #4e5969; font-size: 20px" /></template></a-button></a-tooltip>
             <div class="side-actions-divider"></div>
-            <a-tooltip content="选中成功的数据" position="left"><a-button type="outline" status="success" size="mini" @click="selectSucceeded"><template #icon><Icon icon="mdi:check-circle" style="color: #00b42a; font-size: 19px" /></template></a-button></a-tooltip>
-            <a-tooltip content="选中失败的数据" position="left"><a-button type="outline" status="danger" size="mini" @click="selectFailed"><template #icon><Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 18px" /></template></a-button></a-tooltip>
-            <a-tooltip content="反选" position="left"><a-button type="outline" size="mini" @click="InvertSelection"><template #icon><Icon icon="mdi:swap-horizontal" style="color: #165dff; font-size: 18px" /></template></a-button></a-tooltip>
-            <a-tooltip content="高级筛选" position="left"><a-button type="primary" size="mini" @click="showAdvancedFilter"><template #icon><Icon icon="mdi:filter" style="color: #165dff; font-size: 19px" /></template></a-button></a-tooltip>
-            <a-tooltip content="删除选中" position="left"><a-button type="outline" status="danger" size="mini" @click="deleteSelected"><template #icon><Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 19px" /></template></a-button></a-tooltip>
-            <div class="side-actions-divider"></div>
+            <a-tooltip content="选中成功的数据" position="left"><a-button type="outline" status="success" size="mini" @click="selectSucceeded"><template #icon><Icon icon="mdi:check-circle" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="选中失败的数据" position="left"><a-button type="outline" status="danger" size="mini" @click="selectFailed"><template #icon><Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="反选" position="left"><a-button type="outline" size="mini" @click="InvertSelection"><template #icon><Icon icon="mdi:swap-horizontal" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="高级筛选" position="left"><a-button type="primary" size="mini" @click="showAdvancedFilter"><template #icon><Icon icon="mdi:filter" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="删除选中" position="left"><a-button type="outline" status="danger" size="mini" @click="deleteSelected"><template #icon><Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
           </div>
         </div>
       </div>
@@ -1526,7 +1524,7 @@ export default {
 .column-first { padding-right: 8px; flex: 9; }
 .column-second { padding: 0 8px; flex: 8; }
 .column-third { padding-left: 8px; flex: 7; }
-.config-divider { width: 1px; min-height: 190px; height: 100%; background: linear-gradient(to bottom, transparent, var(--color-border, #e5e6eb) 20%, var(--color-border, #e5e6eb) 80%, transparent); margin: 0; align-self: center; }
+.config-divider { width: 1px; min-height: 150px; height: 100%; background: linear-gradient(to bottom, transparent, var(--color-border, #e5e6eb) 20%, var(--color-border, #e5e6eb) 80%, transparent); margin: 0; align-self: center; }
 .arco-form-item { padding: 5px 10px; margin-bottom: 8px; }
 .container :deep(.arco-form-item-label-col) { margin-bottom: 0; }
 .container :deep(.arco-form-item-wrapper-col) { flex: 1; }
@@ -1607,7 +1605,7 @@ export default {
 .side-actions-panel-fixed { width: 50px; background: var(--color-bg-2, #ffffff); border: 1px solid var(--color-border, #e5e6eb); border-radius: 8px; display: flex; flex-direction: column; align-items: center; padding: 10px; pointer-events: none; box-shadow: 3px 0px 6px 0px rgba(0, 0, 0, 0.06), -1px 0 4px rgba(0, 0, 0, 0.03); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
 .side-actions-panel-fixed.side-actions-panel-collapsed { width: 50px; background: transparent; border: none; box-shadow: none; padding: 0; }
 .side-actions-content-fixed { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; opacity: 1; pointer-events: auto; flex: 1; }
-.side-actions-divider { width: 24px; height: 1px; background: linear-gradient(to right, transparent, var(--color-border, #e2e4e8), transparent); margin: 13px 0; }
+.side-actions-divider { width: 40px; height: 1px; background: linear-gradient(to right, transparent, var(--color-border, #e2e4e8), transparent); margin: 15px 0; }
 .side-actions-content-fixed .arco-btn { width: 38px; height: 38px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--color-border, #e2e4e8); background: var(--color-fill-1, #f7f8fa); transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
 .side-actions-content-fixed .arco-btn:hover { background: var(--color-primary-light-1, #e8f0ff); border-color: var(--color-primary-5, #4086ff); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(22, 93, 255, 0.15); }
 .side-actions-content-fixed .arco-btn > .arco-btn-icon { margin: 0; font-size: 20px; color: var(--text-color-secondary, #6b778c); }

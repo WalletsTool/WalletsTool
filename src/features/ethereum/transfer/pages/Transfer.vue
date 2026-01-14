@@ -1406,7 +1406,7 @@ function handleClickOutside(event) {
                   <a-input ref="chainSearchInputRef" v-model="chainSearchKeyword" placeholder="搜索区块链..." size="small" allow-clear><template #prefix><Icon icon="mdi:magnify" style="font-size: 14px; color: var(--text-color-quaternary, #c9cdd4)" /></template></a-input>
                 </div>
                 <div class="selector-list">
-                  <div v-for="chain in filteredChainOptions" :key="chain.key" class="selector-item" :class="{ 'selector-item-selected': chainValue === chain.key }" @click="handleChainSelect(chain.key)">
+                  <div v-for="chain in filteredChainOptions" :key="chain.key" class="selector-item" :class="{ 'selector-item-selected': chainValue === chain.key }" @click.stop="handleChainSelect(chain.key)">
                     <ChainIcon :chain-key="chain.key" :pic-data="chain.pic_data" :alt="chain.name" style="width: 18px; height: 18px; flex-shrink: 0" />
                     <span class="selector-item-name">{{ chain.name }}</span>
                     <span class="selector-item-url">{{ chain.scan_url }}</span>
@@ -1592,7 +1592,7 @@ export default {
 .selector-item-selected { background: var(--primary-1, #e8f1ff); }
 .selector-item-selected:hover { background: var(--primary-2, #d4e4ff); }
 .selector-item-name { font-weight: 500; color: var(--text-color, #1d2129); flex: 1; overflow: visible; text-overflow: ellipsis; white-space: nowrap; }
-.selector-item-url { font-size: 11px; color: var(--text-color-tertiary, #8c8f94); }
+.selector-item-url { font-size: 11px; color: var(--text-color-tertiary, #8c8f94); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .selector-item-symbol { font-size: 11px; color: var(--text-color-secondary, #6b778c); margin-left: 4px; }
 .selector-slide-enter-active { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
 .selector-slide-leave-active { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }

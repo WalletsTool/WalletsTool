@@ -21,6 +21,8 @@ import { useValidation } from '../composables/useValidation';
 import { useDataOperations } from '../composables/useDataOperations';
 import { useTip } from '../composables/useTip';
 
+const TransferGuide = defineAsyncComponent(() => import('../components/TransferGuide.vue'));
+
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'));
 const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagement.vue'));
 const TokenManagement = defineAsyncComponent(() => import('@/components/TokenManagement.vue'));
@@ -98,6 +100,7 @@ const proxyConfigVisible = ref(false);
 const proxyEnabled = ref(false);
 const proxyStatus = ref('未配置');
 const proxyCount = ref(0);
+const guideVisible = ref(false);
 const advancedFilterVisible = ref(false);
 const filterForm = reactive({
   platBalanceOperator: 'gt',
@@ -1061,6 +1064,14 @@ onMounted(async () => {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) { const currentWindow = getCurrentWindow(); currentWindow.emit('page-loaded'); }
   }, 100);
+  
+  const guideCompleted = localStorage.getItem('transfer_guide_completed');
+  if (!guideCompleted) {
+    setTimeout(() => {
+      guideVisible.value = true;
+    }, 500);
+  }
+  
   if (isTauri) {
     await listen('balance_item_update', (event) => {
       const { item, window_id } = event.payload;
@@ -1389,11 +1400,12 @@ function handleClickOutside(event) {
         </div>
       </template>
     </a-modal>
-    <ProxyConfigModal v-model:modelValue="proxyConfigVisible" @config-change="handleProxyConfigChange" ref="proxyConfigRef" />
+<ProxyConfigModal v-model:modelValue="proxyConfigVisible" @config-change="handleProxyConfigChange" ref="proxyConfigRef" />
+    <TransferGuide v-model:visible="guideVisible" />
     <div class="status-bar">
       <div class="status-bar-left">
         <div class="status-group">
-          <div class="chain-selector-container" style="position: relative">
+          <div class="chain-selector-container" id="chain-selector" style="position: relative">
             <div class="status-item status-chain" :class="{ 'status-chain-active': chainSelectorExpanded }" @click="toggleChainSelector" title="点击切换区块链">
               <ChainIcon v-if="currentChain?.key" :chain-key="currentChain?.key" :pic-data="currentChain?.pic_data" :alt="currentChain?.name" style="width: 14px; height: 14px" />
               <span class="status-label">{{ currentChain?.name || '选择区块链' }}</span>
@@ -1454,7 +1466,7 @@ function handleClickOutside(event) {
           <span v-if="proxyEnabled" class="proxy-count-text">({{ proxyCount }}个)</span>
         </div>
         <div class="status-divider-vertical"></div>
-        <div class="status-menu-btn" :class="{ 'menu-btn-expanded': isSidePanelExpanded }" @click="isSidePanelExpanded ? collapseSidePanel() : expandSidePanel()" :title="isSidePanelExpanded ? '关闭功能菜单' : '打开功能菜单'">
+        <div class="status-menu-btn" id="menu-button" :class="{ 'menu-btn-expanded': isSidePanelExpanded }" @click="isSidePanelExpanded ? collapseSidePanel() : expandSidePanel()" :title="isSidePanelExpanded ? '关闭功能菜单' : '打开功能菜单'">
           <Icon icon="mdi:menu" style="font-size: 15px" />
         </div>
         <a-dropdown>

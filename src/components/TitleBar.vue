@@ -148,7 +148,7 @@ async function closeWindow() {
   justify-content: space-between;
   align-items: center;
   height: 40px;
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(to bottom, var(--color-bg-2, #ffffff), var(--color-bg-1, #f7f8fa));
   color: white;
   font-size: 14px;
   -webkit-app-region: drag;

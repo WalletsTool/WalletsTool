@@ -23,6 +23,18 @@ const steps = [
     icon: 'mdi:web'
   },
   {
+    target: 'table-section',
+    title: '表格数据操作',
+    content: '点击右侧按钮可导入文件或手动录入钱包，也可下载模板。导入数据后可在表格中查看和管理',
+    icon: 'mdi:table'
+  },
+  {
+    target: 'config-section',
+    title: '配置转账参数',
+    content: '在此区域配置发送模式、Gas限制、Gas价格等参数，配置完成后点击下方"执行转账"按钮开始运行',
+    icon: 'mdi:cog'
+  },
+  {
     target: 'menu-button',
     title: '功能菜单',
     content: '点击打开右侧功能菜单，可进行钱包录入、文件导入、数据筛选等操作',
@@ -35,11 +47,13 @@ const isLastStep = computed(() => currentStep.value === totalSteps.value - 1);
 const progressPercent = computed(() => ((currentStep.value + 1) / totalSteps.value) * 100);
 
 function getTargetElement() {
-  if (currentStep.value === 0) {
-    return document.getElementById('chain-selector');
-  } else {
-    return document.getElementById('menu-button');
-  }
+  const targets = {
+    'chain-selector': document.getElementById('chain-selector'),
+    'table-section': document.getElementById('table-section'),
+    'config-section': document.getElementById('config-section'),
+    'menu-button': document.getElementById('menu-button')
+  };
+  return targets[steps[currentStep.value].target];
 }
 
 function updateTooltipPosition() {

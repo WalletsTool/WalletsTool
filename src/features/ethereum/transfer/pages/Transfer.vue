@@ -1118,7 +1118,7 @@ function handleClickOutside(event) {
     </div>
     <div class="main-content" :style="{ gap: isSidePanelExpanded ? '10px' : '0px' }">
       <div class="left-panel" style="flex: 1; display: flex; flex-direction: column; overflow: visible;">
-        <div class="table-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative">
+        <div class="table-section" id="table-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative">
           <TableSkeleton v-if="(tableLoading || balanceLoading) && data.length === 0" :rows="8" />
             <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick" @update:selected-keys="selectedKeys = $event" @open-manual-import="handleManualImport" @open-file-upload="handleFileUpload" @download-template="downloadTemplateAction" row-key="key" height="100%" :empty-data="data.length === 0" class="table-with-side-actions" :class="{ 'expanded': !isSidePanelExpanded }" :hover-keys="Object.keys(rowHoverStates).filter((key) => rowHoverStates[key])">
             <template #exec_status="{ record }">
@@ -1210,7 +1210,7 @@ function handleClickOutside(event) {
             </div>
           </div>
         </div>
-        <div class="config-section" style="flex-shrink: 0; padding-top: 35px">
+        <div class="config-section" id="config-section" style="flex-shrink: 0; padding-top: 35px">
           <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="horizontal" label-align="left">
             <a-row class="config-row">
               <div class="config-column column-first">

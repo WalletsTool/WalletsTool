@@ -1,5 +1,5 @@
 <script setup name="Transfer">
-import { ref, reactive, computed, watch, onBeforeMount, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, computed, watch, onBeforeMount, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import { IconDelete } from '@arco-design/web-vue/es/icon';
@@ -260,6 +260,11 @@ const filteredCoinOptions = computed(() => {
 function toggleChainSelector() {
   chainSelectorExpanded.value = !chainSelectorExpanded.value;
   tokenSelectorExpanded.value = false;
+  if (chainSelectorExpanded.value) {
+    nextTick(() => {
+      chainSearchInputRef.value?.focus();
+    });
+  }
 }
 
 function toggleTokenSelector() {
@@ -268,6 +273,11 @@ function toggleTokenSelector() {
   }
   tokenSelectorExpanded.value = !tokenSelectorExpanded.value;
   chainSelectorExpanded.value = false;
+  if (tokenSelectorExpanded.value) {
+    nextTick(() => {
+      tokenSearchInputRef.value?.focus();
+    });
+  }
 }
 
 function handleChainSelect(chainKey) {
@@ -300,6 +310,8 @@ let currentWindowId = ref('');
 
 const uploadInputRef = ref(null);
 const formRef = ref(null);
+const chainSearchInputRef = ref(null);
+const tokenSearchInputRef = ref(null);
 
 function updateTransferProgress() {
   if (!showProgress.value) return;
@@ -1091,186 +1103,190 @@ function handleClickOutside(event) {
 <template>
   <TitleBar :title="windowTitle" @before-close="handleBeforeClose" />
   <div class="container transfer" style="height: 100vh; display: flex; flex-direction: column; overflow: hidden" @paste="handleGlobalPaste">
-    <div class="toolBar" style="flex-shrink: 0; height: 0; overflow: hidden; margin-top: 0">
+    <div class="toolBar" style="flex-shrink: 0; height: 0; overflow: visible; margin-top: 0">
       <input type="file" ref="uploadInputRef" @change="UploadFile" id="btn_file" style="display: none" />
     </div>
-    <div class="mainTable" style="flex: 1; display: flex; flex-direction: column">
-      <TableSkeleton v-if="(tableLoading || balanceLoading) && data.length === 0" :rows="8" />
-      <div class="table-container">
-        <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick" @update:selected-keys="selectedKeys = $event" @open-manual-import="handleManualImport" @open-file-upload="handleFileUpload" @download-template="downloadTemplateAction" row-key="key" height="100%" :empty-data="data.length === 0" class="table-with-side-actions" :hover-keys="Object.keys(rowHoverStates).filter((key) => rowHoverStates[key])">
-          <template #exec_status="{ record }">
-            <div class="exec-status-wrapper" @mouseenter="rowHoverStates[record.key] = true" @mouseleave="rowHoverStates[record.key] = false">
-              <a-tooltip content="" trigger="hover" :mouseEnterDelay="300" :mouseLeaveDelay="100" :popup-style="{ padding: 0, pointerEvents: 'auto' }">
-                <template #content>
-                  <div class="exec-actions" @mouseenter="rowHoverStates[record.key] = true" @mouseleave="rowHoverStates[record.key] = false">
-                    <div class="action-btn" :class="{ 'action-btn-clicked': actionClickStates[record.key]?.queryFrom }" @click="queryFromAddressBalance(record); setActionClickState(record, 'queryFrom');">
-                      <Icon :icon="actionClickStates[record.key]?.queryFrom ? 'mdi:check' : 'mdi:arrow-up'" /> 查出账余额
+    <div class="main-content" :style="{ gap: isSidePanelExpanded ? '10px' : '0px' }">
+      <div class="left-panel" style="flex: 1; display: flex; flex-direction: column; overflow: visible;">
+        <div class="table-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative">
+          <TableSkeleton v-if="(tableLoading || balanceLoading) && data.length === 0" :rows="8" />
+            <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick" @update:selected-keys="selectedKeys = $event" @open-manual-import="handleManualImport" @open-file-upload="handleFileUpload" @download-template="downloadTemplateAction" row-key="key" height="100%" :empty-data="data.length === 0" class="table-with-side-actions" :class="{ 'expanded': !isSidePanelExpanded }" :hover-keys="Object.keys(rowHoverStates).filter((key) => rowHoverStates[key])">
+            <template #exec_status="{ record }">
+              <div class="exec-status-wrapper" @mouseenter="rowHoverStates[record.key] = true" @mouseleave="rowHoverStates[record.key] = false">
+                <a-tooltip content="" trigger="hover" :mouseEnterDelay="300" :mouseLeaveDelay="100" :popup-style="{ padding: 0, pointerEvents: 'auto' }">
+                  <template #content>
+                    <div class="exec-actions" @mouseenter="rowHoverStates[record.key] = true" @mouseleave="rowHoverStates[record.key] = false">
+                      <div class="action-btn" :class="{ 'action-btn-clicked': actionClickStates[record.key]?.queryFrom }" @click="queryFromAddressBalance(record); setActionClickState(record, 'queryFrom');">
+                        <Icon :icon="actionClickStates[record.key]?.queryFrom ? 'mdi:check' : 'mdi:arrow-up'" /> 查出账余额
+                      </div>
+                      <div class="action-btn" :class="{ 'action-btn-clicked': actionClickStates[record.key]?.queryTo }" @click="queryToAddressBalanceRow(record); setActionClickState(record, 'queryTo');">
+                        <Icon :icon="actionClickStates[record.key]?.queryTo ? 'mdi:check' : 'mdi:arrow-down'" /> 查到账余额
+                      </div>
+                      <div class="action-btn danger" :class="{ 'action-btn-clicked': actionClickStates[record.key]?.resend }" @click="resendTransaction(record); setActionClickState(record, 'resend');">
+                        <Icon :icon="actionClickStates[record.key]?.resend ? 'mdi:check' : 'mdi:refresh'" /> 重新转账
+                      </div>
                     </div>
-                    <div class="action-btn" :class="{ 'action-btn-clicked': actionClickStates[record.key]?.queryTo }" @click="queryToAddressBalanceRow(record); setActionClickState(record, 'queryTo');">
-                      <Icon :icon="actionClickStates[record.key]?.queryTo ? 'mdi:check' : 'mdi:arrow-down'" /> 查到账余额
-                    </div>
-                    <div class="action-btn danger" :class="{ 'action-btn-clicked': actionClickStates[record.key]?.resend }" @click="resendTransaction(record); setActionClickState(record, 'resend');">
-                      <Icon :icon="actionClickStates[record.key]?.resend ? 'mdi:check' : 'mdi:refresh'" /> 重新转账
-                    </div>
-                  </div>
-                </template>
-                <a-tag v-if="record.exec_status === '0'" color="#86909c">等待执行</a-tag>
-                <a-tag v-if="record.exec_status === '1'" color="#ff7d00">执行中</a-tag>
-                <a-tag v-if="record.exec_status === '2'" color="#00b42a">执行成功</a-tag>
-                <a-tag v-if="record.exec_status === '3'" color="#f53f3f">执行失败</a-tag>
-              </a-tooltip>
-            </div>
-          </template>
-          <template #optional="{ record }">
-            <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger"><template #icon><IconDelete /></template></a-button>
-          </template>
-        </VirtualScrollerTable>
-        <div class="side-actions-panel-fixed" :class="{ 'side-actions-panel-collapsed': !isSidePanelExpanded }">
-          <Transition name="panel-slide">
-            <div v-if="isSidePanelExpanded" class="side-actions-content-fixed">
-              <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 19px" /></template></a-button></a-tooltip>
-              <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 19px" /></template></a-button></a-tooltip>
-              <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 19px" /></template></a-button></a-tooltip>
-              <a-tooltip content="下载模板" position="left"><a-button size="mini" @click="downloadTemplateAction"><template #icon><Icon icon="mdi:file-download" style="color: #4e5969; font-size: 19px" /></template></a-button></a-tooltip>
-              <div class="side-actions-divider"></div>
-              <a-tooltip content="选中成功的数据" position="left"><a-button type="outline" status="success" size="mini" @click="selectSucceeded"><template #icon><Icon icon="mdi:check-circle" style="color: #00b42a; font-size: 19px" /></template></a-button></a-tooltip>
-              <a-tooltip content="选中失败的数据" position="left"><a-button type="outline" status="danger" size="mini" @click="selectFailed"><template #icon><Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 18px" /></template></a-button></a-tooltip>
-              <a-tooltip content="反选" position="left"><a-button type="outline" size="mini" @click="InvertSelection"><template #icon><Icon icon="mdi:swap-horizontal" style="color: #165dff; font-size: 18px" /></template></a-button></a-tooltip>
-              <a-tooltip content="高级筛选" position="left"><a-button type="primary" size="mini" @click="showAdvancedFilter"><template #icon><Icon icon="mdi:filter" style="color: #165dff; font-size: 19px" /></template></a-button></a-tooltip>
-              <a-tooltip content="删除选中" position="left"><a-button type="outline" status="danger" size="mini" @click="deleteSelected"><template #icon><Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 19px" /></template></a-button></a-tooltip>
-              <div class="side-actions-divider"></div>
+                  </template>
+                  <a-tag v-if="record.exec_status === '0'" color="#86909c">等待执行</a-tag>
+                  <a-tag v-if="record.exec_status === '1'" color="#ff7d00">执行中</a-tag>
+                  <a-tag v-if="record.exec_status === '2'" color="#00b42a">执行成功</a-tag>
+                  <a-tag v-if="record.exec_status === '3'" color="#f53f3f">执行失败</a-tag>
+                </a-tooltip>
+              </div>
+            </template>
+            <template #optional="{ record }">
+              <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger"><template #icon><IconDelete /></template></a-button>
+            </template>
+          </VirtualScrollerTable>
+          <Transition name="progress-slide" appear>
+            <div v-if="showImportProgress" class="floating-progress-bar">
+              <div class="progress-content">
+                <div class="progress-header"><span class="progress-title">{{ importProgressText }}</span><span class="progress-count">{{ importCompleted }} / {{ importTotal }}</span></div>
+                <a-progress :percent="importProgress" :show-text="true" :stroke-width="6" :color="{ '0%': '#722ed1', '100%': '#722ed1' }" class="progress-bar" />
+              </div>
             </div>
           </Transition>
-        </div>
-      </div>
-      <Transition name="progress-slide" appear>
-        <div v-if="showImportProgress" class="floating-progress-bar">
-          <div class="progress-content">
-            <div class="progress-header"><span class="progress-title">{{ importProgressText }}</span><span class="progress-count">{{ importCompleted }} / {{ importTotal }}</span></div>
-            <a-progress :percent="importProgress" :show-text="true" :stroke-width="6" :color="{ '0%': '#722ed1', '100%': '#722ed1' }" class="progress-bar" />
-          </div>
-        </div>
-      </Transition>
-      <Transition name="progress-slide" appear>
-        <div v-if="showProgress" class="floating-progress-bar" :style="{ top: showImportProgress ? '120px' : '45px' }">
-          <div class="progress-content">
-            <div class="progress-header"><span class="progress-title">转账进度</span><span class="progress-count">{{ transferCompleted }} / {{ transferTotal }}</span></div>
-            <a-progress :percent="transferProgress" :show-text="true" :stroke-width="6" :color="{ '0%': '#00b42a', '100%': '#00b42a' }" class="progress-bar" />
-          </div>
-        </div>
-      </Transition>
-      <Transition name="progress-slide" appear>
-        <div v-if="showBalanceProgress" class="floating-progress-bar" :style="{ top: (showImportProgress && showProgress) ? '220px' : (showImportProgress || showProgress) ? '120px' : '45px' }">
-          <div class="progress-content">
-            <div class="progress-header"><span class="progress-title">查出账地址进度</span><span class="progress-count">{{ balanceCompleted }} / {{ balanceTotal }}</span></div>
-            <a-progress :percent="balanceProgress" :show-text="true" :stroke-width="6" :color="{ '0%': '#1890ff', '100%': '#1890ff' }" class="progress-bar" />
-          </div>
-        </div>
-      </Transition>
-      <Transition name="progress-slide" appear>
-        <div v-if="showToAddressBalanceProgress" class="floating-progress-bar" :style="{ top: (showImportProgress && showProgress && showBalanceProgress) ? '320px' : ((showImportProgress && showProgress) || (showImportProgress && showBalanceProgress) || (showProgress && showBalanceProgress)) ? '220px' : (showImportProgress || showProgress || showBalanceProgress) ? '120px' : '45px' }">
-          <div class="progress-content">
-            <div class="progress-header"><span class="progress-title">查到账地址进度</span><span class="progress-count">{{ toAddressBalanceCompleted }} / {{ toAddressBalanceTotal }}</span></div>
-            <a-progress :percent="toAddressBalanceProgress" :show-text="true" :stroke-width="6" :color="{ '0%': '#52c41a', '100%': '#52c41a' }" class="progress-bar" />
-          </div>
-        </div>
-      </Transition>
-      <div v-if="retryInProgress" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #1890ff; flex-shrink: 0">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px"><a-spin size="small" /><span style="font-size: 14px; color: #1d2129; font-weight: 500">智能重试检查中...</span></div>
-        <div style="font-size: 12px; color: #86909c">正在检查失败交易的链上状态，判断是否需要重试</div>
-      </div>
-      <div v-if="retryResults.length > 0 && !retryInProgress" style="margin-top: 10px; padding: 10px; background: #f6ffed; border-radius: 6px; border-left: 4px solid #52c41a; flex-shrink: 0">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px"><span style="font-size: 14px; color: #1d2129; font-weight: 500">智能重试检查完成</span><a-button size="mini" type="text" @click="retryResults = []"><template #icon><Icon icon="mdi:close" /></template></a-button></div>
-        <div style="font-size: 12px; color: #52c41a; margin-bottom: 4px">跳过重试: {{ retryResults.filter((r) => r.action === '跳过重试').length }} 笔 | 加入重试: {{ retryResults.filter((r) => r.action === '加入重试').length }} 笔</div>
-      </div>
-      <div class="floating-action-bar" :style="floatingActionBarStyle">
-        <div class="floating-action-content">
-          <a-dropdown v-if="!balanceLoading && balanceStopStatus">
-            <a-button type="primary" class="floating-btn primary-btn"><template #icon><Icon icon="mdi:magnify" class="btn-icon" /></template><span class="btn-text">查询余额</span></a-button>
-            <template #content>
-              <a-doption @click="debouncedQueryBalance" class="dropdown-option"><Icon icon="mdi:account-arrow-right" style="margin-right: 8px; margin-bottom: -2px" />查出账地址</a-doption>
-              <a-doption @click="debouncedQueryToAddressBalance" class="dropdown-option"><Icon icon="mdi:account-arrow-left" style="margin-right: 8px; margin-bottom: -2px" />查到账地址</a-doption>
-            </template>
-          </a-dropdown>
-          <a-tooltip v-else content="点击可以提前停止查询">
-            <div @click="debouncedStopBalanceQuery" class="btn-wrapper"><a-button v-if="!balanceStopFlag" class="floating-btn primary-btn executing" loading><template #icon><Icon icon="mdi:pause-circle" /></template>查询中...</a-button></div>
-          </a-tooltip>
-          <a-button v-if="balanceStopFlag && !balanceStopStatus" class="floating-btn primary-btn stopping" loading><template #icon><Icon icon="mdi:timer-sand" /></template>正在停止...</a-button>
-          <a-button v-if="!startLoading && stopStatus" type="success" class="floating-btn success-btn" @click="debouncedStartTransfer"><template #icon><Icon icon="mdi:rocket-launch" /></template>执行转账</a-button>
-          <a-tooltip v-else content="点击可以提前停止执行">
-            <div @click="debouncedStopTransfer"><a-button v-if="!stopFlag" class="floating-btn success-btn executing" loading><template #icon><Icon icon="mdi:rocket-launch" /></template>执行中...</a-button><a-button v-if="stopFlag && !stopStatus" class="floating-btn success-btn stopping" loading><template #icon><Icon icon="mdi:timer-sand" /></template>正在停止...</a-button></div>
-          </a-tooltip>
-        </div>
-      </div>
-      <div style="display: flex; padding-top: 10px; flex-shrink: 0">
-        <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="horizontal" label-align="left">
-          <a-row style="display: flex; gap: 5px">
-            <div style="flex: 9">
-              <a-form-item field="send_type" label="发送模式" :label-col-props="{ span: 6 }">
-                <a-radio-group v-model="form.send_type" type="button"><a-radio value="1">全部</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio><a-radio value="4">剩余随机</a-radio></a-radio-group>
-              </a-form-item>
-              <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" :label-col-props="{ span: 6 }">
-                <a-radio-group v-model="form.amount_from" type="button"><a-radio value="1">表格数据</a-radio><a-radio value="2">自定义</a-radio></a-radio-group>
-              </a-form-item>
-              <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量" :label-col-props="{ span: 6 }">
-                <a-input v-model="form.send_count" />
-              </a-form-item>
-              <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope" :label="form.send_type === '3' ? '发送数量从' : '剩余数量从'" :label-col-props="{ span: 6 }">
-                <a-space><a-input v-model="form.send_min_count" placeholder="最小" style="width: 66px" /><span style="margin: 0 8px">至</span><a-input v-model="form.send_max_count" placeholder="最大" style="width: 85px" /><span style="margin-left: 10px">范围内随机生成</span></a-space>
-              </a-form-item>
-              <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度" :label-col-props="{ span: 6 }">
-                <a-input v-model="form.amount_precision" />
-              </a-form-item>
+          <Transition name="progress-slide" appear>
+            <div v-if="showProgress" class="floating-progress-bar" :style="{ top: showImportProgress ? '120px' : '45px' }">
+              <div class="progress-content">
+                <div class="progress-header"><span class="progress-title">转账进度</span><span class="progress-count">{{ transferCompleted }} / {{ transferTotal }}</span></div>
+                <a-progress :percent="transferProgress" :show-text="true" :stroke-width="6" :color="{ '0%': '#00b42a', '100%': '#00b42a' }" class="progress-bar" />
+              </div>
             </div>
-            <a-divider direction="vertical" style="height: 100%; margin: 0" />
-            <div style="flex: 9">
-              <a-form-item field="limit_type" label="Gas Limit 配置" :label-col-props="{ span: 7 }">
-                <a-radio-group v-model="form.limit_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio></a-radio-group>
-              </a-form-item>
-              <a-form-item v-if="form.limit_type === '2'" field="limit_count" label="Gas Limit 数量" :label-col-props="{ span: 7 }">
-                <a-input v-model="form.limit_count" />
-              </a-form-item>
-              <a-form-item v-if="form.limit_type === '3'" field="limit_count_scope" label="Gas Limit 范围" :label-col-props="{ span: 7 }">
-                <a-space><a-input v-model="form.limit_min_count" placeholder="最小" style="width: 90px" /><span style="margin: 0 8px">至</span><a-input v-model="form.limit_max_count" placeholder="最大" style="width: 90px" /></a-space>
-              </a-form-item>
-              <a-form-item field="gas_price_type" label="Gas Price 方式" :label-col-props="{ span: 7 }">
-                <a-radio-group v-model="form.gas_price_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">加价抢跑</a-radio></a-radio-group>
-              </a-form-item>
-              <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" label="Gas Price" :label-col-props="{ span: 7 }">
-                <a-input v-model="form.gas_price" />
-              </a-form-item>
-              <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate" label="提高比例" :label-col-props="{ span: 7 }">
-                <a-input v-model="form.gas_price_rate"><template #append>%</template></a-input>
-              </a-form-item>
-              <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price" label="最大 Gas Price" :label-col-props="{ span: 7 }">
-                <a-input v-model="form.max_gas_price" placeholder="为空时则不设置上限（单位：Gwei）" />
-              </a-form-item>
+          </Transition>
+          <Transition name="progress-slide" appear>
+            <div v-if="showBalanceProgress" class="floating-progress-bar" :style="{ top: (showImportProgress && showProgress) ? '220px' : (showImportProgress || showProgress) ? '120px' : '45px' }">
+              <div class="progress-content">
+                <div class="progress-header"><span class="progress-title">查出账地址进度</span><span class="progress-count">{{ balanceCompleted }} / {{ balanceTotal }}</span></div>
+                <a-progress :percent="balanceProgress" :show-text="true" :stroke-width="6" :color="{ '0%': '#1890ff', '100%': '#1890ff' }" class="progress-bar" />
+              </div>
             </div>
-            <a-divider direction="vertical" style="height: 100%; margin: 0" />
-            <div style="flex: 8">
-              <a-form-item label="" :label-col-props="{ span: 0 }">
-                <a-space :size="8" align="center" style="display: flex; align-items: center">
-                  <a-switch v-model="enableMultiThread" checked-value="1" unchecked-value="0" style="margin-right: 10px"><template #checked>多线程</template><template #unchecked>单线程</template></a-switch>
-                  <template v-if="enableMultiThread === '1' || enableMultiThread === true">
-                    <span>线程数</span><a-input-number v-model="threadCount" :min="1" :max="999" :step="1" :default-value="1" size="small" style="width: 90px; margin-left: 10px" /><a-tag v-if="threadCount > 90" color="#ff4d4f" style="font-size: 10px; margin-left: 10px">狂暴</a-tag>
-                  </template>
-                  <template v-else>
-                    <span>时间间隔</span><a-input v-model="form.min_interval" placeholder="最小" style="width: 55px; margin-left: 10px" /><span style="margin: 0 8px">至</span><a-input v-model="form.max_interval" placeholder="最大" style="width: 55px; margin-right: 10px" />秒
-                  </template>
-                </a-space>
-              </a-form-item>
-              <a-form-item field="error_retry" label="失败自动重试" :label-col-props="{ span: 8 }" :wrapper-col-props="{ span: 16 }">
-                <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0"><template #checked>开启</template><template #unchecked>关闭</template></a-switch>
-              </a-form-item>
-              <a-form-item field="multi_window" label="窗口多开" :label-col-props="{ span: 7 }" :wrapper-col-props="{ span: 16 }">
-                <a-input-group style="width: 100%">
-                  <a-input-number v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1" placeholder="窗口数" style="width: 50%" />
-                  <a-button status="success" @click="debouncedOpenMultipleWindow"><template #icon><Icon icon="mdi:content-copy" /></template></a-button>
-                </a-input-group>
-              </a-form-item>
+          </Transition>
+          <Transition name="progress-slide" appear>
+            <div v-if="showToAddressBalanceProgress" class="floating-progress-bar" :style="{ top: (showImportProgress && showProgress && showBalanceProgress) ? '320px' : ((showImportProgress && showProgress) || (showImportProgress && showBalanceProgress) || (showProgress && showBalanceProgress)) ? '220px' : (showImportProgress || showProgress || showBalanceProgress) ? '120px' : '45px' }">
+              <div class="progress-content">
+                <div class="progress-header"><span class="progress-title">查到账地址进度</span><span class="progress-count">{{ toAddressBalanceCompleted }} / {{ toAddressBalanceTotal }}</span></div>
+                <a-progress :percent="toAddressBalanceProgress" :show-text="true" :stroke-width="6" :color="{ '0%': '#52c41a', '100%': '#52c41a' }" class="progress-bar" />
+              </div>
             </div>
-          </a-row>
-        </a-form>
+          </Transition>
+          <div v-if="retryInProgress" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #1890ff; flex-shrink: 0">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px"><a-spin size="small" /><span style="font-size: 14px; color: #1d2129; font-weight: 500">智能重试检查中...</span></div>
+            <div style="font-size: 12px; color: #86909c">正在检查失败交易的链上状态，判断是否需要重试</div>
+          </div>
+          <div v-if="retryResults.length > 0 && !retryInProgress" style="margin-top: 10px; padding: 10px; background: #f6ffed; border-radius: 6px; border-left: 4px solid #52c41a; flex-shrink: 0">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px"><span style="font-size: 14px; color: #1d2129; font-weight: 500">智能重试检查完成</span><a-button size="mini" type="text" @click="retryResults = []"><template #icon><Icon icon="mdi:close" /></template></a-button></div>
+            <div style="font-size: 12px; color: #52c41a; margin-bottom: 4px">跳过重试: {{ retryResults.filter((r) => r.action === '跳过重试').length }} 笔 | 加入重试: {{ retryResults.filter((r) => r.action === '加入重试').length }} 笔</div>
+          </div>
+        </div>
+        <div class="action-buttons-section">
+          <div class="floating-action-bar">
+            <div class="floating-action-content">
+              <a-dropdown v-if="!balanceLoading && balanceStopStatus">
+                <a-button type="primary" class="floating-btn primary-btn"><template #icon><Icon icon="mdi:magnify" class="btn-icon" /></template><span class="btn-text">查询余额</span></a-button>
+                <template #content>
+                  <a-doption @click="debouncedQueryBalance" class="dropdown-option"><Icon icon="mdi:account-arrow-right" style="margin-right: 8px; margin-bottom: -2px" />查出账地址</a-doption>
+                  <a-doption @click="debouncedQueryToAddressBalance" class="dropdown-option"><Icon icon="mdi:account-arrow-left" style="margin-right: 8px; margin-bottom: -2px" />查到账地址</a-doption>
+                </template>
+              </a-dropdown>
+              <a-tooltip v-else content="点击可以提前停止查询">
+                <div @click="debouncedStopBalanceQuery" class="btn-wrapper"><a-button v-if="!balanceStopFlag" class="floating-btn primary-btn executing" loading><template #icon><Icon icon="mdi:pause-circle" /></template>查询中...</a-button></div>
+              </a-tooltip>
+              <a-button v-if="balanceStopFlag && !balanceStopStatus" class="floating-btn primary-btn stopping" loading><template #icon><Icon icon="mdi:timer-sand" /></template>正在停止...</a-button>
+              <a-button v-if="!startLoading && stopStatus" type="success" class="floating-btn success-btn" @click="debouncedStartTransfer"><template #icon><Icon icon="mdi:rocket-launch" /></template>执行转账</a-button>
+              <a-tooltip v-else content="点击可以提前停止执行">
+                <div @click="debouncedStopTransfer"><a-button v-if="!stopFlag" class="floating-btn success-btn executing" loading><template #icon><Icon icon="mdi:rocket-launch" /></template>执行中...</a-button><a-button v-if="stopFlag && !stopStatus" class="floating-btn success-btn stopping" loading><template #icon><Icon icon="mdi:timer-sand" /></template>正在停止...</a-button></div>
+              </a-tooltip>
+            </div>
+          </div>
+        </div>
+        <div class="config-section" style="flex-shrink: 0; padding-top: 25px">
+          <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="horizontal" label-align="left">
+            <a-row class="config-row">
+              <div class="config-column column-first">
+                <a-form-item field="send_type" label="发送模式" :label-col-props="{ span: 6 }">
+                  <a-radio-group v-model="form.send_type" type="button"><a-radio value="1">全部</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio><a-radio value="4">剩余随机</a-radio></a-radio-group>
+                </a-form-item>
+                <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" :label-col-props="{ span: 6 }">
+                  <a-radio-group v-model="form.amount_from" type="button"><a-radio value="1">表格数据</a-radio><a-radio value="2">自定义</a-radio></a-radio-group>
+                </a-form-item>
+                <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量" :label-col-props="{ span: 6 }">
+                  <a-input v-model="form.send_count" />
+                </a-form-item>
+                <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope" :label="form.send_type === '3' ? '发送数量从' : '剩余数量从'" :label-col-props="{ span: 6 }">
+                  <a-space><a-input v-model="form.send_min_count" placeholder="最小" style="width: 66px" /><span style="margin: 0 8px">至</span><a-input v-model="form.send_max_count" placeholder="最大" style="width: 85px" /><span style="margin-left: 10px">范围内随机生成</span></a-space>
+                </a-form-item>
+                <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度" :label-col-props="{ span: 6 }">
+                  <a-input v-model="form.amount_precision" />
+                </a-form-item>
+              </div>
+              <div class="config-divider"></div>
+              <div class="config-column column-second">
+                <a-form-item field="limit_type" label="Gas Limit 配置" :label-col-props="{ span: 7 }">
+                  <a-radio-group v-model="form.limit_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio></a-radio-group>
+                </a-form-item>
+                <a-form-item v-if="form.limit_type === '2'" field="limit_count" label="Gas Limit 数量" :label-col-props="{ span: 7 }">
+                  <a-input v-model="form.limit_count" />
+                </a-form-item>
+                <a-form-item v-if="form.limit_type === '3'" field="limit_count_scope" label="Gas Limit 范围" :label-col-props="{ span: 7 }">
+                  <a-space><a-input v-model="form.limit_min_count" placeholder="最小" style="width: 90px" /><span style="margin: 0 8px">至</span><a-input v-model="form.limit_max_count" placeholder="最大" style="width: 90px" /></a-space>
+                </a-form-item>
+                <a-form-item field="gas_price_type" label="Gas Price 方式" :label-col-props="{ span: 7 }">
+                  <a-radio-group v-model="form.gas_price_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">加价抢跑</a-radio></a-radio-group>
+                </a-form-item>
+                <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" label="Gas Price" :label-col-props="{ span: 7 }">
+                  <a-input v-model="form.gas_price" />
+                </a-form-item>
+                <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate" label="提高比例" :label-col-props="{ span: 7 }">
+                  <a-input v-model="form.gas_price_rate"><template #append>%</template></a-input>
+                </a-form-item>
+                <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price" label="最大 Gas Price" :label-col-props="{ span: 7 }">
+                  <a-input v-model="form.max_gas_price" placeholder="为空时则不设置上限（单位：Gwei）" />
+                </a-form-item>
+              </div>
+              <div class="config-divider"></div>
+              <div class="config-column column-third">
+                <a-form-item label="" :label-col-props="{ span: 0 }">
+                  <a-space :size="8" align="center" style="display: flex; align-items: center">
+                    <a-switch v-model="enableMultiThread" checked-value="1" unchecked-value="0" style="margin-right: 10px"><template #checked>多线程</template><template #unchecked>单线程</template></a-switch>
+                    <template v-if="enableMultiThread === '1' || enableMultiThread === true">
+                      <span>线程数</span><a-input-number v-model="threadCount" :min="1" :max="999" :step="1" :default-value="1" size="small" style="width: 90px; margin-left: 10px" /><a-tag v-if="threadCount > 90" color="#ff4d4f" style="font-size: 10px; margin-left: 10px">狂暴</a-tag>
+                    </template>
+                    <template v-else>
+                      <span>时间间隔</span><a-input v-model="form.min_interval" placeholder="最小" style="width: 55px; margin-left: 10px" /><span style="margin: 0 8px">至</span><a-input v-model="form.max_interval" placeholder="最大" style="width: 55px; margin-right: 10px" />秒
+                    </template>
+                  </a-space>
+                </a-form-item>
+                <a-form-item field="error_retry" label="失败自动重试" tooltip="开启失败自动重试功能后，存在多次转账风险，请谨慎使用" :label-col-props="{ span: 9 }" :wrapper-col-props="{ span: 15 }">
+                  <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0"><template #checked>开启</template><template #unchecked>关闭</template></a-switch>
+                </a-form-item>
+                <a-form-item field="multi_window" label="窗口多开" tooltip="相同配置参数多开窗口，方便分组执行转账" :label-col-props="{ span: 7 }" :wrapper-col-props="{ span: 16 }">
+                  <a-input-group style="width: 100%">
+                    <a-input-number v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1" placeholder="窗口数" style="width: 50%" />
+                    <a-button status="success" @click="debouncedOpenMultipleWindow"><template #icon><Icon icon="mdi:content-copy" /></template></a-button>
+                  </a-input-group>
+                </a-form-item>
+              </div>
+            </a-row>
+          </a-form>
+        </div>
+      </div>
+      <div class="right-panel" style="width: 50px; flex-shrink: 0; display: flex; flex-direction: column; transition: width 0.3s ease; overflow: visible;" :style="{ width: isSidePanelExpanded ? '50px' : '0px' }">
+        <div class="side-actions-panel-fixed" style="height: 100%">
+          <div class="side-actions-content-fixed" style="height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 20px 0; min-width: 60px;">
+            <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 19px" /></template></a-button></a-tooltip>
+            <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 19px" /></template></a-button></a-tooltip>
+            <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 19px" /></template></a-button></a-tooltip>
+            <a-tooltip content="下载模板" position="left"><a-button size="mini" @click="downloadTemplateAction"><template #icon><Icon icon="mdi:file-download" style="color: #4e5969; font-size: 19px" /></template></a-button></a-tooltip>
+            <div class="side-actions-divider"></div>
+            <a-tooltip content="选中成功的数据" position="left"><a-button type="outline" status="success" size="mini" @click="selectSucceeded"><template #icon><Icon icon="mdi:check-circle" style="color: #00b42a; font-size: 19px" /></template></a-button></a-tooltip>
+            <a-tooltip content="选中失败的数据" position="left"><a-button type="outline" status="danger" size="mini" @click="selectFailed"><template #icon><Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 18px" /></template></a-button></a-tooltip>
+            <a-tooltip content="反选" position="left"><a-button type="outline" size="mini" @click="InvertSelection"><template #icon><Icon icon="mdi:swap-horizontal" style="color: #165dff; font-size: 18px" /></template></a-button></a-tooltip>
+            <a-tooltip content="高级筛选" position="left"><a-button type="primary" size="mini" @click="showAdvancedFilter"><template #icon><Icon icon="mdi:filter" style="color: #165dff; font-size: 19px" /></template></a-button></a-tooltip>
+            <a-tooltip content="删除选中" position="left"><a-button type="outline" status="danger" size="mini" @click="deleteSelected"><template #icon><Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 19px" /></template></a-button></a-tooltip>
+            <div class="side-actions-divider"></div>
+          </div>
+        </div>
       </div>
     </div>
     <WalletImportModal ref="walletImportRef" @confirm="handleWalletImportConfirm" @cancel="handleWalletImportCancel" />
@@ -1389,7 +1405,7 @@ function handleClickOutside(event) {
             <Transition name="selector-slide">
               <div v-if="chainSelectorExpanded" class="selector-dropdown selector-dropdown-up">
                 <div class="selector-search">
-                  <a-input v-model="chainSearchKeyword" placeholder="搜索区块链..." size="small" allow-clear><template #prefix><Icon icon="mdi:magnify" style="font-size: 14px; color: var(--text-color-quaternary, #c9cdd4)" /></template></a-input>
+                  <a-input ref="chainSearchInputRef" v-model="chainSearchKeyword" placeholder="搜索区块链..." size="small" allow-clear><template #prefix><Icon icon="mdi:magnify" style="font-size: 14px; color: var(--text-color-quaternary, #c9cdd4)" /></template></a-input>
                 </div>
                 <div class="selector-list">
                   <div v-for="chain in filteredChainOptions" :key="chain.key" class="selector-item" :class="{ 'selector-item-selected': chainValue === chain.key }" @click="handleChainSelect(chain.key)">
@@ -1412,7 +1428,7 @@ function handleClickOutside(event) {
             <Transition name="selector-slide">
               <div v-if="tokenSelectorExpanded" class="selector-dropdown selector-dropdown-up">
                 <div class="selector-search">
-                  <a-input v-model="tokenSearchKeyword" placeholder="搜索代币..." size="small" allow-clear><template #prefix><Icon icon="mdi:magnify" style="font-size: 14px; color: var(--text-color-quaternary, #c9cdd4)" /></template></a-input>
+                  <a-input ref="tokenSearchInputRef" v-model="tokenSearchKeyword" placeholder="搜索代币..." size="small" allow-clear><template #prefix><Icon icon="mdi:magnify" style="font-size: 14px; color: var(--text-color-quaternary, #c9cdd4)" /></template></a-input>
                 </div>
                 <div class="selector-list">
                   <div v-for="token in filteredCoinOptions" :key="token.key" class="selector-item" :class="{ 'selector-item-selected': coinValue === token.key }" @click="handleTokenSelect(token.key)">
@@ -1497,16 +1513,26 @@ export default {
 </script>
 
 <style scoped>
-.container { height: 100vh; display: flex; flex-direction: column; overflow: hidden; padding: 10px 10px 50px 10px; min-width: 1240px; }
+.container { height: 100vh; display: flex; flex-direction: column; overflow: visible; padding: 50px 10px 50px 10px; min-width: 1240px; }
 .container::-webkit-scrollbar { display: none; }
 .container { -ms-overflow-style: none; scrollbar-width: none; }
-.mainTable { margin-top: 40px; flex: 1; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.main-content { flex: 1; display: flex; overflow: visible; position: relative; }
+.left-panel { flex: 1; display: flex; flex-direction: column; overflow: visible; min-width: 0; }
+.table-section { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
+.action-buttons-section { flex-shrink: 0; position: relative; overflow: visible; height: 10px;}
+.config-section { flex-shrink: 0; background: var(--card-bg, var(--color-bg-1, #ffffff)); border: 1px solid var(--color-border, #e5e6eb); border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
+.config-row { display: flex; align-items: stretch; height: 100%; min-height: 150px; }
+.config-column { display: flex; flex-direction: column; min-height: 150px; }
+.column-first { padding-right: 8px; flex: 9; }
+.column-second { padding: 0 8px; flex: 8; }
+.column-third { padding-left: 8px; flex: 7; }
+.config-divider { width: 1px; min-height: 190px; height: 100%; background: linear-gradient(to bottom, transparent, var(--color-border, #e5e6eb) 20%, var(--color-border, #e5e6eb) 80%, transparent); margin: 0; align-self: center; }
 .arco-form-item { padding: 5px 10px; margin-bottom: 8px; }
 .container :deep(.arco-form-item-label-col) { margin-bottom: 0; }
 .container :deep(.arco-form-item-wrapper-col) { flex: 1; }
 .container :deep(.arco-form-item) { margin-bottom: 8px; padding: 4px 10px; }
 .container :deep(.arco-form-item-label) { line-height: 32px; }
-.floating-action-bar { position: relative; z-index: 10; width: calc(100% - var(--side-panel-offset, 60px)); display: flex; justify-content: center; margin-bottom: 12px; margin-top: -20px; pointer-events: none; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.floating-action-bar { position: relative; z-index: 10; width: 100%; display: flex; justify-content: center; pointer-events: none; margin-top: -15px;}
 .floating-action-content { display: flex; gap: 80px; align-items: center; pointer-events: auto; }
 .floating-btn { min-width: 120px; height: 40px; font-size: 14px; font-weight: 500; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s ease; border: none; cursor: pointer; }
 .floating-btn.primary-btn { background: linear-gradient(135deg, #165dff 0%, #0d42d6 100%); color: #ffffff; box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3); }
@@ -1559,7 +1585,7 @@ export default {
 .status-proxy-indicator.proxy-active:hover { background: var(--success-2, #b7f0e6); }
 .proxy-status-text { font-size: 12px; font-weight: 500; }
 .proxy-count-text { font-size: 11px; color: var(--text-color-tertiary, #8c8f94); }
-.selector-dropdown { position: absolute; bottom: 100%; left: 0; background: var(--card-bg, #ffffff); border: 1px solid var(--color-border, #e5e6eb); border-radius: 12px; box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15), 0 -2px 8px rgba(0, 0, 0, 0.1); z-index: 10000; margin-bottom: 8px; min-width: 360px; max-height: 320px; display: flex; flex-direction: column; overflow: hidden; }
+.selector-dropdown { position: absolute; bottom: 100%; left: 0; background: var(--card-bg, #ffffff); border: 1px solid var(--color-border, #e5e6eb); border-radius: 12px; box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15), 0 -2px 8px rgba(0, 0, 0, 0.1); z-index: 10000; margin-bottom: 8px; min-width: 360px; max-height: 320px; display: flex; flex-direction: column; overflow: visible; }
 .selector-dropdown-up { border-radius: 12px 12px 4px 4px; }
 .selector-search { padding: 12px 12px 8px 12px; border-bottom: 1px solid var(--color-border-2, #f0f0f0); background: var(--color-fill-1, #f7f8fa); }
 .selector-list { flex: 1; overflow-y: auto; max-height: 240px; padding: 8px; }
@@ -1567,7 +1593,7 @@ export default {
 .selector-item:hover { background: var(--color-fill-2, #f2f3f5); }
 .selector-item-selected { background: var(--primary-1, #e8f1ff); }
 .selector-item-selected:hover { background: var(--primary-2, #d4e4ff); }
-.selector-item-name { font-weight: 500; color: var(--text-color, #1d2129); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selector-item-name { font-weight: 500; color: var(--text-color, #1d2129); flex: 1; overflow: visible; text-overflow: ellipsis; white-space: nowrap; }
 .selector-item-url { font-size: 11px; color: var(--text-color-tertiary, #8c8f94); }
 .selector-item-symbol { font-size: 11px; color: var(--text-color-secondary, #6b778c); margin-left: 4px; }
 .selector-slide-enter-active { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -1578,7 +1604,7 @@ export default {
 .status-chain-active .status-label { color: var(--primary-6, #165dff) !important; }
 .status-token-active { background: linear-gradient(135deg, var(--success-1, #e6fffb), var(--color-fill-2, #f2f3f5)) !important; }
 .status-token-active .status-label { color: var(--success-6, #0fa962) !important; }
-.side-actions-panel-fixed { position: fixed; right: 10px; top: 50px; bottom: 45px; width: 50px; background: var(--color-bg-2, #ffffff); border: 1px solid var(--color-border, #e5e6eb); border-radius: 8px; display: flex; flex-direction: column; align-items: center; padding: 10px; pointer-events: none; box-shadow: 3px 0px 6px 0px rgba(0, 0, 0, 0.06), -1px 0 4px rgba(0, 0, 0, 0.03); z-index: 10; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.side-actions-panel-fixed { width: 50px; background: var(--color-bg-2, #ffffff); border: 1px solid var(--color-border, #e5e6eb); border-radius: 8px; display: flex; flex-direction: column; align-items: center; padding: 10px; pointer-events: none; box-shadow: 3px 0px 6px 0px rgba(0, 0, 0, 0.06), -1px 0 4px rgba(0, 0, 0, 0.03); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
 .side-actions-panel-fixed.side-actions-panel-collapsed { width: 50px; background: transparent; border: none; box-shadow: none; padding: 0; }
 .side-actions-content-fixed { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; opacity: 1; pointer-events: auto; flex: 1; }
 .side-actions-divider { width: 24px; height: 1px; background: linear-gradient(to right, transparent, var(--color-border, #e2e4e8), transparent); margin: 13px 0; }
@@ -1595,11 +1621,9 @@ export default {
 .side-actions-content-fixed .arco-btn[status='danger'] { background: linear-gradient(135deg, var(--color-danger-6, #f53f3f) 0%, var(--color-danger-5, #ff7d7d) 100%); border-color: var(--color-danger-6, #f53f3f); box-shadow: 0 2px 6px rgba(245, 63, 63, 0.25); }
 .side-actions-content-fixed .arco-btn[status='danger'] > .arco-btn-icon { color: #ffffff; }
 .side-actions-content-fixed .arco-btn[status='danger']:hover { background: linear-gradient(135deg, var(--color-danger-5, #ff7d7d) 0%, var(--color-danger-6, #f53f3f) 100%); box-shadow: 0 4px 12px rgba(245, 63, 63, 0.35); transform: translateY(-2px); }
-.panel-slide-enter-active, .panel-slide-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-.panel-slide-enter-from, .panel-slide-leave-to { opacity: 0; transform: translateX(20px); }
-.table-container { flex: 1; display: flex; position: relative; overflow: hidden; width: 100%; }
-.table-with-side-actions { margin-right: 58px; margin-top: 0; height: 100%; transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-.mainTable:has(.side-actions-panel-fixed.side-actions-panel-collapsed) .table-with-side-actions { margin-right: 0; }
+.table-container { flex: 1; display: flex; position: relative; overflow: visible; width: 100%; }
+.table-with-side-actions { margin-right: 60px; margin-top: 0; height: 100%; transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.table-with-side-actions.expanded { margin-right: 0; }
 .exec-actions { display: flex; gap: 4px; padding: 4px 6px; }
 .action-btn { padding: 2px 10px; font-size: 12px; color: #e0e0e0; background: #2a2a2b; border-radius: 3px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .action-btn:hover { background: #3d3d3d; color: #fff; }

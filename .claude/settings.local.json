@@ -1,4 +1,5 @@
 {
+  "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
       "Bash(yarn tauri-build:*)",
@@ -13,9 +14,12 @@
       "Bash(grep:*)",
       "Edit",
       "Bash(cd:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(git:*)",
+      "mcp__acp__Bash"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "outputStyle": "Default"
 }

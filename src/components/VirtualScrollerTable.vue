@@ -106,7 +106,6 @@
         :items="data"
         :itemSize="35"
         class="virtual-scroller"
-        :style="{ height: '100%' }"
       >
         <template #item="{ item, options }">
           <div
@@ -530,6 +529,8 @@ const handleWheel = () => {
 
 .virtual-scroller {
   width: 100%;
+  height: calc(100% - 30px);
+  border-bottom: 1px solid var(--table-border-color);
 }
 
 .table-row {

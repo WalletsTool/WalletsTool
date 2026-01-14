@@ -122,7 +122,7 @@ let threadCount = ref(1);
 let enableMultiThread = ref(false);
 let multiWindowCount = ref(1);
 
-const isSidePanelExpanded = ref(true);
+const isSidePanelExpanded = ref(false);
 
 const floatingActionBarStyle = computed(() => {
   const sidePanelWidth = isSidePanelExpanded.value ? 60 : 0;
@@ -1199,7 +1199,7 @@ function handleClickOutside(event) {
             </div>
           </div>
         </div>
-        <div class="config-section" style="flex-shrink: 0; padding-top: 25px">
+        <div class="config-section" style="flex-shrink: 0; padding-top: 35px">
           <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="horizontal" label-align="left">
             <a-row class="config-row">
               <div class="config-column column-first">
@@ -1530,8 +1530,8 @@ export default {
 .container :deep(.arco-form-item-wrapper-col) { flex: 1; }
 .container :deep(.arco-form-item) { margin-bottom: 8px; padding: 4px 10px; }
 .container :deep(.arco-form-item-label) { line-height: 32px; }
-.floating-action-bar { position: relative; z-index: 10; width: 100%; display: flex; justify-content: center; pointer-events: none; margin-top: -15px;}
-.floating-action-content { display: flex; gap: 80px; align-items: center; pointer-events: auto; }
+.floating-action-bar { position: relative; z-index: 10; width: 100%; display: flex; justify-content: center; pointer-events: none; margin-top: -24px;}
+.floating-action-content { display: flex; gap: 40px; align-items: center; pointer-events: auto; background: var(--bg-color, #ffffff); padding: 8px 50px; border: 1px solid var(--table-border-color, #e5e6eb); border-radius: 50px; }
 .floating-btn { min-width: 120px; height: 40px; font-size: 14px; font-weight: 500; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s ease; border: none; cursor: pointer; }
 .floating-btn.primary-btn { background: linear-gradient(135deg, #165dff 0%, #0d42d6 100%); color: #ffffff; box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3); }
 .floating-btn.primary-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(22, 93, 255, 0.4); }

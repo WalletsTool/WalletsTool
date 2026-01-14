@@ -171,7 +171,7 @@ watch(() => props.visible, (newVal) => {
   <Teleport to="body">
     <Transition name="guide-fade">
       <div v-if="visible" class="guide-overlay">
-        <div class="guide-mask" @click="skipGuide"></div>
+        <div class="guide-mask" @click="nextStep"></div>
         
         <div class="guide-spotlight" :style="{
           top: spotlightPosition.top + 'px',

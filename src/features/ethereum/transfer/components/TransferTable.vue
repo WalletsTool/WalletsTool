@@ -279,14 +279,14 @@ const uploadInputRef = ref(null);
           <a-tooltip content="钱包录入" position="left">
             <a-button type="primary" size="mini" @click="handleManualImport">
               <template #icon>
-                <Icon icon="mdi:wallet" style="color: #165dff; font-size: 19px" />
+                <Icon icon="mdi:wallet" style="color: #165dff; font-size: 20px" />
               </template>
             </a-button>
           </a-tooltip>
           <a-tooltip content="导入文件" position="left">
             <a-button type="primary" size="mini" @click="handleFileUpload">
               <template #icon>
-                <Icon icon="mdi:upload" style="color: #00b42a; font-size: 19px" />
+                <Icon icon="mdi:upload" style="color: #00b42a; font-size: 20px" />
               </template>
             </a-button>
           </a-tooltip>
@@ -300,7 +300,7 @@ const uploadInputRef = ref(null);
               <template #icon>
                 <Icon
                   icon="mdi:delete-sweep"
-                  style="color: #f53f3f; font-size: 19px"
+                  style="color: #f53f3f; font-size: 20px"
                 />
               </template>
             </a-button>
@@ -310,7 +310,7 @@ const uploadInputRef = ref(null);
               <template #icon>
                 <Icon
                   icon="mdi:file-download"
-                  style="color: #4e5969; font-size: 19px"
+                  style="color: #4e5969; font-size: 20px"
                 />
               </template>
             </a-button>
@@ -326,7 +326,7 @@ const uploadInputRef = ref(null);
               <template #icon>
                 <Icon
                   icon="mdi:check-circle"
-                  style="color: #00b42a; font-size: 19px"
+                  style="color: #00b42a; font-size: 20px"
                 />
               </template>
             </a-button>
@@ -334,56 +334,28 @@ const uploadInputRef = ref(null);
           <a-tooltip content="选中失败的数据" position="left">
             <a-button type="outline" status="danger" size="mini" @click="handleSelectFailed">
               <template #icon>
-                <Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 18px" />
+                <Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 20px" />
               </template>
             </a-button>
           </a-tooltip>
           <a-tooltip content="反选" position="left">
             <a-button type="outline" size="mini" @click="handleInvertSelection">
               <template #icon>
-                <Icon icon="mdi:swap-horizontal" style="color: #165dff; font-size: 18px" />
+                <Icon icon="mdi:swap-horizontal" style="color: #165dff; font-size: 20px" />
               </template>
             </a-button>
           </a-tooltip>
           <a-tooltip content="高级筛选" position="left">
             <a-button type="primary" size="mini" @click="handleShowAdvancedFilter">
               <template #icon>
-                <Icon icon="mdi:filter" style="color: #165dff; font-size: 19px" />
+                <Icon icon="mdi:filter" style="color: #165dff; font-size: 20px" />
               </template>
             </a-button>
           </a-tooltip>
           <a-tooltip content="删除选中" position="left">
             <a-button type="outline" status="danger" size="mini" @click="handleDeleteSelected">
               <template #icon>
-                <Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 18px" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="选中失败的数据" position="left">
-            <a-button type="outline" status="danger" size="mini" @click="selectFailed">
-              <template #icon>
-                <Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 18px" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="反选" position="left">
-            <a-button type="outline" size="mini" @click="InvertSelection">
-              <template #icon>
-                <Icon icon="mdi:swap-horizontal" style="color: #165dff; font-size: 18px" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="高级筛选" position="left">
-            <a-button type="primary" size="mini" @click="showAdvancedFilter">
-              <template #icon>
-                <Icon icon="mdi:filter" style="color: #165dff; font-size: 19px" />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip content="删除选中" position="left">
-            <a-button type="outline" status="danger" size="mini" @click="deleteSelected">
-              <template #icon>
-                <Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 19px" />
+                <Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 20px" />
               </template>
             </a-button>
           </a-tooltip>

@@ -84,3 +84,10 @@ pub async fn get_proxy_stats_for_window(_window_id: String) -> Result<std::colle
     // 对于单个窗口的统计，我们返回当前窗口的统计信息
     Ok(all_stats)
 }
+
+/// Tauri命令：清除指定窗口的代理配置
+#[command]
+pub async fn clear_proxy_config_for_window(window_id: String) -> Result<String, String> {
+    PROXY_MANAGER.clear_config_for_window(&window_id).await?;
+    Ok(format!("窗口 {} 的代理配置已完全清除", window_id))
+}

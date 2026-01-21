@@ -354,6 +354,7 @@ async fn main() {
             wallets_tool::ecosystems::ethereum::proxy_commands::test_proxy_connection,
             wallets_tool::ecosystems::ethereum::proxy_commands::get_proxy_stats,
             wallets_tool::ecosystems::ethereum::proxy_commands::get_proxy_stats_for_window,
+            wallets_tool::ecosystems::ethereum::proxy_commands::clear_proxy_config_for_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -146,7 +146,7 @@ impl SimpleBalanceQueryService {
     }
 
     // 发送 JSON-RPC 请求（带超时、代理支持和429重试）
-    async fn send_rpc_request(&self, rpc_url: &str, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+    async fn send_rpc_request(&self, rpc_url: &str, method: &str, params: serde_json::Value, window_id: Option<&str>) -> Result<serde_json::Value> {
         use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
         
         let request = JsonRpcRequest {
@@ -159,17 +159,26 @@ impl SimpleBalanceQueryService {
         // 设置10秒超时
         let timeout = Duration::from_secs(10);
         
-        // 检查代理配置并获取代理客户端
-        let proxy_config = PROXY_MANAGER.get_config();
+        // 根据 window_id 获取代理配置
+        let (proxy_config, proxy_client) = if let Some(wid) = window_id {
+            let config = PROXY_MANAGER.get_config_for_window(wid);
+            let client = PROXY_MANAGER.get_random_proxy_client_for_window(wid);
+            (config, client)
+        } else {
+            let config = PROXY_MANAGER.get_config();
+            let client = PROXY_MANAGER.get_random_proxy_client();
+            (config, client)
+        };
+        
         let using_proxy = proxy_config.enabled && !proxy_config.proxies.is_empty();
         
         // 优先使用代理客户端，如果没有代理则使用默认客户端
-        let client = if let Some(proxy_client) = PROXY_MANAGER.get_random_proxy_client() {
-            println!("[DEBUG] 使用代理发送RPC请求 (余额查询): {}", rpc_url);
+        let client = if let Some(pc) = proxy_client {
+            println!("[DEBUG] 使用代理发送RPC请求 (余额查询): {}, window_id: {:?}", rpc_url, window_id);
             if using_proxy {
                 println!("[INFO] 代理已启用，当前有 {} 个代理可用", proxy_config.proxies.len());
             }
-            proxy_client
+            pc
         } else {
             if proxy_config.enabled {
                 println!("[WARN] 代理已启用但没有可用代理，使用直连模式: {}", rpc_url);
@@ -220,12 +229,12 @@ impl SimpleBalanceQueryService {
     }
 
     // 查询基础币种余额（带重试机制）
-    async fn query_base_balance_with_retry(&self, item: &mut QueryItem, chain: &str, max_retries: usize) -> Result<()> {
+    async fn query_base_balance_with_retry(&self, item: &mut QueryItem, chain: &str, max_retries: usize, window_id: Option<&str>) -> Result<()> {
         let mut last_error = None;
         
         for retry_count in 0..max_retries {
             // 每次重试都重新获取RPC地址（会随机选择不同的RPC节点）
-            match self.query_base_balance(item, chain).await {
+            match self.query_base_balance(item, chain, window_id).await {
                 Ok(_) => {
                     if retry_count > 0 {
                         println!("[SUCCESS] 平台币查询重试成功 - 地址: {}, 重试次数: {}", item.address, retry_count);
@@ -247,14 +256,15 @@ impl SimpleBalanceQueryService {
     }
 
     // 查询基础币种余额
-    async fn query_base_balance(&self, item: &mut QueryItem, chain: &str) -> Result<()> {
+    async fn query_base_balance(&self, item: &mut QueryItem, chain: &str, window_id: Option<&str>) -> Result<()> {
         let rpc_url = self.get_rpc_url(chain).await?;
         
         // 查询余额
         let balance_result = self.send_rpc_request(
             &rpc_url,
             "eth_getBalance",
-            serde_json::json!([item.address, "latest"])
+            serde_json::json!([item.address, "latest"]),
+            window_id
         ).await?;
 
         if let Some(balance_hex) = balance_result.as_str() {
@@ -281,7 +291,8 @@ impl SimpleBalanceQueryService {
         let block_number_result = self.send_rpc_request(
             &rpc_url,
             "eth_blockNumber",
-            serde_json::json!([])
+            serde_json::json!([]),
+            Some(window_id)
         ).await?;
         
         if let Some(block_number_hex) = block_number_result.as_str() {
@@ -307,7 +318,8 @@ impl SimpleBalanceQueryService {
                 let block_result = self.send_rpc_request(
                     &rpc_url,
                     "eth_getBlockByNumber",
-                    serde_json::json!([block_hex, true])
+                    serde_json::json!([block_hex, true]),
+                    Some(window_id)
                 ).await?;
                 
                 if let Some(block) = block_result.as_object() {
@@ -341,7 +353,7 @@ impl SimpleBalanceQueryService {
     }
 
     // 查询代币余额
-    async fn query_token_balance(&self, item: &mut QueryItem, chain: &str, contract_address: &str) -> Result<()> {
+    async fn query_token_balance(&self, item: &mut QueryItem, chain: &str, contract_address: &str, window_id: Option<&str>) -> Result<()> {
         let rpc_url = self.get_rpc_url(chain).await?;
         
         println!("[DEBUG] 开始查询代币余额 - 链: {}, 地址: {}, 合约: {}", chain, item.address, contract_address);
@@ -367,7 +379,8 @@ impl SimpleBalanceQueryService {
                             serde_json::json!([{
                                 "to": contract_address,
                                 "data": decimals_data
-                            }, "latest"])
+                            }, "latest"]),
+                            window_id
                         ).await {
                             Ok(decimals_result) => {
                                 if let Some(decimals_hex) = decimals_result.as_str() {
@@ -410,7 +423,8 @@ impl SimpleBalanceQueryService {
             serde_json::json!([{
                 "to": contract_address,
                 "data": data
-            }, "latest"])
+            }, "latest"]),
+            window_id
         ).await?;
 
         if let Some(balance_hex) = balance_result.as_str() {
@@ -555,7 +569,7 @@ impl SimpleBalanceQueryService {
                 }
                 
                 if params.coin_config.coin_type == "base" {
-                    self.query_base_balance(&mut item, &params.chain).await?;
+                    self.query_base_balance(&mut item, &params.chain, Some(window_id)).await?;
                 } else if params.coin_config.coin_type == "token" {
                     // 查询代币时，同时查询平台币和代币余额
                     let mut base_query_success = true;
@@ -565,7 +579,7 @@ impl SimpleBalanceQueryService {
                     // 如果不是仅查询目标代币，也要查询平台币（带重试机制）
                     if !params.only_coin_config {
                         // 平台币查询失败时记录错误，但不立即返回
-                        if let Err(e) = self.query_base_balance_with_retry(&mut item, &params.chain, 3).await {
+                        if let Err(e) = self.query_base_balance_with_retry(&mut item, &params.chain, 3, Some(window_id)).await {
                             base_query_success = false;
                             errors.push(format!("平台币查询失败: {}", e));
                             println!("[WARN] 平台币查询最终失败: {}", e);
@@ -576,7 +590,7 @@ impl SimpleBalanceQueryService {
                     
                     // 查询代币余额
                     if let Some(contract_address) = &params.coin_config.contract_address {
-                        if let Err(e) = self.query_token_balance(&mut item, &params.chain, contract_address).await {
+                        if let Err(e) = self.query_token_balance(&mut item, &params.chain, contract_address, Some(window_id)).await {
                             token_query_success = false;
                             errors.push(format!("代币查询失败: {}", e));
                             println!("[WARN] 代币查询失败: {}", e);

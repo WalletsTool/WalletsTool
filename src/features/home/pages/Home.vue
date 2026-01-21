@@ -444,7 +444,10 @@ async function closeWindow() {
 }
 
 // 清除所有代理配置缓存
-function clearAllProxyConfigs() {
+async function clearAllProxyConfigs() {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  
+  // 清除前端localStorage
   const keysToRemove = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
@@ -457,6 +460,17 @@ function clearAllProxyConfigs() {
     console.log(`已清除缓存: ${key}`);
   });
   console.log(`已清除 ${keysToRemove.length} 个代理配置缓存`);
+  
+  // 清除后端文件缓存和内存缓存
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow();
+      await invoke('clear_proxy_config_for_window', { windowId: currentWindow.label });
+      console.log(`已清除窗口 ${currentWindow.label} 的后端代理配置`);
+    } catch (error) {
+      console.error('清除后端代理配置失败:', error);
+    }
+  }
 }
 
 // 处理主窗口关闭请求
@@ -517,7 +531,7 @@ async function handleMainWindowCloseRequest() {
             closeConfirmed.value = true
 
             // 清除所有代理配置缓存
-            clearAllProxyConfigs()
+            await clearAllProxyConfigs()
 
             // 先关闭所有子窗口
             if (childWindows && childWindows.length > 0) {

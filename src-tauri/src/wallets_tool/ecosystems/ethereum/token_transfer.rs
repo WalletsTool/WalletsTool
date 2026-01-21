@@ -66,6 +66,8 @@ pub struct TokenTransferConfig {
     pub max_gas_price: f64,
     pub error_retry: String,
     pub error_count_limit: u32,
+    #[serde(default)]
+    pub window_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -106,6 +108,7 @@ impl TokenTransferUtils {
             max_gas_price: config.max_gas_price,
             error_retry: config.error_retry.clone(),
             error_count_limit: config.error_count_limit,
+            window_id: config.window_id.clone(),
         };
         
         match config.limit_type.as_str() {
@@ -180,7 +183,7 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         })?;
     
     // 创建Provider
-    let provider = create_provider(&config.chain).await.map_err(|e| {
+    let provider = create_provider(&config.chain, config.window_id.as_deref()).await.map_err(|e| {
         format!("获取RPC提供商失败: {}", e)
     })?;
     
@@ -268,6 +271,7 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         max_gas_price: config.max_gas_price,
         error_retry: config.error_retry.clone(),
         error_count_limit: config.error_count_limit,
+        window_id: config.window_id.clone(),
     };
     
     // 获取当前使用的RPC URL用于错误信息
@@ -641,7 +645,7 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     let db_decimals = chain_service.get_token_decimals_by_contract(&config.chain, &config.contract_address).await?;
     
     // 创建Provider
-    let provider = create_provider(&config.chain).await?;
+    let provider = create_provider(&config.chain, config.window_id.as_deref()).await?;
     
     // 创建钱包
     if item.private_key.trim().is_empty() {
@@ -698,6 +702,7 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
         max_gas_price: config.max_gas_price,
         error_retry: config.error_retry.clone(),
         error_count_limit: config.error_count_limit,
+        window_id: config.window_id.clone(),
     };
     
     let gas_price = TransferUtils::get_gas_price(&transfer_config, provider.clone()).await?;
@@ -827,7 +832,7 @@ async fn query_token_balance_internal(
     
     // 创建Provider
     println!("[DEBUG] 正在创建Provider...");
-    let provider = create_provider(&chain).await?;
+    let provider = create_provider(&chain, None).await?;
     println!("[DEBUG] Provider创建成功");
     
     // 解析地址
@@ -936,7 +941,7 @@ async fn get_token_info_internal(
     chain: String,
     contract_address: String,
 ) -> Result<TokenInfo, Box<dyn std::error::Error>> {
-    let provider = create_provider(&chain).await?;
+    let provider = create_provider(&chain, None).await?;
     
     let contract_addr: Address = contract_address.parse()?;
     

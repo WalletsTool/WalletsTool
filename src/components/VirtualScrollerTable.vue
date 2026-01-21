@@ -116,6 +116,7 @@
               clickable: true,
               'zebra-stripe': getItemIndex(item) % 2 === 1,
             }"
+            v-memo="[item.key, isRowSelected(item), isRowHovered(item), item.exec_status, item.private_key, item.to_addr, item.amount, item.plat_balance, item.coin_balance, item.error_msg]"
             @click="handleRowClick(item, getItemIndex(item))"
           >
             <!-- 选择列 -->
@@ -208,7 +209,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from "vue";
+import { computed, ref, shallowRef, watch, onMounted, onUnmounted } from "vue";
 import VirtualScroller from "primevue/virtualscroller";
 import { Icon } from "@iconify/vue";
 import { Message, Tooltip } from "@arco-design/web-vue";
@@ -289,12 +290,38 @@ const isIndeterminate = computed(() => {
   return selectedCount > 0 && selectedCount < props.data.length;
 });
 
-// 重新排序列，将optional列放在最右端
-const sortedColumns = computed(() => {
-  const regularColumns = props.columns.filter((col) => col.slotName !== "optional");
-  const optionalColumns = props.columns.filter((col) => col.slotName === "optional");
-  return [...regularColumns, ...optionalColumns];
+// 缓存列排序结果，避免重复计算
+const sortedColumns = shallowRef([]);
+
+// 监听 columns 变化时更新 sortedColumns
+watch(() => props.columns, (newCols) => {
+  if (!newCols || newCols.length === 0) {
+    sortedColumns.value = [];
+    return;
+  }
+  const regular = newCols.filter((col) => col.slotName !== "optional");
+  const optional = newCols.filter((col) => col.slotName === "optional");
+  sortedColumns.value = [...regular, ...optional];
+}, { immediate: true });
+
+// 缓存行索引映射，O(1) 复杂度获取索引
+const itemIndexMap = computed(() => {
+  const map = new Map();
+  const data = props.data;
+  for (let i = 0; i < data.length; i++) {
+    map.set(getRowKey(data[i]), i);
+  }
+  return map;
 });
+
+// 方法
+const getRowKey = (item) => {
+  return item[props.rowKey];
+};
+
+const getItemIndex = (item) => {
+  return itemIndexMap.value.get(getRowKey(item)) ?? -1;
+};
 
 // 判断是否显示空数据提示
 const showEmptyData = computed(() => {
@@ -341,14 +368,6 @@ const getContentColumnStyle = (column) => {
 };
 
 // 方法
-const getRowKey = (item) => {
-  return item[props.rowKey];
-};
-
-const getItemIndex = (item) => {
-  return props.data.findIndex((dataItem) => getRowKey(dataItem) === getRowKey(item));
-};
-
 const isRowSelected = (item) => {
   if (!props.rowSelection) return false;
   return props.selectedKeys.includes(getRowKey(item));

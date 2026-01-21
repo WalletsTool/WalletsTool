@@ -241,18 +241,9 @@ const uploadInputRef = ref(null);
                 </div>
               </div>
             </template>
-            <a-tag v-if="record.exec_status === '0'" color="#86909c"
-              >等待执行</a-tag
-            >
-            <a-tag v-if="record.exec_status === '1'" color="#ff7d00"
-              >执行中</a-tag
-            >
-            <a-tag v-if="record.exec_status === '2'" color="#00b42a"
-              >执行成功</a-tag
-            >
-            <a-tag v-if="record.exec_status === '3'" color="#f53f3f"
-              >执行失败</a-tag
-            >
+            <span :class="['status-tag', 'status-' + record.exec_status]">
+              {{ record.exec_status === '0' ? '等待执行' : record.exec_status === '1' ? '执行中' : record.exec_status === '2' ? '执行成功' : '执行失败' }}
+            </span>
           </a-tooltip>
         </div>
       </template>
@@ -547,7 +538,35 @@ const uploadInputRef = ref(null);
 }
 
 .mainTable:has(.side-actions-panel-fixed.side-actions-panel-collapsed)
-  .table-with-side-actions {
+.table-with-side-actions {
   margin-right: 0;
+}
+
+.status-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-0 {
+  background-color: #f2f3f5;
+  color: #86909c;
+}
+
+.status-1 {
+  background-color: #ff7d0020;
+  color: #ff7d00;
+}
+
+.status-2 {
+  background-color: #00b42a20;
+  color: #00b42a;
+}
+
+.status-3 {
+  background-color: #f53f3f20;
+  color: #f53f3f;
 }
 </style>

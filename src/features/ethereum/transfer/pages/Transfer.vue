@@ -59,12 +59,12 @@ initWindowTitle()
 
 const columns = [
   { title: '序号', align: 'center', width: 55, slotName: 'index' },
-  { title: '发送方私钥', align: 'center', width: 250, dataIndex: 'private_key', ellipsis: true, tooltip: true },
-  { title: '接收地址', align: 'center', width: 250, dataIndex: 'to_addr', ellipsis: true, tooltip: true },
+  { title: '发送方私钥', align: 'center', width: 230, dataIndex: 'private_key', ellipsis: true, tooltip: true },
+  { title: '接收地址', align: 'center', width: 230, dataIndex: 'to_addr', ellipsis: true, tooltip: true },
   { title: '转账数量', align: 'center', dataIndex: 'amount', width: 85, ellipsis: true, tooltip: true },
   { title: '平台币余额', align: 'center', dataIndex: 'plat_balance', width: 95, ellipsis: true, tooltip: true },
   { title: '代币余额', align: 'center', dataIndex: 'coin_balance', width: 85, ellipsis: true, tooltip: true },
-  { title: '状态', align: 'center', slotName: 'exec_status', width: 90, ellipsis: true, tooltip: true },
+  { title: '状态', align: 'center', slotName: 'exec_status', width: 100, ellipsis: true, tooltip: true },
   { title: '返回信息', align: 'center', dataIndex: 'error_msg', ellipsis: true, tooltip: true },
   { title: '操作', align: 'center', slotName: 'optional', width: 55, ellipsis: true, tooltip: true },
 ];
@@ -217,6 +217,7 @@ const transferConfig = computed(() => ({
   gas_price_rate: (Number(form.gas_price_rate) || 5) / 100,
   gas_price: Number(form.gas_price) || 30,
   max_gas_price: Number(form.max_gas_price) || 0,
+  window_id: currentWindowId.value || null,
 }));
 
 const transferStatistics = computed(() => ({
@@ -1223,11 +1224,17 @@ async function handleBeforeClose() {
     try {
       const currentWindow = await getCurrentWindow();
       const windowLabel = currentWindow.label;
+      
+      // 清除前端localStorage
       localStorage.removeItem(`proxy_config_${windowLabel}`);
       localStorage.removeItem(`proxy_window_id_${windowLabel}`);
-      console.log(`已清除窗口 ${windowLabel} 的代理配置缓存`);
+      
+      // 清除后端文件缓存和内存缓存
+      await invoke('clear_proxy_config_for_window', { windowId: windowLabel });
+      
+      console.log(`已完全清除窗口 ${windowLabel} 的代理配置`);
     } catch (error) {
-      console.error('清除代理配置缓存失败:', error);
+      console.error('清除代理配置失败:', error);
     }
   }
 }

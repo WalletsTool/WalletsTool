@@ -33,6 +33,8 @@ pub struct TransferConfig {
     pub max_gas_price: f64,
     pub error_retry: String,
     pub error_count_limit: u32,
+    #[serde(default)]
+    pub window_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -218,13 +220,13 @@ async fn add_rpc_delay() {
 }
 
 // 创建Provider(支持代理和请求间隔控制)
-pub async fn create_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn std::error::Error>> {
+pub async fn create_provider(chain: &str, window_id: Option<&str>) -> Result<Arc<Provider<Http>>, Box<dyn std::error::Error>> {
     use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
     
     // 添加随机延迟，避免请求过于密集
     add_rpc_delay().await;
     
-    println!("[DEBUG] create_provider - 开始为链 '{}' 创建Provider", chain);
+    println!("[DEBUG] create_provider - 开始为链 '{}' 创建Provider, window_id: {:?}", chain, window_id);
     
     let rpc_config = get_rpc_config(chain).await
         .ok_or_else(|| {
@@ -240,24 +242,40 @@ pub async fn create_provider(chain: &str) -> Result<Arc<Provider<Http>>, Box<dyn
         .map_err(|e| format!("选择RPC失败: {}", e))?;
     println!("[DEBUG] create_provider - 选择的RPC URL: {}", rpc_url);
     
-    // 检查代理配置状态
-    let proxy_config = PROXY_MANAGER.get_config();
-    let using_proxy = proxy_config.enabled && !proxy_config.proxies.is_empty();
-    
-    if using_proxy {
-        println!("[INFO] 代理已启用，当前有 {} 个代理可用", proxy_config.proxies.len());
-    } else if proxy_config.enabled {
-        println!("[WARN] 代理已启用但没有配置代理地址，将使用直连模式");
+    let proxy_client = if let Some(wid) = window_id {
+        let config = PROXY_MANAGER.get_config_for_window(wid);
+        let using_proxy = config.enabled && !config.proxies.is_empty();
+        
+        if using_proxy {
+            println!("[INFO] 代理已启用，窗口 {} 有 {} 个代理可用", wid, config.proxies.len());
+        } else if config.enabled {
+            println!("[WARN] 代理已启用但没有配置代理地址，将使用直连模式");
+        } else {
+            println!("[INFO] 代理未启用，使用直连模式");
+        }
+        
+        PROXY_MANAGER.get_random_proxy_client_for_window(wid)
     } else {
-        println!("[INFO] 代理未启用，使用直连模式");
-    }
+        let proxy_config = PROXY_MANAGER.get_config();
+        let using_proxy = proxy_config.enabled && !proxy_config.proxies.is_empty();
+        
+        if using_proxy {
+            println!("[INFO] 代理已启用，当前有 {} 个代理可用", proxy_config.proxies.len());
+        } else if proxy_config.enabled {
+            println!("[WARN] 代理已启用但没有配置代理地址，将使用直连模式");
+        } else {
+            println!("[INFO] 代理未启用，使用直连模式");
+        }
+        
+        PROXY_MANAGER.get_random_proxy_client()
+    };
     
     // 尝试使用代理客户端，如果没有代理则使用默认方式
-    let provider = if let Some(proxy_client) = PROXY_MANAGER.get_random_proxy_client() {
+    let provider = if let Some(client) = proxy_client {
         println!("[DEBUG] create_provider - 使用代理客户端创建Provider");
         let url: Url = rpc_url.parse()
             .map_err(|e| format!("Failed to parse RPC URL: {}", e))?;
-        let http_provider = Http::new_with_client(url, proxy_client);
+        let http_provider = Http::new_with_client(url, client);
         Provider::new(http_provider)
     } else {
         println!("[DEBUG] create_provider - 使用默认方式创建Provider");
@@ -997,7 +1015,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     };
     
     // 预检查余额是否充足（避免RPC调用后才发现余额不足）
-    let provider_for_precheck = create_provider(&config.chain).await.map_err(|e| {
+    let provider_for_precheck = create_provider(&config.chain, config.window_id.as_deref()).await.map_err(|e| {
         format!("获取RPC提供商失败: {}", e)
     })?;
     TransferUtils::pre_check_balance(&config, provider_for_precheck.clone(), wallet_address, to_address).await.map_err(|e| {
@@ -1005,7 +1023,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     })?;
     
     // 获取余额
-    let provider_for_balance = create_provider(&config.chain).await.map_err(|e| {
+    let provider_for_balance = create_provider(&config.chain, config.window_id.as_deref()).await.map_err(|e| {
         format!("获取RPC提供商失败: {}", e)
     })?;
     let balance = provider_for_balance.get_balance(wallet_address, None).await.map_err(|e| {
@@ -1016,7 +1034,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     println!("序号：{}, 当前余额为: {} ETH", index, balance_ether_str);
     
     // 获取Gas Price
-    let provider_for_gas_price = create_provider(&config.chain).await.map_err(|e| {
+    let provider_for_gas_price = create_provider(&config.chain, config.window_id.as_deref()).await.map_err(|e| {
         format!("获取RPC提供商失败: {}", e)
     })?;
     
@@ -1040,7 +1058,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                 // 全部转账：使用多层回退机制估算gas limit
                 // 1. 首先尝试用余额的90%估算
                 let amount_90_percent = balance * U256::from(90) / U256::from(100);
-                let provider_for_gas_limit_90 = create_provider(&config.chain).await?;
+                let provider_for_gas_limit_90 = create_provider(&config.chain, config.window_id.as_deref()).await?;
                 match TransferUtils::get_gas_limit(
                      &config,
                      provider_for_gas_limit_90.clone(),
@@ -1053,7 +1071,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                          println!("序号：{}, 90%余额估算gas limit失败，尝试0.001 ETH估算", index);
                          // 2. 如果90%估算失败，尝试用0.001 ETH估算
                          let fallback_amount = parse_ether(0.000003).map_err(|e| format!("解析金额失败: {}", e))?;
-                         let provider_for_gas_limit_fallback = create_provider(&config.chain).await?;
+                         let provider_for_gas_limit_fallback = create_provider(&config.chain, config.window_id.as_deref()).await?;
                          match TransferUtils::get_gas_limit(
                              &config,
                              provider_for_gas_limit_fallback.clone(),
@@ -1073,7 +1091,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
             } else {
                 // 其他转账类型使用最小金额估算
                 let estimate_amount = parse_ether(0.000003).map_err(|e| format!("解析金额失败: {}", e))?;
-                let provider_for_gas_limit_estimate = create_provider(&config.chain).await?;
+                let provider_for_gas_limit_estimate = create_provider(&config.chain, config.window_id.as_deref()).await?;
                 TransferUtils::get_gas_limit(
                     &config,
                     provider_for_gas_limit_estimate.clone(),
@@ -1136,7 +1154,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
             let final_gas_limit: U256 = match config.limit_type.as_str() {
                 "1" => {
                     // 自动估算模式
-                    let provider = create_provider(&config.chain).await?;
+                    let provider = create_provider(&config.chain, config.window_id.as_deref()).await?;
                     let estimate_amount = balance * U256::from(90) / U256::from(100);
                     let estimated_gas_limit = TransferUtils::get_gas_limit(
                         &config,
@@ -1305,7 +1323,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         "exec_status": "1"
     }));
     
-    let provider_for_transaction = create_provider(&config.chain).await.map_err(|e| {
+    let provider_for_transaction = create_provider(&config.chain, config.window_id.as_deref()).await.map_err(|e| {
         format!("获取RPC提供商失败: {}", e)
     })?;
     let client = SignerMiddleware::new(provider_for_transaction.clone(), wallet);
@@ -1373,7 +1391,7 @@ async fn query_balance_internal(
     chain: String,
     address: String,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let provider = create_provider(&chain).await?;
+    let provider = create_provider(&chain, None).await?;
     if address.trim().is_empty() {
         return Err("查询地址不能为空！".into());
     }
@@ -1494,7 +1512,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
     })?;
     
     // 获取余额
-    let provider_for_balance = create_provider(&config.chain).await?;
+    let provider_for_balance = create_provider(&config.chain, config.window_id.as_deref()).await?;
     let balance = provider_for_balance.get_balance(wallet_address, None).await.map_err(|e| {
         format!("获取余额失败: {}", e)
     })?;
@@ -1504,7 +1522,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
     }
     
     // 获取Gas Price
-    let provider_for_gas_price = create_provider(&config.chain).await?;
+    let provider_for_gas_price = create_provider(&config.chain, config.window_id.as_deref()).await?;
     let gas_price = TransferUtils::get_gas_price(&config, provider_for_gas_price.clone()).await?;
     
     if gas_price.is_zero() {
@@ -1515,7 +1533,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
     let gas_limit = match config.limit_type.as_str() {
         "1" => {
             let estimate_amount = parse_ether(0.000003)?;
-            let provider_for_gas_limit = create_provider(&config.chain).await?;
+            let provider_for_gas_limit = create_provider(&config.chain, config.window_id.as_deref()).await?;
             TransferUtils::get_gas_limit(
                 &config,
                 provider_for_gas_limit.clone(),
@@ -1602,7 +1620,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
         .gas_price(gas_price)
         .gas(gas_limit);
     
-    let provider_for_transaction = create_provider(&config.chain).await?;
+    let provider_for_transaction = create_provider(&config.chain, config.window_id.as_deref()).await?;
     let client = SignerMiddleware::new(provider_for_transaction.clone(), wallet);
     let pending_tx = client.send_transaction(tx, None).await.map_err(|e| {
         format!("发送交易失败: {}", e)
@@ -1641,7 +1659,7 @@ async fn check_transaction_status_internal(
     chain: String,
     tx_hash: String,
 ) -> Result<TransactionStatusResult, Box<dyn std::error::Error>> {
-    let provider = create_provider(&chain).await?;
+    let provider = create_provider(&chain, None).await?;
     
     // 解析交易哈希
     let hash: ethers::types::H256 = tx_hash.parse().map_err(|e| {
@@ -1716,7 +1734,7 @@ async fn check_wallet_recent_transfers_internal(
     contract_address: Option<String>,
 ) -> Result<RecentTransferResult, Box<dyn std::error::Error>> {
     // 创建Provider
-    let provider = create_provider(&chain).await?;
+    let provider = create_provider(&chain, None).await?;
     
     // 处理私钥格式
     let private_key = if private_key.starts_with("0x") || private_key.starts_with("0X") {

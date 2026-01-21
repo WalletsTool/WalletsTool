@@ -335,6 +335,47 @@ impl ProxyManager {
         window_client_pool.get(*selected_proxy).cloned()
     }
     
+    pub fn get_random_proxy_client_for_window(&self, window_id: &str) -> Option<Client> {
+        let config = self.get_config_for_window(window_id);
+        
+        println!("[DEBUG] get_random_proxy_client_for_window - 窗口: {}, 代理启用状态: {}, 代理数量: {}", 
+                 window_id, config.enabled, config.proxies.len());
+        
+        if !config.enabled || config.proxies.is_empty() {
+            println!("[DEBUG] get_random_proxy_client_for_window - 代理未启用或无代理地址");
+            return None;
+        }
+        
+        let client_pools = self.client_pools.lock().unwrap();
+        let window_client_pool = match client_pools.get(window_id) {
+            Some(pool) => pool,
+            None => {
+                println!("[DEBUG] get_random_proxy_client_for_window - 窗口 {} 没有客户端池", window_id);
+                return None;
+            }
+        };
+        
+        println!("[DEBUG] get_random_proxy_client_for_window - 窗口 {} 客户端池大小: {}", window_id, window_client_pool.len());
+        
+        let available_proxies: Vec<_> = config.proxies.iter()
+            .filter(|proxy| window_client_pool.contains_key(*proxy))
+            .collect();
+        
+        println!("[DEBUG] get_random_proxy_client_for_window - 可用代理数量: {}", available_proxies.len());
+        
+        if available_proxies.is_empty() {
+            println!("[WARN] get_random_proxy_client_for_window - 窗口 {} 客户端池为空！代理配置: {:?}", window_id, config.proxies);
+            return None;
+        }
+        
+        let mut rng = thread_rng();
+        let selected_proxy = available_proxies.choose(&mut rng)?;
+        
+        println!("[DEBUG] get_random_proxy_client_for_window - 窗口 {} 选中代理: {}", window_id, selected_proxy);
+        
+        window_client_pool.get(*selected_proxy).cloned()
+    }
+    
     /// 测试代理连接
     pub async fn test_proxy(&self, proxy_url: &str) -> Result<(bool, f64), String> {
         let start_time = std::time::Instant::now();
@@ -406,6 +447,38 @@ impl ProxyManager {
         let window_label = self.get_current_window_label();
         let all_stats = self.stats.lock().unwrap();
         all_stats.get(&window_label).cloned().unwrap_or_else(HashMap::new)
+    }
+    
+    /// 清除指定窗口的代理配置（文件、内存缓存、客户端池、统计）
+    pub async fn clear_config_for_window(&self, window_label: &str) -> Result<(), String> {
+        let config_path = Self::get_config_path_for_window(window_label)?;
+        
+        if config_path.exists() {
+            fs::remove_file(&config_path)
+                .await
+                .map_err(|e| format!("Failed to remove config file: {}", e))?;
+            println!("[DEBUG] clear_config_for_window - 已删除配置文件: {:?}", config_path);
+        }
+        
+        {
+            let mut config_cache = self.config_cache.lock().unwrap();
+            config_cache.remove(window_label);
+            println!("[DEBUG] clear_config_for_window - 已清除内存配置缓存: {}", window_label);
+        }
+        
+        {
+            let mut client_pools = self.client_pools.lock().unwrap();
+            client_pools.remove(window_label);
+            println!("[DEBUG] clear_config_for_window - 已清除客户端池: {}", window_label);
+        }
+        
+        {
+            let mut stats = self.stats.lock().unwrap();
+            stats.remove(window_label);
+            println!("[DEBUG] clear_config_for_window - 已清除统计信息: {}", window_label);
+        }
+        
+        Ok(())
     }
 }
 

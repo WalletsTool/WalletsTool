@@ -254,6 +254,13 @@ watch(proxyListText, () => {
   updateProxyCount()
 })
 
+// 生成唯一的窗口ID
+const generateWindowId = () => {
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 9);
+  return `window_${timestamp}_${randomPart}`;
+}
+
 // 加载代理配置
 const loadProxyConfig = async () => {
   try {
@@ -265,6 +272,32 @@ const loadProxyConfig = async () => {
     }
 
     const { invoke } = await import('@tauri-apps/api/core')
+    
+    // 获取当前窗口的唯一ID
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const currentWindow = await getCurrentWindow()
+    
+    // 优先使用窗口标签，如果没有则生成唯一ID
+    let windowId = currentWindow.label
+    if (!windowId || windowId.trim() === '') {
+      windowId = generateWindowId()
+    }
+    
+    // 检查是否有持久化的窗口ID
+    const storageKey = `proxy_window_id_${currentWindow.label}`
+    const storedWindowId = localStorage.getItem(storageKey)
+    if (storedWindowId) {
+      windowId = storedWindowId
+    } else {
+      // 存储窗口ID供后续使用
+      localStorage.setItem(storageKey, windowId)
+    }
+    
+    console.log('ProxyConfigModal - 当前窗口ID:', windowId, 'label:', currentWindow.label)
+    
+    // 先设置窗口ID，确保后端使用正确的配置
+    await invoke('set_proxy_window_id', { windowId })
+    
     const config = await invoke('get_proxy_config')
     proxyConfig.enabled = config.enabled
     proxyConfig.proxies = config.proxies || []
@@ -272,6 +305,8 @@ const loadProxyConfig = async () => {
     
     // 输出当前加载的代理配置到日志
     console.log('代理配置已加载:', {
+      windowId,
+      label: currentWindow.label,
       enabled: config.enabled,
       proxyCount: config.proxies ? config.proxies.length : 0,
       proxies: config.enabled && config.proxies ? config.proxies : '代理已禁用或无代理'
@@ -292,7 +327,26 @@ const loadProxyStats = async () => {
     }
 
     const { invoke } = await import('@tauri-apps/api/core')
-    const stats = await invoke('get_proxy_stats')
+    
+    // 获取当前窗口ID
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const currentWindow = await getCurrentWindow()
+    
+    // 优先使用窗口标签，如果没有则生成唯一ID
+    let windowId = currentWindow.label
+    if (!windowId || windowId.trim() === '') {
+      windowId = generateWindowId()
+    }
+    
+    // 检查是否有持久化的窗口ID
+    const storageKey = `proxy_window_id_${currentWindow.label}`
+    const storedWindowId = localStorage.getItem(storageKey)
+    if (storedWindowId) {
+      windowId = storedWindowId
+    }
+    
+    // 使用窗口ID特定的统计命令
+    const stats = await invoke('get_proxy_stats_for_window', { windowId })
     proxyStats.value = stats
   } catch (error) {
     console.error('加载代理统计失败:', error)
@@ -465,13 +519,36 @@ const handleSave = async () => {
     }
 
     const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('save_proxy_config', {
+    
+    // 获取当前窗口ID
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const currentWindow = await getCurrentWindow()
+    
+    // 优先使用窗口标签，如果没有则生成唯一ID
+    let windowId = currentWindow.label
+    if (!windowId || windowId.trim() === '') {
+      windowId = generateWindowId()
+    }
+    
+    // 检查是否有持久化的窗口ID
+    const storageKey = `proxy_window_id_${currentWindow.label}`
+    const storedWindowId = localStorage.getItem(storageKey)
+    if (storedWindowId) {
+      windowId = storedWindowId
+    } else {
+      localStorage.setItem(storageKey, windowId)
+    }
+    
+    // 使用窗口ID特定的保存命令
+    await invoke('save_proxy_config_for_window', {
+      windowId,
       proxies: proxyConfig.proxies,
       enabled: proxyConfig.enabled
     })
     
     // 输出保存的代理配置到日志
     console.log('代理配置已保存:', {
+      windowId,
       enabled: proxyConfig.enabled,
       proxyCount: proxyConfig.proxies.length,
       proxies: proxyConfig.enabled ? proxyConfig.proxies : '代理已禁用'

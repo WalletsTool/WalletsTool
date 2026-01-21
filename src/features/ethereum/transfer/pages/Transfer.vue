@@ -391,8 +391,7 @@ function openMultipleWindow() {
     Notification.warning({ content: '窗口数量必须在1-9之间', position: 'topLeft' });
     return;
   }
-  const currentConfig = { chainValue: chainValue.value, coinValue: coinValue.value, form: { ...form }, threadCount: threadCount.value, data: data.value.map((item) => ({ ...item })) };
-  const baseTimestamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 17);
+  const currentConfig = { chainValue: chainValue.value, coinValue: coinValue.value, form: { ...form }, threadCount: threadCount.value, enableMultiThread: enableMultiThread.value, data: data.value.map((item) => ({ ...item })) };
   const configKeys = [];
   
   // 使用localStorage获取已使用的业务标签，避免跨窗口访问问题
@@ -407,7 +406,7 @@ function openMultipleWindow() {
   }
   
   for (let i = 0; i < windowCount; i++) {
-    const windowId = baseTimestamp + i;
+    const windowId = generateWindowId();
     const configKey = `transfer_config_${windowId}`;
     const windowLabel = `${getCurrentWindow().label}_multi_${windowId}`;
     
@@ -449,8 +448,19 @@ function openMultipleWindow() {
       skipTaskbar: false,
     });
     
-    webview.once('tauri://created', () => {
+    webview.once('tauri://created', async () => {
       openedCount++;
+      
+      // 先复制代理配置（同步执行，确保在新窗口加载前完成）
+      const sourceWindowLabel = getCurrentWindow().label;
+      try {
+        console.log('开始复制代理配置到新窗口:', { windowId, windowLabel, sourceWindowLabel });
+        await copyProxyConfigToWindow(windowId, windowLabel, sourceWindowLabel);
+        console.log('代理配置复制完成');
+      } catch (error) {
+        console.error('复制代理配置失败:', error);
+      }
+      
       Notification.success({ content: `已打开新窗口: ${windowTitle} (${openedCount}/${windowCount})`, position: 'topLeft' });
     });
     webview.once('tauri://error', (e) => {
@@ -476,6 +486,7 @@ function applySharedConfig(config) {
   }
   if (config.form) Object.assign(form, config.form);
   if (config.threadCount) threadCount.value = config.threadCount;
+  if (config.enableMultiThread !== undefined) enableMultiThread.value = config.enableMultiThread;
   if (config.data && Array.isArray(config.data)) {
     data.value = config.data.map((item, index) => ({ ...item, key: String(index + 1) }));
   }
@@ -1051,6 +1062,14 @@ function handleProxyConfigChange(config) {
   proxyEnabled.value = config.enabled;
   proxyCount.value = config.proxies ? config.proxies.length : 0;
   proxyStatus.value = config.enabled && proxyCount.value > 0 ? '已配置' : '未配置';
+  
+  // 保存到 localStorage
+  const currentWindow = getCurrentWindow();
+  const storageKey = `proxy_config_${currentWindow.label}`;
+  localStorage.setItem(storageKey, JSON.stringify({
+    enabled: config.enabled,
+    proxies: config.proxies || []
+  }));
 }
 
 const proxyStatusColor = computed(() => {
@@ -1066,8 +1085,127 @@ const proxyStatusColor = computed(() => {
 async function initProxyStatus() {
   try {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-    if (isTauri) { const config = await invoke('get_proxy_config'); handleProxyConfigChange(config); }
+    if (isTauri) {
+      // 获取或生成窗口ID
+      let windowId = currentWindowId.value;
+      if (!windowId || windowId.trim() === '') {
+        windowId = generateWindowId();
+        currentWindowId.value = windowId;
+      }
+      
+      // 检查是否有持久化的窗口ID
+      const currentWindow = await getCurrentWindow();
+      const storageKey = `proxy_window_id_${currentWindow.label}`;
+      const storedWindowId = localStorage.getItem(storageKey);
+      if (storedWindowId) {
+        windowId = storedWindowId;
+        currentWindowId.value = windowId;
+      } else {
+        localStorage.setItem(storageKey, windowId);
+      }
+      
+      // 设置窗口ID到后端
+      await invoke('set_proxy_window_id', { windowId });
+      
+      // 尝试从 localStorage 读取配置
+      const proxyStorageKey = `proxy_config_${currentWindow.label}`;
+      const storedConfig = localStorage.getItem(proxyStorageKey);
+      
+      let config;
+      if (storedConfig) {
+        try {
+          config = JSON.parse(storedConfig);
+          console.log('从 localStorage 加载代理配置:', config);
+        } catch (e) {
+          console.error('解析代理配置失败:', e);
+          config = await invoke('get_proxy_config');
+        }
+      } else {
+        config = await invoke('get_proxy_config');
+      }
+      
+      handleProxyConfigChange(config);
+      
+      console.log('initProxyStatus 完成:', {
+        windowId,
+        currentWindowId: currentWindowId.value,
+        enabled: config.enabled,
+        proxyCount: config.proxies?.length || 0
+      });
+    }
   } catch (error) { console.error('初始化代理状态失败:', error); }
+}
+
+// 复制代理配置到新窗口
+async function copyProxyConfigToWindow(newWindowId, newWindowLabel, sourceWindowLabel) {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (!isTauri) return;
+
+    console.log('copyProxyConfigToWindow 开始:', {
+      newWindowId,
+      newWindowLabel,
+      sourceWindowLabel,
+      currentWindowId: currentWindowId.value
+    });
+
+    // 从源窗口的 localStorage 读取代理配置
+    const storageKey = `proxy_config_${sourceWindowLabel}`;
+    const storedConfig = localStorage.getItem(storageKey);
+    
+    let configToCopy = { enabled: false, proxies: [] };
+    
+    if (storedConfig) {
+      try {
+        configToCopy = JSON.parse(storedConfig);
+        console.log('从源窗口 localStorage 读取到的配置:', configToCopy);
+      } catch (e) {
+        console.error('解析代理配置失败:', e);
+      }
+    }
+    
+    if (configToCopy.proxies && configToCopy.proxies.length > 0) {
+      console.log('代理配置有效，开始保存到新窗口');
+    } else {
+      console.log('代理配置为空或无效，配置将使用默认值');
+    }
+    
+    // 设置新窗口的窗口ID
+    await invoke('set_proxy_window_id', { windowId: newWindowId });
+    
+    // 复制配置到新窗口
+    await invoke('save_proxy_config_for_window', {
+      windowId: newWindowId,
+      proxies: configToCopy.proxies || [],
+      enabled: configToCopy.enabled
+    });
+    
+    // 同时保存到新窗口的 localStorage
+    const newStorageKey = `proxy_config_${newWindowLabel}`;
+    localStorage.setItem(newStorageKey, JSON.stringify({
+      enabled: configToCopy.enabled,
+      proxies: configToCopy.proxies || []
+    }));
+    
+    // 保存新窗口的窗口ID映射
+    const newWindowIdKey = `proxy_window_id_${newWindowLabel}`;
+    localStorage.setItem(newWindowIdKey, newWindowId);
+    
+    console.log(`已复制代理配置到新窗口 ${newWindowLabel}:`, {
+      windowId: newWindowId,
+      enabled: configToCopy.enabled,
+      proxyCount: configToCopy.proxies?.length || 0
+    });
+  } catch (error) {
+    console.error('复制代理配置到新窗口失败:', error);
+  }
+}
+
+// 生成唯一的窗口ID
+function generateWindowId() {
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 9);
+  return `window_${timestamp}_${randomPart}`;
 }
 
 async function handleBeforeClose() {
@@ -1097,12 +1235,7 @@ onBeforeMount(async () => {
       chainOptions.value = result || [];
       chainOptions.value.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       if (sharedConfig) {
-        if (sharedConfig.chainValue) { chainValue.value = sharedConfig.chainValue; const chain = chainOptions.value.find((c) => c.key === sharedConfig.chainValue); if (chain) currentChain.value = chain; }
-        if (sharedConfig.form) Object.assign(form, sharedConfig.form);
-        if (sharedConfig.threadCount) threadCount.value = sharedConfig.threadCount;
-        await chainChange();
-        if (sharedConfig.coinValue) { coinValue.value = sharedConfig.coinValue; const coin = coinOptions.value.find((c) => c.key === sharedConfig.coinValue); if (coin) currentCoin.value = coin; }
-        if (sharedConfig.data && Array.isArray(sharedConfig.data)) data.value = sharedConfig.data.map((item, index) => ({ ...item, key: String(index + 1) }));
+        applySharedConfig(sharedConfig);
       } else {
         const ethChain = chainOptions.value.find((c) => c.key === 'eth');
         if (ethChain) { chainValue.value = 'eth'; currentChain.value = ethChain; }

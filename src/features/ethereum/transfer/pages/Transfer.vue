@@ -874,8 +874,8 @@ const { transferFnc, stopTransfer: stopTransferFn, performIntelligentRetry, iter
    validateForm: validateFormFn, quickValidateData, resetDataStatusAsync, clearValidationCache, executeTransfer,
 });
 
-const { queryBalance, queryToAddressBalance, stopBalanceQuery } = useBalanceQuery({
-  data, chainValue, currentCoin, threadCount, balanceLoading, balanceStopFlag, balanceStopStatus, balanceTotal, balanceCompleted, balanceProgress, showBalanceProgress, toAddressBalanceTotal, toAddressBalanceCompleted, toAddressBalanceProgress, showToAddressBalanceProgress, updateBalanceProgress, updateToAddressBalanceProgress,
+const { queryBalance, queryToAddressBalance, stopBalanceQuery, currentQueryId } = useBalanceQuery({
+  data, chainValue, currentCoin, threadCount, balanceLoading, balanceStopFlag, balanceStopStatus, balanceTotal, balanceCompleted, balanceProgress, showBalanceProgress, toAddressBalanceTotal, toAddressBalanceCompleted, toAddressBalanceProgress, showToAddressBalanceProgress, updateBalanceProgress, updateToAddressBalanceProgress, windowId: currentWindowId,
 });
 
 const debouncedQueryBalance = customDebounce(queryBalance, 500);
@@ -1131,23 +1131,24 @@ onMounted(async () => {
     }, 500);
   }
   
-  if (isTauri) {
-    await listen('balance_item_update', (event) => {
-      const { item, window_id } = event.payload;
-      if (window_id && window_id !== currentWindowId.value) return;
-      if (balanceStopFlag.value) return;
-      const targetIndex = data.value.findIndex((dataItem) => dataItem.key === item.key);
-      if (targetIndex !== -1) { data.value[targetIndex].plat_balance = item.plat_balance; data.value[targetIndex].coin_balance = item.coin_balance; data.value[targetIndex].exec_status = item.exec_status; data.value[targetIndex].error_msg = item.error_msg; updateBalanceProgress(); updateToAddressBalanceProgress(); }
-    });
-    await listen('transfer_status_update', (event) => {
-      const { index, error_msg, exec_status, item } = event.payload;
-      if (index === 999999) return;
-      let targetIndex = -1;
-      if (item && item.private_key) targetIndex = data.value.findIndex((dataItem) => dataItem.private_key === item.private_key);
-      else targetIndex = index;
-      if (targetIndex !== -1 && data.value[targetIndex]) { data.value[targetIndex].error_msg = error_msg; data.value[targetIndex].exec_status = exec_status; updateTransferProgress(); }
-    });
-  }
+   if (isTauri) {
+     await listen('balance_item_update', (event) => {
+       const { item, window_id, query_id } = event.payload;
+       if (window_id && window_id !== currentWindowId.value) return;
+       if (balanceStopFlag.value) return;
+       if (query_id && String(query_id) !== String(currentQueryId.value)) return;
+       const targetIndex = data.value.findIndex((dataItem) => dataItem.key === item.key);
+       if (targetIndex !== -1) { data.value[targetIndex].plat_balance = item.plat_balance; data.value[targetIndex].coin_balance = item.coin_balance; data.value[targetIndex].exec_status = item.exec_status; data.value[targetIndex].error_msg = item.error_msg; updateBalanceProgress(); updateToAddressBalanceProgress(); }
+     });
+     await listen('transfer_status_update', (event) => {
+       const { index, error_msg, exec_status, item } = event.payload;
+       if (index === 999999) return;
+       let targetIndex = -1;
+       if (item && item.private_key) targetIndex = data.value.findIndex((dataItem) => dataItem.private_key === item.private_key);
+       else targetIndex = index;
+       if (targetIndex !== -1 && data.value[targetIndex]) { data.value[targetIndex].error_msg = error_msg; data.value[targetIndex].exec_status = exec_status; updateTransferProgress(); }
+     });
+   }
 });
 
 onBeforeUnmount(async () => {

@@ -21,7 +21,10 @@ export function useBalanceQuery(options = {}) {
     showToAddressBalanceProgress,
     updateBalanceProgress,
     updateToAddressBalanceProgress,
+    windowId = ref('default'),
   } = options;
+
+  const currentQueryId = ref(0);
 
   async function queryBalance() {
     if (!balanceStopStatus.value) {
@@ -48,33 +51,53 @@ export function useBalanceQuery(options = {}) {
       return;
     }
 
-    balanceTotal.value = data.value.length;
+    const invalidItems = data.value.filter(item => !item.address || item.address.trim() === '');
+    if (invalidItems.length > 0) {
+      Notification.warning({
+        content: `存在 ${invalidItems.length} 条数据的地址为空，请检查数据完整性！`,
+        position: 'topLeft',
+      });
+      return;
+    }
+
+    // 重置后端停止标志
+    try {
+      await invoke('reset_balance_query_stop', { windowId: windowId.value || 'main' });
+    } catch (error) {
+      console.error('重置后端停止标志失败:', error);
+    }
+
+    // 更新查询ID，确保新的查询与之前的查询区分开
+    currentQueryId.value++;
+
+    const thisQueryId = currentQueryId.value;
+
+    balanceStopFlag.value = false;
+    balanceStopStatus.value = false;
+    balanceLoading.value = true;
+
+    const totalItems = data.value.length;
+    balanceTotal.value = totalItems;
     balanceCompleted.value = 0;
     balanceProgress.value = 0;
+    showBalanceProgress.value = totalItems > 0;
+
+    data.value.forEach((item) => {
+      item.plat_balance = '';
+      item.coin_balance = '';
+      item.error_msg = '';
+      item.exec_status = '0';
+    });
 
     if (
         currentCoin.value.coin_type === 'base' ||
         currentCoin.value.coin_type === 'token'
     ) {
-      balanceLoading.value = true;
-      balanceStopFlag.value = false;
-      balanceStopStatus.value = false;
-
-      const totalItems = data.value.length;
-      balanceTotal.value = totalItems;
-      balanceCompleted.value = 0;
-      balanceProgress.value = 0;
-      showBalanceProgress.value = totalItems > 0;
-
-      data.value.forEach((item) => {
-        item.plat_balance = '';
-        item.coin_balance = '';
-        item.error_msg = '';
-        item.exec_status = '0';
-      });
-
-      await queryBalanceInBatches();
+      await queryBalanceInBatches(thisQueryId);
     } else {
+      balanceLoading.value = false;
+      balanceStopStatus.value = true;
+      showBalanceProgress.value = false;
       Notification.warning({
         content: '查询 coin 类型错误！',
         position: 'topLeft',
@@ -82,15 +105,18 @@ export function useBalanceQuery(options = {}) {
     }
   }
 
-  async function queryBalanceInBatches() {
+  async function queryBalanceInBatches(queryId) {
     const BATCH_SIZE = 50;
     const totalItems = data.value.length;
     const totalBatches = Math.ceil(totalItems / BATCH_SIZE);
 
-    let stoppedMidway = false;
-
     try {
       for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        // 检查是否是当前有效的查询
+        if (queryId !== currentQueryId.value) {
+          return;
+        }
+
         const shouldStopAtStart = balanceStopFlag.value;
 
         const startIndex = batchIndex * BATCH_SIZE;
@@ -99,14 +125,19 @@ export function useBalanceQuery(options = {}) {
             JSON.stringify(data.value.slice(startIndex, endIndex)),
         );
 
-        await queryBalanceBatch(batchData, startIndex);
+        await queryBalanceBatch(batchData, startIndex, queryId);
+
+        // 检查是否是当前有效的查询
+        if (queryId !== currentQueryId.value) {
+          return;
+        }
 
         if (balanceStopFlag.value && !shouldStopAtStart) {
-          stoppedMidway = true;
-          break;
+          return;
         }
       }
 
+      // 查询完成
       const successCount = data.value.filter(
           (item) => item.exec_status === '2',
       ).length;
@@ -115,8 +146,7 @@ export function useBalanceQuery(options = {}) {
       ).length;
       const totalCount = data.value.length;
 
-      if (stoppedMidway) {
-      } else if (successCount === totalCount) {
+      if (successCount === totalCount) {
         Notification.success({
           content: '查询成功！',
           position: 'topLeft',
@@ -136,25 +166,21 @@ export function useBalanceQuery(options = {}) {
       console.error('分批查询失败:', error);
       Notification.error('查询失败：' + error.message);
     } finally {
-      if (balanceStopFlag.value) {
-        data.value.forEach((item) => {
-          if (item.exec_status === '1' || item.exec_status === '3') {
-            item.exec_status = '0';
-            item.error_msg = '';
-          }
-        });
-      }
-
       balanceLoading.value = false;
       balanceStopStatus.value = true;
       showBalanceProgress.value = false;
     }
   }
 
-  async function queryBalanceBatch(batchData, startIndex) {
+  async function queryBalanceBatch(batchData, startIndex, queryId) {
     const shouldStopAtStart = balanceStopFlag.value;
 
     if (shouldStopAtStart) {
+      return;
+    }
+
+    // 检查是否是当前有效的查询
+    if (queryId !== currentQueryId.value) {
       return;
     }
 
@@ -179,33 +205,44 @@ export function useBalanceQuery(options = {}) {
         })),
         only_coin_config: false,
         thread_count: Number(threadCount.value),
+        window_id: windowId.value || 'main',
+        query_id: String(currentQueryId.value),
       };
 
       const result = await invoke('query_balances_with_updates', {
         params,
       });
 
-      if (balanceStopFlag.value && !shouldStopAtStart) {
+      // 检查是否是当前有效的查询
+      if (queryId !== currentQueryId.value || (balanceStopFlag.value && !shouldStopAtStart)) {
         return;
       }
 
-      if (result.success || result.items) {
-        result.items.forEach((resultItem, index) => {
-          const dataIndex = startIndex + index;
-          if (data.value[dataIndex]) {
-            const originalPrivateKey = data.value[dataIndex].private_key;
-            Object.assign(data.value[dataIndex], resultItem);
-            data.value[dataIndex].private_key = originalPrivateKey;
-          }
-        });
+      if (result && (result.success || (result.items && result.items.length > 0))) {
+        if (result.items && result.items.length > 0) {
+          let successCount = 0;
+          let failCount = 0;
+          result.items.forEach((resultItem, index) => {
+            const dataIndex = startIndex + index;
+            if (data.value[dataIndex]) {
+              const originalPrivateKey = data.value[dataIndex].private_key;
+              Object.assign(data.value[dataIndex], resultItem);
+              data.value[dataIndex].private_key = originalPrivateKey;
+              if (resultItem.exec_status === '2') {
+                successCount++;
+              } else if (resultItem.exec_status === '3') {
+                failCount++;
+              }
+            }
+          });
+        }
       } else {
         if (!balanceStopFlag.value) {
           batchData.forEach((item, index) => {
             const dataIndex = startIndex + index;
             if (data.value[dataIndex]) {
               data.value[dataIndex].exec_status = '3';
-              data.value[dataIndex].error_msg =
-                  result.error_msg || '查询失败！';
+              data.value[dataIndex].error_msg = result?.error_msg || '查询失败！';
             }
           });
         }
@@ -213,7 +250,8 @@ export function useBalanceQuery(options = {}) {
 
       updateBalanceProgress();
     } catch (error) {
-      if (shouldStopAtStart || balanceStopFlag.value) {
+      // 检查是否是当前有效的查询
+      if (queryId !== currentQueryId.value || shouldStopAtStart || balanceStopFlag.value) {
         return;
       }
 
@@ -221,7 +259,7 @@ export function useBalanceQuery(options = {}) {
         const dataIndex = startIndex + index;
         if (data.value[dataIndex]) {
           data.value[dataIndex].exec_status = '3';
-          data.value[dataIndex].error_msg = '查询失败！';
+          data.value[dataIndex].error_msg = error?.message || '查询失败！';
         }
       });
 
@@ -255,29 +293,43 @@ export function useBalanceQuery(options = {}) {
       return;
     }
 
+    // 重置后端停止标志
+    try {
+      await invoke('reset_balance_query_stop', { windowId: windowId.value || 'main' });
+    } catch (error) {
+      console.error('重置后端停止标志失败:', error);
+    }
+
+    // 更新查询ID
+    currentQueryId.value++;
+    const thisQueryId = currentQueryId.value;
+
+    balanceStopFlag.value = false;
+    balanceStopStatus.value = false;
+    balanceLoading.value = true;
+
+    const totalItems = itemsWithToAddr.length;
+    toAddressBalanceTotal.value = totalItems;
+    toAddressBalanceCompleted.value = 0;
+    toAddressBalanceProgress.value = 0;
+    showToAddressBalanceProgress.value = totalItems > 0;
+
+    data.value.forEach((item) => {
+      item.plat_balance = '';
+      item.coin_balance = '';
+      item.error_msg = '';
+      item.exec_status = '0';
+    });
+
     if (
         currentCoin.value.coin_type === 'base' ||
         currentCoin.value.coin_type === 'token'
     ) {
-      balanceLoading.value = true;
-      balanceStopFlag.value = false;
-      balanceStopStatus.value = false;
-
-      const totalItems = itemsWithToAddr.length;
-      toAddressBalanceTotal.value = totalItems;
-      toAddressBalanceCompleted.value = 0;
-      toAddressBalanceProgress.value = 0;
-      showToAddressBalanceProgress.value = totalItems > 0;
-
-      data.value.forEach((item) => {
-        item.plat_balance = '';
-        item.coin_balance = '';
-        item.error_msg = '';
-        item.exec_status = '0';
-      });
-
-      await queryToAddressBalanceInBatches();
+      await queryToAddressBalanceInBatches(thisQueryId);
     } else {
+      balanceLoading.value = false;
+      balanceStopStatus.value = true;
+      showToAddressBalanceProgress.value = false;
       Notification.warning({
         content: '查询 coin 类型错误！',
         position: 'topLeft',
@@ -285,16 +337,19 @@ export function useBalanceQuery(options = {}) {
     }
   }
 
-  async function queryToAddressBalanceInBatches() {
+  async function queryToAddressBalanceInBatches(queryId) {
     const BATCH_SIZE = 50;
     const itemsWithToAddr = data.value.filter((item) => item.to_addr);
     const totalItems = itemsWithToAddr.length;
     const totalBatches = Math.ceil(totalItems / BATCH_SIZE);
 
-    let stoppedMidway = false;
-
     try {
       for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        // 检查是否是当前有效的查询
+        if (queryId !== currentQueryId.value) {
+          return;
+        }
+
         const shouldStopAtStart = balanceStopFlag.value;
 
         const startIndex = batchIndex * BATCH_SIZE;
@@ -303,14 +358,19 @@ export function useBalanceQuery(options = {}) {
             JSON.stringify(itemsWithToAddr.slice(startIndex, endIndex)),
         );
 
-        await queryToAddressBalanceBatch(batchData, startIndex);
+        await queryToAddressBalanceBatch(batchData, startIndex, queryId);
+
+        // 检查是否是当前有效的查询
+        if (queryId !== currentQueryId.value) {
+          return;
+        }
 
         if (balanceStopFlag.value && !shouldStopAtStart) {
-          stoppedMidway = true;
-          break;
+          return;
         }
       }
 
+      // 查询完成
       const successCount = data.value.filter(
           (item) => item.exec_status === '2',
       ).length;
@@ -319,8 +379,7 @@ export function useBalanceQuery(options = {}) {
       ).length;
       const totalCount = itemsWithToAddr.length;
 
-      if (stoppedMidway) {
-      } else if (successCount === totalCount) {
+      if (successCount === totalCount) {
         Notification.success({
           content: `到账地址余额查询成功！共查询 ${totalCount} 个地址`,
           position: 'topLeft',
@@ -340,25 +399,21 @@ export function useBalanceQuery(options = {}) {
       console.error('分批查询到账地址失败:', error);
       Notification.error('到账地址余额查询失败：' + error.message);
     } finally {
-      if (balanceStopFlag.value) {
-        data.value.forEach((item) => {
-          if (item.exec_status === '1' || item.exec_status === '3') {
-            item.exec_status = '0';
-            item.error_msg = '';
-          }
-        });
-      }
-
       balanceLoading.value = false;
       balanceStopStatus.value = true;
       showToAddressBalanceProgress.value = false;
     }
   }
 
-  async function queryToAddressBalanceBatch(batchData, startIndex) {
+  async function queryToAddressBalanceBatch(batchData, startIndex, queryId) {
     const shouldStopAtStart = balanceStopFlag.value;
 
     if (shouldStopAtStart) {
+      return;
+    }
+
+    // 检查是否是当前有效的查询
+    if (queryId !== currentQueryId.value) {
       return;
     }
 
@@ -385,30 +440,35 @@ export function useBalanceQuery(options = {}) {
         items: queryItems,
         only_coin_config: false,
         thread_count: Number(threadCount.value),
+        window_id: windowId.value || 'main',
+        query_id: String(currentQueryId.value),
       };
 
       const result = await invoke('query_balances_with_updates', {
         params,
       });
 
-      if (balanceStopFlag.value && !shouldStopAtStart) {
+      // 检查是否是当前有效的查询
+      if (queryId !== currentQueryId.value || (balanceStopFlag.value && !shouldStopAtStart)) {
         return;
       }
 
-      if (result.success || result.items) {
-        result.items.forEach((resultItem, index) => {
-          const originalItem = batchData[index];
-          const dataIndex = data.value.findIndex(
-              (item) => item.key === originalItem.key,
-          );
-          if (dataIndex !== -1) {
-            const originalPrivateKey = data.value[dataIndex].private_key;
-            const originalToAddr = data.value[dataIndex].to_addr;
-            Object.assign(data.value[dataIndex], resultItem);
-            data.value[dataIndex].private_key = originalPrivateKey;
-            data.value[dataIndex].to_addr = originalToAddr;
-          }
-        });
+      if (result && (result.success || (result.items && result.items.length > 0))) {
+        if (result.items && result.items.length > 0) {
+          result.items.forEach((resultItem, index) => {
+            const originalItem = batchData[index];
+            const dataIndex = data.value.findIndex(
+                (item) => item.key === originalItem.key,
+            );
+            if (dataIndex !== -1) {
+              const originalPrivateKey = data.value[dataIndex].private_key;
+              const originalToAddr = data.value[dataIndex].to_addr;
+              Object.assign(data.value[dataIndex], resultItem);
+              data.value[dataIndex].private_key = originalPrivateKey;
+              data.value[dataIndex].to_addr = originalToAddr;
+            }
+          });
+        }
       } else {
         if (!balanceStopFlag.value) {
           batchData.forEach((item) => {
@@ -417,8 +477,7 @@ export function useBalanceQuery(options = {}) {
             );
             if (dataIndex !== -1) {
               data.value[dataIndex].exec_status = '3';
-              data.value[dataIndex].error_msg =
-                  result.error_msg || '查询失败！';
+              data.value[dataIndex].error_msg = result?.error_msg || '查询失败！';
             }
           });
         }
@@ -426,22 +485,9 @@ export function useBalanceQuery(options = {}) {
 
       updateToAddressBalanceProgress();
     } catch (error) {
-      if (shouldStopAtStart || balanceStopFlag.value) {
+      // 检查是否是当前有效的查询
+      if (queryId !== currentQueryId.value || shouldStopAtStart || balanceStopFlag.value) {
         return;
-      }
-
-      const errorMsg = String(error);
-      if (
-          errorMsg.includes('RPC配置') ||
-          errorMsg.includes('RPC节点') ||
-          errorMsg.includes('禁用')
-      ) {
-        Notification.error({
-          title: '查询失败',
-          content: errorMsg,
-          duration: 5000,
-          position: 'topLeft',
-        });
       }
 
       batchData.forEach((item) => {
@@ -459,20 +505,14 @@ export function useBalanceQuery(options = {}) {
   }
 
   async function stopBalanceQuery() {
+    // 设置停止标志
     balanceStopFlag.value = true;
 
     try {
-      await invoke('stop_balance_query', {});
+      await invoke('stop_balance_query', { windowId: windowId.value || 'main' });
     } catch (error) {
       console.error('停止查询请求失败:', error);
     }
-
-    data.value.forEach((item) => {
-      if (item.exec_status === '1' || item.exec_status === '3') {
-        item.exec_status = '0';
-        item.error_msg = '';
-      }
-    });
 
     balanceLoading.value = false;
     balanceStopStatus.value = true;
@@ -486,5 +526,6 @@ export function useBalanceQuery(options = {}) {
     stopBalanceQuery,
     queryBalanceInBatches,
     queryToAddressBalanceInBatches,
+    currentQueryId,
   };
 }

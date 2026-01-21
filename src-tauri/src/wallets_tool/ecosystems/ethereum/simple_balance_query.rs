@@ -74,6 +74,10 @@ pub struct QueryParams {
     pub thread_count: usize,
     #[serde(default)]
     pub query_last_transaction_time: bool,
+    #[serde(default)]
+    pub window_id: Option<String>,
+    #[serde(default)]
+    pub query_id: Option<String>,
 }
 
 // 查询结果
@@ -476,12 +480,20 @@ impl SimpleBalanceQueryService {
                     let address = format!("{:?}", wallet.address());
                     item.address = address;
                     println!("[INFO] 从私钥生成地址: {}", item.address);
-                } else {
+            } else {
                     item.exec_status = "3".to_string();
                     item.error_msg = Some("私钥格式错误，无法生成地址".to_string());
                     return item;
                 }
             }
+        }
+
+        // 检查地址是否为空
+        if item.address.trim().is_empty() {
+            item.exec_status = "3".to_string();
+            item.error_msg = Some("地址为空，无法查询余额".to_string());
+            println!("[ERROR] 地址为空，无法查询余额 - key: {}", item.key);
+            return item;
         }
 
         // 实现失败重试机制（最多3次，每次重试更换RPC节点）
@@ -504,10 +516,15 @@ impl SimpleBalanceQueryService {
             }
             
             // 每次重试都重新获取RPC地址（会随机选择不同的RPC节点）
-            let rpc_url = if let Ok(url) = self.get_rpc_url(&params.chain).await {
-                url
-            } else {
-                "未知RPC地址".to_string()
+            let rpc_url = match self.get_rpc_url(&params.chain).await {
+                Ok(url) => url,
+                Err(e) => {
+                    last_error = format!("获取RPC地址失败: {}", e);
+                    println!("[ERROR] 获取RPC地址失败: {}, 错误: {}", params.chain, e);
+                    item.exec_status = "3".to_string();
+                    item.error_msg = Some(last_error.clone());
+                    return item;
+                }
             };
             
             // 记录当前使用的RPC
@@ -662,7 +679,7 @@ impl SimpleBalanceQueryService {
         &self,
         params: QueryParams,
         app_handle: tauri::AppHandle<R>,
-        window_id: String
+        window_id: String,
     ) -> QueryResult {
         // 重置停止标志
         reset_stop_flag(&window_id);
@@ -692,6 +709,7 @@ impl SimpleBalanceQueryService {
             tokio::spawn(async move {
                 // 在获取信号量前检查停止标志
                 if get_stop_flag(&window_id) {
+                    println!("[DEBUG] 任务 {} 因停止标志取消", original_index);
                     return original_index;
                 }
 
@@ -699,6 +717,7 @@ impl SimpleBalanceQueryService {
 
                 // 获取信号量后再次检查停止标志
                 if get_stop_flag(&window_id) {
+                    println!("[DEBUG] 任务 {} 获取信号量后因停止标志取消", original_index);
                     return original_index;
                 }
 
@@ -709,14 +728,17 @@ impl SimpleBalanceQueryService {
                 // 通知前端该项目开始执行
                 let mut updating_item = item.clone();
                 updating_item.exec_status = "1".to_string();
+                let query_id = params.query_id.clone().unwrap_or_default();
                 if let Err(e) = app_handle.emit("balance_item_update", serde_json::json!({
                     "index": original_index,
                     "item": updating_item,
-                    "window_id": window_id
+                    "window_id": window_id,
+                    "query_id": query_id
                 })) {
                     println!("发送开始执行事件失败: {}", e);
                 }
 
+                // 直接调用查询函数（已在 tokio 运行时中）
                 let result = service.query_single_item(item, &params, &window_id).await;
 
                 // 将结果存入对应索引位置
@@ -729,7 +751,8 @@ impl SimpleBalanceQueryService {
                 if let Err(e) = app_handle.emit("balance_item_update", serde_json::json!({
                     "index": original_index,
                     "item": result_for_emit,
-                    "window_id": window_id
+                    "window_id": window_id,
+                    "query_id": query_id
                 })) {
                     println!("发送查询完成事件失败: {}", e);
                 }
@@ -780,7 +803,10 @@ impl SimpleBalanceQueryService {
         let error_msg = if success {
             None
         } else {
-            Some("部分查询失败".to_string())
+            let first_error = ordered_results.iter()
+                .find(|item| item.error_msg.is_some() && !item.error_msg.as_ref().unwrap().is_empty())
+                .and_then(|item| item.error_msg.clone());
+            Some(first_error.unwrap_or_else(|| "查询失败".to_string()))
         };
 
         println!("查询完成，成功: {}", success);
@@ -807,8 +833,8 @@ pub async fn query_balances_simple(params: QueryParams) -> Result<QueryResult, S
 pub async fn query_balances_with_updates<R: tauri::Runtime>(
     params: QueryParams,
     app_handle: tauri::AppHandle<R>,
-    window_id: String,
 ) -> Result<QueryResult, String> {
+    let window_id = params.window_id.clone().unwrap_or_else(|| "".to_string());
     let service = SimpleBalanceQueryService::new();
     
     let result = service.query_balances_with_updates(params, app_handle, window_id).await;

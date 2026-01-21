@@ -424,7 +424,13 @@ onMounted(async () => {
     }, 50);
   });
 
-  // 初始化代理状态
+function generateWindowId() {
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 9);
+  return `window_${timestamp}_${randomPart}`;
+}
+
+// 初始化代理状态
   await initProxyStatus();
 })
 
@@ -1348,7 +1354,14 @@ async function initProxyStatus() {
   try {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) {
-      const config = await invoke('get_proxy_config');
+      let windowId = currentWindowId.value;
+      if (!windowId || windowId.trim() === '') {
+        windowId = generateWindowId();
+        currentWindowId.value = windowId;
+      }
+      
+      await invoke('set_proxy_window_id', { windowId });
+      const config = await invoke('get_proxy_config_for_window', { windowId });
       handleProxyConfigChange(config);
     }
   } catch (error) {
@@ -1365,6 +1378,19 @@ async function handleBeforeClose() {
     if (balanceLoading.value) {
       await stopBalanceQuery();
       console.log('已停止余额查询操作');
+    }
+
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      try {
+        const currentWindow = await getCurrentWindow();
+        const windowLabel = currentWindow.label;
+        localStorage.removeItem(`proxy_config_${windowLabel}`);
+        localStorage.removeItem(`proxy_window_id_${windowLabel}`);
+        console.log(`已清除窗口 ${windowLabel} 的代理配置缓存`);
+      } catch (error) {
+        console.error('清除代理配置缓存失败:', error);
+      }
     }
 
     console.log('TitleBar窗口关闭清理完成，所有后台操作已停止');

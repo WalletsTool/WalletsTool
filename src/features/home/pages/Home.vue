@@ -443,6 +443,22 @@ async function closeWindow() {
   }
 }
 
+// 清除所有代理配置缓存
+function clearAllProxyConfigs() {
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith('proxy_config_') || key.startsWith('proxy_window_id_'))) {
+      keysToRemove.push(key);
+    }
+  }
+  keysToRemove.forEach(key => {
+    localStorage.removeItem(key);
+    console.log(`已清除缓存: ${key}`);
+  });
+  console.log(`已清除 ${keysToRemove.length} 个代理配置缓存`);
+}
+
 // 处理主窗口关闭请求
 async function handleMainWindowCloseRequest() {
   try {
@@ -499,6 +515,9 @@ async function handleMainWindowCloseRequest() {
 
             // 设置关闭确认标记位
             closeConfirmed.value = true
+
+            // 清除所有代理配置缓存
+            clearAllProxyConfigs()
 
             // 先关闭所有子窗口
             if (childWindows && childWindows.length > 0) {

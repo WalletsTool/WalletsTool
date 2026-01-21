@@ -1118,10 +1118,10 @@ async function initProxyStatus() {
           console.log('从 localStorage 加载代理配置:', config);
         } catch (e) {
           console.error('解析代理配置失败:', e);
-          config = await invoke('get_proxy_config');
+          config = await invoke('get_proxy_config_for_window', { windowId });
         }
       } else {
-        config = await invoke('get_proxy_config');
+        config = await invoke('get_proxy_config_for_window', { windowId });
       }
       
       handleProxyConfigChange(config);
@@ -1217,6 +1217,19 @@ async function handleBeforeClose() {
   pausedTransferData.value = null;
   gasPriceCountdown.value = 0;
   currentGasPrice.value = 0;
+
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    try {
+      const currentWindow = await getCurrentWindow();
+      const windowLabel = currentWindow.label;
+      localStorage.removeItem(`proxy_config_${windowLabel}`);
+      localStorage.removeItem(`proxy_window_id_${windowLabel}`);
+      console.log(`已清除窗口 ${windowLabel} 的代理配置缓存`);
+    } catch (error) {
+      console.error('清除代理配置缓存失败:', error);
+    }
+  }
 }
 
 onBeforeMount(async () => {

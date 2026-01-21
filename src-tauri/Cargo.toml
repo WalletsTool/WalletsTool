@@ -42,18 +42,12 @@ base64 = "0.22.1"
 
 # Release模式优化配置
 [profile.release]
-# 启用最高级别的优化
-opt-level = 3
-# 启用fat LTO以获得最佳优化
-lto = "fat"
-# 设置代码生成单元为1以获得更好的优化
-codegen-units = 1
-# 移除调试符号以减小文件大小
+lto = false
+codegen-units = 16
+opt-level = 2
 strip = true
-# 优化panic处理，使用abort而不是unwind
 panic = "abort"
-# 注意：trim-paths 需要 nightly Rust，如需使用请取消注释以下行：
-# trim-paths = "all"
+incremental = false
 
 [features]
 # by default Tauri runs in production mode
@@ -77,4 +71,4 @@ opt-level = 2
 
 # 优化生产构建的依赖项
 [profile.release.package."*"]
-opt-level = 3
+opt-level = 2

@@ -1045,7 +1045,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         format!("获取RPC提供商失败: {}", e)
     })?;
     TransferUtils::pre_check_balance(&config, provider_for_precheck.clone(), wallet_address, to_address).await.map_err(|e| {
-        format!("余额预检查失败 (RPC: {}): {}", rpc_url, e)
+        format!("{}: (RPC: {}) 余额预检查失败", e, rpc_url)
     })?;
     
     // 获取余额

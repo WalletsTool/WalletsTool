@@ -283,7 +283,13 @@ const filteredCoinOptions = computed(() => {
   );
 });
 
+const isOperationInProgress = computed(() => balanceLoading.value || startLoading.value);
+
 function toggleChainSelector() {
+  if (isOperationInProgress.value) {
+    Notification.warning({ content: '执行过程中无法切换区块链', position: 'topLeft' });
+    return;
+  }
   chainSelectorExpanded.value = !chainSelectorExpanded.value;
   tokenSelectorExpanded.value = false;
   if (chainSelectorExpanded.value) {
@@ -294,6 +300,10 @@ function toggleChainSelector() {
 }
 
 function toggleTokenSelector() {
+  if (isOperationInProgress.value) {
+    Notification.warning({ content: '执行过程中无法切换代币', position: 'topLeft' });
+    return;
+  }
   if (!chainValue.value) {
     return;
   }
@@ -1252,21 +1262,46 @@ function handleClickOutside(event) {
         <div class="action-buttons-section">
           <div class="floating-action-bar">
             <div class="floating-action-content">
-              <a-dropdown v-if="!balanceLoading && balanceStopStatus">
-                <a-button type="primary" class="floating-btn primary-btn"><template #icon><Icon icon="mdi:magnify" class="btn-icon" /></template><span class="btn-text">查询余额</span></a-button>
-                <template #content>
-                  <a-doption @click="debouncedQueryBalance" class="dropdown-option"><Icon icon="mdi:account-arrow-right" style="margin-right: 8px; margin-bottom: -2px" />查出账地址</a-doption>
-                  <a-doption @click="debouncedQueryToAddressBalance" class="dropdown-option"><Icon icon="mdi:account-arrow-left" style="margin-right: 8px; margin-bottom: -2px" />查到账地址</a-doption>
-                </template>
-              </a-dropdown>
-              <a-tooltip v-else content="点击可以提前停止查询">
-                <div @click="debouncedStopBalanceQuery" class="btn-wrapper"><a-button v-if="!balanceStopFlag" class="floating-btn primary-btn executing" loading><template #icon><Icon icon="mdi:pause-circle" /></template>查询中...</a-button></div>
-              </a-tooltip>
-              <a-button v-if="balanceStopFlag && !balanceStopStatus" class="floating-btn primary-btn stopping" loading><template #icon><Icon icon="mdi:timer-sand" /></template>正在停止...</a-button>
-              <a-button v-if="!startLoading && stopStatus" type="success" class="floating-btn success-btn" @click="debouncedStartTransfer"><template #icon><Icon icon="mdi:rocket-launch" /></template>执行转账</a-button>
-              <a-tooltip v-else content="点击可以提前停止执行">
-                <div @click="debouncedStopTransfer"><a-button v-if="!stopFlag" class="floating-btn success-btn executing" loading><template #icon><Icon icon="mdi:rocket-launch" /></template>执行中...</a-button><a-button v-if="stopFlag && !stopStatus" class="floating-btn success-btn stopping" loading><template #icon><Icon icon="mdi:timer-sand" /></template>正在停止...</a-button></div>
-              </a-tooltip>
+              <div v-if="!balanceLoading" class="btn-wrapper">
+                <a-dropdown>
+                  <a-button type="primary" class="floating-btn primary-btn" :disabled="startLoading">
+                    <template #icon><Icon icon="mdi:magnify" class="btn-icon" /></template>
+                    <span class="btn-text">查询余额</span>
+                  </a-button>
+                  <template #content>
+                    <a-doption @click="debouncedQueryBalance" :disabled="startLoading" class="dropdown-option">
+                      <Icon icon="mdi:account-arrow-right" style="margin-right: 8px; margin-bottom: -2px" />查出账地址
+                    </a-doption>
+                    <a-doption @click="debouncedQueryToAddressBalance" :disabled="startLoading" class="dropdown-option">
+                      <Icon icon="mdi:account-arrow-left" style="margin-right: 8px; margin-bottom: -2px" />查到账地址
+                    </a-doption>
+                  </template>
+                </a-dropdown>
+              </div>
+              <div v-else class="btn-wrapper btn-stop-wrapper">
+                <a-button type="primary" class="floating-btn primary-btn stopping" @click="debouncedStopBalanceQuery">
+                  <template #icon><Icon icon="mdi:magnify" /></template>
+                  <span class="btn-text btn-text-stop">
+                    <span class="btn-text-normal">查询中...</span>
+                    <span class="btn-text-hover">停止查询</span>
+                  </span>
+                </a-button>
+              </div>
+              <div v-if="!startLoading" class="btn-wrapper">
+                <a-button type="success" class="floating-btn success-btn" :disabled="balanceLoading" @click="debouncedStartTransfer">
+                  <template #icon><Icon icon="mdi:rocket-launch" /></template>
+                  <span class="btn-text">执行转账</span>
+                </a-button>
+              </div>
+              <div v-else class="btn-wrapper btn-stop-wrapper">
+                <a-button type="success" class="floating-btn success-btn stopping" @click="debouncedStopTransfer">
+                  <template #icon><Icon icon="mdi:rocket-launch" /></template>
+                  <span class="btn-text btn-text-stop">
+                    <span class="btn-text-normal">转账中...</span>
+                    <span class="btn-text-hover">停止转账</span>
+                  </span>
+                </a-button>
+              </div>
             </div>
           </div>
         </div>
@@ -1466,7 +1501,15 @@ function handleClickOutside(event) {
       <div class="status-bar-left">
         <div class="status-group">
           <div class="chain-selector-container" id="chain-selector" style="position: relative">
-            <div class="status-item status-chain" :class="{ 'status-chain-active': chainSelectorExpanded }" @click="toggleChainSelector" title="点击切换区块链">
+            <div
+              class="status-item status-chain"
+              :class="{
+                'status-chain-active': chainSelectorExpanded,
+                'status-item-disabled': isOperationInProgress,
+              }"
+              @click="toggleChainSelector"
+              :title="isOperationInProgress ? '执行过程中无法切换区块链' : '点击切换区块链'"
+            >
               <ChainIcon v-if="currentChain?.key" :chain-key="currentChain?.key" :pic-data="currentChain?.pic_data" :alt="currentChain?.name" style="width: 14px; height: 14px" />
               <span class="status-label">{{ currentChain?.name || '选择区块链' }}</span>
               <Icon icon="mdi:chevron-up" style="font-size: 12px; margin-left: 4px; transition: transform 0.2s" :style="{ transform: chainSelectorExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }" />
@@ -1490,7 +1533,15 @@ function handleClickOutside(event) {
           </div>
           <div class="status-divider"></div>
           <div class="token-selector-container" style="position: relative">
-            <div class="status-item status-token" :class="{ 'status-token-active': tokenSelectorExpanded }" @click="toggleTokenSelector" title="点击切换代币">
+            <div
+              class="status-item status-token"
+              :class="{
+                'status-token-active': tokenSelectorExpanded,
+                'status-item-disabled': isOperationInProgress,
+              }"
+              @click="toggleTokenSelector"
+              :title="isOperationInProgress ? '执行过程中无法切换代币' : '点击切换代币'"
+            >
               <Icon icon="mdi:coins" style="font-size: 14px" />
               <span class="status-label">{{ currentCoin?.label || '选择代币' }}</span>
               <Icon icon="mdi:chevron-up" style="font-size: 12px; margin-left: 4px; transition: transform 0.2s" :style="{ transform: tokenSelectorExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }" />
@@ -1604,13 +1655,24 @@ export default {
 .container :deep(.arco-form-item-label) { line-height: 32px; }
 .floating-action-bar { position: relative; z-index: 10; width: 100%; display: flex; justify-content: center; pointer-events: none; margin-top: -24px;}
 .floating-action-content { display: flex; gap: 40px; align-items: center; pointer-events: auto; background: var(--bg-color, #ffffff); padding: 8px 50px; border: 1px solid var(--table-border-color, #e5e6eb); border-radius: 50px; }
+.btn-wrapper { min-width: 120px; height: 40px; display: flex; align-items: center; justify-content: center; }
+.btn-stop-wrapper .floating-btn.stopping { background: linear-gradient(135deg, #ff7d00 0%, #e67000 100%); cursor: pointer; transition: all 0.2s ease; }
+.btn-stop-wrapper .floating-btn.stopping:hover { background: linear-gradient(135deg, #ff4d4f 0%, #e64547 100%) !important; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(255, 77, 79, 0.3); }
+.btn-text-stop { position: relative; display: inline-block; }
+.btn-text-normal, .btn-text-hover { display: block; transition: all 0.15s ease; }
+.btn-text-hover { position: absolute; top: 0; left: 0; width: 100%; text-align: center; opacity: 0; transform: translateY(-5px); }
+.btn-stop-wrapper .floating-btn.stopping:hover .btn-text-normal { opacity: 0; transform: translateY(5px); }
+.btn-stop-wrapper .floating-btn.stopping:hover .btn-text-hover { opacity: 1; transform: translateY(0); }
 .floating-btn { min-width: 120px; height: 40px; font-size: 14px; font-weight: 500; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s ease; border: none; cursor: pointer; }
 .floating-btn.primary-btn { background: linear-gradient(135deg, #165dff 0%, #0d42d6 100%); color: #ffffff; box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3); }
 .floating-btn.primary-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(22, 93, 255, 0.4); }
-.floating-btn.primary-btn.executing { background: linear-gradient(135deg, #ff7d00 0%, #e66c00 100%); box-shadow: 0 4px 12px rgba(255, 125, 0, 0.3); }
+.floating-btn.primary-btn:disabled { background: linear-gradient(135deg, #94b4ff 0%, #7a9eff 100%) !important; cursor: not-allowed !important; transform: none !important; box-shadow: none !important; }
+.floating-btn.primary-btn.stopping { background: linear-gradient(135deg, #ff7d00 0%, #e67000 100%) !important; }
 .floating-btn.success-btn { background: linear-gradient(135deg, #00b42a 0%, #009624 100%); color: #ffffff; box-shadow: 0 4px 12px rgba(0, 180, 42, 0.3); }
 .floating-btn.success-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0, 180, 42, 0.4); }
-.floating-btn.success-btn.executing { background: linear-gradient(135deg, #ff4d4f 0%, #e64547 100%); box-shadow: 0 4px 12px rgba(255, 77, 79, 0.3); }
+.floating-btn.success-btn:disabled { background: linear-gradient(135deg, #7ddc8a 0%, #6bc77a 100%) !important; cursor: not-allowed !important; transform: none !important; box-shadow: none !important; }
+.floating-btn.success-btn.disabled-btn { opacity: 0.7; }
+.floating-btn.success-btn.stopping { background: linear-gradient(135deg, #ff7d00 0%, #e67000 100%) !important; box-shadow: 0 4px 12px rgba(255, 125, 0, 0.3) !important; }
 .floating-btn .btn-icon { font-size: 18px; }
 .floating-btn .btn-text { font-weight: 500; }
 .floating-progress-bar { position: fixed; top: 50px; left: 50%; transform: translateX(-50%); z-index: 10000; width: 90%; max-width: 600px; background: var(--card-bg, #ffffff); border-radius: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08); border: 1px solid var(--border-color, #e5e6eb); backdrop-filter: blur(8px); }
@@ -1674,6 +1736,10 @@ export default {
 .status-chain-active .status-label { color: var(--primary-6, #165dff) !important; }
 .status-token-active { background: linear-gradient(135deg, var(--success-1, #e6fffb), var(--color-fill-2, #f2f3f5)) !important; }
 .status-token-active .status-label { color: var(--success-6, #0fa962) !important; }
+.status-item-disabled { cursor: not-allowed !important; opacity: 0.6; }
+.status-item-disabled:hover { background: transparent !important; }
+.status-item-disabled:hover .status-label { color: var(--text-color, #1d2129) !important; }
+.status-item-disabled .status-explorer-tag { cursor: not-allowed !important; pointer-events: none; }
 .side-actions-panel-fixed { width: 50px; background: var(--color-bg-2, #ffffff); border: 1px solid var(--color-border, #e5e6eb); border-radius: 8px; display: flex; flex-direction: column; align-items: center; padding: 10px; pointer-events: none; box-shadow: 3px 0px 6px 0px rgba(0, 0, 0, 0.06), -1px 0 4px rgba(0, 0, 0, 0.03); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
 .side-actions-panel-fixed.side-actions-panel-collapsed { width: 50px; background: transparent; border: none; box-shadow: none; padding: 0; }
 .side-actions-content-fixed { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; opacity: 1; pointer-events: auto; flex: 1; }

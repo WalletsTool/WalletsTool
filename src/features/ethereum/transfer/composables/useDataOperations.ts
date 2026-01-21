@@ -358,6 +358,42 @@ export function useDataOperations(options = {}) {
     });
   }
 
+  function exportPrivateKeyAddress(dataToExport, options = {}) {
+    const { isSelected = false } = options;
+
+    if (dataToExport.length === 0) {
+      Notification.warning({
+        content: isSelected ? '请先选择要导出的数据！' : '当前列表无数据！',
+        position: 'topLeft',
+      });
+      return;
+    }
+
+    let csvContent = 'private_key,address\n';
+    dataToExport.forEach((item) => {
+      const privateKey = item.private_key || '';
+      const address = item.to_addr || item.address || '';
+      csvContent += `${privateKey},${address}\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    link.setAttribute('download', `private_key_address_${timestamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    Notification.success({
+      content: `已导出 ${dataToExport.length} 条私钥地址对至 Downloads 文件夹`,
+      duration: 4000,
+      position: 'topLeft',
+    });
+  }
+
   function clearData(options = {}) {
     const {
       startLoading,
@@ -458,6 +494,7 @@ export function useDataOperations(options = {}) {
     triggerFileUpload,
     downloadFile,
     downloadTemplate,
+    exportPrivateKeyAddress,
     clearData,
     deleteItem,
   };

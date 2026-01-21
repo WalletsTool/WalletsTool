@@ -617,7 +617,7 @@ const tokenForm = reactive({ key: '', name: '', symbol: '', decimals: 18, type: 
 
 const { validateForm: validateFormFn, checkSendType, checkPrecision, checkGasPrice, checkGasLimit, checkDelay } = useValidation({ form, formRef });
 
-const { importProgress, importTotal, importCompleted, showImportProgress, importProgressText, validatePrivateKey, validateAddress, updateImportProgress, processBatchData, UploadFile, upload, triggerFileUpload, downloadFile, downloadTemplate: downloadTemplateFn, clearData: clearDataFn, deleteItem: deleteItemFn } = useDataOperations({
+const { importProgress, importTotal, importCompleted, showImportProgress, importProgressText, validatePrivateKey, validateAddress, updateImportProgress, processBatchData, UploadFile, upload, triggerFileUpload, downloadFile, downloadTemplate: downloadTemplateFn, exportPrivateKeyAddress, clearData: clearDataFn, deleteItem: deleteItemFn } = useDataOperations({
   data, uploadInputRef, clearValidationCache,
 });
 
@@ -721,6 +721,19 @@ function handleManualImport() {
 function handleFileUpload() { upload(); }
 
 async function downloadTemplateAction() { downloadTemplateFn(); }
+
+function exportAllData() {
+  exportPrivateKeyAddress(data.value, { isSelected: false });
+}
+
+function exportSelectedData() {
+  if (selectedKeys.value.length === 0) {
+    Notification.warning({ content: '请先选择要导出的数据！', position: 'topLeft' });
+    return;
+  }
+  const selectedData = data.value.filter((item) => selectedKeys.value.includes(item.key));
+  exportPrivateKeyAddress(selectedData, { isSelected: true });
+}
 
 function deleteItem(item) {
   if (startLoading.value) { Notification.warning({ content: '请停止或等待执行完成后再删除数据！', position: 'topLeft' }); return; }
@@ -1535,7 +1548,22 @@ function handleClickOutside(event) {
             <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
-            <a-tooltip content="下载模板" position="left"><a-button size="mini" @click="downloadTemplateAction"><template #icon><Icon icon="mdi:file-download" style="color: #4e5969; font-size: 20px" /></template></a-button></a-tooltip>
+<a-tooltip content="下载模板" position="left"><a-button size="mini" @click="downloadTemplateAction"><template #icon><Icon icon="mdi:file-download" style="color: #4e5969; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="导出私钥地址" position="left">
+              <a-dropdown>
+                <a-button size="mini">
+                  <template #icon><Icon icon="mdi:export" style="color: #722ed1; font-size: 20px" /></template>
+                </a-button>
+                <template #content>
+                  <a-doption @click="exportAllData" class="dropdown-option">
+                    <Icon icon="mdi:database-export" style="margin-right: 8px; margin-bottom: -2px" />导出全部数据
+                  </a-doption>
+                  <a-doption @click="exportSelectedData" class="dropdown-option">
+                    <Icon icon="mdi:database-export" style="margin-right: 8px; margin-bottom: -2px" />导出选中数据
+                  </a-doption>
+                </template>
+              </a-dropdown>
+            </a-tooltip>
             <div class="side-actions-divider"></div>
             <a-tooltip content="选中成功的数据" position="left"><a-button type="outline" status="success" size="mini" @click="selectSucceeded"><template #icon><Icon icon="mdi:check-circle" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="选中失败的数据" position="left"><a-button type="outline" status="danger" size="mini" @click="selectFailed"><template #icon><Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
-use alloy_provider::{Provider, RootProvider, ProviderBuilder};
+use alloy_provider::{Provider, RootProvider};
 use alloy_transport_http::{Http, Client as AlloyClient};
 use alloy::rpc::client::RpcClient;
 use alloy::consensus::Transaction as _;
@@ -15,8 +15,53 @@ use crate::database::get_database_manager;
 use crate::wallets_tool::ecosystems::ethereum::provider::{ProviderUtils, create_provider_with_client, create_http_client_with_proxy, AlloyProvider};
 use sqlx::Row;
 use super::alloy_utils::{parse_ether_to_wei_f64, parse_gwei_to_wei, format_wei_to_ether, format_wei_to_gwei};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::sync::{Mutex, LazyLock};
 
+// 基于窗口ID的停止标志映射
+static STOP_FLAGS: LazyLock<Mutex<HashMap<String, AtomicBool>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
+// 辅助函数：获取窗口的停止状态
+pub fn get_stop_flag(window_id: &str) -> bool {
+    let flags = STOP_FLAGS.lock().unwrap();
+    if let Some(flag) = flags.get(window_id) {
+        flag.load(Ordering::Relaxed)
+    } else {
+        false
+    }
+}
+
+// 辅助函数：设置窗口的停止状态
+fn set_stop_flag(window_id: &str, value: bool) {
+    let mut flags = STOP_FLAGS.lock().unwrap();
+    if let Some(flag) = flags.get(window_id) {
+        flag.store(value, Ordering::Relaxed);
+    } else {
+        flags.insert(window_id.to_string(), AtomicBool::new(value));
+    }
+}
+
+// 辅助函数：重置窗口的停止状态
+fn reset_stop_flag(window_id: &str) {
+    set_stop_flag(window_id, false);
+}
+
+// 停止转账命令
+#[tauri::command]
+pub async fn stop_transfer(window_id: String) -> Result<(), String> {
+    set_stop_flag(&window_id, true);
+    println!("收到停止转账请求，窗口ID: {}", window_id);
+    Ok(())
+}
+
+// 重置停止标志
+#[tauri::command]
+pub async fn reset_transfer_stop(window_id: String) -> Result<(), String> {
+    reset_stop_flag(&window_id);
+    println!("重置转账停止标志，窗口ID: {}", window_id);
+    Ok(())
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TransferConfig {
@@ -988,6 +1033,12 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
 ) -> Result<String, Box<dyn std::error::Error>> {
     item.retry_flag = false;
     
+    // 0. 获取窗口ID并检查停止状态
+    let window_id = config.window_id.as_deref().unwrap_or("");
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+    
     // 不再在方法开头创建固定的provider，改为在每次RPC调用时动态获取
     
     // 创建钱包
@@ -1344,6 +1395,11 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         ..Default::default()
     };
     
+    // 再次检查停止状态 - 在发送交易之前 (最关键的拦截点)
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+
     // 发送交易
     item.error_msg = "发送交易...".to_string();
     // 发送状态更新事件到前端

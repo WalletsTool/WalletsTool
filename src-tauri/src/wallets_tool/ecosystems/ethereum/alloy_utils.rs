@@ -1,13 +1,4 @@
 use alloy_primitives::U256;
-use std::str::FromStr;
-
-pub fn parse_ether_to_wei(ether: &str) -> Result<U256, String> {
-    let ether_f64: f64 = ether
-        .parse()
-        .map_err(|e| format!("ETH 金额解析失败: {}", e))?;
-    let wei = (ether_f64 * 1e18) as u128;
-    Ok(U256::from(wei))
-}
 
 pub fn parse_ether_to_wei_f64(ether: f64) -> Result<U256, String> {
     let wei = (ether * 1e18) as u128;
@@ -41,12 +32,6 @@ pub fn u256_to_f64(wei: U256) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_ether_to_wei() {
-        assert_eq!(parse_ether_to_wei("1.0").unwrap(), U256::from(1000000000000000000u128));
-        assert_eq!(parse_ether_to_wei("0.5").unwrap(), U256::from(500000000000000000u128));
-    }
 
     #[test]
     fn test_parse_ether_to_wei_f64() {

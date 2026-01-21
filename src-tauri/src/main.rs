@@ -330,6 +330,8 @@ async fn main() {
             wallets_tool::transfer::check_transaction_status,
             wallets_tool::transfer::query_balance,
             wallets_tool::transfer::check_wallet_recent_transfers,
+            wallets_tool::transfer::stop_transfer,
+            wallets_tool::transfer::reset_transfer_stop,
             // token transfer functions
             wallets_tool::token_transfer::token_transfer,
             wallets_tool::token_transfer::token_transfer_fast,

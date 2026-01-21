@@ -1251,6 +1251,10 @@ async function handleBeforeClose() {
       const currentWindow = await getCurrentWindow();
       const windowLabel = currentWindow.label;
       
+      // 发送停止信号给后端，终止所有正在进行的转账操作
+      await invoke('stop_transfer', { windowId: windowLabel });
+      console.log(`已发送停止转账信号给后端，窗口ID: ${windowLabel}`);
+      
       // 清除前端localStorage
       localStorage.removeItem(`proxy_config_${windowLabel}`);
       localStorage.removeItem(`proxy_window_id_${windowLabel}`);
@@ -1364,7 +1368,7 @@ function handleClickOutside(event) {
 </script>
 
 <template>
-  <TitleBar :title="windowTitle" @before-close="handleBeforeClose" />
+  <TitleBar :title="windowTitle" :custom-close="true" @before-close="handleBeforeClose" />
   <div class="container transfer" style="height: 100vh; display: flex; flex-direction: column; overflow: hidden" @paste="handleGlobalPaste">
     <div class="toolBar" style="flex-shrink: 0; height: 0; overflow: visible; margin-top: 0">
       <input type="file" ref="uploadInputRef" @change="UploadFile" id="btn_file" style="display: none" />

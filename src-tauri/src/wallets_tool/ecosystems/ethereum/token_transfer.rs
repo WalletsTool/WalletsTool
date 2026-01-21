@@ -7,10 +7,11 @@ use alloy_signer::Signer;
 use std::sync::Arc;
 use rand::Rng;
 use tauri::Emitter;
-use super::transfer::{TransferConfig, TransferItem, TransferResult, TransferUtils, create_provider, create_signer_provider, get_rpc_config, FastTransferResult};
+use super::transfer::{TransferConfig, TransferItem, TransferResult, TransferUtils, create_provider, create_signer_provider, get_rpc_config, FastTransferResult, get_stop_flag};
 use crate::wallets_tool::ecosystems::ethereum::provider::{ProviderUtils, AlloyProvider};
 use hex;
 use super::alloy_utils::{parse_ether_to_wei_f64, parse_gwei_to_wei, format_wei_to_ether, format_wei_to_gwei, u256_to_f64};
+
 
 
 
@@ -172,6 +173,7 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     config: TokenTransferConfig,
 ) -> Result<String, Box<dyn std::error::Error>> {
     item.retry_flag = false;
+    let window_id = config.window_id.as_deref().unwrap_or("");
     
     if item.private_key.trim().is_empty() {
         return Err("私钥不能为空！".into());
@@ -335,6 +337,11 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         ..Default::default()
     };
     
+    // 再次检查停止状态 - 在发送交易之前 (最关键的拦截点)
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+    
     let signer_provider = create_signer_provider(&config.chain, config.window_id.as_deref(), &signer).await?;
     let pending_tx = signer_provider.send_transaction(tx).await
         .map_err(|e| format!("发送交易失败: {}", e))?;
@@ -449,6 +456,7 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     config: TokenTransferConfig,
 ) -> Result<String, Box<dyn std::error::Error>> {
     item.retry_flag = false;
+    let window_id = config.window_id.as_deref().unwrap_or("");
     
     if item.private_key.trim().is_empty() {
         return Err("私钥不能为空！".into());
@@ -549,6 +557,11 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
         ..Default::default()
     };
     
+    // 再次检查停止状态 - 在发送交易之前 (最关键的拦截点)
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+
     let signer_provider = create_signer_provider(&config.chain, config.window_id.as_deref(), &signer).await?;
     let pending_tx = signer_provider.send_transaction(tx).await
         .map_err(|e| format!("发送交易失败: {}", e))?;

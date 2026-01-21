@@ -104,6 +104,10 @@ const props = defineProps({
   windowLabel: {
     type: String,
     default: ''
+  },
+  customClose: {
+    type: Boolean,
+    default: false
   }
 })
 

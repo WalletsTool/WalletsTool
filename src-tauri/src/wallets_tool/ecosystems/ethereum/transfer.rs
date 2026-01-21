@@ -1,19 +1,20 @@
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
-use ethers::{
-    prelude::*,
-    providers::{Http, Provider, Middleware},
-    types::{Address, U256, U64, TransactionRequest, BlockNumber},
-    utils::{format_ether, format_units, parse_ether, parse_units},
-    signers::{LocalWallet, Signer},
-    middleware::SignerMiddleware,
-};
+use alloy_provider::Provider;
+use alloy::consensus::Transaction as _;
+use alloy_primitives::{Address, U256};
+use alloy_rpc_types_eth::{TransactionRequest, BlockNumberOrTag};
+use alloy_signer_local::{PrivateKeySigner};
+use alloy_signer::Signer;
 use url::Url;
 use std::sync::Arc;
 use rand::Rng;
 use crate::database::get_database_manager;
-use super::provider::ProviderUtils;
+use crate::wallets_tool::ecosystems::ethereum::provider::{ProviderUtils, create_provider_with_client, create_http_client_with_proxy, AlloyProvider};
 use sqlx::Row;
+use super::alloy_utils::{parse_ether_to_wei_f64, parse_gwei_to_wei, format_wei_to_ether, format_wei_to_gwei};
+
+
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TransferConfig {
@@ -220,10 +221,9 @@ async fn add_rpc_delay() {
 }
 
 // 创建Provider(支持代理和请求间隔控制)
-pub async fn create_provider(chain: &str, window_id: Option<&str>) -> Result<Arc<Provider<Http>>, Box<dyn std::error::Error>> {
+pub async fn create_provider(chain: &str, window_id: Option<&str>) -> Result<Arc<AlloyProvider>, Box<dyn std::error::Error>> {
     use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
     
-    // 添加随机延迟，避免请求过于密集
     add_rpc_delay().await;
     
     println!("[DEBUG] create_provider - 开始为链 '{}' 创建Provider, window_id: {:?}", chain, window_id);
@@ -242,7 +242,7 @@ pub async fn create_provider(chain: &str, window_id: Option<&str>) -> Result<Arc
         .map_err(|e| format!("选择RPC失败: {}", e))?;
     println!("[DEBUG] create_provider - 选择的RPC URL: {}", rpc_url);
     
-    let proxy_client = if let Some(wid) = window_id {
+    let proxy_url = if let Some(wid) = window_id {
         let config = PROXY_MANAGER.get_config_for_window(wid);
         let using_proxy = config.enabled && !config.proxies.is_empty();
         
@@ -254,7 +254,7 @@ pub async fn create_provider(chain: &str, window_id: Option<&str>) -> Result<Arc
             println!("[INFO] 代理未启用，使用直连模式");
         }
         
-        PROXY_MANAGER.get_random_proxy_client_for_window(wid)
+        PROXY_MANAGER.get_random_proxy_for_window(wid)
     } else {
         let proxy_config = PROXY_MANAGER.get_config();
         let using_proxy = proxy_config.enabled && !proxy_config.proxies.is_empty();
@@ -267,29 +267,19 @@ pub async fn create_provider(chain: &str, window_id: Option<&str>) -> Result<Arc
             println!("[INFO] 代理未启用，使用直连模式");
         }
         
-        PROXY_MANAGER.get_random_proxy_client()
+        PROXY_MANAGER.get_random_proxy()
     };
     
-    // 尝试使用代理客户端，如果没有代理则使用默认方式
-    let provider = if let Some(client) = proxy_client {
-        println!("[DEBUG] create_provider - 使用代理客户端创建Provider");
-        let url: Url = rpc_url.parse()
-            .map_err(|e| format!("Failed to parse RPC URL: {}", e))?;
-        let http_provider = Http::new_with_client(url, client);
-        Provider::new(http_provider)
-    } else {
-        println!("[DEBUG] create_provider - 使用默认方式创建Provider");
-        Provider::<Http>::try_from(rpc_url)
-            .map_err(|e| {
-                println!("[ERROR] create_provider - Provider创建失败: {}", e);
-                e
-            })?
-    };
+    let provider = create_provider_with_client(rpc_url, proxy_url.as_deref())
+        .await
+        .map_err(|e| {
+            println!("[ERROR] create_provider - Provider创建失败: {}", e);
+            e
+        })?;
     
     println!("[DEBUG] create_provider - Provider创建成功");
     
-    // 测试连接
-    match provider.get_chainid().await {
+    match provider.get_chain_id().await {
         Ok(chain_id) => {
             println!("[DEBUG] create_provider - 连接测试成功，链ID: {}", chain_id);
         }
@@ -298,9 +288,42 @@ pub async fn create_provider(chain: &str, window_id: Option<&str>) -> Result<Arc
         }
     }
     
-    Ok(Arc::new(provider))
+Ok(Arc::new(provider))
 }
 
+pub async fn create_signer_provider(
+    chain: &str,
+    window_id: Option<&str>,
+    signer: &PrivateKeySigner,
+) -> Result<impl Provider, Box<dyn std::error::Error>> {
+    use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
+    use alloy_provider::ProviderBuilder;
+    
+    let rpc_config = get_rpc_config(chain).await
+        .ok_or_else(|| {
+            let error_msg = format!("无法获取链 '{}' 的RPC配置", chain);
+            error_msg
+        })?;
+    
+    let rpc_url = rpc_config.get_random_rpc()
+        .map_err(|e| format!("选择RPC失败: {}", e))?;
+    
+    let proxy_url = if let Some(wid) = window_id {
+        PROXY_MANAGER.get_random_proxy_for_window(wid)
+    } else {
+        PROXY_MANAGER.get_random_proxy()
+    };
+    
+    let _http_client = create_http_client_with_proxy(proxy_url.as_deref()).await?;
+    let url: Url = rpc_url.parse()
+        .map_err(|e| format!("RPC URL 解析失败: {}", e))?;
+    
+    let provider = ProviderBuilder::new()
+        .wallet(signer.clone())
+        .connect_http(url);
+    
+    Ok(provider)
+}
 
 /// 根据链ID和用户配置获取缓冲参数
 /// 返回: (gas_price_buffer_factor, gas_limit_buffer_factor, min_gas_limit)
@@ -399,33 +422,33 @@ pub struct TransferUtils;
 impl TransferUtils {
     // 获取当前网络的baseFee
     pub async fn get_base_fee(
-        provider: Arc<Provider<Http>>,
+        provider: Arc<AlloyProvider>,
     ) -> Result<U256, Box<dyn std::error::Error>> {
         // 获取最新区块
-        let latest_block = provider.get_block(BlockNumber::Latest).await?;
+        let latest_block = provider.get_block(alloy_rpc_types_eth::BlockId::Number(BlockNumberOrTag::Latest)).await?;
         
         if let Some(block) = latest_block {
-            if let Some(base_fee) = block.base_fee_per_gas {
+            if let Some(base_fee) = block.header.base_fee_per_gas {
                 println!("[DEBUG] 获取到当前baseFee: {} wei ({} gwei)", 
                     base_fee, 
-                    format_units(base_fee, "gwei").unwrap_or_default()
+                    format_wei_to_gwei(U256::from(base_fee))
                 );
-                return Ok(base_fee);
+                return Ok(U256::from(base_fee));
             }
         }
         
         // 如果无法获取baseFee，返回默认值（适用于非EIP-1559网络）
         println!("[DEBUG] 无法获取baseFee，使用默认值0");
-        Ok(U256::zero())
+        Ok(U256::from(0))
     }
 
     // 获取区块Gas Limit
     pub async fn get_block_gas_limit(
-        provider: Arc<Provider<Http>>,
+        provider: Arc<AlloyProvider>,
     ) -> Result<U256, Box<dyn std::error::Error>> {
-        match provider.get_block(BlockNumber::Latest).await {
+        match provider.get_block(BlockNumberOrTag::Latest.into()).await {
             Ok(Some(block)) => {
-                let raw_gas_limit = block.gas_limit;
+                let raw_gas_limit = U256::from(block.header.gas_limit);
                 println!("[DEBUG] 从RPC获取到的原始区块gas limit: {}", raw_gas_limit);
                 
                 // 合理性检查：如果gas limit超过1亿，认为是异常值
@@ -435,8 +458,8 @@ impl TransferUtils {
                     println!("[WARN] 检测到异常的区块gas limit: {}，远超合理范围", raw_gas_limit);
                     
                     // 根据链ID返回合理的默认值
-                    let chain_id = match provider.get_chainid().await {
-                        Ok(id) => id.as_u64(),
+                    let chain_id = match provider.get_chain_id().await {
+                        Ok(id) => id,
                         Err(_) => 0,
                     };
                     
@@ -469,12 +492,12 @@ impl TransferUtils {
     // 预检查余额是否充足（在实际转账前进行检查，避免RPC调用后才发现余额不足）
     pub async fn pre_check_balance(
         config: &TransferConfig,
-        provider: Arc<Provider<Http>>,
+        provider: Arc<AlloyProvider>,
         wallet_address: Address,
         to_address: Address,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // 获取当前余额
-        let balance = match provider.get_balance(wallet_address, None).await {
+        let balance = match provider.get_balance(wallet_address).await {
             Ok(balance) => balance,
             Err(e) => {
                 // 获取当前使用的RPC URL
@@ -505,49 +528,49 @@ impl TransferUtils {
         match config.transfer_type.as_str() {
             "1" => {
                 // 全部转账 - 需要预留Gas费用
-                let estimated_gas_limit = Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, parse_ether(0.000003)?).await?;
+                let estimated_gas_limit = Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, parse_ether_to_wei_f64(0.000003)?).await?;
           
                 print!("estimated_gas_limit: {}", estimated_gas_limit);
                 let estimated_gas_fee = gas_price * estimated_gas_limit;
                 if estimated_gas_fee >= balance {
                     return Err(format!(
                         "余额不足支付Gas费用！当前余额: {} ETH，预估Gas费用: {} ETH",
-                        format_units(balance, 18)?,
-                        format_units(estimated_gas_fee, 18)?
+                        format_wei_to_ether(balance),
+                        format_wei_to_ether(estimated_gas_fee)
                     ).into());
                 }
             }
             "2" => {
                 // 转账固定数量
-                let transfer_amount = parse_ether(config.transfer_amount)?;
-                let estimated_gas_limit = Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, parse_ether(0.000003)?).await?;
+                let transfer_amount = parse_ether_to_wei_f64(config.transfer_amount)?;
+                let estimated_gas_limit = Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, parse_ether_to_wei_f64(0.000003)?).await?;
                 let estimated_gas_fee = gas_price * estimated_gas_limit;
                 let total_needed = transfer_amount + estimated_gas_fee;
                 print!("estimated_gas_limit: {}", estimated_gas_limit);
                 if total_needed > balance {
                     return Err(format!(
                         "余额不足！需要: {} ETH (转账: {} + Gas: {} ETH)，当前余额: {} ETH",
-                        format_units(total_needed, 18)?,
-                        format_units(transfer_amount, 18)?,
-                        format_units(estimated_gas_fee, 18)?,
-                        format_units(balance, 18)?
+format_wei_to_ether(total_needed),
+                        format_wei_to_ether(transfer_amount),
+                        format_wei_to_ether(estimated_gas_fee),
+                        format_wei_to_ether(balance)
                     ).into());
                 }
             }
             "3" => {
                 // 转账随机数量 - 使用最大可能金额进行检查
-                let max_transfer_amount = parse_ether(config.transfer_amount_list[1])?;
-                let estimated_gas_limit =Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, parse_ether(0.000003)?).await?;
+                let max_transfer_amount = parse_ether_to_wei_f64(config.transfer_amount_list[1])?;
+                let estimated_gas_limit =Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, parse_ether_to_wei_f64(0.000003)?).await?;
                 let estimated_gas_fee = gas_price * estimated_gas_limit;
                 let total_needed = max_transfer_amount + estimated_gas_fee;
                 
                 if total_needed > balance {
                     return Err(format!(
                         "余额不足！最大可能需要: {} ETH (转账: {} + Gas: {} ETH)，当前余额: {} ETH",
-                        format_units(total_needed, 18)?,
-                        format_units(max_transfer_amount, 18)?,
-                        format_units(estimated_gas_fee, 18)?,
-                        format_units(balance, 18)?
+                        format_wei_to_ether(total_needed),
+                        format_wei_to_ether(max_transfer_amount),
+                        format_wei_to_ether(estimated_gas_fee),
+                        format_wei_to_ether(balance)
                     ).into());
                 }
             }
@@ -556,7 +579,7 @@ impl TransferUtils {
                  let estimated_gas_limit = match config.limit_type.as_str() {
                     "1" => {
                         // 自动估算模式，使用最小转账金额进行估算
-                        let min_transfer = parse_ether(0.000003)?;
+                        let min_transfer = parse_ether_to_wei_f64(0.000003)?;
                         Self::get_gas_limit(config, provider.clone(), wallet_address, to_address, min_transfer).await?
                     }
                     "2" => U256::from(config.limit_count),
@@ -567,8 +590,8 @@ impl TransferUtils {
                     _ => U256::from(21000), // 默认ETH转账gas limit
                 };
                 let estimated_gas_fee = gas_price * estimated_gas_limit;
-                let balance_ether = format_units(balance, 18)?.parse::<f64>()?;
-                let gas_fee_ether = format_units(estimated_gas_fee, 18)?.parse::<f64>()?;
+                let balance_ether = format_wei_to_ether(balance).parse::<f64>()?;
+                let gas_fee_ether = format_wei_to_ether(estimated_gas_fee).parse::<f64>()?;
                 let available_balance = balance_ether - gas_fee_ether;
                 
                 if available_balance <= config.left_amount_list[1] {
@@ -587,7 +610,7 @@ impl TransferUtils {
     // 获取Gas Price
     pub async fn get_gas_price(
         config: &TransferConfig,
-        provider: Arc<Provider<Http>>,
+        provider: Arc<AlloyProvider>,
     ) -> Result<U256, Box<dyn std::error::Error>> {
         // 获取当前网络的baseFee
         let base_fee = if let Ok(fee) = Self::get_base_fee(provider.clone()).await {
@@ -603,12 +626,12 @@ impl TransferUtils {
                 "未知RPC".to_string()
             };
             println!("[WARN] 获取Base Fee失败 (RPC: {}), 使用默认值0", rpc_url);
-            U256::zero()
+            U256::from(0)
         };
         
         // 获取链ID并判断链类型
-        let chain_id = provider.get_chainid().await?;
-        let chain_id_u64 = chain_id.as_u64();
+        let chain_id = provider.get_chain_id().await?;
+        let chain_id_u64 = chain_id;
         let is_arbitrum = chain_id_u64 == 42161; // Arbitrum One
         
         // 判断是否为真正的EIP-1559链
@@ -622,7 +645,7 @@ impl TransferUtils {
             10 => true,     // Optimism
             56 => false,    // BSC - 非EIP-1559链
             97 => false,    // BSC Testnet - 非EIP-1559链
-            _ => base_fee > U256::zero(), // 其他链根据是否有baseFee判断
+            _ => base_fee > U256::from(0), // 其他链根据是否有baseFee判断
         };
         
         println!("[DEBUG] 链ID: {}, 是否为Arbitrum: {}, 是否为EIP-1559链: {}", chain_id_u64, is_arbitrum, is_eip1559_chain);
@@ -631,7 +654,7 @@ impl TransferUtils {
             "1" => {
                 // 使用网络Gas Price
                 let gas_price = match provider.get_gas_price().await {
-                    Ok(price) => price,
+                    Ok(price) => U256::from(price),
                     Err(e) => {
                         // 获取当前使用的RPC URL
                         let error_msg = e.to_string();
@@ -649,7 +672,7 @@ impl TransferUtils {
                 
                 // 检查最大Gas Price限制
                 if config.max_gas_price > 0.0 {
-                    let gas_price_gwei = format_units(gas_price, "gwei")?.parse::<f64>()?;
+                    let gas_price_gwei = format_wei_to_gwei(gas_price).parse::<f64>()?;
                     if gas_price_gwei > config.max_gas_price {
                         return Err("base gas price 超出最大值限制".into());
                     }
@@ -659,12 +682,12 @@ impl TransferUtils {
             }
             "2" => {
                 // 使用固定Gas Price
-                parse_units(config.gas_price, "gwei")?.into()
+                parse_gwei_to_wei(config.gas_price)
             }
             "3" => {
                 // 使用溢价Gas Price
                 let base_gas_price = match provider.get_gas_price().await {
-                    Ok(price) => price,
+                    Ok(price) => U256::from(price),
                     Err(e) => {
                         // 获取当前使用的RPC URL
                         let error_msg = e.to_string();
@@ -694,14 +717,14 @@ impl TransferUtils {
                 
                 // 检查最大Gas Price限制
                 if config.max_gas_price > 0.0 {
-                    let base_gas_price_gwei = format_units(base_gas_price, "gwei")?.parse::<f64>()?;
+                    let base_gas_price_gwei = format_wei_to_gwei(base_gas_price).parse::<f64>()?;
                     if base_gas_price_gwei > config.max_gas_price {
                         return Err("base gas price 超出最大值限制".into());
                     }
                     
-                    let final_gas_price_gwei = format_units(gas_price_with_rate, "gwei")?.parse::<f64>()?;
+                    let final_gas_price_gwei = format_wei_to_gwei(gas_price_with_rate).parse::<f64>()?;
                     if final_gas_price_gwei >= config.max_gas_price {
-                        return Ok(parse_units(config.max_gas_price, "gwei")?.into());
+                        return Ok(parse_gwei_to_wei(config.max_gas_price));
                     }
                 }
                 
@@ -714,13 +737,13 @@ impl TransferUtils {
         if chain_id_u64 == 56 || chain_id_u64 == 97 {
             // BSC链的特殊处理：直接返回计算的Gas Price，不使用baseFee
             println!("[DEBUG] BSC链特殊处理，直接使用计算的Gas Price: {} gwei", 
-                format_units(calculated_gas_price, "gwei").unwrap_or_default()
+                format_wei_to_gwei(calculated_gas_price)
             );
             return Ok(calculated_gas_price);
         }
         
         // 确保Gas Price高于baseFee（仅对真正的EIP-1559链生效）
-        if is_eip1559_chain && base_fee > U256::zero() {
+        if is_eip1559_chain && base_fee > U256::from(0) {
             let min_gas_price = if is_arbitrum {
                 // Arbitrum链：baseFee * 1.5 (50%安全边际)
                 base_fee * U256::from(150) / U256::from(100)
@@ -731,8 +754,8 @@ impl TransferUtils {
             
             let final_gas_price = if calculated_gas_price < min_gas_price {
                 println!("[DEBUG] 计算的Gas Price ({} gwei) 低于最小要求 ({} gwei)，使用最小值", 
-                    format_units(calculated_gas_price, "gwei").unwrap_or_default(),
-                    format_units(min_gas_price, "gwei").unwrap_or_default()
+                    format_wei_to_gwei(calculated_gas_price),
+                    format_wei_to_gwei(min_gas_price)
                 );
                 min_gas_price
             } else {
@@ -740,15 +763,15 @@ impl TransferUtils {
             };
             
             println!("[DEBUG] 最终Gas Price: {} gwei (baseFee: {} gwei)", 
-                format_units(final_gas_price, "gwei").unwrap_or_default(),
-                format_units(base_fee, "gwei").unwrap_or_default()
+                format_wei_to_gwei(final_gas_price),
+                format_wei_to_gwei(base_fee)
             );
             
             Ok(final_gas_price)
         } else {
             // 非EIP-1559网络（如BSC），直接使用计算的Gas Price，不受baseFee影响
             println!("[DEBUG] 非EIP-1559网络或无baseFee，使用计算的Gas Price: {} gwei", 
-                format_units(calculated_gas_price, "gwei").unwrap_or_default()
+                format_wei_to_gwei(calculated_gas_price)
             );
             Ok(calculated_gas_price)
         }
@@ -757,7 +780,7 @@ impl TransferUtils {
     // 获取Gas Limit
     pub async fn get_gas_limit(
         config: &TransferConfig,
-        provider: Arc<Provider<Http>>,
+        provider: Arc<AlloyProvider>,
         from: Address,
         to: Address,
         value: U256,
@@ -772,7 +795,7 @@ impl TransferUtils {
     // 获取Gas Limit（支持区分代币类型）
     pub async fn get_gas_limit_with_token_type(
         config: &TransferConfig,
-        provider: Arc<Provider<Http>>,
+        provider: Arc<AlloyProvider>,
         from: Address,
         to: Address,
         value: U256,
@@ -797,13 +820,16 @@ impl TransferUtils {
         match config.limit_type.as_str() {
             "1" => {
                 // 自动估算Gas Limit
-                let tx = TransactionRequest::new()
-                    .from(from)
-                    .to(to)
-                    .value(value);
+                let tx = TransactionRequest {
+                    from: Some(from),
+                    to: Some(to.into()),
+                    value: Some(value),
+                    ..Default::default()
+                };
                 
-                let estimated_gas = match provider.estimate_gas(&tx.into(), None).await {
+                let estimated_gas = match provider.estimate_gas(tx.into()).await {
                     Ok(gas) => {
+                        let gas = U256::from(gas);
                         println!("[DEBUG] estimate_gas成功: {}", gas);
                         gas
                     }
@@ -828,7 +854,7 @@ impl TransferUtils {
                                 U256::from(21_000)
                             } else {
                                 // 代币转账根据链类型设置默认值
-                                let chain_id = provider.get_chainid().await.unwrap_or_default().as_u64();
+                                let chain_id = provider.get_chain_id().await.unwrap_or_default();
                                 let default_token_gas = match chain_id {
                                     42161 => U256::from(150_000),  // Arbitrum One - 更高的默认值
                                     1 => U256::from(65_000),       // Ethereum Mainnet
@@ -858,7 +884,7 @@ impl TransferUtils {
                     }
                 } else {
                     // 代币转账的gas limit处理
-                    let chain_id = provider.get_chainid().await.unwrap_or_default().as_u64();
+                    let chain_id = provider.get_chain_id().await.unwrap_or_default();
                     let min_token_gas = match chain_id {
                         42161 => U256::from(80_000),  // Arbitrum One - 更高的最小值
                         1 => U256::from(60_000),      // Ethereum Mainnet
@@ -969,7 +995,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         item.private_key.clone()
     };
     
-    let wallet = private_key.parse::<LocalWallet>().map_err(|e| {
+    let wallet = private_key.parse::<PrivateKeySigner>().map_err(|e| {
         format!("私钥格式错误: {}，请检查私钥格式是否正确（应为64位十六进制字符串，可带或不带0x前缀）", e)
     })?;
     // 优先通过统一ProviderUtils获取链ID，避免重复查询逻辑
@@ -988,7 +1014,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
             }
         }
     };
-    let wallet = wallet.with_chain_id(chain_id);
+    let wallet = wallet.with_chain_id(Some(chain_id));
     let wallet_address = wallet.address();
     
     // 解析目标地址
@@ -1026,10 +1052,10 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     let provider_for_balance = create_provider(&config.chain, config.window_id.as_deref()).await.map_err(|e| {
         format!("获取RPC提供商失败: {}", e)
     })?;
-    let balance = provider_for_balance.get_balance(wallet_address, None).await.map_err(|e| {
+    let balance = provider_for_balance.get_balance(wallet_address).await.map_err(|e| {
         format!("获取余额失败 (RPC: {}): {}", rpc_url, e)
     })?;
-    let balance_ether_str = format_ether(balance);
+    let balance_ether_str = format_wei_to_ether(balance);
     
     println!("序号：{}, 当前余额为: {} ETH", index, balance_ether_str);
     
@@ -1070,7 +1096,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                      Err(_) => {
                          println!("序号：{}, 90%余额估算gas limit失败，尝试0.001 ETH估算", index);
                          // 2. 如果90%估算失败，尝试用0.001 ETH估算
-                         let fallback_amount = parse_ether(0.000003).map_err(|e| format!("解析金额失败: {}", e))?;
+                         let fallback_amount = parse_ether_to_wei_f64(0.000003).map_err(|e| format!("解析金额失败: {}", e))?;
                          let provider_for_gas_limit_fallback = create_provider(&config.chain, config.window_id.as_deref()).await?;
                          match TransferUtils::get_gas_limit(
                              &config,
@@ -1090,7 +1116,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
                  }
             } else {
                 // 其他转账类型使用最小金额估算
-                let estimate_amount = parse_ether(0.000003).map_err(|e| format!("解析金额失败: {}", e))?;
+                let estimate_amount = parse_ether_to_wei_f64(0.000003).map_err(|e| format!("解析金额失败: {}", e))?;
                 let provider_for_gas_limit_estimate = create_provider(&config.chain, config.window_id.as_deref()).await?;
                 TransferUtils::get_gas_limit(
                     &config,
@@ -1195,14 +1221,13 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
             if reserved_gas_fee >= balance {
                 return Err(format!(
                     "余额不足支付Gas费用！当前余额: {} ETH，预留Gas: {} ETH",
-                    format_units(balance, 18)?,
-                    format_units(reserved_gas_fee, 18)?
+                    format_wei_to_ether(balance),
+                    format_wei_to_ether(reserved_gas_fee)
                 ).into());
             }
 
             let max_transfer_amount = balance - reserved_gas_fee;
-            let max_transfer_eth = ethers::utils::format_units(max_transfer_amount, 18)
-                .unwrap_or_default();
+            let max_transfer_eth = format_wei_to_ether(max_transfer_amount);
 
             println!("序号：{}, 全部转账: balance={}, max_transfer={} ETH, reserved_gas={} WEI, gas_limit={}",
                 index, balance, max_transfer_eth, reserved_gas_fee, final_gas_limit);
@@ -1226,7 +1251,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         }
         "2" => {
             // 转账固定数量
-            let amount = parse_ether(config.transfer_amount)?;
+            let amount = parse_ether_to_wei_f64(config.transfer_amount)?;
             if amount >= balance {
                 return Err("当前余额不足，不做转账操作！".into());
             }
@@ -1239,7 +1264,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
             // 根据精度设置格式化随机金额
             let formatted_amount = format!("{:.precision$}", random_amount, precision = config.amount_precision as usize);
             let precise_amount: f64 = formatted_amount.parse()?;
-            let amount = parse_ether(precise_amount)?;
+            let amount = parse_ether_to_wei_f64(precise_amount)?;
             if amount >= balance {
                 return Err("当前余额不足，不做转账操作！".into());
             }
@@ -1247,12 +1272,10 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         }
         "4" => {
             // 剩余随机数量
-            // 使用format_units替代format_ether，确保精度不丢失
-            let balance_ether_str = format_units(balance, 18).map_err(|e| {
-                format!("余额格式化失败: {}, 原始余额: {}", e, balance)
-            })?;
+            // 使用format_wei_to_ether替代format_ether，确保精度不丢失
+            let balance_ether_str = format_wei_to_ether(balance);
             let balance_f64: f64 = balance_ether_str.parse::<f64>().map_err(|e| {
-                format!("余额转换失败: {}, 原始余额: {}, format_units结果: {}", e, balance, balance_ether_str)
+                format!("余额转换失败: {}, 原始余额: {}, format_wei_to_ether结果: {}", e, balance, balance_ether_str)
             })?;
             
 
@@ -1260,11 +1283,9 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
             // 使用之前已获取的gas_limit
             
             let gas_fee = gas_price * gas_limit;
-            let gas_fee_ether_str = format_units(gas_fee, 18).map_err(|e| {
-                format!("gas费用格式化失败: {}, gas_fee: {}", e, gas_fee)
-            })?;
+            let gas_fee_ether_str = format_wei_to_ether(gas_fee);
             let gas_fee_ether: f64 = gas_fee_ether_str.parse::<f64>().map_err(|e| {
-                format!("gas费用转换失败: {}, gas_fee: {}, format_units结果: {}", e, gas_fee, gas_fee_ether_str)
+                format!("gas费用转换失败: {}, gas_fee: {}, format_wei_to_ether结果: {}", e, gas_fee, gas_fee_ether_str)
             })?;
             
 
@@ -1299,20 +1320,22 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
             
             println!("序号：{}, 剩余数量: {}, 转账金额: {} (格式化后: {})", index, left_amount, transfer_amount_f64, precise_amount);
             
-            parse_ether(precise_amount)?
+            parse_ether_to_wei_f64(precise_amount)?
         }
         _ => return Err("无效的转账类型".into()),
     };
     
-    println!("序号：{}, 转账数量为: {}", index, format_units(transfer_amount, 18).unwrap_or_else(|_| "0".to_string()));
+    println!("序号：{}, 转账数量为: {}", index, format_wei_to_ether(transfer_amount));
     
     // 构建交易（使用之前已获取的gas_limit）
-    let tx = TransactionRequest::new()
-        .from(wallet_address)
-        .to(to_address)
-        .value(transfer_amount)
-        .gas_price(gas_price)
-        .gas(gas_limit);
+    let tx = TransactionRequest {
+        from: Some(wallet_address),
+        to: Some(to_address.into()),
+        value: Some(transfer_amount),
+        gas_price: Some(gas_price.to::<u128>()),
+        gas: Some(gas_limit.to::<u64>()),
+        ..Default::default()
+    };
     
     // 发送交易
     item.error_msg = "发送交易...".to_string();
@@ -1323,15 +1346,12 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         "exec_status": "1"
     }));
     
-    let provider_for_transaction = create_provider(&config.chain, config.window_id.as_deref()).await.map_err(|e| {
-        format!("获取RPC提供商失败: {}", e)
-    })?;
-    let client = SignerMiddleware::new(provider_for_transaction.clone(), wallet);
-    let pending_tx = client.send_transaction(tx, None).await.map_err(|e| {
+let signer_provider = create_signer_provider(&config.chain, config.window_id.as_deref(), &wallet).await?;
+    let pending_tx = signer_provider.send_transaction(tx).await.map_err(|e| {
         format!("发送交易失败 (RPC: {}): {}", rpc_url, e)
     })?;
     
-    let tx_hash = pending_tx.tx_hash();
+    let tx_hash = *pending_tx.tx_hash();
     println!("序号：{}, 交易 hash 为：{:?}", index, tx_hash);
     
     // 等待交易确认（设置30秒超时）
@@ -1346,7 +1366,7 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     println!("[DEBUG] 开始等待交易确认，设置30秒超时...");
     let receipt = match tokio::time::timeout(
         tokio::time::Duration::from_secs(30),
-        pending_tx
+        pending_tx.get_receipt()
     ).await {
         Ok(result) => {
             result.map_err(|e| {
@@ -1360,17 +1380,10 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
         }
     };
     
-    match receipt {
-        Some(receipt) => {
-            if receipt.status == Some(U64::from(1)) {
-                Ok(format!("{:?}", receipt.transaction_hash))
-            } else {
-                Err(format!("交易失败 (RPC: {})", rpc_url).into())
-            }
-        }
-        None => {
-            Err(format!("交易未确认 (RPC: {})", rpc_url).into())
-        }
+    if receipt.status() {
+        Ok(format!("{:?}", receipt.transaction_hash))
+    } else {
+        Err(format!("交易失败 (RPC: {})", rpc_url).into())
     }
 }
 
@@ -1398,7 +1411,7 @@ async fn query_balance_internal(
     let address: Address = address.parse().map_err(|e| {
         format!("地址格式错误: {}，请检查地址格式是否正确", e)
     })?;
-    let balance = match provider.get_balance(address, None).await {
+    let balance = match provider.get_balance(address).await {
         Ok(balance) => balance,
         Err(e) => {
              // 获取当前使用的RPC URL
@@ -1414,9 +1427,7 @@ async fn query_balance_internal(
              return Err(format!("获取余额失败 (RPC: {}): {}", rpc_url, error_msg).into());
          }
     };
-    let balance_str = format_units(balance, 18).map_err(|e| {
-        format!("余额格式化失败: {}", e)
-    })?;
+    let balance_str = format_wei_to_ether(balance);
     Ok(balance_str)
 }
 
@@ -1481,7 +1492,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
         item.private_key.clone()
     };
     
-    let wallet = private_key.parse::<LocalWallet>().map_err(|e| {
+    let wallet = private_key.parse::<PrivateKeySigner>().map_err(|e| {
         format!("私钥格式错误: {}", e)
     })?;
     
@@ -1500,7 +1511,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
             }
         }
     };
-    let wallet = wallet.with_chain_id(chain_id);
+    let wallet = wallet.with_chain_id(Some(chain_id));
     let wallet_address = wallet.address();
     
     // 解析目标地址
@@ -1513,7 +1524,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
     
     // 获取余额
     let provider_for_balance = create_provider(&config.chain, config.window_id.as_deref()).await?;
-    let balance = provider_for_balance.get_balance(wallet_address, None).await.map_err(|e| {
+    let balance = provider_for_balance.get_balance(wallet_address).await.map_err(|e| {
         format!("获取余额失败: {}", e)
     })?;
     
@@ -1532,7 +1543,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
     // 获取Gas Limit
     let gas_limit = match config.limit_type.as_str() {
         "1" => {
-            let estimate_amount = parse_ether(0.000003)?;
+            let estimate_amount = parse_ether_to_wei_f64(0.000003)?;
             let provider_for_gas_limit = create_provider(&config.chain, config.window_id.as_deref()).await?;
             TransferUtils::get_gas_limit(
                 &config,
@@ -1563,7 +1574,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
             balance - gas_fee - safety_margin
         }
         "2" => {
-            let amount = parse_ether(config.transfer_amount)?;
+            let amount = parse_ether_to_wei_f64(config.transfer_amount)?;
             if amount >= balance {
                 return Err("余额不足".into());
             }
@@ -1574,16 +1585,16 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
             let random_amount = rng.gen_range(config.transfer_amount_list[0]..=config.transfer_amount_list[1]);
             let formatted_amount = format!("{:.precision$}", random_amount, precision = config.amount_precision as usize);
             let precise_amount: f64 = formatted_amount.parse()?;
-            let amount = parse_ether(precise_amount)?;
+            let amount = parse_ether_to_wei_f64(precise_amount)?;
             if amount >= balance {
                 return Err("余额不足".into());
             }
             amount
         }
         "4" => {
-            let balance_f64: f64 = format_units(balance, 18)?.parse()?;
+            let balance_f64: f64 = format_wei_to_ether(balance).parse()?;
             let gas_fee = gas_price * gas_limit;
-            let gas_fee_ether: f64 = format_units(gas_fee, 18)?.parse()?;
+            let gas_fee_ether: f64 = format_wei_to_ether(gas_fee).parse()?;
             let available_balance = balance_f64 - gas_fee_ether;
             
             if available_balance <= config.left_amount_list[1] {
@@ -1600,7 +1611,7 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
             
             let formatted_amount = format!("{:.precision$}", transfer_amount_f64, precision = config.amount_precision as usize);
             let precise_amount: f64 = formatted_amount.parse()?;
-            parse_ether(precise_amount)?
+            parse_ether_to_wei_f64(precise_amount)?
         }
         _ => return Err("无效的转账类型".into()),
     };
@@ -1613,16 +1624,17 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
     }));
     
     // 构建并发送交易
-    let tx = TransactionRequest::new()
-        .from(wallet_address)
-        .to(to_address)
-        .value(transfer_amount)
-        .gas_price(gas_price)
-        .gas(gas_limit);
+    let tx = TransactionRequest {
+        from: Some(wallet_address),
+        to: Some(to_address.into()),
+        value: Some(transfer_amount),
+        gas_price: Some(gas_price.to::<u128>()),
+        gas: Some(gas_limit.to::<u64>()),
+        ..Default::default()
+    };
     
-    let provider_for_transaction = create_provider(&config.chain, config.window_id.as_deref()).await?;
-    let client = SignerMiddleware::new(provider_for_transaction.clone(), wallet);
-    let pending_tx = client.send_transaction(tx, None).await.map_err(|e| {
+let signer_provider = create_signer_provider(&config.chain, config.window_id.as_deref(), &wallet).await?;
+    let pending_tx = signer_provider.send_transaction(tx).await.map_err(|e| {
         format!("发送交易失败: {}", e)
     })?;
     
@@ -1662,7 +1674,7 @@ async fn check_transaction_status_internal(
     let provider = create_provider(&chain, None).await?;
     
     // 解析交易哈希
-    let hash: ethers::types::H256 = tx_hash.parse().map_err(|e| {
+    let hash: alloy::primitives::B256 = tx_hash.parse().map_err(|e| {
         format!("交易哈希格式错误: {}", e)
     })?;
     
@@ -1670,7 +1682,7 @@ async fn check_transaction_status_internal(
     match provider.get_transaction_receipt(hash).await {
         Ok(Some(receipt)) => {
             // 交易已确认
-            let success = receipt.status == Some(U64::from(1));
+            let success = receipt.status();
             Ok(TransactionStatusResult {
                 confirmed: true,
                 success: Some(success),
@@ -1744,7 +1756,7 @@ async fn check_wallet_recent_transfers_internal(
     };
     
     // 创建钱包
-    let wallet = private_key.parse::<LocalWallet>().map_err(|e| {
+    let wallet = private_key.parse::<PrivateKeySigner>().map_err(|e| {
         format!("私钥格式错误: {}", e)
     })?;
     let wallet_address = wallet.address();
@@ -1773,10 +1785,11 @@ async fn check_wallet_recent_transfers_internal(
     };
     
     // 计算开始查询的区块号（简化实现：从最近1000个区块开始查询）
-    let start_block = if current_block.as_u64() > 1000 {
-        current_block - 1000
+    let current_block_u64 = current_block;
+    let start_block = if current_block_u64 > 1000 {
+        current_block_u64 - 1000
     } else {
-        U64::from(0)
+        0
     };
     
     let mut transaction_count = 0u32;
@@ -1784,27 +1797,33 @@ async fn check_wallet_recent_transfers_internal(
     let mut has_recent_transfer = false;
     
     // 查询指定区块范围内的交易
-    for block_num in start_block.as_u64()..=current_block.as_u64() {
-        if let Ok(Some(block)) = provider.get_block_with_txs(U64::from(block_num)).await {
+    for block_num in start_block..=current_block_u64 {
+        if let Ok(Some(block)) = provider.get_block_by_number(block_num.into()).full().await {
             // 检查区块时间戳是否在指定时间之后
-            if block.timestamp.as_u64() < start_timestamp {
+            if block.header.timestamp < start_timestamp {
                 continue;
             }
             
             // 遍历区块中的所有交易
-            for tx in block.transactions {
+            let transactions = match block.transactions {
+                alloy_rpc_types_eth::BlockTransactions::Full(txs) => txs,
+                _ => Vec::new(),
+            };
+
+            for tx in transactions {
                 // 检查交易是否来自指定钱包地址
-                if tx.from == wallet_address {
+                let from_address = tx.inner.signer();
+                if from_address == wallet_address {
                     transaction_count += 1;
                     
                     // 根据币种类型检查交易
                     match coin_type.as_str() {
                         "base" => {
                             // 基础币转账：检查to地址
-                            if let Some(to_addr) = tx.to {
+                            if let Some(to_addr) = tx.inner.to() {
                                 if to_addr == target_addr {
                                     has_recent_transfer = true;
-                                    latest_transaction_hash = Some(format!("{:?}", tx.hash));
+                                    latest_transaction_hash = Some(format!("{:?}", tx.inner.hash()));
                                 }
                             }
                         }
@@ -1816,27 +1835,27 @@ async fn check_wallet_recent_transfers_internal(
                                 })?;
                                 
                                 // 检查是否是对指定合约的调用
-                                if let Some(to_addr) = tx.to {
+                                if let Some(to_addr) = tx.inner.to() {
                                     if to_addr == contract_address {
                                         // 获取交易回执以检查事件日志
-                                        if let Ok(Some(receipt)) = provider.get_transaction_receipt(tx.hash).await {
+                                        if let Ok(Some(receipt)) = provider.get_transaction_receipt(*tx.inner.hash()).await {
                                             // 检查Transfer事件日志
-                                            for log in receipt.logs {
+                                            for log in receipt.inner.logs() {
                                                 // Transfer事件的topic0是keccak256("Transfer(address,address,uint256)")
                                                 let transfer_topic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
                                                 
-                                                if !log.topics.is_empty() && 
-                                                   format!("{:?}", log.topics[0]) == transfer_topic &&
-                                                   log.topics.len() >= 3 {
+                                                if !log.topics().is_empty() && 
+                                                   format!("{:?}", log.topics()[0]) == transfer_topic &&
+                                                   log.topics().len() >= 3 {
                                                     // topics[1]是from地址，topics[2]是to地址
-                                                    let to_topic = log.topics[2];
+                                                    let to_topic = log.topics()[2];
                                                     // 将topic转换为地址（去掉前12个字节的0）
-                                                    let to_bytes = &to_topic.as_bytes()[12..];
+                                                    let to_bytes = &to_topic.as_slice()[12..];
                                                     let to_address = Address::from_slice(to_bytes);
                                                     
                                                     if to_address == target_addr {
                                                         has_recent_transfer = true;
-                                                        latest_transaction_hash = Some(format!("{:?}", tx.hash));
+                                                        latest_transaction_hash = Some(format!("{:?}", tx.inner.hash()));
                                                     }
                                                 }
                                             }

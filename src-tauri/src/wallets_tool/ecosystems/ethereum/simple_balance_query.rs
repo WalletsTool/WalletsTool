@@ -10,7 +10,7 @@ use tokio::sync::Semaphore;
 use tokio::time::{sleep, Duration};
 use tauri::Emitter;
 use rand;
-use ethers::signers::{LocalWallet, Signer};
+use alloy::signers::local::PrivateKeySigner;
 use crate::database::{get_database_manager, rpc_service::RpcService, chain_service::ChainService};
 
 // 基于窗口ID的停止标志映射
@@ -489,9 +489,9 @@ impl SimpleBalanceQueryService {
                     private_key_str.clone()
                 };
                 
-                // 从私钥生成地址
-                if let Ok(wallet) = private_key.parse::<LocalWallet>() {
-                    let address = format!("{:?}", wallet.address());
+// 从私钥生成地址
+                if let Ok(signer) = private_key.parse::<PrivateKeySigner>() {
+                    let address = format!("{:?}", signer.address());
                     item.address = address;
                     println!("[INFO] 从私钥生成地址: {}", item.address);
             } else {

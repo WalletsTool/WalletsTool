@@ -289,7 +289,11 @@ async function closeWindow() {
     try {
       console.log('TitleBar窗口关闭事件触发，正在通知父组件执行清理操作...')
       
-      await emit('before-close')
+      emit('before-close')
+      
+      if (props.customClose) {
+        return
+      }
       
       const currentWindow = getCurrentWindow()
       await currentWindow.destroy()

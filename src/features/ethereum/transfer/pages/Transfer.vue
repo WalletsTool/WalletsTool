@@ -145,6 +145,7 @@ let hasExecutedTransfer = ref(false);
 let transferSessionCompleted = ref(true);
 const transferConfirmVisible = ref(false);
 const transferConfirmLoading = ref(false);
+const isTransferConfirmAction = ref(false);
 let threadCount = ref(1);
 let enableMultiThread = ref(false);
 let multiWindowCount = ref(1);
@@ -888,6 +889,7 @@ function startTransfer() {
 }
 
 function handleTransferConfirmOk() {
+  isTransferConfirmAction.value = true;
   transferConfirmLoading.value = true;
   setTimeout(() => {
     const incompleteData = data.value.filter((item) => item.exec_status === '0');
@@ -897,12 +899,23 @@ function handleTransferConfirmOk() {
 }
 
 function handleTransferConfirmCancel() {
+  isTransferConfirmAction.value = true;
   transferConfirmLoading.value = true;
-  transferConfirmVisible.value = false; transferConfirmLoading.value = false; startLoading.value = true;
+  transferConfirmVisible.value = false;
+  transferConfirmLoading.value = false;
+  startLoading.value = true;
   setTimeout(() => { executeTransfer(data.value, true); }, 100);
 }
 
-function handleTransferConfirmClose() { transferConfirmVisible.value = false; transferConfirmLoading.value = false; startLoading.value = false; }
+function handleTransferConfirmClose() {
+  transferConfirmVisible.value = false;
+  transferConfirmLoading.value = false;
+  if (isTransferConfirmAction.value) {
+    isTransferConfirmAction.value = false;
+    return;
+  }
+  startLoading.value = false;
+}
 
 const { transferFnc, stopTransfer: stopTransferFn, performIntelligentRetry, iterTransfer, iterTransferFuryMode, retryInProgress, retryResults } = useTransfer({
    data, form, chainValue, currentChain, currentCoin, threadCount, enableMultiThread, transferConfig, transferProgress, transferTotal, transferCompleted, showProgress, startLoading, stopFlag, stopStatus, transferStartTime, hasExecutedTransfer, transferSessionCompleted, updateTransferProgress, checkGasPriceForTransfer, startGasPriceMonitoring, stopGasPriceMonitoring, transferPaused, pausedTransferData,
@@ -1246,8 +1259,12 @@ async function handleBeforeClose() {
       await invoke('clear_proxy_config_for_window', { windowId: windowLabel });
       
       console.log(`已完全清除窗口 ${windowLabel} 的代理配置`);
+      
+      await currentWindow.destroy();
     } catch (error) {
       console.error('清除代理配置失败:', error);
+      const currentWindow = getCurrentWindow();
+      await currentWindow.destroy();
     }
   }
 }

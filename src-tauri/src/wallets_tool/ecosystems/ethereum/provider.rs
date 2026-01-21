@@ -1,13 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use rand::Rng;
-use ethers::{
-    providers::{Http, Provider, Middleware},
-    utils::format_units,
-};
+use alloy_provider::{Provider, RootProvider};
+use alloy_network::Ethereum;
+use alloy_primitives::U256;
+use reqwest::{Client, Proxy};
 use url::Url;
 use std::sync::Arc;
 use crate::database::{get_database_manager, chain_service::ChainService};
+use super::alloy_utils::format_wei_to_gwei;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChainRpcConfig {
@@ -23,7 +24,34 @@ pub struct GasPriceInfo {
     pub chain: String,
 }
 
-// 获取所有支持的链配置（从数据库查询）
+pub async fn create_http_client_with_proxy(proxy_url: Option<&str>) -> Result<Client, String> {
+    let mut builder = Client::builder()
+        .timeout(std::time::Duration::from_secs(30));
+    
+    if let Some(proxy_str) = proxy_url {
+        let proxy = Proxy::all(proxy_str)
+            .map_err(|e| format!("代理地址解析失败: {}", e))?;
+        builder = builder.proxy(proxy);
+    }
+    
+    builder.build()
+        .map_err(|e| format!("HTTP客户端创建失败: {}", e))
+}
+
+pub type AlloyProvider = RootProvider<Ethereum>;
+
+pub async fn create_provider_with_client(
+    rpc_url: &str,
+    _proxy_url: Option<&str>,
+) -> Result<AlloyProvider, String> {
+    let url: Url = rpc_url.parse()
+        .map_err(|e| format!("RPC URL 解析失败: {}", e))?;
+    
+    let provider = RootProvider::new_http(url);
+    
+    Ok(provider)
+}
+
 pub async fn get_all_chain_configs() -> Result<HashMap<String, ChainRpcConfig>, Box<dyn std::error::Error>> {
     let db_manager = get_database_manager();
     let chain_service = ChainService::new(db_manager.get_pool());
@@ -43,11 +71,9 @@ pub async fn get_all_chain_configs() -> Result<HashMap<String, ChainRpcConfig>, 
     Ok(configs)
 }
 
-// Provider工具类
 pub struct ProviderUtils;
 
 impl ProviderUtils {
-    // 获取单个链配置
     pub async fn get_chain_config(chain: &str) -> Result<ChainRpcConfig, String> {
         let configs = get_all_chain_configs()
             .await
@@ -58,13 +84,11 @@ impl ProviderUtils {
             .ok_or_else(|| format!("不支持的链: {}", chain))
     }
 
-    // 获取链ID
     pub async fn get_chain_id(chain: &str) -> Result<u64, String> {
         let cfg = Self::get_chain_config(chain).await?;
         Ok(cfg.chain_id)
     }
     
-    // 随机选择RPC URL
     fn get_random_rpc_url(rpc_urls: &[String]) -> Result<&str, String> {
         if rpc_urls.is_empty() {
             return Err("没有可用的RPC URL".to_string());
@@ -72,8 +96,8 @@ impl ProviderUtils {
         let mut rng = rand::thread_rng();
         Ok(&rpc_urls[rng.gen_range(0..rpc_urls.len())])
     }
-    // 获取指定链的Provider
-    pub async fn get_provider(chain: &str) -> Result<Provider<Http>, Box<dyn std::error::Error>> {
+    
+    pub async fn get_provider(chain: &str) -> Result<AlloyProvider, Box<dyn std::error::Error>> {
         use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
         
         println!("[DEBUG] get_provider - 开始获取链 '{}' 的Provider", chain);
@@ -86,43 +110,38 @@ impl ProviderUtils {
             .map_err(|e| format!("获取RPC URL失败: {}. 请检查链 '{}' 是否配置了RPC节点。", e, chain))?;
         println!("[DEBUG] get_provider - 选择的RPC URL: {}", rpc_url);
         
-        // 尝试使用代理客户端，如果没有代理则使用默认方式
-        let provider = if let Some(proxy_client) = PROXY_MANAGER.get_random_proxy_client() {
-            println!("[DEBUG] get_provider - 使用代理客户端创建Provider");
-            let url: Url = rpc_url.parse()
-                .map_err(|e| format!("Failed to parse RPC URL: {}", e))?;
-            let http_provider = Http::new_with_client(url, proxy_client);
-            Provider::new(http_provider)
+        let proxy_url = PROXY_MANAGER.get_random_proxy();
+        if proxy_url.is_some() {
+            println!("[DEBUG] get_provider - 使用代理: {}", proxy_url.as_ref().unwrap());
         } else {
-            println!("[DEBUG] get_provider - 使用默认方式创建Provider");
-            Provider::<Http>::try_from(rpc_url)
-                .map_err(|e| {
-                    println!("[ERROR] get_provider - Provider创建失败: {}", e);
-                    e
-                })?
-        };
+            println!("[DEBUG] get_provider - 未使用代理");
+        }
+        
+        let provider = create_provider_with_client(rpc_url, proxy_url.as_deref())
+            .await
+            .map_err(|e| {
+                println!("[ERROR] get_provider - Provider创建失败: {}", e);
+                e
+            })?;
         
         println!("[DEBUG] get_provider - Provider创建成功");
         Ok(provider)
     }
     
-    // 获取基础Gas Price
     pub async fn get_base_gas_price(chain: &str) -> Result<f64, Box<dyn std::error::Error>> {
         let provider = Arc::new(Self::get_provider(chain).await?);
         let gas_price = provider.get_gas_price().await?;
-        let gas_price_gwei = format_units(gas_price, "gwei")?.parse::<f64>()?;
+        let gas_price_gwei: f64 = format_wei_to_gwei(U256::from(gas_price)).parse::<f64>()?;
         Ok(gas_price_gwei)
     }
     
-    // 测试RPC连接
     pub async fn test_rpc_connection(rpc_url: &str) -> Result<bool, Box<dyn std::error::Error>> {
-        let provider = Provider::<Http>::try_from(rpc_url)?;
+        let provider = create_provider_with_client(rpc_url, None).await?;
         let _block_number = provider.get_block_number().await?;
         Ok(true)
     }
 }
 
-// Tauri命令：获取指定链的Gas Price
 #[tauri::command]
 pub async fn get_chain_gas_price(chain: String) -> Result<GasPriceInfo, String> {
     match ProviderUtils::get_base_gas_price(&chain).await {
@@ -134,7 +153,6 @@ pub async fn get_chain_gas_price(chain: String) -> Result<GasPriceInfo, String> 
     }
 }
 
-// Tauri命令：测试RPC连接
 #[tauri::command]
 pub async fn test_rpc_url(rpc_url: String) -> Result<bool, String> {
     match ProviderUtils::test_rpc_connection(&rpc_url).await {
@@ -143,7 +161,6 @@ pub async fn test_rpc_url(rpc_url: String) -> Result<bool, String> {
     }
 }
 
-// Tauri命令：获取多个链的Gas Price
 #[tauri::command]
 pub async fn get_multiple_gas_prices(chains: Vec<String>) -> Result<Vec<GasPriceInfo>, String> {
     let mut results = Vec::new();
@@ -158,7 +175,6 @@ pub async fn get_multiple_gas_prices(chains: Vec<String>) -> Result<Vec<GasPrice
             }
             Err(e) => {
                 eprintln!("获取{}链Gas Price失败: {}", chain, e);
-                // 继续处理其他链，不中断整个流程
                 results.push(GasPriceInfo {
                     gas_price_gwei: 0.0,
                     chain: chain.clone(),

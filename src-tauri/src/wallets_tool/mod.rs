@@ -10,6 +10,7 @@ pub mod ecosystems {
         pub mod transfer;
         pub mod proxy_manager;
         pub mod proxy_commands;
+        pub mod alloy_utils;
     }
     pub mod solana;
 }

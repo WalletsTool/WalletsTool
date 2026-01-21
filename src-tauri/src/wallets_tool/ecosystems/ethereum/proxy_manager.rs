@@ -376,6 +376,31 @@ impl ProxyManager {
         window_client_pool.get(*selected_proxy).cloned()
     }
     
+    /// 获取随机代理URL
+    pub fn get_random_proxy(&self) -> Option<String> {
+        let window_label = self.get_current_window_label();
+        let config = self.get_config_for_window(&window_label);
+        
+        if !config.enabled || config.proxies.is_empty() {
+            return None;
+        }
+        
+        let mut rng = thread_rng();
+        config.proxies.choose(&mut rng).cloned()
+    }
+    
+    /// 获取指定窗口的随机代理URL
+    pub fn get_random_proxy_for_window(&self, window_id: &str) -> Option<String> {
+        let config = self.get_config_for_window(window_id);
+        
+        if !config.enabled || config.proxies.is_empty() {
+            return None;
+        }
+        
+        let mut rng = thread_rng();
+        config.proxies.choose(&mut rng).cloned()
+    }
+    
     /// 测试代理连接
     pub async fn test_proxy(&self, proxy_url: &str) -> Result<(bool, f64), String> {
         let start_time = std::time::Instant::now();

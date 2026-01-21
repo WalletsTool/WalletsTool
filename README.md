@@ -76,13 +76,14 @@ Web3 multi-chain wallet manager (Vue 3 + Tauri/Rust). Supports Ethereum & Solana
 
 ### ⚡ 高级功能
 
+* **极速转账 (Fury Mode)** - 90+ 线程并发处理，极速批量转账
 * **智能 Gas 管理** - 自动 Gas 估算和优化
-
-* **交易监控** - 实时交易状态跟踪
-
-* **失败重试** - 智能重试机制，避免重复转账
-
-* **多窗口支持** - 支持同时打开多个功能窗口
+* **交易监控** - 实时交易状态跟踪，链上交易检测
+* **智能重试** - 智能重试机制，避免重复转账
+* **多窗口支持** - 支持主窗口 + 子窗口同时操作
+* **系统托盘** - 最小化到托盘运行
+* **代理支持** - HTTP/SOCKS5 代理配置
+* **数据热重载** - 数据库配置热更新 (`reload_database` 命令)
 
 ### 🛡️ 安全特性
 
@@ -97,47 +98,99 @@ Web3 multi-chain wallet manager (Vue 3 + Tauri/Rust). Supports Ethereum & Solana
 
 ### 前端技术栈
 
-* **Vue 3** - 现代化前端框架
+* **Vue 3** - 现代化前端框架 (Composition API)
 
-* **Vite** - 快速构建工具
+* **Vite** - 极速构建工具 (手动分包优化)
 
-* **PrimeVue** - UI 组件库
+* **PrimeVue** - 主要 UI 组件库
 
-* **Arco Design** - 补充 UI 组件
+* **Arco Design** - 补充 UI 组件 (标签/弹窗/提示)
+
+* **Pinia** - 状态管理
+
+* **Vue Router** - 路由管理 (Hash 模式)
 
 * **ethers.js** - 以太坊交互库
 
-* **party-js** - 动画效果库
+* **solana-web3.js** - Solana 交互库
 
-* **xlsx** - Excel 文件处理
+* **xlsx** - Excel 文件导入导出
+
+* **party-js** - 动画效果库
 
 ### 后端技术栈
 
-* **Tauri** - 跨平台桌面应用框架 (Rust)
+* **Tauri 2.0** - 跨平台桌面应用框架 (Rust)
 
-* **SQLite** - 轻量级本地数据库
+* **SQLite** - 轻量级本地数据库 (数据目录: `src-tauri/data/`)
 
-* **tokio** - 异步运行时
+* **tokio** - 异步运行时 (高性能并发)
+
+* **reqwest** - HTTP 客户端 (代理支持)
+
+* **SQLx** - 异步 SQL 框架
+
+* **serde** - 序列化/反序列化
 
 ### 项目结构
 
 ```
 WalletsTool/
-├── src/                    # 前端源码
-│   ├── components/         # 公共组件
-│   ├── features/          # 功能模块
-│   │   ├── ethereum/      # 以太坊相关功能
-│   │   ├── solana/        # Solana 相关功能
-│   │   └── home/          # 主页
-│   ├── router/            # 路由配置
-│   └── stores/            # 状态管理
-├── src-tauri/             # Tauri 后端
-│   ├── src/               # Rust 源码
-│   ├── data/              # 数据库文件
-│   └── icons/             # 应用图标
-├── public/                # 静态资源
-└── tests/                 # 测试文件
+├── src/                      # Vue 3 前端源码
+│   ├── features/             # 功能模块目录
+│   │   └── {ecosystem}/      # 生态系统模块 (ethereum/solana)
+│   │       └── {feature}/    # 功能模块 (transfer/balance/import等)
+│   │           ├── pages/    # 路由页面
+│   │           ├── components/ # 功能组件
+│   │           ├── composables/ # 业务逻辑 (桶式导出)
+│   │           └── styles/   # 样式文件
+│   ├── components/           # 公共组件
+│   ├── stores/               # Pinia 状态管理
+│   └── router/               # 路由配置
+├── src-tauri/                # Tauri 后端
+│   ├── src/
+│   │   ├── main.rs           # 后端入口 (37+ Tauri 命令)
+│   │   ├── wallets_tool/     # 业务逻辑
+│   │   │   └── ecosystems/   # 链实现模块
+│   │   │       └── {chain}/  # 区块链实现
+│   │   │           ├── mod.rs
+│   │   │           ├── chain_config.rs
+│   │   │           ├── provider.rs
+│   │   │           ├── transfer.rs
+│   │   │           ├── token_transfer.rs
+│   │   │           ├── rpc_management.rs
+│   │   │           ├── simple_balance_query.rs
+│   │   │           └── proxy_manager/  # HTTP/SOCKS5 代理
+│   │   └── database/         # 数据库服务
+│   │       ├── mod.rs        # init_database 初始化函数
+│   │       ├── chain_service.rs  # ChainService 链CRUD
+│   │       └── rpc_service.rs    # RpcService RPC CRUD
+│   └── data/                 # SQLite 数据库 + init.sql
+├── scripts/                  # 构建工具 (version:update 版本更新)
+└── .github/workflows/        # CI (多平台)
 ```
+
+### 代码规范
+
+* **JavaScript (非 TypeScript):** 前端使用 `.js` 文件
+* **双 UI 库:** PrimeVue (主要) + Arco Design (标签/弹窗/提示)
+* **缩进:** JavaScript/Vue 使用 2 空格，Rust 使用标准缩进
+* **无注释原则:** "DO NOT ADD COMMENTS unless explicitly required"
+* **分号:** JavaScript 代码必须使用分号
+* **Tauri 命令:** 所有命令异步执行，返回 `Result<T, String>`
+
+### 重要文件索引
+
+| 符号 | 类型 | 位置 | 职责 |
+|------|------|------|------|
+| `useTransfer` | composable | `features/ethereum/transfer/composables/` | 批量转账逻辑 |
+| `useBalance` | composable | `features/ethereum/balance/composables/` | 余额查询逻辑 |
+| `ChainService` | struct | `database/chain_service.rs` | 链配置 CRUD |
+| `RpcService` | struct | `database/rpc_service.rs` | RPC 配置 CRUD |
+| `init_database` | fn | `database/mod.rs` | 数据库初始化 |
+| 前端入口 | - | `src/main.js` | PrimeVue + Arco 双 UI |
+| 后端入口 | - | `src-tauri/src/main.rs` | 37+ Tauri 命令 |
+| 构建配置 | - | `vite.config.js` | 手动分包 (213行) |
 
 ## 🚀 快速开始
 
@@ -184,6 +237,19 @@ yarn tauri-dev
 # 构建生产版本
 yarn tauri-build
 ```
+
+### 🔖 版本更新
+
+```bash
+# 自动更新版本号并创建 Git 标签
+yarn version:update <version>
+
+# 示例
+yarn version:update 1.2.3
+yarn version:update v1.0.0-beta.1
+```
+
+版本更新脚本会自动更新 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 中的版本号，创建 Git 标签并推送到远程仓库。
 
 ### 🛠️ 故障排除
 
@@ -301,19 +367,18 @@ async fn get_chains() -> Result<Vec<Chain>, String> {
 }
 ```
 
-## 🗂️ 数据库结构
+## 🧪 测试
 
-### 主要数据表
+* **Playwright** - 已安装 (`@playwright/test` v1.57.0)
+* **当前状态:** 暂无测试文件，欢迎贡献测试用例
 
-* **chains** - 区块链网络配置
+```bash
+# 安装 Playwright 浏览器
+npx playwright install
 
-* **rpc\_providers** - RPC 节点配置
-
-* **tokens** - 代币配置信息
-
-* **monitor\_configs** - 监控配置（未来功能）
-
-* **monitor\_history** - 监控历史（未来功能）
+# 运行测试 (未来)
+npx playwright test
+```
 
 ## 🛣️ 开发路线图
 
@@ -331,25 +396,31 @@ async fn get_chains() -> Result<Vec<Chain>, String> {
 
 ### 开发中功能 🚧
 
-* [ ] 极速分发功能
+* [ ] Solana 完整支持
+
+* [ ] 极速分发功能 (Fury Mode 优化)
 
 * [ ] 链上地址监控
 
 * [ ] 私钥加密存储
 
-* [ ] 多线程转账优化
+* [ ] 多线程转账优化 (>90 线程)
 
 ### 计划功能 📋
 
 * [ ] CEX 工具集成 (Binance, OKX, Bybit)
 
-* [ ] DEX 工具集成 (Uniswap, SushiSwap)
+* [ ] DEX 工具集成 (Uniswap, SushiSwap, Raydium)
 
-* [ ] 合约监控功能
+* [ ] 合约交互功能
 
-* [ ] 自动抢购机制
+* [ ] 批量空投工具
 
-* [ ] 消息通知系统
+* [ ] 交易历史追踪
+
+* [ ] 消息通知系统 (系统通知 + 邮件)
+
+* [ ] 主题自定义
 
 ## 🤝 贡献指南
 
@@ -371,7 +442,15 @@ Copyright © 2025 EzBan. All rights reserved.
 
 * [PrimeVue 组件库](https://primevue.org/)
 
+* [Arco Design 组件库](https://arco.design/)
+
+* [Pinia 状态管理](https://pinia.vuejs.org/)
+
 * [ethers.js 文档](https://docs.ethers.org/)
+
+* [Solana Web3.js](https://docs.solana.com/developing/clients/javascript-api)
+
+* [SQLx (Rust DB)](https://github.com/launchbadge/sqlx)
 
 ## ⚠️ 免责声明
 

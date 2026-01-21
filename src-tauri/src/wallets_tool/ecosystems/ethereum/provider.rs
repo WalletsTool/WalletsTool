@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use rand::Rng;
 use alloy_provider::{Provider, RootProvider};
+use alloy_transport_http::{Http, Client as AlloyClient};
+use alloy::rpc::client::RpcClient;
 use alloy_network::Ethereum;
 use alloy_primitives::U256;
 use reqwest::{Client, Proxy};
@@ -42,12 +44,17 @@ pub type AlloyProvider = RootProvider<Ethereum>;
 
 pub async fn create_provider_with_client(
     rpc_url: &str,
-    _proxy_url: Option<&str>,
+    proxy_url: Option<&str>,
 ) -> Result<AlloyProvider, String> {
     let url: Url = rpc_url.parse()
         .map_err(|e| format!("RPC URL 解析失败: {}", e))?;
     
-    let provider = RootProvider::new_http(url);
+    let client = create_http_client_with_proxy(proxy_url).await?;
+    let client: AlloyClient = client;
+
+    let http = Http::with_client(client, url);
+    let rpc_client = RpcClient::new(http, false);
+    let provider = RootProvider::new(rpc_client);
     
     Ok(provider)
 }

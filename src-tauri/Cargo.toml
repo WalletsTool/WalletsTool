@@ -20,7 +20,7 @@ tauri-plugin-shell = "2.3.4"
 anyhow = "1.0.98"
 tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "fs", "net", "time"] }
 # HTTP 客户端
-reqwest = { version = "0.11.27", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 # 异步流处理
 futures = "0.3"
 # 随机数

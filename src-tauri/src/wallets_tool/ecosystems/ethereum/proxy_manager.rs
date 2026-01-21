@@ -278,7 +278,7 @@ impl ProxyManager {
         
         let proxy = match proxy_type {
             ProxyType::Http(_) | ProxyType::Https(_) => {
-                Proxy::http(proxy_url).map_err(|e| format!("Failed to create HTTP proxy: {}", e))?
+                Proxy::all(proxy_url).map_err(|e| format!("Failed to create HTTP/HTTPS proxy: {}", e))?
             }
             ProxyType::Socks5(_) => {
                 Proxy::all(proxy_url).map_err(|e| format!("Failed to create SOCKS5 proxy: {}", e))?

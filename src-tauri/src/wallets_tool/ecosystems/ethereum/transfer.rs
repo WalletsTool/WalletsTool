@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
-use alloy_provider::Provider;
+use alloy_provider::{Provider, RootProvider, ProviderBuilder};
+use alloy_transport_http::{Http, Client as AlloyClient};
+use alloy::rpc::client::RpcClient;
 use alloy::consensus::Transaction as _;
 use alloy_primitives::{Address, U256};
 use alloy_rpc_types_eth::{TransactionRequest, BlockNumberOrTag};
@@ -314,13 +316,18 @@ pub async fn create_signer_provider(
         PROXY_MANAGER.get_random_proxy()
     };
     
-    let _http_client = create_http_client_with_proxy(proxy_url.as_deref()).await?;
+    let http_client = create_http_client_with_proxy(proxy_url.as_deref()).await?;
+    let http_client: AlloyClient = http_client;
     let url: Url = rpc_url.parse()
         .map_err(|e| format!("RPC URL 解析失败: {}", e))?;
     
+    let http = Http::with_client(http_client, url);
+    let rpc_client = RpcClient::new(http, false);
+    let root = RootProvider::new(rpc_client);
+
     let provider = ProviderBuilder::new()
         .wallet(signer.clone())
-        .connect_http(url);
+        .connect_provider(root);
     
     Ok(provider)
 }

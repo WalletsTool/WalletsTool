@@ -447,35 +447,13 @@ export function useDataOperations(options = {}) {
         content: '请停止或等待执行完成后再删除数据！',
         position: 'topLeft',
       });
-      return;
-    }
-
-    const deleteItemVisible = ref(false);
-    const currentItemKey = ref('');
-    const currentItemPrivateKey = ref('');
-
-    deleteItemVisible.value = true;
-    currentItemKey.value = item.key;
-    currentItemPrivateKey.value = item.private_key || '';
-
-    function deleteItemConfirm() {
-      deleteItemVisible.value = false;
-      data.value = data.value.filter(
-          (obj) => currentItemKey.value !== obj.key,
-      );
-      Notification.success({ content: '删除成功！', position: 'topLeft' });
-    }
-
-    function deleteItemCancel() {
-      deleteItemVisible.value = false;
+      return null;
     }
 
     return {
-      deleteItemVisible,
-      currentItemKey,
-      currentItemPrivateKey,
-      deleteItemConfirm,
-      deleteItemCancel,
+      success: true,
+      key: item.key,
+      privateKey: item.private_key || '',
     };
   }
 

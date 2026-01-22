@@ -739,9 +739,11 @@ function exportSelectedData() {
 function deleteItem(item) {
   if (startLoading.value) { Notification.warning({ content: '请停止或等待执行完成后再删除数据！', position: 'topLeft' }); return; }
   const result = deleteItemFn(item, { startLoading });
-  Object.assign(deleteItemVisible, result.deleteItemVisible);
-  Object.assign(currentItemKey, result.currentItemKey);
-  Object.assign(currentItemPrivateKey, result.currentItemPrivateKey);
+  if (result && result.success) {
+    deleteItemVisible.value = true;
+    currentItemKey.value = result.key;
+    currentItemPrivateKey.value = result.privateKey;
+  }
 }
 
 function deleteItemCancel() { deleteItemVisible.value = false; }

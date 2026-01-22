@@ -206,17 +206,17 @@ div[class*="notification"] {
 
 /* 成功通知 - 绿色虚线边框 */
 .arco-notification-success {
-  border: 2px dashed #4ade80 !important;
+  border: 1px solid #3db96b !important;
 }
 
 /* 警告通知 - 黄色虚线边框 */
 .arco-notification-warning {
-  border: 2px dashed #fbbf24 !important;
+  border: 1px solid #cc9a1d !important;
 }
 
 /* 错误通知 - 红色虚线边框 */
 .arco-notification-error {
-  border: 2px dashed #f87171 !important;
+  border: 1px solid #c94f4f !important;
 }
 
 /* 通知弹出动画容器 */

@@ -131,6 +131,66 @@ async function updateCargoLock(newVersion) {
 }
 
 /**
+ * 更新 release.yml 文件中的发布日志
+ * @param {string} newVersion - 新版本号
+ */
+async function updateReleaseWorkflow(newVersion) {
+  const releaseWorkflowPath = path.join(projectRoot, '.github', 'workflows', 'release.yml');
+  const releaseNotesPath = path.join(projectRoot, 'RELEASE_NOTES.md');
+  
+  try {
+    let notesContent = '请查看下方的变更日志了解本版本的新功能和修复。';
+    
+    // 检查是否存在 RELEASE_NOTES.md
+    try {
+      await fs.access(releaseNotesPath);
+      const fileContent = await fs.readFile(releaseNotesPath, 'utf8');
+      if (fileContent.trim()) {
+        notesContent = fileContent.trim();
+        console.log('✅ 已读取 RELEASE_NOTES.md 内容');
+      }
+    } catch (e) {
+      console.log('ℹ️  未找到 RELEASE_NOTES.md，使用默认发布说明');
+    }
+
+    const workflowContent = await fs.readFile(releaseWorkflowPath, 'utf8');
+    
+    // 构造新的 releaseBody
+    // 注意：YAML 多行字符串需要正确的缩进（这里是 12 个空格）
+    const indent = '            ';
+    const indentedNotes = notesContent.split('\n').join(`\n${indent}`);
+    
+    const newBody = `${indent}## 🎉 新版本发布 v${newVersion}
+${indent}
+${indent}### 📦 安装包下载
+${indent}- **Windows**: 下载 \`.msi\` 或 \`.exe\` 文件
+${indent}
+${indent}### 🔄 更新说明
+${indent}${indentedNotes}
+${indent}
+${indent}---
+${indent}
+${indent}See the assets below to download and install this version.
+`;
+
+    // 使用正则替换 releaseBody 内容
+    // 匹配 releaseBody: | 到 releaseDraft: 之间的内容
+    const regex = /(releaseBody: \|\n)([\s\S]*?)(          releaseDraft:)/;
+    
+    if (regex.test(workflowContent)) {
+      const updatedContent = workflowContent.replace(regex, `$1${newBody}$3`);
+      await fs.writeFile(releaseWorkflowPath, updatedContent);
+      console.log(`✅ 已更新 release.yml 发布日志`);
+    } else {
+      console.warn('⚠️  无法在 release.yml 中找到 releaseBody 字段，跳过更新');
+    }
+    
+  } catch (error) {
+    throw new Error(`更新 release.yml 失败: ${error.message}`);
+  }
+}
+
+/**
  * 执行 git 命令
  * @param {string} command - git 命令
  * @returns {string} - 命令输出
@@ -171,7 +231,7 @@ function commitAndPushChanges(version) {
   try {
     // 添加修改的文件
     console.log('📝 添加修改的文件到暂存区...');
-    execGitCommand('git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/Cargo.lock');
+    execGitCommand('git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/Cargo.lock .github/workflows/release.yml RELEASE_NOTES.md');
     console.log('✅ 已添加修改的文件到暂存区');
     
     // 创建提交
@@ -266,8 +326,19 @@ async function main() {
     console.log(`🚀 开始更新项目版本到: ${inputVersion}`);
     console.log('=' .repeat(50));
     
-    // 检查 git 状态
+    // 检查是否有未提交的更改
     checkGitStatus();
+
+    // 自动生成 RELEASE_NOTES.md
+    console.log('\n📝 正在根据 Git 提交记录生成 RELEASE_NOTES.md...');
+    try {
+      execSync('node scripts/generate-release-notes.js', { 
+        cwd: projectRoot, 
+        stdio: 'inherit' 
+      });
+    } catch (error) {
+      console.warn('⚠️  自动生成 RELEASE_NOTES.md 失败，将使用现有文件或默认内容');
+    }
     
     // 更新各个文件中的版本号
     await updatePackageJson(newVersion);
@@ -275,10 +346,13 @@ async function main() {
     await updateTauriConfig(newVersion);
     await updateCargoLock(newVersion);
     
+    // 更新 release.yml 中的发布日志
+    await updateReleaseWorkflow(newVersion);
+    
     console.log('\n📝 版本号更新完成，准备提交更改...');
     
     // 提交修改的文件并推送到远端
-    commitAndPushChanges(newVersion);
+    await commitAndPushChanges(newVersion);
     
     console.log('\n📝 准备创建 git 标签...');
     

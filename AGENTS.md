@@ -1,6 +1,6 @@
 # WalletsTool Development Guide
 
-**Generated:** 2026-01-13
+**Generated:** 2026-01-22
 **Commit:** d1f52e9 (dev branch)
 
 ## OVERVIEW
@@ -21,7 +21,7 @@ Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch
 │   │   └── ecosystems/       # Chain implementations
 │   └── data/                 # SQLite DB + init.sql
 ├── scripts/                  # Build utilities
-└── .github/workflows/        # CI (multi-platform)
+└── .github/workflows/        # CI (windows only)
 ```
 
 ## WHERE TO LOOK

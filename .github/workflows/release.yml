@@ -19,12 +19,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-22.04'
-            args: ''
           - platform: 'windows-latest'
             args: ''
 
@@ -33,16 +27,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ''
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -105,9 +93,7 @@ jobs:
             ## 🎉 新版本发布
             
             ### 📦 安装包下载
-            - **Windows**: 下载 `.msi` 或 `.exe` 文件
-            - **macOS**: 下载 `.dmg` 文件
-            - **Linux**: 下载 `.deb` 或 `.rpm` 或 `.AppImage` 文件
+            - **Windows**: 下载 `.exe` 文件
             
             ### 🔄 更新说明
             请查看下方的变更日志了解本版本的新功能和修复。
@@ -119,30 +105,9 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-  create-universal-macos:
-    if: contains(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-    needs: release
-    runs-on: macos-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download macOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
-
-      - name: Create universal macOS app
-        run: |
-          # 这里可以添加创建通用macOS应用的脚本
-          echo "Creating universal macOS app..."
-          # 实际实现需要根据具体需求调整
-
   cleanup:
     if: always()
-    needs: [release, create-universal-macos]
+    needs: [release]
     runs-on: ubuntu-latest
     permissions:
       contents: write

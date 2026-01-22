@@ -61,9 +61,6 @@
 | 平台 | 架构 | 输出文件 |
 |------|------|----------|
 | Windows | x64 | `.msi`, `.exe` |
-| macOS | Intel (x64) | `.dmg`, `.app` |
-| macOS | Apple Silicon (ARM64) | `.dmg`, `.app` |
-| Linux | x64 | `.deb`, `.AppImage` |
 
 ## 📦 发布流程
 
@@ -108,8 +105,7 @@
    - 遵循语义化版本规范
 
 2. **构建时间**
-   - 多平台构建需要 10-20 分钟
-   - macOS 构建需要额外时间处理签名
+   - Windows 构建需要 5-10 分钟
 
 3. **权限要求**
    - 需要仓库的 Actions 权限
@@ -134,8 +130,6 @@
 
 3. **平台特定问题**
    - **Windows**: 检查 Windows SDK 依赖
-   - **macOS**: 确认 Xcode 工具链
-   - **Linux**: 验证系统依赖包
 
 ### 调试步骤
 

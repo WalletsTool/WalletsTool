@@ -8,6 +8,7 @@ import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import { ethers } from 'ethers'
 import { utils as xlUtils, read as xlRead } from 'xlsx'
 import { WINDOW_CONFIG } from '@/utils/windowNames'
+import { downloadWithDialog, openDirectory } from '@/utils/downloadWithDialog'
 
 // 懒加载组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -148,10 +149,14 @@ function handleFileUpload() {
 
 // 下载模板
 function downloadTemplate() {
-  let a = document.createElement("a");
-  a.href = `/template/import_model.xlsx`;
-  a.download = "导入模板.xlsx";
-  a.click();
+  downloadWithDialog('import_model.xlsx', '导入模板.xlsx').then((path) => {
+    if (path) {
+      Notification.success({
+        content: '模板已保存',
+        position: 'topLeft',
+      });
+    }
+  });
 }
 
 // 处理文件变化

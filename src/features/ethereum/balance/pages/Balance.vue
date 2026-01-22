@@ -14,6 +14,7 @@ import TableSkeleton from '@/components/TableSkeleton.vue'
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import { debounce } from '@/utils/debounce.js'
 import { WINDOW_CONFIG } from '@/utils/windowNames'
+import { exportWithDialog, openDirectory } from '@/utils/exportWithDialog'
 
 // 懒加载非关键组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -839,13 +840,7 @@ function handleFileUpload() {
   uploadInputRef.value.click();
 }
 
-// 下载模板
-function downloadTemplate() {
-  let a = document.createElement("a");
-  a.href = `/template/import_model.xlsx`;
-  a.download = "导入模板.xlsx";
-  a.click();
-}
+
 
 // 处理文件变化
 function handleFileChange(event) {
@@ -1342,21 +1337,24 @@ function exportSelectToExcel() {
 function exportExcel(target_data) {
   if (target_data.length === 0) {
     Notification.warning({ content: '无法导出空列表！', position: 'topLeft' });
-    return
+    return;
   }
-  let export_data = [['地址', 'Nonce', '平台余额', '代币余额', '查询状态', '错误信息', '最后交易时间']]
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+  const export_data = [['地址', 'Nonce', '平台余额', '代币余额', '查询状态', '错误信息', '最后交易时间']];
   target_data.forEach(item => {
-    const transactionTime = formatTransactionTime(item.last_transaction_time)
-    export_data.push([item.address, item.nonce, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg, transactionTime])
-  })
-  // 创建工作簿
-  const workbook = xlUtils.book_new();
-  // 创建工作表
-  const worksheet = xlUtils.aoa_to_sheet(export_data);
-  // 将工作表添加到工作簿
-  xlUtils.book_append_sheet(workbook, worksheet, 'Sheet1');
-  // 导出文件
-  writeFile(workbook, 'balance_data.xlsx');
+    const transactionTime = formatTransactionTime(item.last_transaction_time);
+    export_data.push([item.address, item.nonce, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg, transactionTime]);
+  });
+
+  exportWithDialog(export_data, `balance_data_${timestamp}.xlsx`).then((path) => {
+    if (path) {
+      Notification.success({
+        content: '导出成功！',
+        duration: 4000,
+        position: 'topLeft',
+      });
+    }
+  });
 }
 
 // 链管理相关方法
@@ -1603,7 +1601,6 @@ async function handleBeforeClose() {
             @update:selected-keys="selectedKeys = $event"
             @open-manual-import="handleManualImport"
             @open-file-upload="handleFileUpload"
-            @download-template="downloadTemplate"
             row-key="address"
             height="100%"
             page-type="balance"
@@ -1686,7 +1683,7 @@ async function handleBeforeClose() {
           <div class="config-container">
              <div class="config-item">
                <span class="config-label">线程数</span>
-               <a-input-number :max="99" :min="1" mode="button" v-model="form.thread_count" style="width: 100px; margin-left: 8px;" />
+               <a-input-number :max="999" :min="1" mode="button" v-model="form.thread_count" style="width: 120px; margin-left: 8px;" />
              </div>
              
              <div class="config-divider"></div>
@@ -1713,7 +1710,6 @@ async function handleBeforeClose() {
             <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
-            <a-tooltip content="下载模板" position="left"><a-button size="mini" @click="downloadTemplate"><template #icon><Icon icon="mdi:file-download" style="color: #4e5969; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导出数据" position="left">
               <a-dropdown>
                 <a-button size="mini">

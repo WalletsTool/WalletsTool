@@ -29,6 +29,7 @@
     "core:app:allow-version",
     "core:app:allow-name",
     "core:app:allow-tauri-version",
-    "shell:allow-open"
+    "shell:allow-open",
+    "dialog:allow-save"
   ]
 }

@@ -3,6 +3,8 @@ import { ethers } from 'ethers';
 import { read, utils as xlUtils, writeFile } from 'xlsx';
 import { Notification, Modal } from '@arco-design/web-vue';
 import { debounce as customDebounce } from '@/utils/debounce.js';
+import { downloadWithDialog, openDirectory } from '@/utils/downloadWithDialog';
+import { exportWithDialog } from '@/utils/exportWithDialog';
 
 export function useDataOperations(options = {}) {
   const {
@@ -339,23 +341,18 @@ export function useDataOperations(options = {}) {
   }
 
   const downloadFile = customDebounce(() => {
-    let a = document.createElement('a');
-    a.href = `/template/import_model.xlsx`;
-    a.download = '导入模板.xlsx';
-    a.click();
+    downloadWithDialog('import_model.xlsx', '导入模板.xlsx');
   }, 1000);
 
   async function downloadTemplate() {
-    let a = document.createElement('a');
-    a.href = `/template/import_model.xlsx`;
-    a.download = '导入模板.xlsx';
-    a.click();
-
-    Notification.success({
-      content: '模板已下载至浏览器下载文件夹，请在 Downloads 文件夹中查找并打开编辑',
-      duration: 5000,
-      position: 'topLeft',
-    });
+    const filePath = await downloadWithDialog('import_model.xlsx', '导入模板.xlsx');
+    if (filePath) {
+      Notification.success({
+        content: '模板已保存',
+        duration: 5000,
+        position: 'topLeft',
+      });
+    }
   }
 
   function exportPrivateKeyAddress(dataToExport, options = {}) {
@@ -369,28 +366,22 @@ export function useDataOperations(options = {}) {
       return;
     }
 
-    let csvContent = 'private_key,address\n';
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    const exportData = [['private_key', 'address']];
     dataToExport.forEach((item) => {
       const privateKey = item.private_key || '';
       const address = item.to_addr || item.address || '';
-      csvContent += `${privateKey},${address}\n`;
+      exportData.push([privateKey, address]);
     });
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
-    link.setAttribute('download', `private_key_address_${timestamp}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    Notification.success({
-      content: `已导出 ${dataToExport.length} 条私钥地址对至 Downloads 文件夹`,
-      duration: 4000,
-      position: 'topLeft',
+    exportWithDialog(exportData, `private_key_address_${timestamp}.xlsx`).then((path) => {
+      if (path) {
+        Notification.success({
+          content: `已导出 ${dataToExport.length} 条私钥地址对`,
+          duration: 4000,
+          position: 'topLeft',
+        });
+      }
     });
   }
 

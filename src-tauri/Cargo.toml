@@ -17,6 +17,7 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.9.5", features = ["tray-icon", "wry"], default-features = false }
 tauri-plugin-shell = "2.3.4"
+tauri-plugin-dialog = "2.6.0"
 anyhow = "1.0.98"
 tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "fs", "net", "time"] }
 # HTTP 客户端

@@ -149,6 +149,7 @@ async fn main() {
     
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(chain_service)
         .setup(|app| {
             // 主窗口直接显示
@@ -306,6 +307,10 @@ async fn main() {
             wallets_tool::utils::download_file,
             wallets_tool::utils::save_chain_icon,
             wallets_tool::utils::get_chain_icon,
+            wallets_tool::utils::read_resource_file,
+            wallets_tool::utils::save_file,
+            wallets_tool::utils::get_temp_dir,
+            wallets_tool::utils::open_file_directory,
             // fs extra functions
             plugins::fs_extra::exists,
             plugins::fs_extra::open_file,

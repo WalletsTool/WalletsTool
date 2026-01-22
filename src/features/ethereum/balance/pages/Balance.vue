@@ -493,17 +493,15 @@ function processUpdates() {
 
 // 初始化Chain列表
 onBeforeMount(async () => {
-  chainOptions.value = await invoke('get_chain_list')
+  const result = await invoke('get_chain_list');
+  chainOptions.value = result || [];
+  chainOptions.value.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   if (chainOptions.value && chainOptions.value.length > 0) {
     // 优先选择eth
-    const ethChain = chainOptions.value.find(c => c.key === 'eth');
-    if (ethChain) {
-      chainValue.value = 'eth';
-      currentChain.value = ethChain;
-    } else {
-      chainValue.value = chainOptions.value[0].key
-      currentChain.value = chainOptions.value[0]
-    }
+  
+    const ethChain = chainOptions.value.find((c) => c.key === 'eth');
+    if (ethChain) { chainValue.value = 'eth'; currentChain.value = ethChain; }
+    else { chainValue.value = chainOptions.value[0]?.key; currentChain.value = chainOptions.value[0]; }
     // 获取chain对应的代币列表
     await chainChange()
   }
@@ -595,42 +593,34 @@ function generateWindowId() {
 
 // RPC变化事件
 async function chainChange() {
-  coinOptions.value = await invoke("get_coin_list", { chainKey: chainValue.value })
-  if (coinOptions.value && coinOptions.value.length > 0) {
-    // 如果之前没有选择，或者之前的选择在新列表中不存在
-    const exist = coinOptions.value.find(c => c.key === coinValue.value);
-    if (!exist) {
-      // ETH链直接指定选择eth代币
-      if (chainValue.value === 'eth') {
-        const ethCoin = coinOptions.value.find(c => c.key === 'eth');
-        if (ethCoin) {
-          coinValue.value = 'eth';
-          currentCoin.value = ethCoin;
-        } else {
-          coinValue.value = coinOptions.value[0].key
-          currentCoin.value = coinOptions.value[0]
-        }
-      } else {
-        // 其他链：优先选择与链同名的代币（如sol -> sol）
-        const sameKeyCoin = coinOptions.value.find(c => c.key === chainValue.value);
-        if (sameKeyCoin) {
-          coinValue.value = sameKeyCoin.key;
-          currentCoin.value = sameKeyCoin;
-        } else {
-          coinValue.value = coinOptions.value[0].key
-          currentCoin.value = coinOptions.value[0]
-        }
+  const chainResult = chainOptions.value.filter((item) => item.key === chainValue.value);
+  if (chainResult.length > 0) {
+    console.log('chainResult', chainResult);
+    currentChain.value = chainResult[0];
+    currentChain.value.gas_price = '查询中...';
+    fetchGas();
+    startGasTimer();
+    try {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        const tokenList = await invoke('get_coin_list', { chainKey: chainValue.value });
+        coinOptions.value = tokenList.map((token) => ({ key: token.key, label: token.label, symbol: token.symbol, contract_address: token.contract_address, decimals: token.decimals, coin_type: token.coin_type, contract_type: token.contract_type, abi: token.abi }));
+        coinOptions.value.sort((a, b) => {
+          if (a.coin_type === 'base' && b.coin_type !== 'base') return -1;
+          if (a.coin_type !== 'base' && b.coin_type === 'base') return 1;
+          return a.label.localeCompare(b.label);
+        });
+        if (coinOptions.value.length > 0) { coinValue.value = coinOptions.value[0].key; currentCoin.value = coinOptions.value[0]; }
       }
-    } else {
-      currentCoin.value = exist;
-    }
+    } catch (error) { console.error('加载代币列表失败:', error); coinOptions.value = []; coinValue.value = ''; currentCoin.value = null; }
+  } else {
+    currentChain.value = null;
+    coinOptions.value = [];
+    coinValue.value = '';
+    currentCoin.value = null;
+    stopGasTimer();
   }
-  currentChain.value = chainOptions.value.find(item => item.key === chainValue.value) || {}
-  
-  // 更新Gas显示
-  currentChain.value.gas_price = '查询中...';
-  fetchGas();
-  startGasTimer();
+
 }
 
 // coin变化事件

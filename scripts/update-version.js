@@ -163,7 +163,7 @@ async function updateReleaseWorkflow(newVersion) {
     const newBody = `${indent}## 🎉 新版本发布 v${newVersion}
 ${indent}
 ${indent}### 📦 安装包下载
-${indent}- **Windows**: 下载 \`.msi\` 或 \`.exe\` 文件
+${indent}- **Windows**: 下载 \`.exe\` 文件
 ${indent}
 ${indent}### 🔄 更新说明
 ${indent}${indentedNotes}

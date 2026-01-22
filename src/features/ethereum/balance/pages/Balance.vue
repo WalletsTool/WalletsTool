@@ -600,14 +600,26 @@ async function chainChange() {
     // 如果之前没有选择，或者之前的选择在新列表中不存在
     const exist = coinOptions.value.find(c => c.key === coinValue.value);
     if (!exist) {
-      // 优先选择与链同名的代币（如eth -> eth）
-      const sameKeyCoin = coinOptions.value.find(c => c.key === chainValue.value);
-      if (sameKeyCoin) {
-        coinValue.value = sameKeyCoin.key;
-        currentCoin.value = sameKeyCoin;
+      // ETH链直接指定选择eth代币
+      if (chainValue.value === 'eth') {
+        const ethCoin = coinOptions.value.find(c => c.key === 'eth');
+        if (ethCoin) {
+          coinValue.value = 'eth';
+          currentCoin.value = ethCoin;
+        } else {
+          coinValue.value = coinOptions.value[0].key
+          currentCoin.value = coinOptions.value[0]
+        }
       } else {
-        coinValue.value = coinOptions.value[0].key
-        currentCoin.value = coinOptions.value[0]
+        // 其他链：优先选择与链同名的代币（如sol -> sol）
+        const sameKeyCoin = coinOptions.value.find(c => c.key === chainValue.value);
+        if (sameKeyCoin) {
+          coinValue.value = sameKeyCoin.key;
+          currentCoin.value = sameKeyCoin;
+        } else {
+          coinValue.value = coinOptions.value[0].key
+          currentCoin.value = coinOptions.value[0]
+        }
       }
     } else {
       currentCoin.value = exist;

@@ -90,17 +90,24 @@ jobs:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
           releaseName: 'Wallets Tool ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
-            ## 🎉 新版本发布
+            ## 🎉 新版本发布 v0.3.8
             
             ### 📦 安装包下载
-            - **Windows**: 下载 `.exe` 文件
+            - **Windows**: 下载 `.msi` 或 `.exe` 文件
             
             ### 🔄 更新说明
-            请查看下方的变更日志了解本版本的新功能和修复。
+            ### ✨ New Features | 新功能
+            
+            - **security:** 添加安全模块以保护私钥内存
+            
+            ### 🐛 Bug Fixes | 修复
+            
+            - **scripts:** 修复更新版本脚本中正则表达式兼容Windows换行符
             
             ---
             
             See the assets below to download and install this version.
+
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

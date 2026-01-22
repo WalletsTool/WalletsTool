@@ -65,7 +65,7 @@ const columns = [
   { title: '平台币余额', align: 'center', dataIndex: 'plat_balance', width: 95, ellipsis: true, tooltip: true },
   { title: '代币余额', align: 'center', dataIndex: 'coin_balance', width: 85, ellipsis: true, tooltip: true },
   { title: '状态', align: 'center', slotName: 'exec_status', width: 100, ellipsis: true, tooltip: true },
-  { title: '返回信息', align: 'center', dataIndex: 'error_msg', ellipsis: true, tooltip: true },
+  { title: '返回信息', align: 'center', dataIndex: 'error_msg', width: 330, ellipsis: true, tooltip: true },
   { title: '操作', align: 'center', slotName: 'optional', width: 55, ellipsis: true, tooltip: true },
 ];
 

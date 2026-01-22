@@ -137,6 +137,9 @@ async fn open_function_window<R: Runtime>(app: AppHandle<R>, page_name: String) 
 
 #[tokio::main]
 async fn main() {
+    // 启动安全保护
+    wallets_tool::security::enable_protection();
+
     // 初始化数据库
     if let Err(err) = database::init_database().await {
         eprintln!("数据库初始化失败: {:?}", err);

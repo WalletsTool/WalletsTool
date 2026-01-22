@@ -13,6 +13,7 @@ use std::sync::Arc;
 use rand::Rng;
 use crate::database::get_database_manager;
 use crate::wallets_tool::ecosystems::ethereum::provider::{ProviderUtils, create_provider_with_client, create_http_client_with_proxy, AlloyProvider};
+use crate::wallets_tool::security::SecureMemory;
 use sqlx::Row;
 use super::alloy_utils::{parse_ether_to_wei_f64, parse_gwei_to_wei, format_wei_to_ether, format_wei_to_gwei};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -85,9 +86,9 @@ pub struct TransferConfig {
     pub window_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TransferItem {
-    pub private_key: String,
+    pub private_key: SecureMemory,
     pub to_addr: String,
     pub error_msg: String,
     pub error_count: u32,
@@ -1042,20 +1043,19 @@ async fn base_coin_transfer_internal<R: tauri::Runtime>(
     // 不再在方法开头创建固定的provider，改为在每次RPC调用时动态获取
     
     // 创建钱包
-    if item.private_key.trim().is_empty() {
-        return Err("私钥不能为空！".into());
-    }
-    
-    // 处理私钥格式，兼容带0x和不带0x的格式
-    let private_key = if item.private_key.starts_with("0x") || item.private_key.starts_with("0X") {
-        item.private_key[2..].to_string()
-    } else {
-        item.private_key.clone()
-    };
-    
-    let wallet = private_key.parse::<PrivateKeySigner>().map_err(|e| {
-        format!("私钥格式错误: {}，请检查私钥格式是否正确（应为64位十六进制字符串，可带或不带0x前缀）", e)
-    })?;
+    let wallet = item.private_key.use_secret(|pk| {
+        if pk.trim().is_empty() {
+             return Err("私钥不能为空！".to_string());
+        }
+        let private_key = if pk.starts_with("0x") || pk.starts_with("0X") {
+            &pk[2..]
+        } else {
+            pk
+        };
+        private_key.parse::<PrivateKeySigner>().map_err(|e| e.to_string())
+    })
+    .map_err(|e| format!("私钥解密失败: {}", e))?
+    .map_err(|e| format!("私钥格式错误: {}，请检查私钥格式是否正确（应为64位十六进制字符串，可带或不带0x前缀）", e))?;
     // 优先通过统一ProviderUtils获取链ID，避免重复查询逻辑
     let chain_id = match ProviderUtils::get_chain_id(&config.chain).await {
         Ok(id) => id,
@@ -1652,20 +1652,19 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
         .map_err(|e| format!("获取RPC提供商失败: {}", e))?;
     
     // 创建钱包
-    if item.private_key.trim().is_empty() {
-        return Err("私钥不能为空！".into());
-    }
-    
-    // 处理私钥格式
-    let private_key = if item.private_key.starts_with("0x") || item.private_key.starts_with("0X") {
-        item.private_key[2..].to_string()
-    } else {
-        item.private_key.clone()
-    };
-    
-    let wallet = private_key.parse::<PrivateKeySigner>().map_err(|e| {
-        format!("私钥格式错误: {}", e)
-    })?;
+    let wallet = item.private_key.use_secret(|pk| {
+        if pk.trim().is_empty() {
+             return Err("私钥不能为空！".to_string());
+        }
+        let private_key = if pk.starts_with("0x") || pk.starts_with("0X") {
+            &pk[2..]
+        } else {
+            pk
+        };
+        private_key.parse::<PrivateKeySigner>().map_err(|e| e.to_string())
+    })
+    .map_err(|e| format!("私钥解密失败: {}", e))?
+    .map_err(|e| format!("私钥格式错误: {}", e))?;
     
     // 获取链ID
     let chain_id = match ProviderUtils::get_chain_id(&config.chain).await {

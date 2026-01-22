@@ -175,18 +175,19 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     item.retry_flag = false;
     let window_id = config.window_id.as_deref().unwrap_or("");
     
-    if item.private_key.trim().is_empty() {
-        return Err("私钥不能为空！".into());
-    }
-    
-    let private_key = if item.private_key.starts_with("0x") || item.private_key.starts_with("0X") {
-        item.private_key[2..].to_string()
-    } else {
-        item.private_key.clone()
-    };
-    
-    let signer: PrivateKeySigner = private_key.parse()
-        .map_err(|e| format!("私钥格式错误: {}", e))?;
+    let signer = item.private_key.use_secret(|pk| {
+        if pk.trim().is_empty() {
+             return Err("私钥不能为空！".to_string());
+        }
+        let private_key = if pk.starts_with("0x") || pk.starts_with("0X") {
+            &pk[2..]
+        } else {
+            pk
+        };
+        private_key.parse::<PrivateKeySigner>().map_err(|e| e.to_string())
+    })
+    .map_err(|e| format!("私钥解密失败: {}", e))?
+    .map_err(|e| format!("私钥格式错误: {}", e))?;
     
     let chain_id = match ProviderUtils::get_chain_id(&config.chain).await {
         Ok(id) => id,
@@ -463,18 +464,19 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
         return Err("用户已停止转账任务".into());
     }
 
-    if item.private_key.trim().is_empty() {
-        return Err("私钥不能为空！".into());
-    }
-    
-    let private_key = if item.private_key.starts_with("0x") || item.private_key.starts_with("0X") {
-        item.private_key[2..].to_string()
-    } else {
-        item.private_key.clone()
-    };
-    
-    let signer: PrivateKeySigner = private_key.parse()
-        .map_err(|e| format!("私钥格式错误: {}", e))?;
+    let signer = item.private_key.use_secret(|pk| {
+        if pk.trim().is_empty() {
+             return Err("私钥不能为空！".to_string());
+        }
+        let private_key = if pk.starts_with("0x") || pk.starts_with("0X") {
+            &pk[2..]
+        } else {
+            pk
+        };
+        private_key.parse::<PrivateKeySigner>().map_err(|e| e.to_string())
+    })
+    .map_err(|e| format!("私钥解密失败: {}", e))?
+    .map_err(|e| format!("私钥格式错误: {}", e))?;
     
     // 复用 Provider 逻辑
     let provider = create_provider(&config.chain, config.window_id.as_deref()).await

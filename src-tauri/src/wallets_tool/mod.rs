@@ -1,4 +1,5 @@
 pub mod utils;
+pub mod security;
 
 pub mod ecosystems {
     pub mod ethereum {

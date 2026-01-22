@@ -88,6 +88,7 @@ const columns = [
   {
     title: '错误信息',
     align: 'center',
+     width: 320,
     dataIndex: 'error_msg',
     ellipsis: true,
     tooltip: true,

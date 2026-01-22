@@ -59,7 +59,7 @@ const columns = [
   { title: "SOL余额", width: 95, dataIndex: "plat_balance", ellipsis: true, tooltip: true },
   { title: "代币余额", width: 85, dataIndex: "coin_balance", ellipsis: true, tooltip: true },
   { title: "状态", width: 90, slotName: "exec_status", ellipsis: true, tooltip: true },
-  { title: "返回信息", dataIndex: "error_msg", ellipsis: true, tooltip: true },
+  { title: "返回信息", width: 320, dataIndex: "error_msg", ellipsis: true, tooltip: true },
   { title: "操作", width: 55, slotName: "optional", ellipsis: true, tooltip: true }
 ];
 

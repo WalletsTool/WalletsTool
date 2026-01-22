@@ -120,3 +120,31 @@ Run with `cargo test`.
 - Proxy manager with HTTP/SOCKS5 support
 - Migrated to Alloy framework (Jan 2026)
 - **Security:** Private keys masked in UI.
+
+## SECURITY MODULE
+
+**Location:** `src-tauri/src/wallets_tool/security/`
+
+**Features:**
+- **SecureMemory:** AES-256-CBC encrypted memory storage for private keys.
+- **Zeroization:** Automatic memory wiping (zeroize) on drop.
+- **Anti-Debug:** Runtime debugger detection (Windows `IsDebuggerPresent`).
+- **Integrity:** SHA-256 integrity checks for sensitive data.
+- **Session Key:** Ephemeral RAM-only key generated on startup.
+
+**Usage Pattern:**
+```rust
+use crate::wallets_tool::security::SecureMemory;
+
+// Struct definition
+struct MyStruct {
+    secret: SecureMemory,
+}
+
+// Access
+my_struct.secret.use_secret(|s| {
+    // 's' is the plaintext slice, valid only within this closure
+    // 's' is zeroized immediately after closure returns
+    do_something(s);
+});
+```

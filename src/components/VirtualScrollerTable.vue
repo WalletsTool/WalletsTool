@@ -663,7 +663,7 @@ const handleWheel = () => {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  height: 500px;
+  min-height: 450px;
   color: #888888ff;
 }
 

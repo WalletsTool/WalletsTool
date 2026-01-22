@@ -48,6 +48,15 @@ hex = "0.4"
 # 明确指定兼容版本
 base64 = "0.22.1"
 # 正则表达式
+regex = "1.10"
+
+# 安全模块依赖
+aes = "0.8"
+cbc = "0.1"
+zeroize = { version = "1.7", features = ["derive"] }
+sha2 = "0.10"
+winapi = { version = "0.3", features = ["memoryapi", "debugapi", "sysinfoapi", "processthreadsapi", "errhandlingapi"] }
+block-padding = "0.3"
 
 # Release模式优化配置
 [profile.release]

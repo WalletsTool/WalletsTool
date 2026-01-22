@@ -151,6 +151,7 @@ function handleFileUpload() {
 function downloadTemplate() {
   downloadWithDialog('import_model.xlsx', '导入模板.xlsx').then((path) => {
     if (path) {
+      openDirectory(path);
       Notification.success({
         content: '模板已保存',
         position: 'topLeft',

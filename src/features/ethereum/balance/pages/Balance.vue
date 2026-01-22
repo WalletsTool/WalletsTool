@@ -1348,6 +1348,7 @@ function exportExcel(target_data) {
 
   exportWithDialog(export_data, `balance_data_${timestamp}.xlsx`).then((path) => {
     if (path) {
+      openDirectory(path);
       Notification.success({
         content: '导出成功！',
         duration: 4000,

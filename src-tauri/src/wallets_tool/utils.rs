@@ -126,10 +126,12 @@ pub fn open_file_directory(file_path: String) {
         }
         #[cfg(target_os = "linux")]
         {
-            std::process::Command::new("xdg-open")
-                .arg(parent)
-                .spawn()
-                .unwrap();
+            if let Some(parent) = path.parent() {
+                std::process::Command::new("xdg-open")
+                    .arg(parent)
+                    .spawn()
+                    .unwrap();
+            }
         }
     }
 }

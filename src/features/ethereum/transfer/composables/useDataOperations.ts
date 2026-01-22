@@ -347,6 +347,7 @@ export function useDataOperations(options = {}) {
   async function downloadTemplate() {
     const filePath = await downloadWithDialog('import_model.xlsx', '导入模板.xlsx');
     if (filePath) {
+      openDirectory(filePath);
       Notification.success({
         content: '模板已保存',
         duration: 5000,
@@ -376,6 +377,7 @@ export function useDataOperations(options = {}) {
 
     exportWithDialog(exportData, `private_key_address_${timestamp}.xlsx`).then((path) => {
       if (path) {
+        openDirectory(path);
         Notification.success({
           content: `已导出 ${dataToExport.length} 条私钥地址对`,
           duration: 4000,

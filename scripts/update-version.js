@@ -174,8 +174,8 @@ ${indent}See the assets below to download and install this version.
 `;
 
     // 使用正则替换 releaseBody 内容
-    // 匹配 releaseBody: | 到 releaseDraft: 之间的内容
-    const regex = /(releaseBody: \|\n)([\s\S]*?)(          releaseDraft:)/;
+    // 匹配 releaseBody: | 到 releaseDraft: 之间的内容 (兼容 Windows CRLF)
+    const regex = /(releaseBody: \|\s*[\r\n]+)([\s\S]*?)(\s+releaseDraft:)/;
     
     if (regex.test(workflowContent)) {
       const updatedContent = workflowContent.replace(regex, `$1${newBody}$3`);

@@ -116,7 +116,7 @@
               clickable: true,
               'zebra-stripe': getItemIndex(item) % 2 === 1,
             }"
-            v-memo="[item.key, isRowSelected(item), isRowHovered(item), item.exec_status, item.private_key, item.to_addr, item.amount, item.plat_balance, item.coin_balance, item.error_msg]"
+            v-memo="[getRowKey(item), isRowSelected(item), isRowHovered(item), item.exec_status, item.private_key, item.to_addr, item.amount, item.plat_balance, item.coin_balance, item.error_msg]"
             @click="handleRowClick(item, getItemIndex(item))"
           >
             <!-- 选择列 -->

@@ -31,6 +31,7 @@ Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch
 | Frontend entry | `src/main.js` | PrimeVue + Arco dual UI |
 | Backend entry | `src-tauri/src/main.rs` | 37+ Tauri commands |
 | Transfer logic | `src/features/ethereum/transfer/` | Composables-heavy |
+| Balance logic | `src/features/ethereum/balance/` | VirtualScroller + Batch event processing + Allow duplicate imports |
 | Ethereum backend | `src-tauri/src/wallets_tool/ecosystems/ethereum/` | 9 modules (Alloy migration) |
 | Database ops | `src-tauri/src/database/` | Service pattern (ChainService, RpcService) |
 | Configs | `src-tauri/Cargo.toml` | Rust deps + profiles |
@@ -114,6 +115,8 @@ Run with `cargo test`.
 - Multi-window support (main + child windows)
 - System tray integration
 - "Fury mode" for high-concurrency transfers (>90 threads)
+- Frontend optimization: requestAnimationFrame batching for high-frequency backend events
 - Intelligent retry with on-chain tx detection
 - Proxy manager with HTTP/SOCKS5 support
 - Migrated to Alloy framework (Jan 2026)
+- **Security:** Private keys masked in UI.

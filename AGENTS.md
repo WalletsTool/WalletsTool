@@ -31,7 +31,7 @@ Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch
 | Frontend entry | `src/main.js` | PrimeVue + Arco dual UI |
 | Backend entry | `src-tauri/src/main.rs` | 37+ Tauri commands |
 | Transfer logic | `src/features/ethereum/transfer/` | Composables-heavy |
-| Ethereum backend | `src-tauri/src/wallets_tool/ecosystems/ethereum/` | 8 specialized modules |
+| Ethereum backend | `src-tauri/src/wallets_tool/ecosystems/ethereum/` | 9 modules (Alloy migration) |
 | Database ops | `src-tauri/src/database/` | Service pattern (ChainService, RpcService) |
 | Configs | `src-tauri/Cargo.toml` | Rust deps + profiles |
 | Build | `vite.config.js` | 213 lines, manual chunk splitting |
@@ -95,7 +95,9 @@ yarn version:update <version> # Bump all versions
 
 ## TESTING
 
-Playwright installed (`@playwright/test` v1.57.0) but **no test files found**.
+Playwright installed (`@playwright/test` v1.57.0).
+Rust unit tests added in `src-tauri/src/wallets_tool/ecosystems/ethereum/alloy_utils.rs`.
+Run with `cargo test`.
 
 ## CODE MAP
 
@@ -114,3 +116,4 @@ Playwright installed (`@playwright/test` v1.57.0) but **no test files found**.
 - "Fury mode" for high-concurrency transfers (>90 threads)
 - Intelligent retry with on-chain tx detection
 - Proxy manager with HTTP/SOCKS5 support
+- Migrated to Alloy framework (Jan 2026)

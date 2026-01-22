@@ -1504,12 +1504,109 @@ pub struct FastTransferResult {
     pub error: Option<String>,
 }
 
+
 // 交易状态检查结果
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TransactionStatusResult {
     pub confirmed: bool,
     pub success: Option<bool>,  // None表示还在pending，Some(true)表示成功，Some(false)表示失败
     pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BatchTransactionStatusResult {
+    pub hash: String,
+    pub status: TransactionStatusResult,
+}
+
+// Tauri命令：批量检查交易状态
+#[tauri::command]
+pub async fn check_transactions_status_batch(
+    chain: String,
+    tx_hashes: Vec<String>,
+) -> Result<Vec<BatchTransactionStatusResult>, String> {
+    match check_transactions_status_batch_internal(chain, tx_hashes).await {
+        Ok(results) => Ok(results),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+// 内部批量检查交易状态实现
+async fn check_transactions_status_batch_internal(
+    chain: String,
+    tx_hashes: Vec<String>,
+) -> Result<Vec<BatchTransactionStatusResult>, Box<dyn std::error::Error>> {
+    if tx_hashes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 复用同一个Provider
+    let provider = create_provider(&chain, None).await?;
+    
+    let mut results = Vec::new();
+    
+    // 并发检查还是顺序检查？
+    // 为了避免对RPC造成瞬间过大压力，这里使用顺序检查，因为Provider复用已经减少了很大开销
+    // 如果需要进一步优化，可以使用FuturesUnordered进行并发，但要注意RPC限制
+    
+    for tx_hash in tx_hashes {
+        // 解析交易哈希
+        let hash_res: Result<alloy::primitives::B256, _> = tx_hash.parse();
+        
+        match hash_res {
+            Ok(hash) => {
+                // 获取交易回执
+                match provider.get_transaction_receipt(hash).await {
+                    Ok(Some(receipt)) => {
+                        let success = receipt.status();
+                        results.push(BatchTransactionStatusResult {
+                            hash: tx_hash,
+                            status: TransactionStatusResult {
+                                confirmed: true,
+                                success: Some(success),
+                                error: if success { None } else { Some("交易执行失败".to_string()) },
+                            }
+                        });
+                    }
+                    Ok(None) => {
+                        results.push(BatchTransactionStatusResult {
+                            hash: tx_hash,
+                            status: TransactionStatusResult {
+                                confirmed: false,
+                                success: None,
+                                error: None,
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        // 单个失败不影响整体，标记为查询失败（或者视为pending）
+                        // 这里我们返回confirmed=false但带有错误信息，或者直接忽略
+                        // 为了前端好处理，我们返回一个带有错误信息的pending状态
+                         results.push(BatchTransactionStatusResult {
+                            hash: tx_hash,
+                            status: TransactionStatusResult {
+                                confirmed: false,
+                                success: None,
+                                error: Some(format!("查询失败: {}", e)),
+                            }
+                        });
+                    }
+                }
+            }
+            Err(e) => {
+                results.push(BatchTransactionStatusResult {
+                    hash: tx_hash,
+                    status: TransactionStatusResult {
+                        confirmed: false,
+                        success: Some(false),
+                        error: Some(format!("哈希格式错误: {}", e)),
+                    }
+                });
+            }
+        }
+    }
+    
+    Ok(results)
 }
 
 // Tauri命令：快速基础币转账（狂暴模式 - 只提交不等待确认）
@@ -1542,6 +1639,17 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
     config: TransferConfig,
 ) -> Result<String, Box<dyn std::error::Error>> {
     item.retry_flag = false;
+    
+    // 0. 获取窗口ID并检查停止状态
+    let window_id = config.window_id.as_deref().unwrap_or("");
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+
+    // 创建Provider (复用)
+    // 这是一个优化：只创建一个Provider用于后续的所有查询，减少RPC连接开销和延迟
+    let provider = create_provider(&config.chain, config.window_id.as_deref()).await
+        .map_err(|e| format!("获取RPC提供商失败: {}", e))?;
     
     // 创建钱包
     if item.private_key.trim().is_empty() {
@@ -1585,9 +1693,13 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
         format!("目标地址格式错误: {}", e)
     })?;
     
-    // 获取余额
-    let provider_for_balance = create_provider(&config.chain, config.window_id.as_deref()).await?;
-    let balance = provider_for_balance.get_balance(wallet_address).await.map_err(|e| {
+    // 检查停止状态
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+
+    // 获取余额 (复用Provider)
+    let balance = provider.get_balance(wallet_address).await.map_err(|e| {
         format!("获取余额失败: {}", e)
     })?;
     
@@ -1595,22 +1707,31 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
         return Err("当前余额为0，无法进行转账操作！".into());
     }
     
-    // 获取Gas Price
-    let provider_for_gas_price = create_provider(&config.chain, config.window_id.as_deref()).await?;
-    let gas_price = TransferUtils::get_gas_price(&config, provider_for_gas_price.clone()).await?;
+    // 检查停止状态
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+
+    // 获取Gas Price (复用Provider)
+    let gas_price = TransferUtils::get_gas_price(&config, provider.clone()).await?;
     
     if gas_price.is_zero() {
         return Err("获取到的 gas price 为0".into());
     }
     
-    // 获取Gas Limit
+    // 检查停止状态
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+
+    // 获取Gas Limit (复用Provider)
     let gas_limit = match config.limit_type.as_str() {
         "1" => {
             let estimate_amount = parse_ether_to_wei_f64(0.000003)?;
-            let provider_for_gas_limit = create_provider(&config.chain, config.window_id.as_deref()).await?;
+            // 复用Provider
             TransferUtils::get_gas_limit(
                 &config,
-                provider_for_gas_limit.clone(),
+                provider.clone(),
                 wallet_address,
                 to_address,
                 estimate_amount,
@@ -1696,7 +1817,12 @@ async fn base_coin_transfer_fast_internal<R: tauri::Runtime>(
         ..Default::default()
     };
     
-let signer_provider = create_signer_provider(&config.chain, config.window_id.as_deref(), &wallet).await?;
+    // 再次检查停止状态 - 在发送交易之前 (最关键的拦截点)
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+
+    let signer_provider = create_signer_provider(&config.chain, config.window_id.as_deref(), &wallet).await?;
     let pending_tx = signer_provider.send_transaction(tx).await.map_err(|e| {
         format!("发送交易失败: {}", e)
     })?;
@@ -1785,6 +1911,7 @@ pub async fn check_wallet_recent_transfers(
     start_timestamp: u64,
     coin_type: String,
     contract_address: Option<String>,
+    amount: Option<String>,
 ) -> Result<RecentTransferResult, String> {
     match check_wallet_recent_transfers_internal(
         chain,
@@ -1793,6 +1920,7 @@ pub async fn check_wallet_recent_transfers(
         start_timestamp,
         coin_type,
         contract_address,
+        amount,
     ).await {
         Ok(result) => Ok(result),
         Err(e) => Err(e.to_string()),
@@ -1807,6 +1935,7 @@ async fn check_wallet_recent_transfers_internal(
     start_timestamp: u64,
     coin_type: String,
     contract_address: Option<String>,
+    amount: Option<String>,
 ) -> Result<RecentTransferResult, Box<dyn std::error::Error>> {
     // 创建Provider
     let provider = create_provider(&chain, None).await?;
@@ -1855,6 +1984,27 @@ async fn check_wallet_recent_transfers_internal(
         0
     };
     
+    // 解析预期的转账金额（如果有）
+    let expected_wei_value = if let Some(amt_str) = &amount {
+        if !amt_str.is_empty() {
+            if let Ok(val) = amt_str.parse::<f64>() {
+                // 仅当币种为base时，我们确定金额单位转换关系（Ether -> Wei）
+                // 对于Token，由于不知道Decimals，暂不进行金额严格校验
+                if coin_type == "base" {
+                    parse_ether_to_wei_f64(val).ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let mut transaction_count = 0u32;
     let mut latest_transaction_hash: Option<String> = None;
     let mut has_recent_transfer = false;
@@ -1885,6 +2035,15 @@ async fn check_wallet_recent_transfers_internal(
                             // 基础币转账：检查to地址
                             if let Some(to_addr) = tx.inner.to() {
                                 if to_addr == target_addr {
+                                    // 如果设置了金额校验，则需检查金额是否一致
+                                    if let Some(expected_wei) = expected_wei_value {
+                                        // 允许极小的误差（浮点数转换可能导致1wei的差异），或者严格相等
+                                        // 这里使用严格相等，因为parse_ether_to_wei_f64应该是确定性的
+                                        if tx.inner.value() != expected_wei {
+                                            continue;
+                                        }
+                                    }
+                                    
                                     has_recent_transfer = true;
                                     latest_transaction_hash = Some(format!("{:?}", tx.inner.hash()));
                                 }

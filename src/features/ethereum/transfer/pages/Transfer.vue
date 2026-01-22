@@ -1549,8 +1549,11 @@ function handleClickOutside(event) {
                     </template>
                   </a-space>
                 </a-form-item>
-                <a-form-item field="error_retry" label="失败自动重试" tooltip="开启失败自动重试功能后，存在多次转账风险，请谨慎使用" :label-col-props="{ span: 9 }" :wrapper-col-props="{ span: 15 }">
-                  <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0"><template #checked>开启</template><template #unchecked>关闭</template></a-switch>
+                <a-form-item field="error_retry" label="失败自动重试" tooltip="开启失败自动重试功能后，存在多次转账风险，请谨慎使用。建议渡过bate阶段后再用" :label-col-props="{ span: 9 }" :wrapper-col-props="{ span: 15 }">
+                  <a-space :size="6" align="center" class="error-retry-control">
+                    <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0"><template #checked>开启</template><template #unchecked>关闭</template></a-switch>
+                    <a-tag color="orange" class="beta-tag">BATE</a-tag>
+                  </a-space>
                 </a-form-item>
                 <a-form-item field="multi_window" label="窗口多开" tooltip="相同配置参数多开窗口，方便分组执行转账" :label-col-props="{ span: 7 }" :wrapper-col-props="{ span: 16 }">
                   <a-input-group style="width: 100%">
@@ -1839,6 +1842,7 @@ export default {
 .container { height: 100vh; display: flex; flex-direction: column; overflow: visible; padding: 50px 10px 50px 10px; min-width: 1240px; }
 .container::-webkit-scrollbar { display: none; }
 .container { -ms-overflow-style: none; scrollbar-width: none; }
+:deep(.arco-dropdown-option-content) { display: flex; align-items: center; }
 .main-content { flex: 1; display: flex; overflow: visible; position: relative; }
 .left-panel { flex: 1; display: flex; flex-direction: column; overflow: visible; min-width: 0; }
 .table-section { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
@@ -1968,6 +1972,8 @@ export default {
 .action-btn.danger { color: #f53f3f; }
 .action-btn.danger:hover { background: #3d3d3d; color: #f53f3f; }
 .action-btn-clicked { background: #4ade80 !important; color: #fff !important; transform: scale(0.95); }
+.error-retry-control { display: inline-flex; align-items: center; white-space: nowrap; }
+.beta-tag { font-size: 10px; padding: 0 6px; line-height: 18px; height: 18px; margin-left: 5px; }
 .celebration-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(16, 185, 129, 0.9)); display: flex; justify-content: center; align-items: center; z-index: 10001; animation: celebrationFadeIn 0.5s ease-out; }
 .celebration-content { text-align: center; color: white; animation: celebrationBounce 1s ease-out; }
 .celebration-icon { font-size: 120px; margin-bottom: 120px; animation: celebrationRotate 2s ease-in-out infinite; }

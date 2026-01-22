@@ -1,109 +1,141 @@
 <template>
   <!-- RPC管理弹窗 -->
-  <a-modal v-model:visible="visible" title="RPC管理" :width="1200" @cancel="closeManage">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-      <h3 style="margin: 0;">{{ chainName }} - RPC节点管理</h3>
-      <div style="display: flex; gap: 8px;">
-        <a-button type="outline" @click="batchTestAllRpc" :loading="batchTesting">
-          <icon-thunderbolt />
-          {{ batchTesting ? '批量测试中...' : '批量测试' }}
-        </a-button>
-        <a-button type="primary" @click="showAddRpc">
-          <icon-plus />
-          添加RPC
-        </a-button>
+  <a-modal v-model:visible="visible" title="RPC管理" :width="1000" @cancel="closeManage" :footer="false">
+    <div class="rpc-header">
+      <div class="header-left">
+        <h3 class="modal-title">{{ chainName }} - RPC节点列表</h3>
+        <span class="rpc-count">共 {{ rpcManageData.length }} 个节点</span>
+      </div>
+      <div class="header-right">
+        <div class="header-actions">
+          <a-tooltip content="启用所有RPC节点">
+            <a-button type="outline" status="success" @click="batchEnableAllRpc">
+              <template #icon><icon-check-circle /></template>
+              全部启用
+            </a-button>
+          </a-tooltip>
+          <a-tooltip content="禁用所有RPC节点">
+            <a-button type="outline" status="warning" @click="batchDisableAllRpc">
+              <template #icon><icon-close-circle /></template>
+              全部禁用
+            </a-button>
+          </a-tooltip>
+          <a-button type="outline" @click="batchTestAllRpc" :loading="batchTesting">
+            <template #icon><icon-thunderbolt /></template>
+            {{ batchTesting ? '测试中...' : '批量测试' }}
+          </a-button>
+          <a-button type="primary" @click="showAddRpc">
+            <template #icon><icon-plus /></template>
+            添加节点
+          </a-button>
+        </div>
       </div>
     </div>
 
-    <a-table :data="rpcManageData" :loading="rpcTableLoading" :pagination="false" :scroll="{ y: 400 }">
+    <a-table 
+      :data="rpcManageData" 
+      :loading="rpcTableLoading" 
+      :pagination="false" 
+      :scroll="{ y: 450 }"
+      :bordered="{ cell: true }"
+      size="medium"
+    >
       <template #columns>
-        <a-table-column title="序号" :width="60" align="center">
-          <template #cell="{ rowIndex }">
-            {{ rowIndex + 1 }}
+        <a-table-column title="序号" :width="70" align="center">
+          <template #cell="{ rowIndex }">{{ rowIndex + 1 }}</template>
+        </a-table-column>
+        <a-table-column title="RPC地址" data-index="rpc_url" :ellipsis="true" :tooltip="true" />
+        <a-table-column title="优先级" data-index="priority" :width="80" align="center" />
+        <a-table-column title="状态" :width="80" align="center">
+          <template #cell="{ record }">
+            <a-switch 
+              v-model="record.is_active" 
+              size="small"
+              :before-change="() => handleSwitchBeforeChange(record)"
+            />
           </template>
         </a-table-column>
-        <a-table-column title="ID" data-index="id" :width="50" />
-        <a-table-column title="RPC地址" data-index="rpc_url" :width="300" :ellipsis="true" :tooltip="true" />
-        <a-table-column title="优先级" data-index="priority" :width="65" align="center" />
-        <a-table-column title="状态" :width="55" align="center">
+        <a-table-column title="响应时间" data-index="response_time" :width="100" align="center">
           <template #cell="{ record }">
-            <a-tag :color="record.is_active ? 'green' : 'red'">
-              {{ record.is_active ? '启用' : '禁用' }}
-            </a-tag>
-          </template>
-        </a-table-column>
-        <a-table-column title="响应时间(ms)" data-index="response_time" :width="105" align="center">
-          <template #cell="{ record }">
-            <span
-              :style="{ color: record.response_time > 200 ? '#f53f3f' : record.response_time > 100 ? '#ff7d00' : '#00b42a' }">
-              {{ record.response_time || '-' }}
+            <span :class="getResponseTimeClass(record.response_time)">
+              {{ (record.response_time !== null && record.response_time !== undefined) ? `${record.response_time} ms` : '-' }}
             </span>
           </template>
         </a-table-column>
-        <a-table-column title="成功率(%)" data-index="success_rate" :width="85" align="center">
+        <a-table-column title="成功率" data-index="success_rate" :width="90" align="center">
           <template #cell="{ record }">
-            <span
-              :style="{ color: record.success_rate < 95 ? '#f53f3f' : record.success_rate < 98 ? '#ff7d00' : '#00b42a' }">
-              {{ record.success_rate ? record.success_rate.toFixed(1) : '-' }}
+            <span :class="getSuccessRateClass(record.success_rate)">
+              {{ (record.success_rate !== null && record.success_rate !== undefined) ? `${record.success_rate.toFixed(0)}%` : '-' }}
             </span>
           </template>
         </a-table-column>
-        <a-table-column title="操作" :width="280">
+        <a-table-column title="操作" :width="100" align="center">
           <template #cell="{ record }">
-            <a-button type="text" @click="testRpcConnection(record)" size="small"
-              :loading="record.testing" status="normal">
-              {{ record.testing ? '测试中...' : '测试' }}
-            </a-button>
-            <a-button type="text" @click="showEditRpc(record)" size="small">
-              编辑
-            </a-button>
-            <a-button type="text" @click="toggleRpcStatus(record)" size="small"
-              :status="record.is_active ? 'warning' : 'success'">
-              {{ record.is_active ? '禁用' : '启用' }}
-            </a-button>
-            <a-popconfirm content="确定要删除这个RPC节点吗？" @ok="deleteRpcFromManage(record.id)">
-              <a-button type="text" status="danger" size="small">
-                删除
-              </a-button>
-            </a-popconfirm>
+            <a-space>
+              <!-- <a-tooltip :content="record.is_active ? '禁用' : '启用'">
+                <a-button 
+                  type="text" 
+                  @click="handleSwitchBeforeChange(record).then(res => { if(res) record.is_active = !record.is_active })"
+                  :status="record.is_active ? 'warning' : 'success'"
+                >
+                  <template #icon>
+                    <icon-stop v-if="record.is_active" :style="{ fontSize: '18px' }" />
+                    <icon-play-circle v-else :style="{ fontSize: '18px' }" />
+                  </template>
+                </a-button>
+              </a-tooltip>
+              <a-tooltip content="测试连接">
+                <a-button type="text" @click="testRpcConnection(record)" :loading="isRecordTesting(record)">
+                  <template #icon><icon-play-arrow :style="{ fontSize: '18px' }" /></template>
+                </a-button>
+              </a-tooltip> -->
+              <a-tooltip content="编辑">
+                <a-button type="text" @click="showEditRpc(record)">
+                  <template #icon><icon-edit :style="{ fontSize: '18px' }" /></template>
+                </a-button>
+              </a-tooltip>
+              <a-popconfirm content="确定要删除这个RPC节点吗？" @ok="deleteRpcFromManage(record.id)">
+                <a-tooltip content="删除">
+                  <a-button type="text" status="danger">
+                    <template #icon><icon-delete :style="{ fontSize: '18px' }" /></template>
+                  </a-button>
+                </a-tooltip>
+              </a-popconfirm>
+            </a-space>
           </template>
         </a-table-column>
       </template>
     </a-table>
-
-    <template #footer>
-      <a-button @click="closeManage">关闭</a-button>
-    </template>
   </a-modal>
 
   <!-- 添加/编辑RPC弹窗 -->
-  <a-modal v-model:visible="rpcFormVisible" :title="isRpcEditMode ? '编辑RPC' : '添加RPC'" :width="700"
-    @cancel="() => rpcFormVisible = false" :on-before-ok="submitRpcForm">
-    <a-form :model="rpcForm" layout="vertical">
-      <!-- 批量模式切换 -->
-      <div v-if="!isRpcEditMode" style="margin-bottom: 16px;">
-        <a-radio-group v-model="rpcInputMode" type="button">
-          <a-radio value="single">单个添加</a-radio>
-          <a-radio value="batch">批量添加</a-radio>
-        </a-radio-group>
-      </div>
-      
+  <a-modal 
+    v-model:visible="rpcFormVisible" 
+    :title="isRpcEditMode ? '编辑RPC' : '添加RPC'" 
+    :width="600"
+    @cancel="() => rpcFormVisible = false" 
+    :on-before-ok="submitRpcForm"
+  >
+    <div v-if="!isRpcEditMode" class="mode-tabs">
+      <a-tabs v-model:active-key="rpcInputMode" type="rounded" size="medium">
+        <a-tab-pane key="single" title="单个添加"></a-tab-pane>
+        <a-tab-pane key="batch" title="批量添加"></a-tab-pane>
+      </a-tabs>
+    </div>
+
+    <a-form :model="rpcForm" layout="vertical" class="rpc-form">
       <!-- 单个添加模式 -->
       <div v-if="rpcInputMode === 'single'">
         <a-form-item label="RPC地址" required>
-          <a-input v-model="rpcForm.rpc_url" placeholder="例如：https://mainnet.infura.io/v3/your-key" />
-          <template #help>
-            请输入完整的RPC地址，必须以http://或https://开头
-          </template>
+          <a-input v-model="rpcForm.rpc_url" placeholder="例如：https://mainnet.infura.io/v3/your-key" allow-clear />
+          <template #help>必须以 http:// 或 https:// 开头</template>
         </a-form-item>
 
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="优先级" required>
               <a-input-number v-model="rpcForm.priority" :min="1" :max="999" placeholder="100" />
-              <template #help>
-                数值越大优先级越高（1-999）
-              </template>
+              <template #help>数值越大优先级越高 (1-999)</template>
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -120,9 +152,8 @@
           <a-textarea
             v-model="batchRpcText"
             class="batch-rpc-textarea"
-            placeholder="请每行输入一个RPC地址&#10;例如：&#10;https://mainnet.infura.io/v3/your-key&#10;https://eth-mainnet.alchemyapi.io/v2/your-key&#10;https://rpc.ankr.com/eth&#10;&#10;系统将自动校验和去重"
-            rows="12"
-            style="width: 100%;"
+            placeholder="每行一个RPC地址，系统将自动校验和去重"
+            :auto-size="{ minRows: 8, maxRows: 12 }"
             @paste="handleBatchRpcPaste"
           />
         </a-form-item>
@@ -131,9 +162,6 @@
           <a-col :span="12">
             <a-form-item label="默认优先级">
               <a-input-number v-model="batchDefaultPriority" :min="1" :max="999" placeholder="100" />
-              <template #help>
-                批量添加的RPC将使用此优先级
-              </template>
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -143,23 +171,19 @@
           </a-col>
         </a-row>
         
-        <!-- 校验结果显示 -->
-        <div v-if="batchRpcValidation.length > 0" style="margin-bottom: 16px;">
-          <div style="margin-bottom: 8px; font-weight: 500;">校验结果：</div>
-          <div style="max-height: 100px; overflow-y: auto; border: 1px solid #e5e5e5; border-radius: 4px; padding: 8px;">
-            <div v-for="(item, index) in batchRpcValidation" :key="index" 
-                 :style="{color: item.valid ? '#52c41a' : '#ff4d4f', fontSize: '12px', marginBottom: '4px'}">
-              {{ item.url }} - {{ item.message }}
-            </div>
-          </div>
-        </div>
-        
         <!-- 统计信息 -->
-        <div v-if="batchRpcStats.total > 0" style="background: #f6f8fa; padding: 12px; border-radius: 4px; font-size: 14px;display: flex;justify-content:space-between">
-          <div>总计：{{ batchRpcStats.total }} 个地址</div>
-          <div style="color: #52c41a;">有效：{{ batchRpcStats.valid }} 个</div>
-          <div style="color: #ff4d4f;">无效：{{ batchRpcStats.invalid }} 个</div>
-          <div style="color: #faad14;">重复：{{ batchRpcStats.duplicate }} 个</div>
+        <div v-if="batchRpcStats.total > 0" class="batch-stats">
+          <div class="stat-item total">总计: {{ batchRpcStats.total }}</div>
+          <div class="stat-item valid">有效: {{ batchRpcStats.valid }}</div>
+          <div class="stat-item invalid" v-if="batchRpcStats.invalid > 0">无效: {{ batchRpcStats.invalid }}</div>
+          <div class="stat-item duplicate" v-if="batchRpcStats.duplicate > 0">重复: {{ batchRpcStats.duplicate }}</div>
+        </div>
+
+        <!-- 校验结果显示 -->
+        <div v-if="batchRpcValidation.length > 0 && (batchRpcStats.invalid > 0 || batchRpcStats.duplicate > 0)" class="validation-results">
+          <div v-for="(item, index) in batchRpcValidation" :key="index" class="validation-item" :class="{ 'error': !item.valid }">
+             <span v-if="!item.valid" class="validation-msg">{{ item.url }} - {{ item.message }}</span>
+          </div>
         </div>
       </div>
     </a-form>
@@ -168,7 +192,7 @@
 
 <script setup>
 import { ref, reactive, watch, computed } from 'vue'
-import { IconPlus, IconDelete, IconThunderbolt } from '@arco-design/web-vue/es/icon'
+import { IconPlus, IconDelete, IconThunderbolt, IconEdit, IconPlayArrow, IconCheckCircle, IconCloseCircle, IconStop, IconPlayCircle } from '@arco-design/web-vue/es/icon'
 import { Notification } from '@arco-design/web-vue'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -236,6 +260,29 @@ watch(() => props.chainValue, (newVal) => {
   }
 })
 
+// 辅助函数：样式类
+function getResponseTimeClass(time) {
+  // 如果 time 是 null, undefined 或 0 (0可能表示异常或未测试，但如果是真0ms也不太可能)
+  // 严格判断 null 或 undefined
+  if (time === null || time === undefined) return 'text-gray'
+  if (time <= 200) return 'text-success'
+  if (time <= 500) return 'text-warning'
+  return 'text-danger'
+}
+
+function getSuccessRateClass(rate) {
+  if (rate === undefined || rate === null) return 'text-gray'
+  if (rate >= 98) return 'text-success'
+  if (rate >= 90) return 'text-warning'
+  return 'text-danger'
+}
+
+function isRecordTesting(record) {
+  const index = rpcManageData.value.findIndex(item => item.id === record.id)
+  if (index === -1) return false
+  return rpcManageData.value[index].testing
+}
+
 // 加载RPC数据
 async function loadRpcData() {
   if (!props.chainValue) return
@@ -244,10 +291,15 @@ async function loadRpcData() {
     rpcTableLoading.value = true
     const result = await invoke('get_rpc_providers', { chainKey: props.chainValue })
     // 排序：先按启用状态排序（启用在前），再按RPC地址排序
-    rpcManageData.value = sortRpcData(result || [])
+    const sortedData = sortRpcData(result || [])
+    // 初始化 UI 状态字段
+    rpcManageData.value = sortedData.map(item => ({
+      ...item,
+      testing: false
+    }))
   } catch (error) {
     console.error('加载RPC数据失败:', error)
-    Notification.error({ content: '加载RPC数据失败', position: 'topLeft' })
+    Notification.error({ content: '加载RPC数据失败: ' + (error.message || error), position: 'topLeft' })
   } finally {
     rpcTableLoading.value = false
   }
@@ -273,6 +325,8 @@ function showEditRpc(record) {
     is_active: record.is_active !== undefined ? record.is_active : true
   })
   
+  // 强制切回单条模式
+  rpcInputMode.value = 'single'
   rpcFormVisible.value = true
 }
 
@@ -456,7 +510,7 @@ async function submitSingleRpc() {
   } else {
     await invoke('add_rpc_provider', {
       chainKey: rpcData.chain_key,
-      rpcUrl: rpcData.rpc_url,
+      rpc_url: rpcData.rpc_url,
       priority: rpcData.priority
     })
     Notification.success({ content: 'RPC添加成功', position: 'topLeft' })
@@ -563,7 +617,7 @@ async function submitBatchRpcs() {
     try {
       await invoke('add_rpc_provider', {
         chainKey: props.chainValue,
-        rpcUrl: url,
+        rpc_url: url,
         priority: batchDefaultPriority.value
       })
       successCount++
@@ -591,41 +645,38 @@ async function submitBatchRpcs() {
 
 // 测试RPC连接
 async function testRpcConnection(record) {
+  if (!record || !record.rpc_url) return
+
+  // 查找最新的记录索引，确保响应式更新
+  const index = rpcManageData.value.findIndex(item => item.id === record.id)
+  if (index === -1) return
+
   try {
     // 设置测试状态
-    const index = rpcManageData.value.findIndex(item => item.id === record.id)
-    if (index !== -1) {
-      rpcManageData.value[index].testing = true
-    }
+    rpcManageData.value[index].testing = true
     
     console.log('开始测试RPC连接:', record.rpc_url)
-    const result = await invoke('test_rpc_connection', { rpcUrl: record.rpc_url })
+     const result = await invoke('test_rpc_connection', { rpcUrl: record.rpc_url })
     console.log('RPC测试结果:', result)
     
     if (result.success) {
-      Notification.success({ content: `RPC测试成功，响应时间: ${result.response_time_ms}ms`, position: 'topLeft' })
-      // 更新响应时间 - 使用响应式更新
-      if (index !== -1) {
-        rpcManageData.value[index].response_time = result.response_time_ms
+      Notification.success({ content: `测试成功: ${result.response_time_ms}ms`, position: 'topLeft' })
+      // 更新响应时间
+      rpcManageData.value[index].response_time = result.response_time_ms
+      // 如果没有成功率数据，暂时设为 100
+      if (rpcManageData.value[index].success_rate === undefined || rpcManageData.value[index].success_rate === null) {
+        rpcManageData.value[index].success_rate = 100
       }
     } else {
-      Notification.error({ content: `RPC测试失败: ${result.error || '未知错误'}`, position: 'topLeft' })
-      if (index !== -1) {
-        rpcManageData.value[index].response_time = null
-      }
+      Notification.error({ content: `测试失败`, position: 'topLeft' })
+      rpcManageData.value[index].response_time = null
     }
   } catch (error) {
     console.error('RPC测试失败:', error)
-    Notification.error({ content: 'RPC测试失败: ' + error.message, position: 'topLeft' })
-    const index = rpcManageData.value.findIndex(item => item.id === record.id)
-    if (index !== -1) {
-      rpcManageData.value[index].response_time = null
-    }
+    Notification.error({ content: '测试出错: ' + (error.message || error), position: 'topLeft' })
+    rpcManageData.value[index].response_time = null
   } finally {
-    const index = rpcManageData.value.findIndex(item => item.id === record.id)
-    if (index !== -1) {
-      rpcManageData.value[index].testing = false
-    }
+    rpcManageData.value[index].testing = false
   }
 }
 
@@ -641,24 +692,27 @@ async function batchTestAllRpc() {
     console.log('开始批量测试RPC节点，总数:', rpcManageData.value.length)
     
     // 并发测试所有RPC
-    const testPromises = rpcManageData.value.map(async (record, index) => {
+    const testPromises = rpcManageData.value.map(async (item, index) => {
+      // 跳过已经在测试中的
+      if (item.testing) return
+
       try {
         rpcManageData.value[index].testing = true
-        console.log('测试RPC:', record.rpc_url)
-        const result = await invoke('test_rpc_connection', { rpcUrl: record.rpc_url })
-        console.log('RPC测试结果:', record.rpc_url, result)
+        console.log('测试RPC:', item.rpc_url)
+         const result = await invoke('test_rpc_connection', { rpcUrl: item.rpc_url })
         
         if (result.success) {
           rpcManageData.value[index].response_time = result.response_time_ms
-          rpcManageData.value[index].success_rate = 100 // 简化处理，实际应该基于历史数据
+          // 如果没有成功率数据，暂时设为 100，给用户正向反馈
+          if (rpcManageData.value[index].success_rate === undefined || rpcManageData.value[index].success_rate === null) {
+            rpcManageData.value[index].success_rate = 100
+          }
         } else {
           rpcManageData.value[index].response_time = null
-          rpcManageData.value[index].success_rate = 0
         }
       } catch (error) {
-        console.error('RPC测试失败:', record.rpc_url, error)
+        console.error('RPC测试失败:', item.rpc_url, error)
         rpcManageData.value[index].response_time = null
-        rpcManageData.value[index].success_rate = 0
       } finally {
         rpcManageData.value[index].testing = false
       }
@@ -674,31 +728,98 @@ async function batchTestAllRpc() {
   }
 }
 
-// 切换RPC状态
-async function toggleRpcStatus(record) {
+// Switch 改变前的钩子，实际逻辑在 toggleRpcStatus 中处理
+// 这里返回 Promise 来控制 switch 状态
+async function handleSwitchBeforeChange(record) {
   try {
+    // 乐观更新：先切换
+    const newValue = !record.is_active
+    
+    // 调用后端 API
+    // 注意：Tauri invoke 参数映射默认可能是驼峰转下划线，也可能需要完全匹配
+    // 为了稳妥，这里使用后端定义的参数名 rpc_url
     await invoke('update_rpc_provider', {
       id: record.id,
       request: {
         rpc_url: record.rpc_url,
         priority: record.priority,
-        is_active: !record.is_active
+        is_active: newValue
       }
     })
     
-    // 使用响应式更新
-    const index = rpcManageData.value.findIndex(item => item.id === record.id)
-    if (index !== -1) {
-      rpcManageData.value[index].is_active = !rpcManageData.value[index].is_active
-    }
+    // 成功后，通知并保持新状态
+    Notification.success({ content: `RPC已${newValue ? '启用' : '禁用'}`, position: 'topLeft' })
     
-    // 重新排序数据
-    rpcManageData.value = sortRpcData(rpcManageData.value)
-
-    Notification.success({ content: `RPC已${!record.is_active ? '启用' : '禁用'}`, position: 'topLeft' })
+    // 注意：这里取消了 sortRpcData 的调用，避免用户点击后列表跳变
+    // 如果需要更新顺序，建议在页面加载时处理，或者提供专门的排序按钮
+    
+    return true // 允许切换
   } catch (error) {
     console.error('切换RPC状态失败:', error)
     Notification.error({ content: '切换RPC状态失败: ' + error.message, position: 'topLeft' })
+    return false // 阻止切换
+  }
+}
+
+// 批量启用所有RPC
+async function batchEnableAllRpc() {
+  if (rpcManageData.value.length === 0) return
+  
+  try {
+    // 并发更新
+    const promises = rpcManageData.value
+      .filter(item => !item.is_active)
+      .map(item => invoke('update_rpc_provider', {
+        id: item.id,
+        request: {
+          rpc_url: item.rpc_url,
+          priority: item.priority,
+          is_active: true
+        }
+      }))
+      
+    if (promises.length === 0) {
+      Notification.info({ content: '所有节点已处于启用状态', position: 'topLeft' })
+      return
+    }
+    
+    await Promise.all(promises)
+    Notification.success({ content: `已启用 ${promises.length} 个节点`, position: 'topLeft' })
+    await loadRpcData()
+  } catch (error) {
+    console.error('批量启用失败:', error)
+    Notification.error({ content: '批量启用失败', position: 'topLeft' })
+  }
+}
+
+// 批量禁用所有RPC
+async function batchDisableAllRpc() {
+  if (rpcManageData.value.length === 0) return
+  
+  try {
+    // 并发更新
+    const promises = rpcManageData.value
+      .filter(item => item.is_active)
+      .map(item => invoke('update_rpc_provider', {
+        id: item.id,
+        request: {
+          rpc_url: item.rpc_url,
+          priority: item.priority,
+          is_active: false
+        }
+      }))
+      
+    if (promises.length === 0) {
+      Notification.info({ content: '所有节点已处于禁用状态', position: 'topLeft' })
+      return
+    }
+    
+    await Promise.all(promises)
+    Notification.success({ content: `已禁用 ${promises.length} 个节点`, position: 'topLeft' })
+    await loadRpcData()
+  } catch (error) {
+    console.error('批量禁用失败:', error)
+    Notification.error({ content: '批量禁用失败', position: 'topLeft' })
   }
 }
 
@@ -737,9 +858,97 @@ defineExpose({
 </script>
 
 <style scoped>
-/* 批量RPC地址输入框高度 */
-.batch-rpc-textarea :deep(textarea) {
-  min-height: 180px !important;
-  max-height: 250px !important;
+.rpc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.header-right{
+  flex: 1;
+}
+
+.header-actions{
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--color-text-1);
+}
+
+.rpc-count {
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.mode-tabs {
+  margin-bottom: 20px;
+}
+
+.rpc-form {
+  margin-top: 10px;
+}
+
+.batch-stats {
+  display: flex;
+  gap: 16px;
+  padding: 10px 16px;
+  background-color: var(--color-fill-2);
+  border-radius: 4px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+}
+
+.stat-item.total { color: var(--color-text-2); }
+.stat-item.valid { color: rgb(var(--green-6)); }
+.stat-item.invalid { color: rgb(var(--red-6)); }
+.stat-item.duplicate { color: rgb(var(--orange-6)); }
+
+.validation-results {
+  margin-top: 12px;
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.validation-item {
+  font-size: 12px;
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.validation-item.error {
+  color: rgb(var(--red-6));
+}
+
+.text-success { color: rgb(var(--green-6)); }
+.text-warning { color: rgb(var(--orange-6)); }
+.text-danger { color: rgb(var(--red-6)); }
+.text-gray { color: var(--color-text-4); }
+
+/* 调整表格内开关和按钮的垂直对齐 */
+:deep(.arco-table-cell) {
+  vertical-align: middle;
 }
 </style>

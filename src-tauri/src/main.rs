@@ -327,6 +327,7 @@ async fn main() {
             // transfer functions
             wallets_tool::transfer::base_coin_transfer,
             wallets_tool::transfer::base_coin_transfer_fast,
+            wallets_tool::transfer::check_transactions_status_batch,
             wallets_tool::transfer::check_transaction_status,
             wallets_tool::transfer::query_balance,
             wallets_tool::transfer::check_wallet_recent_transfers,

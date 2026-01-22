@@ -1,43 +1,35 @@
 import { ref, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { Notification } from '@arco-design/web-vue';
-import { debounce as customDebounce } from '@/utils/debounce.js';
 
 export function useTransfer(options = {}) {
   const {
     data,
     form,
     chainValue,
-    currentChain,
     currentCoin,
     threadCount,
     enableMultiThread,
     transferConfig,
-    transferProgress,
-    transferTotal,
-    transferCompleted,
     showProgress,
     startLoading,
     stopFlag,
     stopStatus,
     transferStartTime,
-    hasExecutedTransfer,
     transferSessionCompleted,
     updateTransferProgress,
     checkGasPriceForTransfer,
     startGasPriceMonitoring,
-    stopGasPriceMonitoring,
     transferPaused,
     pausedTransferData,
-    validateForm,
-    quickValidateData,
-    resetDataStatusAsync,
-    clearValidationCache,
     executeTransfer,
   } = options;
 
   const retryInProgress = ref(false);
   const retryResults = ref([]);
+  const MAX_RETRY_ROUNDS = 3;
+  const currentRetryRound = ref(0);
+  const lastTransferStartTime = ref(0);
 
   async function performIntelligentRetry(failedData) {
     if (!transferStartTime.value) {
@@ -46,73 +38,128 @@ export function useTransfer(options = {}) {
       return;
     }
 
+    // 检查是否为新一轮任务（根据开始时间变化判断）
+    if (transferStartTime.value !== lastTransferStartTime.value) {
+      currentRetryRound.value = 0;
+      lastTransferStartTime.value = transferStartTime.value;
+    }
+
+    if (currentRetryRound.value >= MAX_RETRY_ROUNDS) {
+      Notification.warning({
+        content: `已达到最大重试次数 (${MAX_RETRY_ROUNDS}次)，停止重试以防止死循环`,
+        position: 'topLeft',
+      });
+      stopStatus.value = true;
+      transferSessionCompleted.value = true;
+      return;
+    }
+
+    currentRetryRound.value++;
     retryInProgress.value = true;
     retryResults.value = [];
 
     Notification.info({
-      content: `开始智能重试检查，共 ${failedData.length} 笔失败交易`,
+      content: `开始第 ${currentRetryRound.value}/${MAX_RETRY_ROUNDS} 轮智能重试检查，共 ${failedData.length} 笔失败交易`,
       position: 'topLeft',
     });
 
     try {
       const retryList = [];
+      const concurrency = 5; // 并发检查数
 
-      for (const item of failedData) {
-        try {
-          const hasRecentTransfer = await checkRecentTransfer(
-            item.private_key,
-            item.to_addr,
-            transferStartTime.value,
-          );
+      for (let i = 0; i < failedData.length; i += concurrency) {
+        if (stopFlag.value) break;
+        const chunk = failedData.slice(i, i + concurrency);
+        await Promise.all(
+          chunk.map(async (item) => {
+            try {
+              // 确定用于校验的金额
+              // 只有当转账类型为"固定数量"(type='2')时，才能进行精确金额校验
+              // 其他类型(全部/随机等)金额不固定，只校验地址
+              let amountToCheck = null;
+              if (transferConfig.value && transferConfig.value.transfer_type === '2') {
+                if (form.amount_from === '1') {
+                  amountToCheck = item.amount ? String(item.amount) : null;
+                } else {
+                  amountToCheck = form.send_count ? String(form.send_count) : null;
+                }
+              }
 
-          if (hasRecentTransfer) {
-            const realIndex = data.value.findIndex(
-              (dataItem) => dataItem.key === item.key,
-            );
-            if (realIndex !== -1) {
-              data.value[realIndex].error_msg =
-                  '检测到链上已有相关交易，跳过重试';
-              data.value[realIndex].exec_status = '2';
+              const hasRecentTransfer = await checkRecentTransfer(
+                item.private_key,
+                item.to_addr,
+                transferStartTime.value,
+                amountToCheck
+              );
+
+              if (hasRecentTransfer) {
+                const realIndex = data.value.findIndex(
+                  (dataItem) => dataItem.key === item.key
+                );
+                if (realIndex !== -1) {
+                  data.value[realIndex].error_msg =
+                    '检测到链上已有相关交易，跳过重试';
+                  data.value[realIndex].exec_status = '2';
+                  data.value[realIndex].retry_flag = false;
+                }
+                retryResults.value.push({
+                  key: item.key,
+                  address: item.to_addr,
+                  action: '跳过重试',
+                  reason: '检测到链上已有相关交易',
+                });
+              } else {
+                retryList.push(item);
+                retryResults.value.push({
+                  key: item.key,
+                  address: item.to_addr,
+                  action: '加入重试',
+                  reason: '未检测到相关链上交易',
+                });
+              }
+            } catch (error) {
+              console.error(`检查交易失败 ${item.to_addr}:`, error);
+              retryList.push(item);
+              retryResults.value.push({
+                key: item.key,
+                address: item.to_addr,
+                action: '加入重试',
+                reason: '检查失败，保守重试',
+              });
             }
-            retryResults.value.push({
-              key: item.key,
-              address: item.to_addr,
-              action: '跳过重试',
-              reason: '检测到链上已有相关交易',
-            });
-          } else {
-            retryList.push(item);
-            retryResults.value.push({
-              key: item.key,
-              address: item.to_addr,
-              action: '加入重试',
-              reason: '未检测到相关链上交易',
-            });
-          }
-        } catch (error) {
-          console.error(`检查交易失败 ${item.to_addr}:`, error);
-          retryList.push(item);
-          retryResults.value.push({
-            key: item.key,
-            address: item.to_addr,
-            action: '加入重试',
-            reason: '检查失败，保守重试',
-          });
-        }
+          })
+        );
       }
 
       retryInProgress.value = false;
 
+      if (stopFlag.value) {
+        Notification.warning({ content: '重试检查已停止', position: 'topLeft' });
+        stopStatus.value = true;
+        return;
+      }
+
       if (retryList.length > 0) {
         Notification.info({
-          content: `智能重试检查完成，将重试 ${retryList.length} 笔交易，跳过 ${failedData.length - retryList.length} 笔交易`,
+          content: `智能检查完成，将重试 ${retryList.length} 笔交易`,
           position: 'topLeft',
         });
-        executeTransfer(retryList);
+        
+        // 重置待重试数据的状态
+        retryList.forEach((item) => {
+          const realIndex = data.value.findIndex((d) => d.key === item.key);
+          if (realIndex !== -1) {
+            data.value[realIndex].exec_status = '0';
+            data.value[realIndex].error_msg = `等待重试 (${currentRetryRound.value}/${MAX_RETRY_ROUNDS})...`;
+          }
+        });
+
+        // 传入 false 以避免重置 transferStartTime
+        executeTransfer(retryList, false);
       } else {
         Notification.success({
           content:
-              '智能重试检查完成，所有失败交易均检测到链上已有相关交易，无需重试',
+            '智能重试检查完成，所有失败交易均已确认成功或跳过',
           position: 'topLeft',
         });
         stopStatus.value = true;
@@ -122,14 +169,15 @@ export function useTransfer(options = {}) {
       console.error('智能重试检查失败:', error);
       retryInProgress.value = false;
       Notification.error({
-        content: '智能重试检查失败，使用传统重试方式',
+        content: '智能重试检查异常，停止重试',
         position: 'topLeft',
       });
-      executeTransfer(failedData);
+      stopStatus.value = true;
+      transferSessionCompleted.value = true;
     }
   }
 
-  async function checkRecentTransfer(privateKey, targetAddress, startTime) {
+  async function checkRecentTransfer(privateKey, targetAddress, startTime, amount = null) {
     try {
       const result = await invoke('check_wallet_recent_transfers', {
         chain: chainValue.value,
@@ -141,6 +189,7 @@ export function useTransfer(options = {}) {
             currentCoin.value.coin_type === 'token'
                 ? currentCoin.value.contract_address
                 : null,
+        amount: amount,
       });
 
       return result.has_recent_transfer || false;
@@ -305,6 +354,7 @@ export function useTransfer(options = {}) {
               } else {
                 data.value[realIndex].exec_status = '3';
                 data.value[realIndex].error_msg = err;
+                data.value[realIndex].retry_flag = true;
                 updateTransferProgress();
               }
             }
@@ -350,6 +400,7 @@ export function useTransfer(options = {}) {
               } else {
                 data.value[realIndex].exec_status = '3';
                 data.value[realIndex].error_msg = err;
+                data.value[realIndex].retry_flag = true;
                 updateTransferProgress();
               }
             }
@@ -363,6 +414,7 @@ export function useTransfer(options = {}) {
         } catch (e) {
           data.value[realIndex].exec_status = '3';
           data.value[realIndex].error_msg = e.message || '转账异常';
+          data.value[realIndex].retry_flag = true;
           updateTransferProgress();
         }
 
@@ -515,6 +567,7 @@ export function useTransfer(options = {}) {
               } else {
                 data.value[realIndex].exec_status = '3';
                 data.value[realIndex].error_msg = err;
+                data.value[realIndex].retry_flag = true;
                 updateTransferProgress();
               }
             }
@@ -560,6 +613,7 @@ export function useTransfer(options = {}) {
               } else {
                 data.value[realIndex].exec_status = '3';
                 data.value[realIndex].error_msg = err;
+                data.value[realIndex].retry_flag = true;
                 updateTransferProgress();
               }
             }
@@ -573,6 +627,7 @@ export function useTransfer(options = {}) {
         } catch (e) {
           data.value[realIndex].exec_status = '3';
           data.value[realIndex].error_msg = e.message || '转账异常';
+          data.value[realIndex].retry_flag = true;
           updateTransferProgress();
         }
       }
@@ -618,6 +673,7 @@ export function useTransfer(options = {}) {
     });
 
     const pendingTransactions = [];
+    const submissionFinished = { value: false }; // 使用对象引用传递状态
 
     const walletGroups = new Map();
     accountData.forEach((item) => {
@@ -689,12 +745,16 @@ export function useTransfer(options = {}) {
           if (res && res.success && res.tx_hash) {
             data.value[realIndex].error_msg =
                 `已提交，等待确认: ${res.tx_hash.substring(0, 15)}...`;
+            
+            // 将交易加入待确认列表
             pendingTransactions.push({
               key: item.key,
               realIndex,
               txHash: res.tx_hash,
               item,
               config,
+              retryCount: 0,
+              startTime: Date.now(),
             });
           } else {
             data.value[realIndex].exec_status = '3';
@@ -723,108 +783,109 @@ export function useTransfer(options = {}) {
       }
     };
 
+    // 启动确认线程
+    const confirmationWorker = async () => {
+      const BATCH_SIZE = 50; // 批量查询大小
+      const CHECK_INTERVAL = 1000; // 检查间隔 (ms)
+      const MAX_CONFIRM_TIME = 60000; // 最大确认时间 60s (超时则标记失败)
+
+      while (!stopFlag.value) {
+        if (pendingTransactions.length === 0) {
+          if (submissionFinished.value) {
+            break; // 提交完成且无待确认交易，退出
+          }
+          await new Promise((r) => setTimeout(r, 500));
+          continue;
+        }
+
+        // 处理超时交易
+        const now = Date.now();
+        for (let i = pendingTransactions.length - 1; i >= 0; i--) {
+            if (now - pendingTransactions[i].startTime > MAX_CONFIRM_TIME) {
+                const tx = pendingTransactions[i];
+                data.value[tx.realIndex].exec_status = '3';
+                data.value[tx.realIndex].error_msg = '确认超时';
+                data.value[tx.realIndex].retry_flag = true;
+                updateTransferProgress();
+                pendingTransactions.splice(i, 1);
+            }
+        }
+        
+        if (pendingTransactions.length === 0) continue;
+
+        // 批量查询
+        // 我们只查询前 BATCH_SIZE 个，或者所有 pending 的 (如果支持大批量)
+        // 这里为了避免并发冲突，我们取出一批进行查询，查询期间它们仍在数组中，但我们只处理这批
+        // 为了防止重复频繁查询同一个，我们可以简单地轮询
+        
+        const batch = pendingTransactions.slice(0, BATCH_SIZE);
+        if (batch.length === 0) {
+             await new Promise((r) => setTimeout(r, 500));
+             continue;
+        }
+
+        const txHashes = batch.map(t => t.txHash);
+        
+        try {
+            const results = await invoke('check_transactions_status_batch', {
+                chain: chainValue.value,
+                tx_hashes: txHashes
+            });
+            
+            // 处理结果
+            const confirmedIndices = []; // 在 batch 中的索引
+            
+            results.forEach((res) => {
+                const txInfo = batch.find(t => t.txHash === res.hash);
+                if (!txInfo) return;
+                
+                if (res.status.confirmed) {
+                    if (res.status.success === true) {
+                        data.value[txInfo.realIndex].exec_status = '2';
+                        data.value[txInfo.realIndex].error_msg = txInfo.txHash;
+                        data.value[txInfo.realIndex].retry_flag = false;
+                    } else {
+                         data.value[txInfo.realIndex].exec_status = '3';
+                         data.value[txInfo.realIndex].error_msg = res.status.error || '交易执行失败';
+                         data.value[txInfo.realIndex].retry_flag = true;
+                    }
+                    updateTransferProgress();
+                    
+                    // 标记为已完成，需要从 pendingTransactions 中移除
+                    // 我们记录 txHash 来移除
+                    const idx = pendingTransactions.findIndex(t => t.txHash === res.hash);
+                    if (idx !== -1) {
+                        pendingTransactions.splice(idx, 1);
+                    }
+                } else {
+                     // 仍在确认中
+                     // 可以更新 UI 显示确认中...
+                     data.value[txInfo.realIndex].error_msg = `确认中... ${txInfo.txHash.substring(0, 10)}`;
+                }
+            });
+            
+        } catch (e) {
+            console.error('[狂暴模式] 批量查询失败:', e);
+        }
+
+        await new Promise((r) => setTimeout(r, CHECK_INTERVAL));
+      }
+    };
+
+    const confirmWorkerPromise = confirmationWorker();
+
     for (let i = 0; i < maxConcurrency; i++) {
       workers.push(startSubmitWorker());
     }
 
     await Promise.all(workers);
+    submissionFinished.value = true;
+    
+    // 等待确认线程完成
+    await confirmWorkerPromise;
 
     if (stopFlag.value) {
       console.log('[狂暴模式] 用户停止，中断执行');
-      return;
-    }
-
-    if (pendingTransactions.length > 0) {
-      Notification.info({
-        content: `开始确认 ${pendingTransactions.length} 笔交易结果...`,
-        position: 'topLeft',
-      });
-
-      const confirmBatchSize = 50;
-      const maxRetries = 30;
-      let retryCount = 0;
-
-      while (
-          pendingTransactions.length > 0 &&
-          retryCount < maxRetries &&
-          !stopFlag.value
-      ) {
-        retryCount++;
-
-        const confirmedIndices = [];
-
-        for (
-            let batchStart = 0;
-            batchStart < pendingTransactions.length;
-            batchStart += confirmBatchSize
-        ) {
-          if (stopFlag.value) break;
-
-          const batch = pendingTransactions.slice(
-              batchStart,
-              batchStart + confirmBatchSize,
-          );
-
-          const confirmPromises = batch.map(async (txInfo, batchIdx) => {
-            const globalIdx = batchStart + batchIdx;
-            try {
-              const statusResult = await invoke(
-                  'check_transaction_status',
-                  {
-                    chain: chainValue.value,
-                    txHash: txInfo.txHash,
-                  },
-              );
-
-              if (statusResult.confirmed) {
-                if (statusResult.success === true) {
-                  data.value[txInfo.realIndex].exec_status = '2';
-                  data.value[txInfo.realIndex].error_msg = txInfo.txHash;
-                  data.value[txInfo.realIndex].retry_flag = false;
-                  confirmedIndices.push(globalIdx);
-                } else {
-                  data.value[txInfo.realIndex].exec_status = '3';
-                  data.value[txInfo.realIndex].error_msg =
-                      statusResult.error || '交易执行失败';
-                  data.value[txInfo.realIndex].retry_flag = true;
-                  confirmedIndices.push(globalIdx);
-                }
-                updateTransferProgress();
-              } else {
-                data.value[txInfo.realIndex].error_msg =
-                    `确认中...(${retryCount}/${maxRetries}) ${txInfo.txHash.substring(0, 15)}...`;
-              }
-            } catch (err) {
-              console.error('[狂暴模式] 查询交易状态失败:', err);
-            }
-          });
-
-          await Promise.all(confirmPromises);
-        }
-
-        confirmedIndices.sort((a, b) => b - a);
-        for (const idx of confirmedIndices) {
-          pendingTransactions.splice(idx, 1);
-        }
-
-        if (
-            pendingTransactions.length > 0 &&
-            retryCount < maxRetries &&
-            !stopFlag.value
-        ) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      }
-
-      if (pendingTransactions.length > 0) {
-        for (const txInfo of pendingTransactions) {
-          data.value[txInfo.realIndex].exec_status = '3';
-          data.value[txInfo.realIndex].error_msg =
-              `确认超时: ${txInfo.txHash.substring(0, 20)}...`;
-          data.value[txInfo.realIndex].retry_flag = true;
-          updateTransferProgress();
-        }
-      }
     }
   }
 

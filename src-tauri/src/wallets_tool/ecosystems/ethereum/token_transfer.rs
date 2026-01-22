@@ -10,7 +10,7 @@ use tauri::Emitter;
 use super::transfer::{TransferConfig, TransferItem, TransferResult, TransferUtils, create_provider, create_signer_provider, get_rpc_config, FastTransferResult, get_stop_flag};
 use crate::wallets_tool::ecosystems::ethereum::provider::{ProviderUtils, AlloyProvider};
 use hex;
-use super::alloy_utils::{parse_ether_to_wei_f64, parse_gwei_to_wei, format_wei_to_ether, format_wei_to_gwei, u256_to_f64};
+use super::alloy_utils::{parse_ether_to_wei_f64, format_wei_to_ether, format_wei_to_gwei, u256_to_f64};
 
 
 
@@ -458,6 +458,11 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     item.retry_flag = false;
     let window_id = config.window_id.as_deref().unwrap_or("");
     
+    // 0. 检查停止状态
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+
     if item.private_key.trim().is_empty() {
         return Err("私钥不能为空！".into());
     }
@@ -471,13 +476,22 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     let signer: PrivateKeySigner = private_key.parse()
         .map_err(|e| format!("私钥格式错误: {}", e))?;
     
+    // 复用 Provider 逻辑
+    let provider = create_provider(&config.chain, config.window_id.as_deref()).await
+        .map_err(|e| format!("获取RPC提供商失败: {}", e))?;
+
     let chain_id = match ProviderUtils::get_chain_id(&config.chain).await {
         Ok(id) => id,
         Err(_) => {
-            match get_rpc_config(&config.chain).await {
-                Some(c) => c.chain_id,
-                None => {
-                    return Err(format!("无法获取链 '{}' 的配置信息", config.chain).into());
+            match provider.get_chain_id().await {
+                Ok(id) => id,
+                Err(_) => {
+                    match get_rpc_config(&config.chain).await {
+                        Some(c) => c.chain_id,
+                        None => {
+                            return Err(format!("无法获取链 '{}' 的配置信息", config.chain).into());
+                        }
+                    }
                 }
             }
         }
@@ -494,30 +508,24 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     let contract_address: Address = config.contract_address.parse()
         .map_err(|e| format!("代币合约地址格式错误: {}", e))?;
     
-    let provider = create_provider(&config.chain, config.window_id.as_deref()).await
-        .map_err(|e| format!("获取RPC提供商失败: {}", e))?;
-    
-    let (symbol, decimals) = TokenTransferUtils::get_token_info(&provider, contract_address).await
-        .map_err(|e| format!("获取代币信息失败: {}", e))?;
-    println!("[DEBUG] 代币符号: {}, 精度: {}", symbol, decimals);
-    
-    let wallet_balance = TokenTransferUtils::get_token_balance(&provider, contract_address, wallet_address).await
-        .map_err(|e| format!("获取钱包代币余额失败: {}", e))?;
-    let wallet_balance_eth = u256_to_f64(wallet_balance) / 10f64.powi(decimals as i32);
-    println!("[DEBUG] 钱包代币余额: {} {}", wallet_balance_eth, symbol);
-    
-    let transfer_amount = parse_ether_to_wei_f64(config.transfer_amount)
-        .map_err(|e| format!("代币金额解析失败: {}", e))?;
-    let transfer_amount_tokens = config.transfer_amount;
-    println!("[DEBUG] 计划转账数量: {} {}", transfer_amount_tokens, symbol);
-    
-    if wallet_balance < transfer_amount {
-        return Err(format!("余额不足，需要 {} {}，实际 {} {}", transfer_amount_tokens, symbol, wallet_balance_eth, symbol).into());
+    // 检查停止状态
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
     }
+
+    let (_symbol, decimals) = TokenTransferUtils::get_token_info(&provider, contract_address).await
+        .map_err(|e| format!("获取代币信息失败: {}", e))?;
     
-    let gas_limit = TokenTransferUtils::get_contract_gas_limit(&config, provider.clone(), contract_address, wallet_address, to_address, transfer_amount).await?;
-    println!("[DEBUG] 预估Gas Limit: {}", gas_limit);
+    let balance = TokenTransferUtils::get_token_balance(&provider, contract_address, wallet_address).await
+        .map_err(|e| format!("获取钱包代币余额失败: {}", e))?;
     
+    let balance_wei = u256_to_f64(balance);
+
+    // 检查停止状态
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+
     let gas_price = TransferUtils::get_gas_price(&TransferConfig {
         chain: config.chain.clone(),
         delay: config.delay,
@@ -538,10 +546,71 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
         window_id: config.window_id.clone(),
     }, provider.clone()).await
         .map_err(|e| format!("获取Gas Price失败: {}", e))?;
-    let gas_price_wei = parse_gwei_to_wei(u256_to_f64(gas_price));
-    println!("[DEBUG] Gas Price: {} Gwei", gas_price);
+        
+    if gas_price.is_zero() {
+        return Err("获取到的 gas price 为0".into());
+    }
     
-    let _max_fee = gas_price_wei * U256::from(2);
+    // 计算转账金额 (修复：支持多种转账类型)
+    let transfer_amount = match config.transfer_type.as_str() {
+        "1" => balance,
+        "2" => {
+            let amount = parse_ether_to_wei_f64(config.transfer_amount)?
+                * U256::from(10u64.pow(decimals as u32 - 18));
+            if amount >= balance {
+                return Err("当前余额不足，不做转账操作！".into());
+            }
+            amount
+        }
+        "3" => {
+            let mut rng = rand::thread_rng();
+            let random_amount = rng.gen_range(config.transfer_amount_list[0]..=config.transfer_amount_list[1]);
+            let formatted_amount = format!("{:.precision$}", random_amount, precision = config.amount_precision as usize);
+            let precise_amount: f64 = formatted_amount.parse()?;
+            let amount = parse_ether_to_wei_f64(precise_amount)?
+                * U256::from(10u64.pow(decimals as u32 - 18));
+            if amount >= balance {
+                return Err("当前余额不足，不做转账操作！".into());
+            }
+            amount
+        }
+        "4" => {
+            let balance_ether = balance_wei / 10f64.powi(decimals as i32);
+            let gas_fee_wei = u256_to_f64(gas_price * U256::from(65000));
+            let gas_fee_ether = gas_fee_wei / 1e18;
+            let available_balance = balance_ether - gas_fee_ether;
+            
+            if available_balance <= config.left_amount_list[1] {
+                return Err(format!("当前可用余额为：{}，无法满足最大剩余数量 {} 要求", available_balance, config.left_amount_list[1]).into());
+            }
+            
+            let mut rng = rand::thread_rng();
+            let left_amount = rng.gen_range(config.left_amount_list[0]..=config.left_amount_list[1]);
+            let transfer_amount_f64 = available_balance - left_amount;
+            
+            if transfer_amount_f64 <= 0.0 {
+                return Err("计算转账金额为负数或零，不做转账操作！".into());
+            }
+            
+            let formatted_amount = format!("{:.precision$}", transfer_amount_f64, precision = config.amount_precision as usize);
+            let precise_amount: f64 = formatted_amount.parse()?;
+            parse_ether_to_wei_f64(precise_amount)? * U256::from(10u64.pow(decimals as u32 - 18))
+        }
+        _ => return Err("无效的转账类型".into()),
+    };
+    
+    // 检查停止状态
+    if !window_id.is_empty() && get_stop_flag(window_id) {
+        return Err("用户已停止转账任务".into());
+    }
+    
+    let gas_limit = TokenTransferUtils::get_contract_gas_limit(&config, provider.clone(), contract_address, wallet_address, to_address, transfer_amount).await?;
+    
+    let _ = app_handle.emit("transfer_status_update", serde_json::json!({
+        "index": index - 1,
+        "error_msg": "发送交易中...",
+        "exec_status": "1"
+    }));
     
     let method_id = "a9059cbb";
     let to_param = format!("{:0>64}", &hex::encode(to_address)[2..]);
@@ -569,7 +638,7 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     let tx_hash = *pending_tx.tx_hash();
     let tx_hash_str = format!("{:?}", tx_hash);
     
-    println!("序号：{}, 交易 hash 为：{:?}", index, tx_hash);
+    println!("[狂暴模式] 序号：{}, 交易已提交，hash: {}", index, tx_hash_str);
     
     let _ = app_handle.emit("transfer_status_update", serde_json::json!({
         "index": index - 1,

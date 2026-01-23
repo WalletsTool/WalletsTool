@@ -15,6 +15,7 @@ import TitleBar from '@/components/TitleBar.vue'
 import TableSkeleton from '@/components/TableSkeleton.vue'
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import * as party from 'party-js'
+import { WINDOW_CONFIG } from '@/utils/windowNames'
 
 // 懒加载组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -25,18 +26,40 @@ const WalletImportModal = defineAsyncComponent(() => import('@/components/Wallet
 const router = useRouter();
 const route = useRoute();
 
+// 窗口标题定义
 const windowTitle = ref('Solana 批量转账');
+
+// 窗口标题初始化
+function initSolanaTransferWindowTitle() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      const windowLabel = getCurrentWindow().label
+      const saved = WINDOW_CONFIG.getCustomTitle(windowLabel)
+      if (saved) {
+        windowTitle.value = saved
+        return
+      }
+    }
+  } catch (e) {
+    console.error('初始化Solana转账窗口标题失败:', e)
+  }
+  
+  // 不再设置默认标题，由后端或调用方设置
+}
+
+initSolanaTransferWindowTitle()
 
 // 表格列定义
 const columns = [
   { title: "序号", width: 55, slotName: "index" },
-  { title: "发送方私钥", width: 250, dataIndex: "private_key", ellipsis: true, tooltip: true },
-  { title: "接收地址", width: 250, dataIndex: "to_addr", ellipsis: true, tooltip: true },
+  { title: "发送方私钥", dataIndex: "private_key", ellipsis: true, tooltip: true },
+  { title: "接收地址", width: 200, dataIndex: "to_addr", ellipsis: true, tooltip: true },
   { title: "转账数量", width: 95, dataIndex: "amount", ellipsis: true, tooltip: true },
   { title: "SOL余额", width: 95, dataIndex: "plat_balance", ellipsis: true, tooltip: true },
   { title: "代币余额", width: 85, dataIndex: "coin_balance", ellipsis: true, tooltip: true },
   { title: "状态", width: 90, slotName: "exec_status", ellipsis: true, tooltip: true },
-  { title: "返回信息", dataIndex: "error_msg", ellipsis: true, tooltip: true },
+  { title: "返回信息", width: 300, dataIndex: "error_msg", ellipsis: true, tooltip: true },
   { title: "操作", width: 55, slotName: "optional", ellipsis: true, tooltip: true }
 ];
 
@@ -98,6 +121,7 @@ const chainManageRef = ref(null);
 const rpcManageRef = ref(null);
 const tokenManageRef = ref(null);
 const walletImportRef = ref(null);
+const uploadInputRef = ref(null);
 
 // 进度相关
 const transferProgress = ref(0);
@@ -203,7 +227,7 @@ async function chainChange() {
       }
     } catch (error) {
       console.error('获取代币列表失败:', error);
-      Notification.error('获取代币列表失败');
+      Notification.error({ content: '获取代币列表失败', position: 'topLeft' });
     }
   }
 }
@@ -221,7 +245,7 @@ function coinChange() {
 // 查询余额
 async function queryBalance() {
   if (data.value.length === 0) {
-    Notification.error('请先导入转账数据');
+    Notification.error({ content: '请先导入转账数据', position: 'topLeft' });
     return;
   }
 
@@ -251,7 +275,7 @@ async function queryBalance() {
     const result = await invoke('query_balances', { params });
     
     if (result && result.success) {
-      Notification.success('余额查询完成');
+      Notification.success({ content: '余额查询完成', position: 'topLeft' });
     } else {
       Notification.error('余额查询失败: ' + (result?.error || '未知错误'));
     }
@@ -267,7 +291,7 @@ async function queryBalance() {
 // 开始转账
 async function startTransfer() {
   if (data.value.length === 0) {
-    Notification.error('请先导入转账数据');
+    Notification.error({ content: '请先导入转账数据', position: 'topLeft' });
     return;
   }
 
@@ -276,7 +300,7 @@ async function startTransfer() {
   );
 
   if (validData.length === 0) {
-    Notification.warning('没有可执行的转账数据');
+    Notification.warning({ content: '没有可执行的转账数据', position: 'topLeft' });
     return;
   }
 
@@ -308,7 +332,7 @@ async function startTransfer() {
 
     if (result && result.success) {
       const stats = transferStatistics.value;
-      Notification.success(`转账执行完成！成功: ${stats.succeeded}, 失败: ${stats.failed}`);
+      Notification.success({ content: `转账执行完成！成功: ${stats.succeeded}, 失败: ${stats.failed}`, position: 'topLeft' });
     } else {
       Notification.error('转账执行失败: ' + (result?.error || '未知错误'));
     }
@@ -353,6 +377,84 @@ onBeforeMount(async () => {
 // 防抖函数
 const debouncedQueryBalance = customDebounce(queryBalance, 500);
 const debouncedStartTransfer = customDebounce(startTransfer, 800);
+
+// Solana 钱包导入处理
+function handleWalletImportConfirm(importData) {
+  const { privateKeys, addresses } = importData;
+
+  const newData = [];
+  let successCount = 0;
+
+  for (let i = 0; i < privateKeys.length; i++) {
+    const privateKey = privateKeys[i];
+    const toAddress = addresses[i];
+
+    newData.push({
+      key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      private_key: privateKey,
+      to_addr: toAddress,
+      amount: "",
+      plat_balance: "",
+      coin_balance: "",
+      exec_status: "0",
+      error_msg: "",
+    });
+    successCount++;
+  }
+
+  data.value.push(...newData);
+
+  Notification.success({
+    title: "导入成功！",
+    content: `成功导入 ${successCount} 条数据`,
+    position: "topLeft",
+  });
+}
+
+function handleWalletImportCancel() {
+  console.log("钱包导入已取消");
+}
+
+// 手动录入钱包
+function handleManualImport() {
+  if (walletImportRef.value) {
+    walletImportRef.value.show();
+  }
+}
+
+// 上传文件导入
+function handleFileUpload() {
+  uploadInputRef.value.click();
+}
+
+// 下载模板
+async function downloadTemplate() {
+  let a = document.createElement("a");
+  a.href = `/template/import_model.xlsx`;
+  a.download = "导入模板.xlsx";
+  a.click();
+  
+  Notification.success({
+    content: "模板已下载至浏览器下载文件夹，请在 Downloads 文件夹中查找并打开编辑",
+    duration: 5000,
+    position: "topLeft",
+  });
+}
+
+// 处理文件变化
+function handleFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // 这里可以添加文件处理逻辑，或者复用 Ethereum 的处理方式
+  Notification.info({
+    content: "文件上传功能待实现",
+    position: "topLeft",
+  });
+
+  // 清空输入框，允许再次选择相同文件
+  event.target.value = "";
+}
 </script>
 
 <template>
@@ -438,7 +540,7 @@ const debouncedStartTransfer = customDebounce(startTransfer, 800);
       </div>
       
       <!-- 数据表格 -->
-      <div style="flex: 1; min-height: 0;">
+      <div style="flex: 1; min-height: 0; width: 100%;">
         <VirtualScrollerTable
           :columns="columns"
           :data="data"
@@ -447,7 +549,11 @@ const debouncedStartTransfer = customDebounce(startTransfer, 800);
           :loading="tableLoading"
           :scroll="{ y: 'calc(100vh - 350px)' }"
           @row-click="rowClick"
+          @open-manual-import="handleManualImport"
+          @open-file-upload="handleFileUpload"
+          @download-template="downloadTemplate"
           row-key="key"
+          :empty-data="data.length === 0"
         >
           <template #index="{ record, rowIndex }">
             {{ rowIndex + 1 }}
@@ -471,24 +577,128 @@ const debouncedStartTransfer = customDebounce(startTransfer, 800);
         </VirtualScrollerTable>
       </div>
       
-      <!-- 操作按钮 -->
-      <div style="display: flex; justify-content: center; gap: 20px; padding: 15px;">
-        <a-button v-if="!balanceLoading" type="primary" @click="debouncedQueryBalance" style="width: 120px;">
-          查询余额
-        </a-button>
-        <a-button v-else loading style="width: 120px;">
-          查询中...
-        </a-button>
-        
-        <a-button v-if="!startLoading" type="success" @click="debouncedStartTransfer" style="width: 120px;">
-          执行转账
-        </a-button>
-        <a-button v-else loading style="width: 120px;">
-          执行中...
-        </a-button>
+      <!-- 功能配置区 -->
+      <div style="display: flex; padding-top: 15px; flex-shrink: 0;">
+        <a-form :model="form" :style="{ width: '100%' }" layout="horizontal" :label-col-props="{ span: 8 }" :wrapper-col-props="{ span: 16 }">
+          <a-row style="display: flex; gap: 20px;">
+            <!-- 第一列 -->
+            <div style="flex: 1;">
+              <a-form-item label="Solana网络">
+                <a-select v-model="chainValue" @change="chainChange" style="width: 100%;">
+                  <a-option v-for="chain in chainOptions" :key="chain.key" :value="chain.key">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <ChainIcon :chain="chain.key" :size="16" />
+                      <span>{{ chain.name }}</span>
+                    </div>
+                  </a-option>
+                </a-select>
+              </a-form-item>
+              <a-form-item label="代币">
+                <a-select v-model="coinValue" @change="coinChange" style="width: 100%;">
+                  <a-option v-for="coin in coinOptions" :key="coin.key" :value="coin.key">
+                    {{ coin.label }}
+                  </a-option>
+                </a-select>
+              </a-form-item>
+            </div>
+            <a-divider direction="vertical" style="height: 100%; margin: 0;" />
+            <!-- 第二列 -->
+            <div style="flex: 1;">
+              <a-form-item label="线程数">
+                <a-input-number v-model="threadCount" :min="1" :max="10" style="width: 100%;" />
+              </a-form-item>
+              <a-form-item label="转账类型">
+                <a-radio-group v-model="form.send_type" type="button">
+                  <a-radio value="2">指定数量</a-radio>
+                  <a-radio value="3">随机数量</a-radio>
+                </a-radio-group>
+              </a-form-item>
+              <a-form-item v-if="form.send_type === '3'" label="数量范围">
+                <a-space>
+                  <a-input v-model="form.send_min_count" placeholder="最小" style="width: 80px;" />
+                  <span>至</span>
+                  <a-input v-model="form.send_max_count" placeholder="最大" style="width: 80px;" />
+                </a-space>
+              </a-form-item>
+            </div>
+            <a-divider direction="vertical" style="height: 100%; margin: 0;" />
+            <!-- 第三列 -->
+            <div style="flex: 1;">
+              <a-form-item label="时间间隔">
+                <a-space>
+                  <a-input v-model="form.min_interval" placeholder="最小" style="width: 80px;" />
+                  <span>至</span>
+                  <a-input v-model="form.max_interval" placeholder="最大" style="width: 80px;" />
+                </a-space>
+              </a-form-item>
+              <a-form-item :label-col-props="{ span: 0 }" :wrapper-col-props="{ span: 24 }">
+                <div style="display: flex; gap: 20px; justify-content: center; align-items: center;">
+                  <a-button
+                      v-if="!balanceLoading"
+                      type="primary"
+                      class="core-action-btn primary-btn"
+                      @click="debouncedQueryBalance"
+                  >
+                    <template #icon>
+                      <Icon icon="mdi:magnify"/>
+                    </template>
+                    查询余额
+                  </a-button>
+                  <a-button
+                      v-else
+                      class="core-action-btn primary-btn executing"
+                      loading
+                  >
+                    <template #icon>
+                      <Icon icon="mdi:pause-circle"/>
+                    </template>
+                    查询中...
+                  </a-button>
+                  <a-button
+                      v-if="!startLoading"
+                      type="success"
+                      class="core-action-btn success-btn"
+                      @click="debouncedStartTransfer"
+                  >
+                    <template #icon>
+                      <Icon icon="mdi:rocket-launch"/>
+                    </template>
+                    执行转账
+                  </a-button>
+                  <a-button
+                      v-else
+                      class="core-action-btn success-btn executing"
+                      loading
+                  >
+                    <template #icon>
+                      <Icon icon="mdi:rocket-launch"/>
+                    </template>
+                    执行中...
+                  </a-button>
+                </div>
+              </a-form-item>
+            </div>
+          </a-row>
+        </a-form>
       </div>
     </div>
   </div>
+
+  <!-- 钱包信息录入弹窗 -->
+  <WalletImportModal
+    ref="walletImportRef"
+    @confirm="handleWalletImportConfirm"
+    @cancel="handleWalletImportCancel"
+  />
+
+  <!-- 隐藏的文件输入框 -->
+  <input
+    type="file"
+    ref="uploadInputRef"
+    accept=".xlsx,.xls,.csv"
+    style="display: none"
+    @change="handleFileChange"
+  />
 </template>
 
 <style scoped>
@@ -520,5 +730,135 @@ const debouncedStartTransfer = customDebounce(startTransfer, 800);
 
 .stats-section {
   flex-shrink: 0;
+}
+
+.main-content :deep(.arco-form-item-label-col) {
+  margin-bottom: 0;
+}
+
+.main-content :deep(.arco-form-item-wrapper-col) {
+  flex: 1;
+}
+
+.main-content :deep(.arco-form-item) {
+  margin-bottom: 8px;
+  padding: 4px 10px;
+}
+
+.main-content :deep(.arco-form-item-label) {
+  line-height: 32px;
+}
+
+/* 核心功能按钮样式 */
+.core-action-btn {
+  width: 130px;
+  height: 48px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  border: none;
+  border-radius: 16px;
+  will-change: transform, background-color, box-shadow;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.core-action-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  transition: left 0.5s ease;
+}
+
+.core-action-btn:hover::before {
+  left: 100%;
+}
+
+.core-action-btn:hover {
+  color: #ffffff;
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.core-action-btn.primary-btn {
+  background: linear-gradient(135deg, #9945ff 0%, #14f195 100%);
+  box-shadow: 0 6px 20px rgba(153, 69, 255, 0.45), 0 2px 8px rgba(153, 69, 255, 0.2);
+}
+
+.core-action-btn.primary-btn:hover {
+  background: linear-gradient(135deg, #14f195 0%, #9945ff 100%);
+  box-shadow: 0 10px 30px rgba(153, 69, 255, 0.55), 0 4px 12px rgba(153, 69, 255, 0.3);
+}
+
+.core-action-btn.executing.primary-btn {
+  background: linear-gradient(135deg, #14f195 0%, #9945ff 100%);
+  box-shadow: 0 6px 20px rgba(153, 69, 255, 0.45), 0 2px 8px rgba(153, 69, 255, 0.2);
+  animation: pulse-solana 2s ease-in-out infinite;
+}
+
+@keyframes pulse-solana {
+  0%, 100% {
+    box-shadow: 0 6px 20px rgba(153, 69, 255, 0.45), 0 2px 8px rgba(153, 69, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 6px 35px rgba(153, 69, 255, 0.7), 0 3px 12px rgba(153, 69, 255, 0.35);
+  }
+}
+
+.core-action-btn.success-btn {
+  background: linear-gradient(135deg, #10a85c 0%, #12c47d 50%, #14e08e 100%);
+  box-shadow: 0 6px 20px rgba(16, 168, 92, 0.45), 0 2px 8px rgba(16, 168, 92, 0.2);
+}
+
+.core-action-btn.success-btn:hover {
+  background: linear-gradient(135deg, #12c47d 0%, #14e08e 50%, #16f89f 100%);
+  box-shadow: 0 10px 30px rgba(16, 168, 92, 0.55), 0 4px 12px rgba(16, 168, 92, 0.3);
+}
+
+.core-action-btn.executing.success-btn {
+  background: linear-gradient(135deg, #12c47d 0%, #14e08e 100%);
+  box-shadow: 0 6px 20px rgba(16, 168, 92, 0.45), 0 2px 8px rgba(16, 168, 92, 0.2);
+  animation: pulse-success-soft 2s ease-in-out infinite;
+}
+
+@keyframes pulse-success-soft {
+  0%, 100% {
+    box-shadow: 0 6px 20px rgba(16, 168, 92, 0.45), 0 2px 8px rgba(16, 168, 92, 0.2);
+  }
+  50% {
+    box-shadow: 0 6px 35px rgba(16, 168, 92, 0.7), 0 3px 12px rgba(16, 168, 92, 0.35);
+  }
+}
+
+/* Solana风格图标动画 */
+.core-action-btn .arco-icon {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+}
+
+.core-action-btn:hover .arco-icon {
+  transform: scale(1.15);
+}
+
+.core-action-btn.executing .arco-icon {
+  animation: icon-spin 1s linear infinite;
+}
+
+@keyframes icon-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 </style>

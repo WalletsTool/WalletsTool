@@ -1,6 +1,6 @@
 {
   "productName": "Wallets Tool",
-  "version": "0.2.3",
+  "version": "0.3.10",
   "identifier": "com.ezban.walletstool",
   "build": {
     "beforeDevCommand": "yarn dev",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "title": "WalletsTool",
-        "label": "WalletsTool",
+        "label": "main",
         "width": 350,
         "height": 750,
         "resizable": false,
@@ -27,7 +27,8 @@
         "minHeight": 730,
         "maximized": false,
         "visible": true,
-        "focus": true
+        "focus": true,
+        "url": "/"
       }
     ],
     "security": {
@@ -45,7 +46,6 @@
     "publisher": "EzBan",
     "homepage": "https://github.com/WalletsTool/WalletsTool",
     "externalBin": [],
-    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",
@@ -81,26 +81,18 @@
       "data/*"
     ],
     "shortDescription": "多链钱包管理工具 - 安全便捷的数字资产管理解决方案",
-    "targets": "all",
+    "targets": "nsis",
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": "",
       "allowDowngrades": false,
-      "webviewInstallMode": {
-        "type": "downloadBootstrapper"
-      },
-      "wix": {
-        "language": "zh-CN"
-      },
       "nsis": {
         "installMode": "currentUser",
         "languages": [
           "SimpChinese"
         ],
-        "installerIcon": "icons/icon.ico",
-        "headerImage": "icons/icon.ico",
-        "sidebarImage": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico"
       }
     },
     "linux": {

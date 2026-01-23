@@ -1,8 +1,8 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 const routes = [
-    // default redirects (keep backward compatibility for tray/open_function_window)
-    { path: "/", redirect: "/home" },
-    { path: "/home", name: "home", component: () => import('@/features/home/pages/Home.vue') },
+    // 主窗口页面
+    { path: "/", name: "main", component: () => import('@/features/home/pages/Home.vue') },
+    // 其他功能页面
     { path: "/transfer", redirect: "/eth/transfer" },
     { path: "/balance", redirect: "/eth/balance" },
     { path: "/monitor", redirect: "/eth/monitor" },

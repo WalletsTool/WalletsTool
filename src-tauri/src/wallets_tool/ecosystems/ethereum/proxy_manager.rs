@@ -69,28 +69,30 @@ impl ProxyType {
     }
 }
 
-/// 代理管理器
+/// 代理管理器 - 支持窗口隔离配置
 pub struct ProxyManager {
-    config: Arc<Mutex<ProxyConfig>>,
-    stats: Arc<Mutex<HashMap<String, ProxyStats>>>,
-    client_pool: Arc<Mutex<HashMap<String, Client>>>,
-    config_path: PathBuf,
+    /// 当前窗口的配置
+    current_window_label: Arc<Mutex<Option<String>>>,
+    /// 所有窗口的配置缓存
+    config_cache: Arc<Mutex<HashMap<String, ProxyConfig>>>,
+    /// 所有窗口的客户端池
+    client_pools: Arc<Mutex<HashMap<String, HashMap<String, Client>>>>,
+    /// 所有窗口的统计信息
+    stats: Arc<Mutex<HashMap<String, HashMap<String, ProxyStats>>>>,
 }
 
 impl ProxyManager {
     pub fn new() -> Result<Self, String> {
-        let config_path = Self::get_config_path()?;
-        
         Ok(Self {
-            config: Arc::new(Mutex::new(ProxyConfig::default())),
+            current_window_label: Arc::new(Mutex::new(None)),
+            config_cache: Arc::new(Mutex::new(HashMap::new())),
+            client_pools: Arc::new(Mutex::new(HashMap::new())),
             stats: Arc::new(Mutex::new(HashMap::new())),
-            client_pool: Arc::new(Mutex::new(HashMap::new())),
-            config_path,
         })
     }
     
-    /// 获取配置文件路径
-    fn get_config_path() -> Result<PathBuf, String> {
+    /// 获取指定窗口的配置文件路径
+    fn get_config_path_for_window(window_label: &str) -> Result<PathBuf, String> {
         let app_data_dir = dirs::config_dir()
             .ok_or("Failed to get config directory")?
             .join("WalletsTool");
@@ -98,81 +100,152 @@ impl ProxyManager {
         std::fs::create_dir_all(&app_data_dir)
             .map_err(|e| format!("Failed to create config directory: {}", e))?;
         
-        Ok(app_data_dir.join("proxy_config.json"))
+        // 使用窗口ID生成配置文件名，将特殊字符替换为下划线
+        let safe_label = window_label
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect::<String>();
+        
+        Ok(app_data_dir.join(format!("proxy_config_{}.json", safe_label)))
     }
     
-    /// 加载配置
-    pub async fn load_config(&self) -> Result<(), String> {
-        println!("[DEBUG] load_config - 开始加载代理配置");
+    /// 设置当前窗口标签
+    pub fn set_window_label(&self, window_label: String) {
+        let mut current_label = self.current_window_label.lock().unwrap();
+        *current_label = Some(window_label);
+        println!("[DEBUG] ProxyManager - 设置当前窗口ID: {:?}", current_label);
+    }
+    
+    /// 获取当前窗口标签
+    pub fn get_current_window_label(&self) -> String {
+        let current_label = self.current_window_label.lock().unwrap();
+        match &*current_label {
+            Some(label) => label.clone(),
+            None => "default".to_string(),
+        }
+    }
+    
+    /// 加载指定窗口的配置
+    pub async fn load_config_for_window(&self, window_label: &str) -> Result<ProxyConfig, String> {
+        let config_path = Self::get_config_path_for_window(window_label)?;
+        let config_path_clone = config_path.clone();
         
-        if !self.config_path.exists() {
-            println!("[DEBUG] load_config - 配置文件不存在，创建默认配置");
-            return self.save_config().await;
+        println!("[DEBUG] load_config_for_window - 加载窗口 {} 的配置", window_label);
+        
+        if !config_path.exists() {
+            println!("[DEBUG] load_config_for_window - 窗口 {} 的配置文件不存在，使用默认配置", window_label);
+            let default_config = ProxyConfig::default();
+            
+            // 释放锁后再进行其他操作
+            let mut config_cache = self.config_cache.lock().unwrap();
+            config_cache.insert(window_label.to_string(), default_config.clone());
+            return Ok(default_config);
         }
         
-        let content = fs::read_to_string(&self.config_path)
+        // 读取配置文件内容
+        let content = fs::read_to_string(&config_path_clone)
             .await
-            .map_err(|e| format!("Failed to read config file: {}", e))?;
+            .map_err(|e| format!("Failed to read config file for window {}: {}", window_label, e))?;
         
         let config: ProxyConfig = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse config: {}", e))?;
+            .map_err(|e| format!("Failed to parse config for window {}: {}", window_label, e))?;
         
-        println!("[DEBUG] load_config - 配置加载成功，代理启用: {}, 代理数量: {}", 
-                 config.enabled, config.proxies.len());
+        println!("[DEBUG] load_config_for_window - 窗口 {} 的配置加载成功，代理启用: {}, 代理数量: {}", 
+                 window_label, config.enabled, config.proxies.len());
         
-        *self.config.lock().unwrap() = config;
+        {
+            let mut config_cache = self.config_cache.lock().unwrap();
+            config_cache.insert(window_label.to_string(), config.clone());
+        }
         
-        // 重要：加载配置后需要重建客户端池
-        self.rebuild_client_pool().await?;
+        // 为该窗口重建客户端池（释放锁后）
+        self.rebuild_client_pool_for_window(window_label, &config).await?;
         
-        Ok(())
+        Ok(config)
     }
     
-    /// 保存配置
-    pub async fn save_config(&self) -> Result<(), String> {
-        let config = self.config.lock().unwrap().clone();
-        let content = serde_json::to_string_pretty(&config)
+    /// 加载当前窗口的配置
+    pub async fn load_current_window_config(&self) -> Result<ProxyConfig, String> {
+        let window_label = self.get_current_window_label();
+        self.load_config_for_window(&window_label).await
+    }
+    
+    /// 保存指定窗口的配置
+    pub async fn save_config_for_window(&self, window_label: &str, config: &ProxyConfig) -> Result<(), String> {
+        let config_path = Self::get_config_path_for_window(window_label)?;
+        let content = serde_json::to_string_pretty(config)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
         
-        fs::write(&self.config_path, content)
+        fs::write(&config_path, content)
             .await
             .map_err(|e| format!("Failed to write config file: {}", e))?;
         
+        println!("[DEBUG] save_config_for_window - 窗口 {} 的配置已保存", window_label);
+        
         Ok(())
     }
     
-    /// 更新代理配置
+    /// 更新当前窗口的代理配置
     pub async fn update_config(&self, proxies: Vec<String>, enabled: bool) -> Result<(), String> {
+        let window_label = self.get_current_window_label();
+        self.update_config_for_window(&window_label, proxies, enabled).await
+    }
+    
+    /// 更新指定窗口的代理配置
+    pub async fn update_config_for_window(&self, window_label: &str, proxies: Vec<String>, enabled: bool) -> Result<(), String> {
+        // 先获取配置，克隆后释放锁
+        let config = {
+            let config_cache = self.config_cache.lock().unwrap();
+            config_cache.get(window_label)
+                .cloned()
+                .unwrap_or_else(ProxyConfig::default)
+        };
+        
+        // 创建新配置
+        let mut new_config = config;
+        new_config.proxies = proxies;
+        new_config.enabled = enabled;
+        new_config.updated_at = Utc::now();
+        
+        // 插入到缓存中（释放锁后）
         {
-            let mut config = self.config.lock().unwrap();
-            config.proxies = proxies;
-            config.enabled = enabled;
-            config.updated_at = Utc::now();
+            let mut config_cache = self.config_cache.lock().unwrap();
+            config_cache.insert(window_label.to_string(), new_config.clone());
         }
         
-        self.save_config().await?;
-        self.rebuild_client_pool().await?;
+        self.save_config_for_window(window_label, &new_config).await?;
+        self.rebuild_client_pool_for_window(window_label, &new_config).await?;
+        
         Ok(())
     }
     
-    /// 获取当前配置
+    /// 获取当前窗口的配置
     pub fn get_config(&self) -> ProxyConfig {
-        self.config.lock().unwrap().clone()
+        let window_label = self.get_current_window_label();
+        self.get_config_for_window(&window_label)
     }
     
-    /// 重建客户端池
-    async fn rebuild_client_pool(&self) -> Result<(), String> {
-        let config = self.config.lock().unwrap().clone();
-        let mut client_pool = self.client_pool.lock().unwrap();
+    /// 获取指定窗口的配置
+    pub fn get_config_for_window(&self, window_label: &str) -> ProxyConfig {
+        let config_cache = self.config_cache.lock().unwrap();
+        match config_cache.get(window_label) {
+            Some(config) => config.clone(),
+            None => ProxyConfig::default(),
+        }
+    }
+    
+    /// 重建指定窗口的客户端池
+    async fn rebuild_client_pool_for_window(&self, window_label: &str, config: &ProxyConfig) -> Result<(), String> {
+        let mut client_pools = self.client_pools.lock().unwrap();
+        let window_client_pool = client_pools.entry(window_label.to_string()).or_insert_with(HashMap::new);
         
-        println!("[DEBUG] rebuild_client_pool - 开始重建客户端池");
-        println!("[DEBUG] rebuild_client_pool - 代理启用: {}, 代理数量: {}", 
-                 config.enabled, config.proxies.len());
+        println!("[DEBUG] rebuild_client_pool_for_window - 窗口 {}, 代理启用: {}, 代理数量: {}", 
+                 window_label, config.enabled, config.proxies.len());
         
-        client_pool.clear();
+        window_client_pool.clear();
         
         if !config.enabled {
-            println!("[DEBUG] rebuild_client_pool - 代理未启用，清空客户端池");
+            println!("[DEBUG] rebuild_client_pool_for_window - 窗口 {} 代理未启用，清空客户端池", window_label);
             return Ok(());
         }
         
@@ -182,19 +255,19 @@ impl ProxyManager {
         for proxy_url in &config.proxies {
             match self.create_proxy_client(proxy_url) {
                 Ok(client) => {
-                    client_pool.insert(proxy_url.clone(), client);
+                    window_client_pool.insert(proxy_url.clone(), client);
                     success_count += 1;
-                    println!("[DEBUG] rebuild_client_pool - 成功创建代理客户端: {}", proxy_url);
+                    println!("[DEBUG] rebuild_client_pool_for_window - 窗口 {} 成功创建代理客户端: {}", window_label, proxy_url);
                 }
                 Err(e) => {
                     fail_count += 1;
-                    println!("[ERROR] rebuild_client_pool - 创建代理客户端失败: {} - {}", proxy_url, e);
+                    println!("[ERROR] rebuild_client_pool_for_window - 窗口 {} 创建代理客户端失败: {} - {}", window_label, proxy_url, e);
                 }
             }
         }
         
-        println!("[DEBUG] rebuild_client_pool - 完成，成功: {}, 失败: {}, 客户端池大小: {}", 
-                 success_count, fail_count, client_pool.len());
+        println!("[DEBUG] rebuild_client_pool_for_window - 窗口 {} 完成，成功: {}, 失败: {}, 客户端池大小: {}", 
+                 window_label, success_count, fail_count, window_client_pool.len());
         
         Ok(())
     }
@@ -205,7 +278,7 @@ impl ProxyManager {
         
         let proxy = match proxy_type {
             ProxyType::Http(_) | ProxyType::Https(_) => {
-                Proxy::http(proxy_url).map_err(|e| format!("Failed to create HTTP proxy: {}", e))?
+                Proxy::all(proxy_url).map_err(|e| format!("Failed to create HTTP/HTTPS proxy: {}", e))?
             }
             ProxyType::Socks5(_) => {
                 Proxy::all(proxy_url).map_err(|e| format!("Failed to create SOCKS5 proxy: {}", e))?
@@ -221,36 +294,111 @@ impl ProxyManager {
     
     /// 获取随机代理客户端
     pub fn get_random_proxy_client(&self) -> Option<Client> {
-        let config = self.config.lock().unwrap();
+        let window_label = self.get_current_window_label();
+        let config = self.get_config_for_window(&window_label);
         
-        println!("[DEBUG] get_random_proxy_client - 代理启用状态: {}, 代理数量: {}", 
-                 config.enabled, config.proxies.len());
+        println!("[DEBUG] get_random_proxy_client - 窗口: {}, 代理启用状态: {}, 代理数量: {}", 
+                 window_label, config.enabled, config.proxies.len());
         
         if !config.enabled || config.proxies.is_empty() {
             println!("[DEBUG] get_random_proxy_client - 代理未启用或无代理地址");
             return None;
         }
         
-        let client_pool = self.client_pool.lock().unwrap();
-        println!("[DEBUG] get_random_proxy_client - 客户端池大小: {}", client_pool.len());
+        let client_pools = self.client_pools.lock().unwrap();
+        let window_client_pool = match client_pools.get(&window_label) {
+            Some(pool) => pool,
+            None => {
+                println!("[DEBUG] get_random_proxy_client - 窗口 {} 没有客户端池", window_label);
+                return None;
+            }
+        };
+        
+        println!("[DEBUG] get_random_proxy_client - 窗口 {} 客户端池大小: {}", window_label, window_client_pool.len());
         
         let available_proxies: Vec<_> = config.proxies.iter()
-            .filter(|proxy| client_pool.contains_key(*proxy))
+            .filter(|proxy| window_client_pool.contains_key(*proxy))
             .collect();
         
         println!("[DEBUG] get_random_proxy_client - 可用代理数量: {}", available_proxies.len());
         
         if available_proxies.is_empty() {
-            println!("[WARN] get_random_proxy_client - 客户端池为空！代理配置: {:?}", config.proxies);
+            println!("[WARN] get_random_proxy_client - 窗口 {} 客户端池为空！代理配置: {:?}", window_label, config.proxies);
             return None;
         }
         
         let mut rng = thread_rng();
         let selected_proxy = available_proxies.choose(&mut rng)?;
         
-        println!("[DEBUG] get_random_proxy_client - 选中代理: {}", selected_proxy);
+        println!("[DEBUG] get_random_proxy_client - 窗口 {} 选中代理: {}", window_label, selected_proxy);
         
-        client_pool.get(*selected_proxy).cloned()
+        window_client_pool.get(*selected_proxy).cloned()
+    }
+    
+    pub fn get_random_proxy_client_for_window(&self, window_id: &str) -> Option<Client> {
+        let config = self.get_config_for_window(window_id);
+        
+        println!("[DEBUG] get_random_proxy_client_for_window - 窗口: {}, 代理启用状态: {}, 代理数量: {}", 
+                 window_id, config.enabled, config.proxies.len());
+        
+        if !config.enabled || config.proxies.is_empty() {
+            println!("[DEBUG] get_random_proxy_client_for_window - 代理未启用或无代理地址");
+            return None;
+        }
+        
+        let client_pools = self.client_pools.lock().unwrap();
+        let window_client_pool = match client_pools.get(window_id) {
+            Some(pool) => pool,
+            None => {
+                println!("[DEBUG] get_random_proxy_client_for_window - 窗口 {} 没有客户端池", window_id);
+                return None;
+            }
+        };
+        
+        println!("[DEBUG] get_random_proxy_client_for_window - 窗口 {} 客户端池大小: {}", window_id, window_client_pool.len());
+        
+        let available_proxies: Vec<_> = config.proxies.iter()
+            .filter(|proxy| window_client_pool.contains_key(*proxy))
+            .collect();
+        
+        println!("[DEBUG] get_random_proxy_client_for_window - 可用代理数量: {}", available_proxies.len());
+        
+        if available_proxies.is_empty() {
+            println!("[WARN] get_random_proxy_client_for_window - 窗口 {} 客户端池为空！代理配置: {:?}", window_id, config.proxies);
+            return None;
+        }
+        
+        let mut rng = thread_rng();
+        let selected_proxy = available_proxies.choose(&mut rng)?;
+        
+        println!("[DEBUG] get_random_proxy_client_for_window - 窗口 {} 选中代理: {}", window_id, selected_proxy);
+        
+        window_client_pool.get(*selected_proxy).cloned()
+    }
+    
+    /// 获取随机代理URL
+    pub fn get_random_proxy(&self) -> Option<String> {
+        let window_label = self.get_current_window_label();
+        let config = self.get_config_for_window(&window_label);
+        
+        if !config.enabled || config.proxies.is_empty() {
+            return None;
+        }
+        
+        let mut rng = thread_rng();
+        config.proxies.choose(&mut rng).cloned()
+    }
+    
+    /// 获取指定窗口的随机代理URL
+    pub fn get_random_proxy_for_window(&self, window_id: &str) -> Option<String> {
+        let config = self.get_config_for_window(window_id);
+        
+        if !config.enabled || config.proxies.is_empty() {
+            return None;
+        }
+        
+        let mut rng = thread_rng();
+        config.proxies.choose(&mut rng).cloned()
     }
     
     /// 测试代理连接
@@ -296,9 +444,11 @@ impl ProxyManager {
     /// 更新代理统计
     #[allow(dead_code)]
     pub fn update_proxy_stats(&self, proxy_url: &str, success: bool, latency: f64) {
-        let mut stats = self.stats.lock().unwrap();
+        let window_label = self.get_current_window_label();
+        let mut all_stats = self.stats.lock().unwrap();
+        let window_stats = all_stats.entry(window_label.clone()).or_insert_with(HashMap::new);
         
-        let proxy_stats = stats.entry(proxy_url.to_string()).or_insert_with(|| ProxyStats {
+        let proxy_stats = window_stats.entry(proxy_url.to_string()).or_insert_with(|| ProxyStats {
             proxy_url: proxy_url.to_string(),
             success_count: 0,
             failure_count: 0,
@@ -319,7 +469,41 @@ impl ProxyManager {
     
     /// 获取代理统计信息
     pub fn get_proxy_stats(&self) -> HashMap<String, ProxyStats> {
-        self.stats.lock().unwrap().clone()
+        let window_label = self.get_current_window_label();
+        let all_stats = self.stats.lock().unwrap();
+        all_stats.get(&window_label).cloned().unwrap_or_else(HashMap::new)
+    }
+    
+    /// 清除指定窗口的代理配置（文件、内存缓存、客户端池、统计）
+    pub async fn clear_config_for_window(&self, window_label: &str) -> Result<(), String> {
+        let config_path = Self::get_config_path_for_window(window_label)?;
+        
+        if config_path.exists() {
+            fs::remove_file(&config_path)
+                .await
+                .map_err(|e| format!("Failed to remove config file: {}", e))?;
+            println!("[DEBUG] clear_config_for_window - 已删除配置文件: {:?}", config_path);
+        }
+        
+        {
+            let mut config_cache = self.config_cache.lock().unwrap();
+            config_cache.remove(window_label);
+            println!("[DEBUG] clear_config_for_window - 已清除内存配置缓存: {}", window_label);
+        }
+        
+        {
+            let mut client_pools = self.client_pools.lock().unwrap();
+            client_pools.remove(window_label);
+            println!("[DEBUG] clear_config_for_window - 已清除客户端池: {}", window_label);
+        }
+        
+        {
+            let mut stats = self.stats.lock().unwrap();
+            stats.remove(window_label);
+            println!("[DEBUG] clear_config_for_window - 已清除统计信息: {}", window_label);
+        }
+        
+        Ok(())
     }
 }
 

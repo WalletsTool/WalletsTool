@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::command;
 use crate::database::chain_service::ChainService;
 use base64::{Engine as _, engine::general_purpose};
@@ -74,5 +74,64 @@ pub async fn get_chain_icon(
     match chain {
         Some(chain) => Ok(chain.pic_data),
         None => Ok(None)
+    }
+}
+
+#[command]
+pub async fn read_resource_file(relative_path: String) -> Result<Vec<u8>, String> {
+    let resource_path = PathBuf::from("..")
+        .join("public")
+        .join("template")
+        .join(&relative_path);
+
+    std::fs::read(&resource_path)
+        .map_err(|e| format!("读取资源文件失败: {}", e))
+}
+
+#[command]
+pub async fn save_file(file_path: String, content: Vec<u8>) -> Result<(), String> {
+    if let Some(parent) = PathBuf::from(&file_path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("创建目录失败: {}", e))?;
+    }
+
+    std::fs::write(&file_path, content)
+        .map_err(|e| format!("保存文件失败: {}", e))?;
+
+    Ok(())
+}
+
+#[command]
+pub fn get_temp_dir() -> String {
+    std::env::temp_dir().to_string_lossy().to_string()
+}
+
+#[command]
+pub fn open_file_directory(file_path: String) {
+    let path = PathBuf::from(&file_path);
+    if let Some(_parent) = path.parent() {
+        #[cfg(target_os = "windows")]
+        {
+            std::process::Command::new("explorer")
+                .args(["/select,", &file_path])
+                .spawn()
+                .unwrap();
+        }
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("open")
+                .args(["-R", &file_path])
+                .spawn()
+                .unwrap();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(parent) = path.parent() {
+                std::process::Command::new("xdg-open")
+                    .arg(parent)
+                    .spawn()
+                    .unwrap();
+            }
+        }
     }
 }

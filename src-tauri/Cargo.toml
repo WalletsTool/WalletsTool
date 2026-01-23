@@ -1,6 +1,6 @@
 [package]
 name = "WalletsTool"
-version = "0.2.3"
+version = "0.3.10"
 description = "web3 链上钱包管理工具集，基于 Vue3 Tauri 等技术"
 authors = ["renmk"]
 license = ""
@@ -10,24 +10,22 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "2.0.0", features = [] }
+tauri-build = { version = "2.5.3", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-tauri = { version = "2.1", features = ["tray-icon", "wry"], default-features = false }
-tauri-plugin-shell = "2.0.0"
-anyhow = "1.0.65"
-thiserror = "1.0.37"
-tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "fs", "net", "time"] }
+tauri = { version = "2.9.5", features = ["tray-icon", "wry"], default-features = false }
+tauri-plugin-shell = "2.3.4"
+tauri-plugin-dialog = "2.6.0"
+anyhow = "1.0.98"
+tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "fs", "net", "time"] }
 # HTTP 客户端
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 # 异步流处理
 futures = "0.3"
 # 随机数
 rand = "0.8"
-# 序列化
-hex = "0.4"
 # URL 解析
 url = "2.0"
 # 目录路径
@@ -35,29 +33,39 @@ dirs = "5.0"
 # 懒加载静态变量
 lazy_static = "1.4"
 # 数据库
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "chrono", "macros"], default-features = false }
-chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.0", features = ["v4", "serde"] }
+sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "sqlite", "chrono", "macros"], default-features = false }
+chrono = { version = "0.4.41", features = ["serde"] }
 # 以太坊相关
-ethers = "1.0"
+alloy = { version = "1.4.0", default-features = false, features = ["full"] }
+alloy-provider = "1.4"
+alloy-primitives = "1.4"
+alloy-signer-local = "1.4"
+alloy-rpc-types-eth = "1.4"
+alloy-network = "1.4"
+alloy-signer = "1.4"
+alloy-transport-http = "1.4"
+hex = "0.4"
 # 明确指定兼容版本
-base64ct = "1.6"
-base64 = "0.21"
+base64 = "0.22.1"
 # 正则表达式
-regex = "1.0"
+regex = "1.10"
+
+# 安全模块依赖
+aes = "0.8"
+cbc = "0.1"
+zeroize = { version = "1.7", features = ["derive"] }
+sha2 = "0.10"
+winapi = { version = "0.3", features = ["memoryapi", "debugapi", "sysinfoapi", "processthreadsapi", "errhandlingapi"] }
+block-padding = "0.3"
 
 # Release模式优化配置
 [profile.release]
-# 启用最高级别的优化
-opt-level = 3
-# 启用fat LTO以获得最佳优化
-lto = "fat"
-# 设置代码生成单元为1以获得更好的优化
-codegen-units = 1
-# 移除调试符号以减小文件大小
+lto = false
+codegen-units = 16
+opt-level = 2
 strip = true
-# 优化panic处理，使用abort而不是unwind
 panic = "abort"
+incremental = false
 
 [features]
 # by default Tauri runs in production mode
@@ -69,4 +77,16 @@ custom-protocol = ["tauri/custom-protocol"]
 
 # 禁用增量编译，减少缓存
 [profile.dev]
-incremental = false
+incremental = true
+# 优化级别为0以加快编译速度
+opt-level = 0
+# 禁用调试信息以加速编译
+debug = false
+
+# 为特定依赖项设置优化级别（加快第三方库编译）
+[profile.dev.package."*"]
+opt-level = 2
+
+# 优化生产构建的依赖项
+[profile.release.package."*"]
+opt-level = 2

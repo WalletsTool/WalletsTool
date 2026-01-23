@@ -10,7 +10,7 @@ use tokio::sync::Semaphore;
 use tokio::time::{sleep, Duration};
 use tauri::Emitter;
 use rand;
-use ethers::signers::{LocalWallet, Signer};
+use alloy::signers::local::PrivateKeySigner;
 use crate::database::{get_database_manager, rpc_service::RpcService, chain_service::ChainService};
 
 // 基于窗口ID的停止标志映射
@@ -50,6 +50,7 @@ pub struct QueryItem {
     pub plat_balance: Option<String>,
     pub coin_balance: Option<String>,
     pub nonce: Option<u64>,
+    pub last_transaction_time: Option<u64>, // 新增字段，Unix时间戳
     pub retry_flag: bool,
     pub exec_status: String, // "0"=未执行, "1"=执行中, "2"=成功, "3"=失败
     pub error_msg: Option<String>,
@@ -71,6 +72,12 @@ pub struct QueryParams {
     pub items: Vec<QueryItem>,
     pub only_coin_config: bool,
     pub thread_count: usize,
+    #[serde(default)]
+    pub query_last_transaction_time: bool,
+    #[serde(default)]
+    pub window_id: Option<String>,
+    #[serde(default)]
+    pub query_id: Option<String>,
 }
 
 // 查询结果
@@ -139,7 +146,7 @@ impl SimpleBalanceQueryService {
     }
 
     // 发送 JSON-RPC 请求（带超时、代理支持和429重试）
-    async fn send_rpc_request(&self, rpc_url: &str, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+    async fn send_rpc_request(&self, rpc_url: &str, method: &str, params: serde_json::Value, window_id: Option<&str>) -> Result<serde_json::Value> {
         use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
         
         let request = JsonRpcRequest {
@@ -152,17 +159,26 @@ impl SimpleBalanceQueryService {
         // 设置10秒超时
         let timeout = Duration::from_secs(10);
         
-        // 检查代理配置并获取代理客户端
-        let proxy_config = PROXY_MANAGER.get_config();
+        // 根据 window_id 获取代理配置
+        let (proxy_config, proxy_client) = if let Some(wid) = window_id {
+            let config = PROXY_MANAGER.get_config_for_window(wid);
+            let client = PROXY_MANAGER.get_random_proxy_client_for_window(wid);
+            (config, client)
+        } else {
+            let config = PROXY_MANAGER.get_config();
+            let client = PROXY_MANAGER.get_random_proxy_client();
+            (config, client)
+        };
+        
         let using_proxy = proxy_config.enabled && !proxy_config.proxies.is_empty();
         
         // 优先使用代理客户端，如果没有代理则使用默认客户端
-        let client = if let Some(proxy_client) = PROXY_MANAGER.get_random_proxy_client() {
-            println!("[DEBUG] 使用代理发送RPC请求 (余额查询): {}", rpc_url);
+        let client = if let Some(pc) = proxy_client {
+            println!("[DEBUG] 使用代理发送RPC请求 (余额查询): {}, window_id: {:?}", rpc_url, window_id);
             if using_proxy {
                 println!("[INFO] 代理已启用，当前有 {} 个代理可用", proxy_config.proxies.len());
             }
-            proxy_client
+            pc
         } else {
             if proxy_config.enabled {
                 println!("[WARN] 代理已启用但没有可用代理，使用直连模式: {}", rpc_url);
@@ -213,12 +229,12 @@ impl SimpleBalanceQueryService {
     }
 
     // 查询基础币种余额（带重试机制）
-    async fn query_base_balance_with_retry(&self, item: &mut QueryItem, chain: &str, max_retries: usize) -> Result<()> {
+    async fn query_base_balance_with_retry(&self, item: &mut QueryItem, chain: &str, max_retries: usize, window_id: Option<&str>) -> Result<()> {
         let mut last_error = None;
         
         for retry_count in 0..max_retries {
             // 每次重试都重新获取RPC地址（会随机选择不同的RPC节点）
-            match self.query_base_balance(item, chain).await {
+            match self.query_base_balance(item, chain, window_id).await {
                 Ok(_) => {
                     if retry_count > 0 {
                         println!("[SUCCESS] 平台币查询重试成功 - 地址: {}, 重试次数: {}", item.address, retry_count);
@@ -240,14 +256,15 @@ impl SimpleBalanceQueryService {
     }
 
     // 查询基础币种余额
-    async fn query_base_balance(&self, item: &mut QueryItem, chain: &str) -> Result<()> {
+    async fn query_base_balance(&self, item: &mut QueryItem, chain: &str, window_id: Option<&str>) -> Result<()> {
         let rpc_url = self.get_rpc_url(chain).await?;
         
         // 查询余额
         let balance_result = self.send_rpc_request(
             &rpc_url,
             "eth_getBalance",
-            serde_json::json!([item.address, "latest"])
+            serde_json::json!([item.address, "latest"]),
+            window_id
         ).await?;
 
         if let Some(balance_hex) = balance_result.as_str() {
@@ -266,8 +283,77 @@ impl SimpleBalanceQueryService {
         Ok(())
     }
 
+    // 获取地址的最后交易时间
+    async fn get_last_transaction_time(&self, address: &str, chain: &str, window_id: &str) -> Result<Option<u64>> {
+        let rpc_url = self.get_rpc_url(chain).await?;
+        
+        // 获取当前区块号
+        let block_number_result = self.send_rpc_request(
+            &rpc_url,
+            "eth_blockNumber",
+            serde_json::json!([]),
+            Some(window_id)
+        ).await?;
+        
+        if let Some(block_number_hex) = block_number_result.as_str() {
+            let current_block = u64::from_str_radix(&block_number_hex[2..], 16)
+                .map_err(|e| anyhow!("区块号转换失败: {}", e))?;
+            
+            // 从最新区块开始向前搜索，查找该地址的交易
+            let search_blocks = 1000; // 最多搜索1000个区块
+            let start_block = if current_block > search_blocks {
+                current_block - search_blocks
+            } else {
+                0
+            };
+            
+            for block_num in (start_block..=current_block).rev() {
+                if get_stop_flag(window_id) {
+                    return Ok(None);
+                }
+                
+                let block_hex = format!("0x{:x}", block_num);
+                
+                // 获取区块信息
+                let block_result = self.send_rpc_request(
+                    &rpc_url,
+                    "eth_getBlockByNumber",
+                    serde_json::json!([block_hex, true]),
+                    Some(window_id)
+                ).await?;
+                
+                if let Some(block) = block_result.as_object() {
+                    if let Some(transactions) = block.get("transactions").and_then(|t| t.as_array()) {
+                        for tx in transactions {
+                            if let Some(tx_obj) = tx.as_object() {
+                                let from = tx_obj.get("from").and_then(|f| f.as_str());
+                                let to = tx_obj.get("to").and_then(|t| t.as_str());
+                                
+                                if from == Some(address) || to == Some(address) {
+                                    // 找到该地址的交易，获取区块时间戳
+                                    if let Some(timestamp_hex) = block.get("timestamp").and_then(|t| t.as_str()) {
+                                        let timestamp = u64::from_str_radix(&timestamp_hex[2..], 16)
+                                            .map_err(|e| anyhow!("时间戳转换失败: {}", e))?;
+                                        return Ok(Some(timestamp));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // 避免请求过于频繁
+                if block_num % 10 == 0 {
+                    sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
+        
+        Ok(None) // 未找到交易记录
+    }
+
     // 查询代币余额
-    async fn query_token_balance(&self, item: &mut QueryItem, chain: &str, contract_address: &str) -> Result<()> {
+    async fn query_token_balance(&self, item: &mut QueryItem, chain: &str, contract_address: &str, window_id: Option<&str>) -> Result<()> {
         let rpc_url = self.get_rpc_url(chain).await?;
         
         println!("[DEBUG] 开始查询代币余额 - 链: {}, 地址: {}, 合约: {}", chain, item.address, contract_address);
@@ -293,7 +379,8 @@ impl SimpleBalanceQueryService {
                             serde_json::json!([{
                                 "to": contract_address,
                                 "data": decimals_data
-                            }, "latest"])
+                            }, "latest"]),
+                            window_id
                         ).await {
                             Ok(decimals_result) => {
                                 if let Some(decimals_hex) = decimals_result.as_str() {
@@ -336,7 +423,8 @@ impl SimpleBalanceQueryService {
             serde_json::json!([{
                 "to": contract_address,
                 "data": data
-            }, "latest"])
+            }, "latest"]),
+            window_id
         ).await?;
 
         if let Some(balance_hex) = balance_result.as_str() {
@@ -401,17 +489,25 @@ impl SimpleBalanceQueryService {
                     private_key_str.clone()
                 };
                 
-                // 从私钥生成地址
-                if let Ok(wallet) = private_key.parse::<LocalWallet>() {
-                    let address = format!("{:?}", wallet.address());
+// 从私钥生成地址
+                if let Ok(signer) = private_key.parse::<PrivateKeySigner>() {
+                    let address = format!("{:?}", signer.address());
                     item.address = address;
                     println!("[INFO] 从私钥生成地址: {}", item.address);
-                } else {
+            } else {
                     item.exec_status = "3".to_string();
                     item.error_msg = Some("私钥格式错误，无法生成地址".to_string());
                     return item;
                 }
             }
+        }
+
+        // 检查地址是否为空
+        if item.address.trim().is_empty() {
+            item.exec_status = "3".to_string();
+            item.error_msg = Some("地址为空，无法查询余额".to_string());
+            println!("[ERROR] 地址为空，无法查询余额 - key: {}", item.key);
+            return item;
         }
 
         // 实现失败重试机制（最多3次，每次重试更换RPC节点）
@@ -434,10 +530,15 @@ impl SimpleBalanceQueryService {
             }
             
             // 每次重试都重新获取RPC地址（会随机选择不同的RPC节点）
-            let rpc_url = if let Ok(url) = self.get_rpc_url(&params.chain).await {
-                url
-            } else {
-                "未知RPC地址".to_string()
+            let rpc_url = match self.get_rpc_url(&params.chain).await {
+                Ok(url) => url,
+                Err(e) => {
+                    last_error = format!("获取RPC地址失败: {}", e);
+                    println!("[ERROR] 获取RPC地址失败: {}, 错误: {}", params.chain, e);
+                    item.exec_status = "3".to_string();
+                    item.error_msg = Some(last_error.clone());
+                    return item;
+                }
             };
             
             // 记录当前使用的RPC
@@ -450,8 +551,25 @@ impl SimpleBalanceQueryService {
             let query_timeout = Duration::from_secs(15);
             
             let result = tokio::time::timeout(query_timeout, async {
+                // 可配置：查询最后交易时间
+                if params.query_last_transaction_time {
+                    match self.get_last_transaction_time(&item.address, &params.chain, window_id).await {
+                        Ok(timestamp) => {
+                            item.last_transaction_time = timestamp;
+                            println!("[INFO] 地址 {} 的最后交易时间: {:?}", item.address, timestamp);
+                        }
+                        Err(e) => {
+                            println!("[WARN] 查询地址 {} 的最后交易时间失败: {}", item.address, e);
+                            item.last_transaction_time = None;
+                        }
+                    }
+                } else {
+                    // 未开启查询则保持为空
+                    item.last_transaction_time = None;
+                }
+                
                 if params.coin_config.coin_type == "base" {
-                    self.query_base_balance(&mut item, &params.chain).await?;
+                    self.query_base_balance(&mut item, &params.chain, Some(window_id)).await?;
                 } else if params.coin_config.coin_type == "token" {
                     // 查询代币时，同时查询平台币和代币余额
                     let mut base_query_success = true;
@@ -461,7 +579,7 @@ impl SimpleBalanceQueryService {
                     // 如果不是仅查询目标代币，也要查询平台币（带重试机制）
                     if !params.only_coin_config {
                         // 平台币查询失败时记录错误，但不立即返回
-                        if let Err(e) = self.query_base_balance_with_retry(&mut item, &params.chain, 3).await {
+                        if let Err(e) = self.query_base_balance_with_retry(&mut item, &params.chain, 3, Some(window_id)).await {
                             base_query_success = false;
                             errors.push(format!("平台币查询失败: {}", e));
                             println!("[WARN] 平台币查询最终失败: {}", e);
@@ -472,7 +590,7 @@ impl SimpleBalanceQueryService {
                     
                     // 查询代币余额
                     if let Some(contract_address) = &params.coin_config.contract_address {
-                        if let Err(e) = self.query_token_balance(&mut item, &params.chain, contract_address).await {
+                        if let Err(e) = self.query_token_balance(&mut item, &params.chain, contract_address, Some(window_id)).await {
                             token_query_success = false;
                             errors.push(format!("代币查询失败: {}", e));
                             println!("[WARN] 代币查询失败: {}", e);
@@ -531,28 +649,29 @@ impl SimpleBalanceQueryService {
     pub async fn query_balances(&self, params: QueryParams) -> QueryResult {
         let thread_count = params.thread_count.max(1).min(99); // 限制线程数在1-99之间
         let semaphore = Arc::new(Semaphore::new(thread_count));
-        
+
         println!("开始批量查询余额，线程数: {}, 总任务数: {}", thread_count, params.items.len());
-        
+
         let items = params.items.clone();
         let tasks: Vec<_> = items.into_iter().map(|item| {
             let semaphore = semaphore.clone();
             let params = params.clone();
             let service = self;
-            
+
             async move {
                 let _permit = semaphore.acquire().await.unwrap();
-                
-                // 添加随机延迟，避免速率限制（300-800ms）
-                let delay = Duration::from_millis(300 + (rand::random::<u64>() % 500));
+
+                // 添加轻微随机延迟（50-150ms），避免所有请求同时发送导致RPC限流
+                // 移除原来的300-800ms延迟，改为真正的并发
+                let delay = Duration::from_millis(50 + (rand::random::<u64>() % 100));
                 sleep(delay).await;
-                
+
                 service.query_single_item(item, &params, "default").await
             }
         }).collect();
 
         let results = join_all(tasks).await;
-        
+
         let success = results.iter().all(|item| item.exec_status == "2");
         let error_msg = if success {
             None
@@ -561,7 +680,7 @@ impl SimpleBalanceQueryService {
         };
 
         println!("查询完成，成功: {}", success);
-        
+
         QueryResult {
             success,
             items: results,
@@ -571,110 +690,144 @@ impl SimpleBalanceQueryService {
 
     // 批量查询余额（带实时更新）
     pub async fn query_balances_with_updates<R: tauri::Runtime>(
-        &self, 
-        params: QueryParams, 
+        &self,
+        params: QueryParams,
         app_handle: tauri::AppHandle<R>,
-        window_id: String
+        window_id: String,
     ) -> QueryResult {
         // 重置停止标志
         reset_stop_flag(&window_id);
-        
+
         let thread_count = params.thread_count.max(1).min(99); // 限制线程数在1-99之间
         let semaphore = Arc::new(Semaphore::new(thread_count));
-        
+
         println!("开始批量查询余额（实时更新），线程数: {}, 总任务数: {}", thread_count, params.items.len());
-        
-        let items = params.items.clone();
-        // 使用Arc包装service，使其能在tokio::spawn中使用
+
+        let total_items = params.items.len();
         let service = Arc::new(SimpleBalanceQueryService::new());
-        
-        let tasks: Vec<_> = items.into_iter().enumerate().map(|(index, item)| {
+
+        // 创建结果数组，使用索引映射确保按原始顺序返回
+        // results[original_index] = Some(result) 或 None（如果任务失败）
+        let results: Arc<Mutex<Vec<Option<QueryItem>>>> = Arc::new(Mutex::new(vec![None; total_items]));
+
+        // 创建任务，每个任务保留其原始索引
+        let tasks: Vec<_> = params.items.clone().into_iter().enumerate().map(|(original_index, item)| {
             let semaphore = semaphore.clone();
             let params = params.clone();
             let service = service.clone();
             let app_handle = app_handle.clone();
             let window_id = window_id.clone();
-            
+            let results = results.clone();
+
             // 使用tokio::spawn创建真正的独立任务
             tokio::spawn(async move {
                 // 在获取信号量前检查停止标志
                 if get_stop_flag(&window_id) {
-                    return item.clone();
+                    println!("[DEBUG] 任务 {} 因停止标志取消", original_index);
+                    return original_index;
                 }
-                
+
                 let _permit = semaphore.acquire().await.unwrap();
-                
+
                 // 获取信号量后再次检查停止标志
                 if get_stop_flag(&window_id) {
-                    return item.clone();
+                    println!("[DEBUG] 任务 {} 获取信号量后因停止标志取消", original_index);
+                    return original_index;
                 }
-                
-                // 添加随机延迟，避免速率限制（300-800ms）
-                let delay = Duration::from_millis(300 + (rand::random::<u64>() % 500));
+
+                // 添加轻微随机延迟（50-150ms），避免所有请求同时发送导致RPC限流
+                let delay = Duration::from_millis(50 + (rand::random::<u64>() % 100));
                 sleep(delay).await;
-                
+
                 // 通知前端该项目开始执行
                 let mut updating_item = item.clone();
                 updating_item.exec_status = "1".to_string();
+                let query_id = params.query_id.clone().unwrap_or_default();
                 if let Err(e) = app_handle.emit("balance_item_update", serde_json::json!({
-                    "index": index,
+                    "index": original_index,
                     "item": updating_item,
-                    "window_id": window_id
+                    "window_id": window_id,
+                    "query_id": query_id
                 })) {
                     println!("发送开始执行事件失败: {}", e);
                 }
-                
+
+                // 直接调用查询函数（已在 tokio 运行时中）
                 let result = service.query_single_item(item, &params, &window_id).await;
-                
+
+                // 将结果存入对应索引位置
+                let mut results_guard = results.lock().unwrap();
+                results_guard[original_index] = Some(result.clone());
+                let result_for_emit = result.clone();
+                drop(results_guard);
+
                 // 通知前端该项目查询完成
                 if let Err(e) = app_handle.emit("balance_item_update", serde_json::json!({
-                    "index": index,
-                    "item": result.clone(),
-                    "window_id": window_id
+                    "index": original_index,
+                    "item": result_for_emit,
+                    "window_id": window_id,
+                    "query_id": query_id
                 })) {
                     println!("发送查询完成事件失败: {}", e);
                 }
-                
-                result
+
+                original_index
             })
         }).collect();
 
         // 等待所有tokio任务完成
-        let mut results = Vec::new();
+        let mut join_errors = 0;
         for task in tasks {
             match task.await {
-                Ok(result) => results.push(result),
+                Ok(_) => {
+                    // 任务正常完成，结果已在results中
+                }
                 Err(e) => {
                     println!("[ERROR] 任务执行失败: {}", e);
-                    // 对于失败的任务，创建一个错误结果
-                    let error_item = QueryItem {
-                        key: String::new(),
-                        address: String::new(),
-                        private_key: None,
-                        plat_balance: None,
-                        coin_balance: None,
-                        nonce: None,
-                        retry_flag: true,
-                        exec_status: "3".to_string(),
-                        error_msg: Some(format!("任务执行失败: {}", e)),
-                    };
-                    results.push(error_item);
+                    join_errors += 1;
                 }
             }
         }
-        
-        let success = results.iter().all(|item| item.exec_status == "2");
+
+        // 按原始顺序收集结果
+        let mut ordered_results = Vec::with_capacity(total_items);
+        let results_guard = results.lock().unwrap();
+        for i in 0..total_items {
+            if let Some(item) = results_guard[i].clone() {
+                ordered_results.push(item);
+            } else {
+                // 创建错误结果
+                let error_item = QueryItem {
+                    key: String::new(),
+                    address: String::new(),
+                    private_key: None,
+                    plat_balance: None,
+                    coin_balance: None,
+                    nonce: None,
+                    last_transaction_time: None,
+                    retry_flag: true,
+                    exec_status: "3".to_string(),
+                    error_msg: Some(format!("任务执行失败{}", if join_errors > 0 { format!("（{}个任务异常）", join_errors) } else { String::new() })),
+                };
+                ordered_results.push(error_item);
+            }
+        }
+
+        let success = ordered_results.iter().all(|item| item.exec_status == "2");
         let error_msg = if success {
             None
         } else {
-            Some("部分查询失败".to_string())
+            let first_error = ordered_results.iter()
+                .find(|item| item.error_msg.is_some() && !item.error_msg.as_ref().unwrap().is_empty())
+                .and_then(|item| item.error_msg.clone());
+            Some(first_error.unwrap_or_else(|| "查询失败".to_string()))
         };
 
         println!("查询完成，成功: {}", success);
-        
+
         QueryResult {
             success,
-            items: results,
+            items: ordered_results,
             error_msg,
         }
     }
@@ -694,8 +847,8 @@ pub async fn query_balances_simple(params: QueryParams) -> Result<QueryResult, S
 pub async fn query_balances_with_updates<R: tauri::Runtime>(
     params: QueryParams,
     app_handle: tauri::AppHandle<R>,
-    window_id: String,
 ) -> Result<QueryResult, String> {
+    let window_id = params.window_id.clone().unwrap_or_else(|| "".to_string());
     let service = SimpleBalanceQueryService::new();
     
     let result = service.query_balances_with_updates(params, app_handle, window_id).await;

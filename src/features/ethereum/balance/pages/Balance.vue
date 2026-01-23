@@ -1,18 +1,20 @@
 <script setup name="balance">
 import { Icon } from '@iconify/vue';
 import { IconDelete } from '@arco-design/web-vue/es/icon';
-import { computed, defineAsyncComponent, nextTick, onBeforeMount, onMounted, reactive, ref } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeMount, onMounted, onBeforeUnmount, reactive, ref, triggerRef, shallowRef } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ethers } from "ethers";
 import { Notification, Modal } from "@arco-design/web-vue";
 import { utils as xlUtils, writeFile } from "xlsx";
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import ChainIcon from '@/components/ChainIcon.vue';
+import ChainIcon from '@/components/ChainIcon.vue'
 import TitleBar from '@/components/TitleBar.vue'
 import TableSkeleton from '@/components/TableSkeleton.vue'
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import { debounce } from '@/utils/debounce.js'
+import { WINDOW_CONFIG } from '@/utils/windowNames'
+import { exportWithDialog, openDirectory } from '@/utils/exportWithDialog'
 
 // 懒加载非关键组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -20,6 +22,11 @@ const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagem
 const TokenManagement = defineAsyncComponent(() => import('@/components/TokenManagement.vue'))
 const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vue'))
 const ProxyConfigModal = defineAsyncComponent(() => import('@/components/ProxyConfigModal.vue'))
+
+// 组件配置参数（props）：是否查询最后交易时间，默认 false
+const props = defineProps({
+  queryLastTransactionTime: { type: Boolean, default: false }
+})
 
 // table列名
 const columns = [
@@ -32,7 +39,6 @@ const columns = [
   {
     title: '钱包地址',
     align: 'center',
-    width: 390,
     dataIndex: 'address',
     ellipsis: true,
     tooltip: true
@@ -49,7 +55,7 @@ const columns = [
     title: '平台币余额',
     align: 'center',
     dataIndex: 'plat_balance',
-    width: 95,
+    width: 105,
     ellipsis: true,
     tooltip: true
   },
@@ -57,9 +63,18 @@ const columns = [
     title: '代币余额',
     align: 'center',
     dataIndex: 'coin_balance',
-    width: 85,
+    width: 100,
     ellipsis: true,
     tooltip: true
+  },
+  {
+    title: '最后交易时间',
+    align: 'center',
+    dataIndex: 'last_transaction_time',
+    width: 120,
+    ellipsis: true,
+    tooltip: true,
+    slotName: 'last_transaction_time'
   },
   {
     title: '状态',
@@ -72,6 +87,7 @@ const columns = [
   {
     title: '错误信息',
     align: 'center',
+     width: 300,
     dataIndex: 'error_msg',
     ellipsis: true,
     tooltip: true,
@@ -106,8 +122,29 @@ const showProgress = ref(false); // 是否显示进度条
 // 分页
 const pagination = ref(false);
 const scrollbar = ref(true);
-// 窗口标题
+
+// 窗口标题定义
 const windowTitle = ref('余额查询');
+
+// 窗口标题初始化
+function initBalanceWindowTitle() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      const windowLabel = getCurrentWindow().label
+      const saved = WINDOW_CONFIG.getCustomTitle(windowLabel)
+      if (saved) {
+        windowTitle.value = saved
+        return
+      }
+    }
+  } catch (e) {
+    console.error('初始化余额查询窗口标题失败:', e)
+  }
+}
+
+initBalanceWindowTitle()
+
 // chain默认值
 const chainValue = ref('');
 // 当前chain
@@ -128,7 +165,9 @@ let balanceLoading = ref(false)
 let balanceStopFlag = ref(false)
 // 详细配置
 const form = reactive({
-  thread_count: 3
+  thread_count: 3,
+  // 是否查询最后交易时间（默认关闭），可由组件外部通过 props 控制初始值
+  queryLastTransactionTime: props.queryLastTransactionTime
 })
 // 录入 钱包地址 弹窗
 let visible = ref(false)
@@ -158,8 +197,10 @@ const chainManageRef = ref(null);
 const rpcManageRef = ref(null);
 // 代币管理组件引用
 const tokenManageRef = ref(null);
-// 代理配置相关变量
+// 代理配置组件引用
 const proxyConfigRef = ref(null);
+// 文件上传输入框引用
+const uploadInputRef = ref(null);
 const proxyConfigVisible = ref(false);
 const proxyEnabled = ref(false);
 const proxyStatus = ref('未配置');
@@ -175,6 +216,128 @@ const filterForm = reactive({
   nonceValue: '',
   errorMsg: ''
 });
+
+// 界面控制变量
+const isSidePanelExpanded = ref(false);
+const chainSelectorExpanded = ref(false);
+const tokenSelectorExpanded = ref(false);
+const chainSearchKeyword = ref('');
+const tokenSearchKeyword = ref('');
+const chainSearchInputRef = ref(null);
+const tokenSearchInputRef = ref(null);
+let timer = null; // Gas查询定时器
+
+// 计算属性：过滤后的链列表
+const filteredChainOptions = computed(() => {
+  if (!chainSearchKeyword.value.trim()) {
+    return chainOptions.value || [];
+  }
+  const keyword = chainSearchKeyword.value.toLowerCase();
+  return (chainOptions.value || []).filter(
+    (chain) =>
+      (chain.name && chain.name.toLowerCase().includes(keyword)) ||
+      (chain.key && chain.key.toLowerCase().includes(keyword)) ||
+      (chain.scan_url && chain.scan_url.toLowerCase().includes(keyword))
+  );
+});
+
+// 计算属性：过滤后的代币列表
+const filteredCoinOptions = computed(() => {
+  if (!tokenSearchKeyword.value.trim()) {
+    return coinOptions.value || [];
+  }
+  const keyword = tokenSearchKeyword.value.toLowerCase();
+  return (coinOptions.value || []).filter(
+    (coin) =>
+      (coin.label && coin.label.toLowerCase().includes(keyword)) ||
+      (coin.symbol && coin.symbol.toLowerCase().includes(keyword)) ||
+      (coin.key && coin.key.toLowerCase().includes(keyword))
+  );
+});
+
+// 侧边栏控制
+function expandSidePanel() { isSidePanelExpanded.value = true; }
+function collapseSidePanel() { isSidePanelExpanded.value = false; }
+
+// 选择器控制
+function toggleChainSelector() {
+  if (balanceLoading.value) {
+    Notification.warning({ content: '执行过程中无法切换区块链', position: 'topLeft' });
+    return;
+  }
+  chainSelectorExpanded.value = !chainSelectorExpanded.value;
+  tokenSelectorExpanded.value = false;
+  if (chainSelectorExpanded.value) {
+    nextTick(() => {
+      chainSearchInputRef.value?.focus();
+    });
+  }
+}
+
+function toggleTokenSelector() {
+  if (balanceLoading.value) {
+    Notification.warning({ content: '执行过程中无法切换代币', position: 'topLeft' });
+    return;
+  }
+  if (!chainValue.value) {
+    return;
+  }
+  tokenSelectorExpanded.value = !tokenSelectorExpanded.value;
+  chainSelectorExpanded.value = false;
+  if (tokenSelectorExpanded.value) {
+    nextTick(() => {
+      tokenSearchInputRef.value?.focus();
+    });
+  }
+}
+
+function handleChainSelect(chainKey) {
+  chainValue.value = chainKey;
+  const chain = chainOptions.value.find((c) => c.key === chainKey);
+  if (chain) currentChain.value = chain;
+  chainSelectorExpanded.value = false;
+  tokenSelectorExpanded.value = true;
+  chainChange();
+}
+
+function handleTokenSelect(tokenKey) {
+  coinChange(tokenKey);
+  tokenSelectorExpanded.value = false;
+}
+
+// 点击外部关闭选择器
+function handleClickOutside(event) {
+  const chainSelector = document.querySelector('.chain-selector-container');
+  const tokenSelector = document.querySelector('.token-selector-container');
+  const isInChainSelector = chainSelector && chainSelector.contains(event.target);
+  const isInTokenSelector = tokenSelector && tokenSelector.contains(event.target);
+  if (!isInChainSelector) chainSelectorExpanded.value = false;
+  if (!isInTokenSelector) tokenSelectorExpanded.value = false;
+}
+
+// Gas Price 相关
+function fetchGas() {
+  const temp = chainValue.value;
+  if (!currentChain.value) return;
+  if (temp === 'sol') { currentChain.value.gas_price = ''; return; }
+  invoke('get_chain_gas_price', { chain: chainValue.value })
+    .then((res) => {
+      if (temp === chainValue.value && currentChain.value) {
+        const gasPrice = res?.gas_price_gwei;
+        currentChain.value.gas_price = isNaN(gasPrice) ? '数据格式错误' : chainValue.value === 'eth' ? gasPrice.toFixed(3) : gasPrice.toFixed(7);
+      }
+    })
+    .catch((err) => { if (currentChain.value) currentChain.value.gas_price = '查询错误'; });
+}
+
+function startGasTimer() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(fetchGas, 5000);
+}
+
+function stopGasTimer() {
+  if (timer) { clearInterval(timer); timer = null; }
+}
 
 // 计算属性：缓存筛选后的数据
 const filteredData = computed(() => {
@@ -238,21 +401,42 @@ const filteredData = computed(() => {
   });
 });
 
-// 计算属性：缓存统计数据
-const statisticsData = computed(() => {
-  const total = data.value.length;
-  const succeeded = data.value.filter(item => item.exec_status === '2').length;
-  const failed = data.value.filter(item => item.exec_status === '3').length;
-  const pending = data.value.filter(item => item.exec_status === '0' || item.exec_status === '1').length;
-  
-  return { total, succeeded, failed, pending };
-});
-
 // 防抖的筛选更新函数
 const debouncedFilterUpdate = debounce(() => {
   // 触发筛选数据的重新计算
   // filteredData computed属性会自动响应filterForm的变化
 }, 300);
+
+// 时间格式化函数
+function formatTransactionTime(timestamp) {
+  if (!timestamp || timestamp === 0) {
+    return '暂无交易';
+  }
+  
+  try {
+    // 将Unix时间戳转换为毫秒
+    const date = new Date(timestamp * 1000);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    
+    if (diffMinutes < 60) {
+      return `${diffMinutes}分钟前`;
+    } else if (diffHours < 24) {
+      return `${diffHours}小时前`;
+    } else if (diffDays < 30) {
+      return `${diffDays}天前`;
+    } else {
+      // 超过30天显示具体日期
+      return date.toLocaleDateString('zh-CN');
+    }
+  } catch (error) {
+    console.error('时间格式化错误:', error);
+    return '时间错误';
+  }
+}
 
 // a-table行选择配置
 const rowSelection = reactive({
@@ -271,18 +455,62 @@ const rowSelection = reactive({
   }
 })
 
+// 待处理的更新队列
+const pendingUpdates = [];
+let updateTimer = null;
+
+// 批量处理更新
+function processUpdates() {
+  if (pendingUpdates.length === 0) return;
+
+  // 批量应用更新
+  const updates = pendingUpdates.splice(0, pendingUpdates.length);
+  const dataRef = data.value;
+  let hasChanges = false;
+  
+  // 使用Map优化查找
+  const addressMap = new Map();
+  dataRef.forEach((item, index) => {
+    addressMap.set(item.address, index);
+  });
+
+  updates.forEach(({ item }) => {
+    const targetIndex = addressMap.get(item.address);
+    if (targetIndex !== undefined) {
+      Object.assign(dataRef[targetIndex], item);
+      hasChanges = true;
+    }
+  });
+
+  if (hasChanges) {
+    // 触发响应式更新
+    triggerRef(data);
+    // 更新进度
+    updateBalanceProgress();
+  }
+  
+  updateTimer = null;
+}
+
 // 初始化Chain列表
 onBeforeMount(async () => {
-  chainOptions.value = await invoke('get_chain_list')
+  const result = await invoke('get_chain_list');
+  chainOptions.value = result || [];
+  chainOptions.value.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   if (chainOptions.value && chainOptions.value.length > 0) {
-    chainValue.value = chainOptions.value[0].key
-    currentChain.value = chainOptions.value[0]
+    // 优先选择eth
+  
+    const ethChain = chainOptions.value.find((c) => c.key === 'eth');
+    if (ethChain) { chainValue.value = 'eth'; currentChain.value = ethChain; }
+    else { chainValue.value = chainOptions.value[0]?.key; currentChain.value = chainOptions.value[0]; }
     // 获取chain对应的代币列表
     await chainChange()
   }
 })
 
 onMounted(async () => {
+  document.addEventListener('click', handleClickOutside);
+  
   // 获取窗口标题和ID
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
   if (isTauri) {
@@ -320,8 +548,6 @@ onMounted(async () => {
     currentWindowId.value = 'browser_window';
   }
 
-  // 页面高度现在通过 CSS 自动调整，无需监听器
-
   // 监听余额查询更新事件
   await listen('balance_item_update', (event) => {
     const { index, item, window_id } = event.payload
@@ -329,14 +555,13 @@ onMounted(async () => {
     if (window_id && window_id !== currentWindowId.value) {
       return; // 不是本窗口的事件，直接返回
     }
-    // 使用address查找对应的数据项，而不是使用index
-    const targetIndex = data.value.findIndex(dataItem => dataItem.address === item.address)
-    if (targetIndex !== -1) {
-      // 更新对应地址的数据
-      Object.assign(data.value[targetIndex], item)
-
-      // 更新进度
-      updateBalanceProgress()
+    
+    // 将更新加入队列
+    pendingUpdates.push({ index, item });
+    
+    // 如果没有定时器，启动一个
+    if (!updateTimer) {
+      updateTimer = requestAnimationFrame(processUpdates);
     }
   })
 
@@ -355,56 +580,67 @@ onMounted(async () => {
   await initProxyStatus();
 })
 
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside);
+  stopGasTimer();
+});
+
+function generateWindowId() {
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 9);
+  return `window_${timestamp}_${randomPart}`;
+}
+
 
 // RPC变化事件
 async function chainChange() {
-  coinOptions.value = await invoke("get_coin_list", { chainKey: chainValue.value })
-  if (coinOptions.value && coinOptions.value.length > 0) {
-    coinValue.value = coinOptions.value[0].key
-    currentCoin.value = coinOptions.value[0]
+  const chainResult = chainOptions.value.filter((item) => item.key === chainValue.value);
+  if (chainResult.length > 0) {
+    console.log('chainResult', chainResult);
+    currentChain.value = chainResult[0];
+    currentChain.value.gas_price = '查询中...';
+    fetchGas();
+    startGasTimer();
+    try {
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri) {
+        const tokenList = await invoke('get_coin_list', { chainKey: chainValue.value });
+        coinOptions.value = tokenList.map((token) => ({ key: token.key, label: token.label, symbol: token.symbol, contract_address: token.contract_address, decimals: token.decimals, coin_type: token.coin_type, contract_type: token.contract_type, abi: token.abi }));
+        coinOptions.value.sort((a, b) => {
+          if (a.coin_type === 'base' && b.coin_type !== 'base') return -1;
+          if (a.coin_type !== 'base' && b.coin_type === 'base') return 1;
+          return a.label.localeCompare(b.label);
+        });
+        if (coinOptions.value.length > 0) { coinValue.value = coinOptions.value[0].key; currentCoin.value = coinOptions.value[0]; }
+      }
+    } catch (error) { console.error('加载代币列表失败:', error); coinOptions.value = []; coinValue.value = ''; currentCoin.value = null; }
+  } else {
+    currentChain.value = null;
+    coinOptions.value = [];
+    coinValue.value = '';
+    currentCoin.value = null;
+    stopGasTimer();
   }
-  currentChain.value = chainOptions.value.find(item => item.key === chainValue.value) || {}
+
 }
 
 // coin变化事件
 async function coinChange(value) {
+  coinValue.value = value;
   currentCoin.value = coinOptions.value.filter(item => item.key === value)[0]
 }
 
 // 删除代币方法
 function deleteToken() {
-  if (chainValue.value === 'starknet') {
-    Notification.warning(' StarkNet 暂不支持删除代币！');
-    return
-  }
-  if (chainValue.value === 'okt') {
-    Notification.warning(' OKT Chain 暂不支持删除代币！');
-    return
-  }
-  if (chainValue.value === "evmos") {
-    Notification.warning(" EVMOS Chain 暂不支持删除代币！");
-    return;
-  }
-  if (chainValue.value === 'geth') {
-    Notification.warning(' Goerli Ethereum 暂不支持删除代币！');
-    return
-  }
-  if (chainValue.value === 'sepolia') {
-    Notification.warning(' Sepolia Ethereum 暂不支持删除代币！');
-    return
-  }
-  if (chainValue.value === 'scroll') {
-    Notification.warning(' Scroll Alpha TestNet 暂不支持删除代币！');
-    return
-  }
-  if (chainValue.value === 'linea') {
-    Notification.warning(' Linea MainNet 暂不支持删除代币！');
-    return
-  }
-  if (chainValue.value === 'base') {
-    Notification.warning(' Base MainNet 暂不支持删除代币！');
-    return
-  }
+  // 各种链的检查逻辑保持不变
+  if (chainValue.value === 'starknet') { Notification.warning({ content: ' StarkNet 暂不支持删除代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'okt') { Notification.warning({ content: ' OKT Chain 暂不支持删除代币！', position: 'topLeft' }); return }
+  if (chainValue.value === "evmos") { Notification.warning({ content: " EVMOS Chain 暂不支持删除代币！", position: 'topLeft' }); return; }
+  if (chainValue.value === 'geth') { Notification.warning({ content: ' Goerli Ethereum 暂不支持删除代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'sepolia') { Notification.warning({ content: ' Sepolia Ethereum 暂不支持删除代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'scroll') { Notification.warning({ content: ' Scroll Alpha TestNet 暂不支持删除代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'linea') { Notification.warning({ content: ' Linea MainNet 暂不支持删除代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'base') { Notification.warning({ content: ' Base MainNet 暂不支持删除代币！', position: 'topLeft' }); return }
   deleteTokenVisible.value = true
 }
 
@@ -417,48 +653,25 @@ function deleteTokenCancel() {
 async function deleteTokenConfirm() {
   deleteTokenVisible.value = false
   await invoke("remove_coin", { chain: chainValue.value, key: currentCoin.value.key }).then(() => {
-    Notification.success('删除成功！');
+    Notification.success({ content: '删除成功！', position: 'topLeft' });
     // 删除成功后重新获取代币列表
     chainChange()
   }).catch(() => {
-    Notification.error('删除失败！');
+    Notification.error({ content: '删除失败！', position: 'topLeft' });
   })
 }
 
 // 导入事件触发
 function handleAddCoinClick() {
-  if (chainValue.value === 'starknet') {
-    Notification.warning(' StarkNet 暂不支持添加代币！');
-    return
-  }
-  if (chainValue.value === 'okt') {
-    Notification.warning(' OKT Chain 暂不支持添加代币！');
-    return
-  }
-  if (chainValue.value === "evmos") {
-    Notification.warning(" EVMOS Chain 暂不支持添加代币！");
-    return;
-  }
-  if (chainValue.value === 'geth') {
-    Notification.warning(' Goerli Ethereum 暂不支持添加代币！');
-    return
-  }
-  if (chainValue.value === 'sepolia') {
-    Notification.warning(' Sepolia Ethereum 暂不支持添加代币！');
-    return
-  }
-  if (chainValue.value === 'scroll') {
-    Notification.warning(' Scroll Alpha TestNet 暂不支持添加代币！');
-    return
-  }
-  if (chainValue.value === 'linea') {
-    Notification.warning(' Linea MainNet 暂不支持添加代币！');
-    return
-  }
-  if (chainValue.value === 'base') {
-    Notification.warning(' Base MainNet 暂不支持添加代币！');
-    return
-  }
+  // 各种链的检查逻辑保持不变
+  if (chainValue.value === 'starknet') { Notification.warning({ content: ' StarkNet 暂不支持添加代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'okt') { Notification.warning({ content: ' OKT Chain 暂不支持添加代币！', position: 'topLeft' }); return }
+  if (chainValue.value === "evmos") { Notification.warning({ content: " EVMOS Chain 暂不支持添加代币！", position: 'topLeft' }); return; }
+  if (chainValue.value === 'geth') { Notification.warning({ content: ' Goerli Ethereum 暂不支持添加代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'sepolia') { Notification.warning({ content: ' Sepolia Ethereum 暂不支持添加代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'scroll') { Notification.warning({ content: ' Scroll Alpha TestNet 暂不支持添加代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'linea') { Notification.warning({ content: ' Linea MainNet 暂不支持添加代币！', position: 'topLeft' }); return }
+  if (chainValue.value === 'base') { Notification.warning({ content: ' Base MainNet 暂不支持添加代币！', position: 'topLeft' }); return }
   addCoinVisible.value = true
 }
 
@@ -505,12 +718,12 @@ function addCoinFunc() {
 const handleAddCoinBeforeOk = async () => {
   coinAddress.value = coinAddress.value.trim()
   if (!coinAddress.value) {
-    Notification.warning('请输入代币地址！');
+    Notification.warning({ content: '请输入代币地址！', position: 'topLeft' });
     return false
   }
   let flag = false
   await addCoinFunc().then(() => {
-    Notification.success('添加代币成功！');
+    Notification.success({ content: '添加代币成功！', position: 'topLeft' });
     flag = true
   }).catch(err => {
     Notification.error(err);
@@ -523,11 +736,11 @@ const handleAddCoinBeforeOk = async () => {
 // 清空列表
 function clearData() {
   if (balanceLoading.value) {
-    Notification.warning('请停止或等待查询完成后再清空列表！');
+    Notification.warning({ content: '请停止或等待查询完成后再清空列表！', position: 'topLeft' });
     return;
   }
    if(data.value.length === 0){
-    Notification.warning('当前列表无数据！');
+    Notification.warning({ content: '当前列表无数据！', position: 'topLeft' });
     return;
   }
   Modal.confirm({
@@ -535,13 +748,13 @@ function clearData() {
     content: '确定要清空所有列表数据吗？此操作不可撤销。',
     onOk: () => {
       data.value = [];
-      Notification.success('清空列表成功！');
+      Notification.success({ content: '清空列表成功！', position: 'topLeft' });
     }
   });
 }
 
 // 导入事件触发
-function handleClick() {
+function handleManualImport() {
   visible.value = true
 }
 
@@ -567,7 +780,7 @@ function validateAddress(address) {
       return false;
     }
     // 使用ethers.js进行最终验证
-    return ethers.utils.isAddress(trimmedAddress);
+    return ethers.isAddress(trimmedAddress);
   } catch (error) {
     return false;
   }
@@ -610,7 +823,7 @@ const displayedErrors = computed(() => {
 function handleCancel() {
   // 如果正在导入，不允许关闭
   if (importLoading.value) {
-    Notification.warning('正在导入数据，请稍候...');
+    Notification.warning({ content: '正在导入数据，请稍候...', position: 'topLeft' });
     return false;
   }
   
@@ -620,6 +833,63 @@ function handleCancel() {
   validationErrors.value = []
   errorsExpanded.value = false
   addressErrorLines.value = []
+}
+
+// 上传文件导入
+function handleFileUpload() {
+  uploadInputRef.value.click();
+}
+
+
+
+// 处理文件变化
+function handleFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = xlUtils.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = xlUtils.sheet_to_json(firstSheet, { header: 1 });
+
+      const addresses = [];
+      jsonData.forEach((row, index) => {
+        if (row && row[0]) {
+          const addr = String(row[0]).trim();
+          if (validateAddress(addr)) {
+            addresses.push(addr);
+          }
+        }
+      });
+
+      if (addresses.length > 0) {
+        importText.value = addresses.join('\n');
+        validateImportData();
+        visible.value = true;
+        Notification.success({
+          content: `成功解析 ${addresses.length} 个地址`,
+          position: 'topLeft',
+        });
+      } else {
+        Notification.error({
+          content: '未在文件中找到有效的地址数据',
+          position: 'topLeft',
+        });
+      }
+    } catch (error) {
+      console.error('解析文件失败:', error);
+      Notification.error({
+        content: '解析文件失败，请确保文件格式正确',
+        position: 'topLeft',
+      });
+    } finally {
+      event.target.value = '';
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 // 导入弹窗保存事件
@@ -643,6 +913,8 @@ const handleBeforeOk = async () => {
     const original_count = importList.length
     
     // 第二步：去除导入文本中的重复地址（保持原始顺序，去除后面的重复项）
+    // 用户需求：允许导入重复地址进行测试，暂时注释掉去重逻辑
+    /*
     const uniqueAddresses = new Set()
     importList = importList.filter(item => {
       const trimmedAddr = item.trim()
@@ -652,32 +924,39 @@ const handleBeforeOk = async () => {
       uniqueAddresses.add(trimmedAddr)
       return true
     })
+    */
     const after_dedup_count = importList.length
     const internal_dup_count = original_count - after_dedup_count
     
     // 第三步：过滤与现有数据重复的地址
+    // 用户需求：允许导入重复地址进行测试，暂时注释掉去重逻辑
+    /*
     const beforeFilterCount = importList.length
     importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.address === item.trim()))
     const success_count = importList.length
     const existing_dup_count = beforeFilterCount - success_count
     const total_filtered_count = original_count - success_count
+    */
+   
+    // 不去重直接使用
+    const success_count = importList.length
+    const existing_dup_count = 0
+    const total_filtered_count = 0
     
-    // 批量处理数据，避免UI阻塞
-    const batchSize = 100;
-    for (let i = 0; i < importList.length; i += batchSize) {
-      const batch = importList.slice(i, i + batchSize);
-      data.value.push(...batch.map(item => {
-        return {
-          address: item.trim(),
-          nonce: '',
-          plat_balance: '',
-          coin_balance: '',
-          exec_status: '0',
-          error_msg: ''
-        }
-      }));
-      // 让UI有机会更新
-      await new Promise(resolve => setTimeout(resolve, 10));
+    // 批量处理数据
+    const newItems = importList.map(item => ({
+      address: item.trim(),
+      nonce: '',
+      plat_balance: '',
+      coin_balance: '',
+      exec_status: '0',
+      error_msg: '',
+      last_transaction_time: null
+    }));
+
+    if (newItems.length > 0) {
+      // 一次性推入数据，减少触发响应式更新的次数
+      data.value.push(...newItems);
     }
     
     // 显示详细的导入统计信息
@@ -696,10 +975,10 @@ const handleBeforeOk = async () => {
         message += `，已过滤：${details.join('、')}`
       }
       
-      Notification.warning({
+      Notification.warning({ 
         title: '导入完成！',
-        content: message,
-      })
+        content: message
+      , position: 'topLeft' })
     } else {
       Notification.success({
         title: '导入成功！',
@@ -727,7 +1006,7 @@ const handleBeforeOk = async () => {
 // 删除数据
 function deleteItem(item) {
   if (balanceLoading.value) {
-    Notification.warning('请停止或等待查询完成后再删除数据！');
+    Notification.warning({ content: '请停止或等待查询完成后再删除数据！', position: 'topLeft' });
     return
   }
   // 删除确认
@@ -749,7 +1028,7 @@ function deleteItemCancel() {
 async function deleteItemConfirm() {
   deleteItemVisible.value = false
   data.value = data.value.filter(obj => currentItemKey.value !== obj.address)
-  Notification.success('删除成功！');
+  Notification.success({ content: '删除成功！', position: 'topLeft' });
 }
 
 // 更新余额查询进度
@@ -772,15 +1051,15 @@ const debouncedDeleteItemConfirm = debounce(deleteItemConfirm, 400);
 // 查询余额（改为使用Rust后端）
 async function queryBalance() {
   if (data.value.length === 0) {
-    Notification.warning('请先导入地址！');
+    Notification.warning({ content: '请先导入地址！', position: 'topLeft' });
     return
   }
   if (!chainValue.value) {
-    Notification.warning('请先选择区块链！');
+    Notification.warning({ content: '请先选择区块链！', position: 'topLeft' });
     return
   }
   if (!coinValue.value) {
-    Notification.warning('请先选择代币！');
+    Notification.warning({ content: '请先选择代币！', position: 'topLeft' });
     return
   }
 
@@ -806,6 +1085,7 @@ async function executeBalanceQuery(queryData) {
       item.coin_balance = ''
       item.error_msg = ''
       item.exec_status = '0'
+      item.last_transaction_time = null
     })
 
     showProgress.value = true
@@ -813,7 +1093,7 @@ async function executeBalanceQuery(queryData) {
     // 分批处理大数据集
     await queryBalanceInBatches()
   } else {
-    Notification.warning('查询 coin 类型错误！');
+    Notification.warning({ content: '查询 coin 类型错误！', position: 'topLeft' });
   }
 }
 
@@ -865,11 +1145,11 @@ async function queryBalanceInBatches() {
     }, 3000); // 3秒后隐藏进度条
     
     if (successCount === totalCount) {
-      Notification.success('查询成功！');
+      Notification.success({ content: '查询成功！', position: 'topLeft' });
     } else if (successCount > 0) {
-      Notification.warning(`查询完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+      Notification.warning({ content: `查询完成！成功 ${successCount} 条，失败 ${failCount} 条`, position: 'topLeft' });
     } else {
-      Notification.error('查询失败：所有记录都查询失败');
+      Notification.error({ content: '查询失败：所有记录都查询失败', position: 'topLeft' });
     }
     
   } catch (error) {
@@ -900,8 +1180,8 @@ async function queryBalanceBatch(batchData, startIndex) {
         contract_address: currentCoin.value.contract_address || null,
         abi: currentCoin.value.abi || null
       },
-      items: batchData.map(item => ({
-        key: item.address,
+      items: batchData.map((item, index) => ({
+        key: String(startIndex + index), // 使用全局索引作为key，确保重复地址也能正确更新
         address: item.address,
         private_key: item.private_key || null,
         plat_balance: null,
@@ -912,7 +1192,9 @@ async function queryBalanceBatch(batchData, startIndex) {
         retry_flag: false
       })),
       only_coin_config: onlyCoin.value,
-      thread_count: form.thread_count
+      thread_count: form.thread_count,
+      // 将配置参数传递给后端，按需查询最后交易时间
+      query_last_transaction_time: !!form.queryLastTransactionTime
     };
 
     // 检查是否需要停止查询
@@ -994,6 +1276,14 @@ async function stopBalanceQuery() {
   balanceStopFlag.value = true;
   // 隐藏进度条
   showProgress.value = false;
+  
+  // 清空待处理的更新
+  pendingUpdates.length = 0;
+  if (updateTimer) {
+    cancelAnimationFrame(updateTimer);
+    updateTimer = null;
+  }
+  
   console.log('停止查询成功');
 }
 
@@ -1023,16 +1313,16 @@ function applyAdvancedFilter() {
   selectedKeys.value = filteredItems;
   advancedFilterVisible.value = false;
   
-  Notification.success(`已筛选并选中 ${filteredItems.length} 条数据`);
+  Notification.success({ content: `已筛选并选中 ${filteredItems.length} 条数据`, position: 'topLeft' });
 }
 
 function deleteSelected() {
   if (balanceLoading.value) {
-    Notification.warning('请停止或等待查询完成后再删除数据！');
+    Notification.warning({ content: '请停止或等待查询完成后再删除数据！', position: 'topLeft' });
     return
   }
   data.value = data.value.filter(item => !selectedKeys.value.includes(item.address))
-  Notification.success('删除成功')
+  Notification.success({ content: '删除成功', position: 'topLeft' })
 }
 
 function exportAllToExcel() {
@@ -1046,21 +1336,26 @@ function exportSelectToExcel() {
 
 function exportExcel(target_data) {
   if (target_data.length === 0) {
-    Notification.warning('无法导出空列表！');
-    return
+    Notification.warning({ content: '无法导出空列表！', position: 'topLeft' });
+    return;
   }
-  let export_data = [['地址', 'Nonce', '平台余额', '代币余额', '查询状态', '错误信息']]
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+  const export_data = [['地址', 'Nonce', '平台余额', '代币余额', '查询状态', '错误信息', '最后交易时间']];
   target_data.forEach(item => {
-    export_data.push([item.address, item.nonce, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg])
-  })
-  // 创建工作簿
-  const workbook = xlUtils.book_new();
-  // 创建工作表
-  const worksheet = xlUtils.aoa_to_sheet(export_data);
-  // 将工作表添加到工作簿
-  xlUtils.book_append_sheet(workbook, worksheet, 'Sheet1');
-  // 导出文件
-  writeFile(workbook, 'balance_data.xlsx');
+    const transactionTime = formatTransactionTime(item.last_transaction_time);
+    export_data.push([item.address, item.nonce, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg, transactionTime]);
+  });
+
+  exportWithDialog(export_data, `balance_data_${timestamp}.xlsx`).then((path) => {
+    if (path) {
+      openDirectory(path);
+      Notification.success({
+        content: '导出成功！',
+        duration: 4000,
+        position: 'topLeft',
+      });
+    }
+  });
 }
 
 // 链管理相关方法
@@ -1074,7 +1369,7 @@ function showChainManage() {
 // 显示RPC管理弹窗
 function showRpcManage() {
   if (!chainValue.value) {
-    Notification.warning("请先选择区块链！");
+    Notification.warning({ content: "请先选择区块链！", position: 'topLeft' });
     return;
   }
   rpcManageRef.value?.show();
@@ -1083,7 +1378,7 @@ function showRpcManage() {
 // 显示代币管理弹窗
 function showTokenManage() {
   if (!chainValue.value) {
-    Notification.warning("请先选择区块链！");
+    Notification.warning({ content: "请先选择区块链！", position: 'topLeft' });
     return;
   }
   tokenManageRef.value?.show();
@@ -1092,7 +1387,7 @@ function showTokenManage() {
 // 打开区块链浏览器
 function openBlockchainScan() {
   if (!currentChain.value?.scan_url) {
-    Notification.warning('当前链没有配置区块链浏览器地址');
+    Notification.warning({ content: '当前链没有配置区块链浏览器地址', position: 'topLeft' });
     return;
   }
 
@@ -1103,7 +1398,7 @@ function openBlockchainScan() {
       open(currentChain.value.scan_url);
     }).catch(error => {
       console.error('打开浏览器失败:', error);
-      Notification.error('打开浏览器失败');
+      Notification.error({ content: '打开浏览器失败', position: 'topLeft' });
     });
   } else {
     // 在浏览器环境中直接打开新窗口
@@ -1171,12 +1466,13 @@ function handleProxyConfigChange(config) {
     proxyStatus.value = '未配置';
   }
   
-  // 调试日志
-  console.log('[代理状态更新]', {
-    enabled: proxyEnabled.value,
-    count: proxyCount.value,
-    status: proxyStatus.value
-  });
+  // 保存到 localStorage (复用Transfer的逻辑)
+  const currentWindow = getCurrentWindow();
+  const storageKey = `proxy_config_${currentWindow.label}`;
+  localStorage.setItem(storageKey, JSON.stringify({
+    enabled: config.enabled,
+    proxies: config.proxies || []
+  }));
 }
 
 // 获取代理状态颜色
@@ -1200,7 +1496,40 @@ async function initProxyStatus() {
   try {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) {
-      const config = await invoke('get_proxy_config');
+      let windowId = currentWindowId.value;
+      if (!windowId || windowId.trim() === '') {
+        windowId = generateWindowId();
+        currentWindowId.value = windowId;
+      }
+      
+      // 检查是否有持久化的窗口ID
+      const currentWindow = await getCurrentWindow();
+      const storageKey = `proxy_window_id_${currentWindow.label}`;
+      const storedWindowId = localStorage.getItem(storageKey);
+      if (storedWindowId) {
+        windowId = storedWindowId;
+        currentWindowId.value = windowId;
+      } else {
+        localStorage.setItem(storageKey, windowId);
+      }
+
+      await invoke('set_proxy_window_id', { windowId });
+      
+      // 尝试从 localStorage 读取配置
+      const proxyStorageKey = `proxy_config_${currentWindow.label}`;
+      const storedConfig = localStorage.getItem(proxyStorageKey);
+      
+      let config;
+      if (storedConfig) {
+        try {
+          config = JSON.parse(storedConfig);
+        } catch (e) {
+          config = await invoke('get_proxy_config_for_window', { windowId });
+        }
+      } else {
+        config = await invoke('get_proxy_config_for_window', { windowId });
+      }
+
       handleProxyConfigChange(config);
     }
   } catch (error) {
@@ -1219,6 +1548,21 @@ async function handleBeforeClose() {
       console.log('已停止余额查询操作');
     }
 
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri) {
+      try {
+        const currentWindow = await getCurrentWindow();
+        const windowLabel = currentWindow.label;
+        localStorage.removeItem(`proxy_config_${windowLabel}`);
+        localStorage.removeItem(`proxy_window_id_${windowLabel}`);
+        console.log(`已清除窗口 ${windowLabel} 的代理配置缓存`);
+        
+        await invoke('clear_proxy_config_for_window', { windowId: windowLabel });
+      } catch (error) {
+        console.error('清除代理配置缓存失败:', error);
+      }
+    }
+
     console.log('TitleBar窗口关闭清理完成，所有后台操作已停止');
   } catch (error) {
     console.error('处理窗口关闭事件时发生错误:', error);
@@ -1230,239 +1574,283 @@ async function handleBeforeClose() {
   <!-- 标题栏组件 -->
   <TitleBar :title="windowTitle" @before-close="handleBeforeClose" />
 
-  <div class="container balance" style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
-    <!-- <span class="pageTitle">余额查询</span> -->
-    <!-- 工具栏 -->
-    <div class="toolBar" style="flex-shrink: 0;">
-      <a-button type="primary" @click="handleClick()">
-        <template #icon>
-          <Icon icon="mdi:wallet" />
-        </template>
-        录入钱包地址
-      </a-button>
-      <a-divider direction="vertical" />
-      <!-- 选择操作区按钮 -->
-      <a-button type="outline" status="success" @click="selectSucceeded">
-        <template #icon>
-          <Icon icon="mdi:check" />
-        </template>
-        选中成功
-      </a-button>
-      <a-button type="outline" status="danger" style="margin-left: 10px" @click="selectFailed">
-        <template #icon>
-          <Icon icon="mdi:close" />
-        </template>
-        选中失败
-      </a-button>
-      <!-- 高级筛选按钮 -->
-      <a-button type="outline" status="normal" style="margin-left: 10px" @click="showAdvancedFilter">
-        <template #icon>
-          <Icon icon="mdi:filter" />
-        </template>
-        高级筛选
-      </a-button>
-      <a-button type="outline" status="normal" style="margin-left: 10px" @click="InvertSelection">
-        <template #icon>
-          <Icon icon="mdi:swap-horizontal" />
-        </template>
-        反选
-      </a-button>
-      <a-button type="primary" status="danger" style="margin-left: 10px" @click="debouncedDeleteSelected">
-        <template #icon>
-          <Icon icon="mdi:delete" />
-        </template>
-        删除选中
-      </a-button>
-      <!-- 代理配置按钮 -->
-      <a-button type="outline" status="normal" style="margin-left: 10px" @click="openProxyConfig">
-        <template #icon>
-          <Icon icon="mdi:proxy" />
-        </template>
-        代理配置
-        <a-tag :color="proxyEnabled ? proxyStatusColor : '#86909c'" size="small" style="margin-left: 4px;">
-          {{ proxyEnabled ? proxyCount + '个' : '未启用' }}
-        </a-tag>
-      </a-button>
-      <a-divider direction="vertical" />
-      <a-button type="primary" status="success" @click="debouncedExportAllToExcel">
-        <template #icon>
-          <Icon icon="mdi:download" />
-        </template>
-        导出全表
-      </a-button>
-      <a-button type="outline" status="normal" style="margin-left: 10px" @click="debouncedExportSelectToExcel">
-        <template #icon>
-          <Icon icon="mdi:download" />
-        </template>
-        导出选中
-      </a-button>
-      <a-button type="primary" status="danger" style="float: right;margin-right: 10px" @click="debouncedClearData">
-        <template #icon>
-          <Icon icon="mdi:delete" />
-        </template>
-        清空列表
-      </a-button>
-    </div>
-    <!-- 操作账号表格 -->
-    <div class="mainTable" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;">
-      <!-- 骨架屏 -->
-      <TableSkeleton v-if="balanceLoading && data.length === 0" :rows="8" />
-      
-      <!-- 正常表格 -->
-      <VirtualScrollerTable 
-        v-else-if="tableBool" 
-        :columns="columns" 
-        :data="filteredData"
-        :row-selection="rowSelection" 
-        :selected-keys="selectedKeys"
-        @row-click="rowClick"
-        @update:selected-keys="selectedKeys = $event"
-        row-key="address"
-        height="100%"
-      >
+  <div class="container balance" @click="handleClickOutside">
+    <!-- 隐藏的文件输入框 -->
+    <input
+      type="file"
+      ref="uploadInputRef"
+      accept=".xlsx,.xls,.csv"
+      style="display: none"
+      @change="handleFileChange"
+    />
 
-        <template #exec_status="{ record }">
-          <a-tag v-if="record.exec_status === '0'" color="#86909c">等待查询
-          </a-tag>
-          <a-tag v-if="record.exec_status === '1'" color="#ff7d00">查询中
-          </a-tag>
-          <a-tag v-if="record.exec_status === '2'" color="#00b42a">查询成功
-          </a-tag>
-          <a-tag v-if="record.exec_status === '3'" color="#f53f3f">查询失败
-          </a-tag>
-        </template>
-        <template #optional="{ record }">
-          <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger">
-            <template #icon>
-              <icon-delete />
+    <div class="main-content" :style="{ gap: isSidePanelExpanded ? '10px' : '0px' }">
+      <!-- 左侧主面板 -->
+      <div class="left-panel">
+        <div class="table-section">
+          <!-- 骨架屏 -->
+          <TableSkeleton v-if="balanceLoading && data.length === 0" :rows="8" />
+          
+          <!-- 正常表格 -->
+          <VirtualScrollerTable 
+            v-else-if="tableBool" 
+            :columns="columns" 
+            :data="filteredData"
+            :row-selection="rowSelection" 
+            :selected-keys="selectedKeys"
+            @row-click="rowClick"
+            @update:selected-keys="selectedKeys = $event"
+            @open-manual-import="handleManualImport"
+            @open-file-upload="handleFileUpload"
+            row-key="address"
+            height="100%"
+            page-type="balance"
+            :empty-data="filteredData.length === 0"
+            class="table-with-side-actions"
+            :class="{ 'expanded': !isSidePanelExpanded }"
+          >
+
+            <template #exec_status="{ record }">
+              <a-tag v-if="record.exec_status === '0'" color="#86909c">等待查询
+              </a-tag>
+              <a-tag v-if="record.exec_status === '1'" color="#ff7d00">查询中
+              </a-tag>
+              <a-tag v-if="record.exec_status === '2'" color="#00b42a">查询成功
+              </a-tag>
+              <a-tag v-if="record.exec_status === '3'" color="#f53f3f">查询失败
+              </a-tag>
             </template>
-          </a-button>
-        </template>
-      </VirtualScrollerTable>
-    </div>
+            <template #last_transaction_time="{ record }">
+              <span>{{ formatTransactionTime(record.last_transaction_time) }}</span>
+            </template>
+            <template #optional="{ record }">
+              <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger">
+                <template #icon>
+                  <icon-delete />
+                </template>
+              </a-button>
+            </template>
+          </VirtualScrollerTable>
 
-    <!-- 余额查询进度条 - 悬浮在页面顶部 -->
-    <Transition name="progress-slide" appear>
-      <div v-if="showProgress" class="floating-progress-bar">
-        <div class="progress-content">
-          <div class="progress-header">
-            <span class="progress-title">查询进度</span>
-            <span class="progress-count">{{ balanceCompleted }}/{{ balanceTotal }}</span>
+          <!-- 余额查询进度条 - 悬浮在表格上方 -->
+          <Transition name="progress-slide" appear>
+            <div v-if="showProgress" class="floating-progress-bar">
+              <div class="progress-content">
+                <div class="progress-header">
+                  <span class="progress-title">查询进度</span>
+                  <span class="progress-count">{{ balanceCompleted }}/{{ balanceTotal }}</span>
+                </div>
+                <a-progress 
+                  :percent="balanceProgress" 
+                  :stroke-width="6" 
+                  :animation="true" 
+                  :color="{
+                    '0%': '#37ecba',
+                    '100%': '#009efd',
+                  }" 
+                  class="progress-bar"
+                />
+              </div>
+            </div>
+          </Transition>
+
+        </div>
+
+          <!-- 悬浮操作栏 -->
+          <div class="action-buttons-section">
+            <div class="floating-action-bar">
+              <div class="floating-action-content">
+                <div v-if="!balanceLoading" class="btn-wrapper">
+                  <a-button type="success" class="floating-btn success-btn" @click="debouncedQueryBalance">
+                    <template #icon><Icon icon="mdi:play" /></template>
+                    <span class="btn-text">查询余额</span>
+                  </a-button>
+                </div>
+                <div v-else class="btn-wrapper btn-stop-wrapper">
+                  <a-button type="success" class="floating-btn success-btn stopping" @click="debouncedStopBalanceQuery">
+                    <template #icon><Icon icon="mdi:stop" /></template>
+                    <span class="btn-text btn-text-stop">
+                      <span class="btn-text-normal">查询中...</span>
+                      <span class="btn-text-hover">停止查询</span>
+                    </span>
+                  </a-button>
+                </div>
+              </div>
+            </div>
           </div>
-          <a-progress 
-            :percent="balanceProgress" 
-            :stroke-width="6" 
-            :animation="true" 
-            :color="{
-              '0%': '#37ecba',
-              '100%': '#009efd',
-            }" 
-            class="progress-bar"
-          />
+
+        <!-- 底部配置区 -->
+        <div class="config-section">
+          <div class="config-container">
+             <div class="config-item">
+               <span class="config-label">线程数</span>
+               <a-input-number :max="999" :min="1" mode="button" v-model="form.thread_count" style="width: 120px; margin-left: 8px;" />
+             </div>
+             
+             <div class="config-divider"></div>
+             
+             <div class="config-item">
+               <span class="config-label">查询最后交易时间</span>
+               <a-switch v-model="form.queryLastTransactionTime" style="margin-left: 8px;" />
+             </div>
+             
+             <div class="config-divider"></div>
+             
+             <div class="config-item">
+               <span class="config-label">仅查询目标代币</span>
+               <a-switch v-model="onlyCoin" style="margin-left: 8px;" />
+             </div>
+          </div>
         </div>
       </div>
-    </Transition>
 
-    <!-- 链管理按钮嵌入 -->
-    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-shrink: 0;">
-      <!-- 链管理按钮 -->
-      <a-button type="primary" @click="showChainManage" style="white-space: nowrap;">
-        <template #icon>
-          <Icon icon="mdi:settings" />
-        </template>
-        区块链管理
-      </a-button>
-      <a-button type="primary" @click="showRpcManage" :disabled="!chainValue" style="white-space: nowrap;">
-        <template #icon>
-          <Icon icon="mdi:link" />
-        </template>
-        RPC管理
-      </a-button>
-      <!-- 链 选择器 -->
-      <a-select v-model="chainValue" :options="chainOptions" @change="chainChange" :field-names="chainFieldNames"
-        size="large" :style="{ width: '65%' }">
-        <template #label="{ data }">
-          <div style="
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            width: 100%;
-          ">
-            <span style="color: gray;">区块链：</span>
-            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
-              style="width: 20px; height: 20px;" />
-            <span style="margin-left: 10px">{{ data?.name }}</span>
-            <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
+      <!-- 右侧工具栏 -->
+      <div class="right-panel" :style="{ width: isSidePanelExpanded ? '50px' : '0', overflow: isSidePanelExpanded ? 'visible' : 'hidden'}">
+        <div class="side-actions-panel-fixed">
+          <div class="side-actions-content-fixed">
+            <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="导出数据" position="left">
+              <a-dropdown>
+                <a-button size="mini">
+                  <template #icon><Icon icon="mdi:export" style="color: #722ed1; font-size: 20px" /></template>
+                </a-button>
+                <template #content>
+                  <a-doption @click="debouncedExportAllToExcel" class="dropdown-option">
+                    <Icon icon="mdi:database-export" style="margin-right: 8px; margin-bottom: -2px" />导出全部数据
+                  </a-doption>
+                  <a-doption @click="debouncedExportSelectToExcel" class="dropdown-option">
+                    <Icon icon="mdi:database-export" style="margin-right: 8px; margin-bottom: -2px" />导出选中数据
+                  </a-doption>
+                </template>
+              </a-dropdown>
+            </a-tooltip>
+            
+            <div class="side-actions-divider"></div>
+            
+            <a-tooltip content="选中成功的数据" position="left"><a-button type="outline" status="success" size="mini" @click="selectSucceeded"><template #icon><Icon icon="mdi:check-circle" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="选中失败的数据" position="left"><a-button type="outline" status="danger" size="mini" @click="selectFailed"><template #icon><Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="反选" position="left"><a-button type="outline" size="mini" @click="InvertSelection"><template #icon><Icon icon="mdi:swap-horizontal" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="高级筛选" position="left"><a-button type="primary" size="mini" @click="showAdvancedFilter"><template #icon><Icon icon="mdi:filter" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="删除选中" position="left"><a-button type="outline" status="danger" size="mini" @click="debouncedDeleteSelected"><template #icon><Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
           </div>
-        </template>
-        <template #option="{ data }">
-          <div style="display: flex; flex-direction: row; align-items: center;height: 32px;">
-            <ChainIcon :chain-key="data?.key" :pic-data="data?.pic_data" :alt="data?.name"
-              style="width: 20px; height: 20px;" />
-            <span style="margin-left: 10px">{{ data?.name }}</span>
-            <span style="margin-left: 20px;color: #c3c3c3;">{{ data?.scan_url }}</span>
-          </div>
-        </template>
-      </a-select>
-      <!-- 区块链浏览器跳转按钮 -->
-      <a-tooltip v-if="currentChain?.scan_url" content="在浏览器中打开区块链浏览器">
-        <a-button type="primary" @click="openBlockchainScan" shape="round" style="white-space: nowrap; padding: 0 8px;">
-          <Icon icon="mdi:open-in-new" />
-        </a-button>
-      </a-tooltip>
-      <a-button type="primary" @click="showTokenManage" :disabled="!chainValue" style="white-space: nowrap;">
-        <template #icon>
-          <Icon icon="mdi:cog" />
-        </template>
-        代币管理
-      </a-button>
-      <!-- 代币 选择器 -->
-      <a-select v-model="coinValue" :options="coinOptions" :field-names="coinFieldNames" :style="{ width: '30%' }"
-        @change="coinChange">
-        <template #label="{ data }">
-          <span style="color: gray;">代币：</span>
-          <span style="margin-left: 10px">{{ data?.label }}</span>
-        </template>
-        <template #option="{ data }">
-          <span style="margin-left: 10px">{{ data?.label }}</span>
-        </template>
-      </a-select>
-    </div>
-    <!-- 相关设置 -->
-    <div style="display: flex; padding-top: 5px; align-items: center; flex-shrink: 0;">
-      <!-- 表单配置 -->
-      <a-form :model="form" auto-label-width="true">
-        <div style="display: flex; align-items: end; gap: 20px;">
-          <!-- 仅查询目标代币开关 -->
-          <a-form-item label="仅查询目标代币" style="width: 145px;margin-bottom: 0;">
-            <a-switch v-model="onlyCoin" />
-          </a-form-item>
-          <!-- 线程数配置 -->
-          <a-form-item field="thread_count" label="线程数" style="width: 240px; margin-bottom: 0;"
-            tooltip="同时查询的钱包数量（1-99）之间">
-            <a-input-number :max="99" :min="1" mode="button" v-model="form.thread_count" style="width: 100%;" />
-          </a-form-item>
         </div>
-      </a-form>
+      </div>
     </div>
-    <div style="display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 5px; flex-shrink: 0;">
-      <!-- 查询按钮 -->
-      <a-tooltip v-if="balanceLoading" content="点击可以提前停止查询">
-        <a-button type="primary" status="danger" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="debouncedStopBalanceQuery">
-          <template #icon>
-            <Icon icon="mdi:stop" />
+
+    <!-- 底部状态栏 -->
+    <div class="status-bar">
+      <div class="status-bar-left">
+        <div class="status-group">
+          <!-- 链选择器 -->
+          <div class="chain-selector-container" style="position: relative">
+            <div
+              class="status-item status-chain"
+              :class="{
+                'status-chain-active': chainSelectorExpanded,
+                'status-item-disabled': balanceLoading,
+              }"
+              @click="toggleChainSelector"
+              :title="balanceLoading ? '执行过程中无法切换区块链' : '点击切换区块链'"
+            >
+              <ChainIcon v-if="currentChain?.key" :chain-key="currentChain?.key" :pic-data="currentChain?.pic_data" :alt="currentChain?.name" style="width: 14px; height: 14px" />
+              <span class="status-label">{{ currentChain?.name || '选择区块链' }}</span>
+              <Icon icon="mdi:chevron-up" style="font-size: 12px; margin-left: 4px; transition: transform 0.2s" :style="{ transform: chainSelectorExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }" />
+              <a-tag v-if="currentChain?.scan_url" size="small" class="status-explorer-tag" @click.stop="openBlockchainScan" title="打开区块链浏览器"><Icon icon="mdi:open-in-new" /></a-tag>
+            </div>
+            <Transition name="selector-slide">
+              <div v-if="chainSelectorExpanded" class="selector-dropdown selector-dropdown-up">
+                <div class="selector-search">
+                  <a-input ref="chainSearchInputRef" v-model="chainSearchKeyword" placeholder="搜索区块链..." size="small" allow-clear><template #prefix><Icon icon="mdi:magnify" style="font-size: 14px; color: var(--text-color-quaternary, #c9cdd4)" /></template></a-input>
+                </div>
+                <div class="selector-list">
+                  <div v-for="chain in filteredChainOptions" :key="chain.key" class="selector-item" :class="{ 'selector-item-selected': chainValue === chain.key }" @click.stop="handleChainSelect(chain.key)">
+                    <ChainIcon :chain-key="chain.key" :pic-data="chain.pic_data" :alt="chain.name" style="width: 18px; height: 18px; flex-shrink: 0" />
+                    <span class="selector-item-name">{{ chain.name }}</span>
+                    <span class="selector-item-url">{{ chain.scan_url }}</span>
+                    <Icon v-if="chainValue === chain.key" icon="mdi:check" style="font-size: 14px; color: var(--primary-6, #165dff); margin-left: auto" />
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </div>
+          
+          <div class="status-divider"></div>
+          
+          <!-- 代币选择器 -->
+          <div class="token-selector-container" style="position: relative">
+            <div
+              class="status-item status-token"
+              :class="{
+                'status-token-active': tokenSelectorExpanded,
+                'status-item-disabled': balanceLoading,
+              }"
+              @click="toggleTokenSelector"
+              :title="balanceLoading ? '执行过程中无法切换代币' : '点击切换代币'"
+            >
+              <Icon icon="mdi:coins" style="font-size: 14px" />
+              <span class="status-label">{{ currentCoin?.label || '选择代币' }}</span>
+              <Icon icon="mdi:chevron-up" style="font-size: 12px; margin-left: 4px; transition: transform 0.2s" :style="{ transform: tokenSelectorExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }" />
+            </div>
+            <Transition name="selector-slide">
+              <div v-if="tokenSelectorExpanded" class="selector-dropdown selector-dropdown-up">
+                <div class="selector-search">
+                  <a-input ref="tokenSearchInputRef" v-model="tokenSearchKeyword" placeholder="搜索代币..." size="small" allow-clear><template #prefix><Icon icon="mdi:magnify" style="font-size: 14px; color: var(--text-color-quaternary, #c9cdd4)" /></template></a-input>
+                </div>
+                <div class="selector-list">
+                  <div v-for="token in filteredCoinOptions" :key="token.key" class="selector-item" :class="{ 'selector-item-selected': coinValue === token.key }" @click="handleTokenSelect(token.key)">
+                    <Icon :icon="token.coin_type === 'base' ? 'mdi:circle-slice-8' : 'mdi:coin'" :style="{ fontSize: '18px', color: token.coin_type === 'base' ? 'var(--primary-6, #165dff)' : 'var(--success-6, #0fa962)', flexShrink: '0' }" />
+                    <span class="selector-item-name">{{ token.label }}</span>
+                    <span class="selector-item-symbol">({{ token.symbol }})</span>
+                    <Icon v-if="coinValue === token.key" icon="mdi:check" style="font-size: 14px; color: var(--primary-6, #165dff); margin-left: auto" />
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </div>
+        </div>
+        
+        <div class="status-divider-vertical"></div>
+        
+        <!-- Gas Price -->
+        <div class="status-group status-gas-group" v-show="chainValue && chainValue !== 'sol'">
+          <Icon icon="mdi:gas-station" style="font-size: 14px; color: var(--text-color-tertiary, #c9cdd4)" />
+          <span class="status-gas-label">Gas:</span>
+          <span class="status-gas-value">{{ currentChain?.gas_price ?? '--' }}<span class="status-gas-unit">Gwei</span></span>
+        </div>
+      </div>
+      
+      <div class="status-bar-right">
+        <!-- 代理状态 -->
+        <div class="status-proxy-indicator" :class="{ 'proxy-active': proxyEnabled }" :style="{ color: proxyEnabled ? proxyStatusColor : 'var(--text-color-quaternary, #c9cdd4)' }" title="代理状态" @click="openProxyConfig">
+          <Icon icon="mdi:shield-network" style="font-size: 14px" />
+          <span class="proxy-status-text">{{ proxyEnabled ? '已启用代理' : '未启动代理' }}</span>
+          <span v-if="proxyEnabled" class="proxy-count-text">({{ proxyCount }}个)</span>
+        </div>
+        
+        <div class="status-divider-vertical"></div>
+        
+        <!-- 菜单按钮 -->
+        <div class="status-menu-btn" :class="{ 'menu-btn-expanded': isSidePanelExpanded }" @click="isSidePanelExpanded ? collapseSidePanel() : expandSidePanel()" :title="isSidePanelExpanded ? '关闭功能菜单' : '打开功能菜单'">
+          <Icon icon="mdi:menu" style="font-size: 15px" />
+        </div>
+        
+        <!-- 设置按钮 -->
+        <a-dropdown position="tr">
+          <div class="status-settings-btn" title="设置"><Icon icon="mdi:cog" style="font-size: 15px" /></div>
+          <template #content>
+            <a-doption @click="toggleChainSelector"><template #icon><Icon icon="mdi:swap-horizontal" /></template>重新选择区块链</a-doption>
+            <a-doption @click="showTokenManage" :disabled="!chainValue"><template #icon><Icon icon="mdi:coin" /></template>代币管理</a-doption>
+            <a-doption @click="showRpcManage" :disabled="!chainValue"><template #icon><Icon icon="mdi:link" /></template>RPC管理</a-doption>
+            <a-doption @click="showChainManage"><template #icon><Icon icon="mdi:web" /></template>区块链管理</a-doption>
+            <a-doption @click="openProxyConfig"><template #icon><Icon icon="mdi:shield-network" /></template>代理配置<a-tag :color="proxyEnabled ? proxyStatusColor : '#86909c'" size="small" style="margin-left: 4px">{{ proxyEnabled ? proxyCount + '个' : '未启用' }}</a-tag></a-doption>
           </template>
-          查询中...
-        </a-button>
-      </a-tooltip>
-      <a-button v-else type="primary" status="success" class="execute-btn" style="height: 40px;width: 130px;font-size: 14px;" @click="debouncedQueryBalance">
-        <template #icon>
-          <Icon icon="mdi:play" />
-        </template>
-        查询余额
-      </a-button>
+        </a-dropdown>
+      </div>
     </div>
   </div>
+  
   <!-- 录入弹窗 -->
   <a-modal v-model:visible="visible" :width="700" title="录入钱包地址" @cancel="handleCancel" :on-before-ok="handleBeforeOk"
     :confirm-loading="importLoading"
@@ -1501,11 +1889,13 @@ async function handleBeforeClose() {
       </a-alert>
     </div>
   </a-modal>
+  
   <!-- 添加代币弹窗 -->
   <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"
     :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
     <a-input v-model="coinAddress" placeholder="请输入代币合约地址" allow-clear />
   </a-modal>
+  
   <!-- 删除代币确认框 -->
   <a-modal v-model:visible="deleteTokenVisible" title="删除确认">
     <div>确认删除【 {{ currentCoin.coin }} 】代币？</div>
@@ -1515,6 +1905,7 @@ async function handleBeforeClose() {
       </a-button>
     </template>
   </a-modal>
+  
   <!-- 删除数据确认框 -->
   <a-modal v-model:visible="deleteItemVisible" title="删除确认">
     <div>确认删除地址为【
@@ -1582,9 +1973,9 @@ async function handleBeforeClose() {
   <!-- 链管理组件 -->
   <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" />
   <!-- RPC管理组件 -->
-  <RpcManagement ref="rpcManageRef" :chain-value="chainValue" @rpc-updated="handleRpcUpdated" />
+  <RpcManagement ref="rpcManageRef" :chain-value="chainValue" :chain-options="chainOptions" @rpc-updated="handleRpcUpdated" />
   <!-- 代币管理组件 -->
-  <TokenManagement ref="tokenManageRef" :chain-value="chainValue" @token-updated="handleTokenUpdated" />
+  <TokenManagement ref="tokenManageRef" :chain-value="chainValue" :chain-options="chainOptions" @token-updated="handleTokenUpdated" />
   
   <!-- 代理配置弹窗 -->
   <ProxyConfigModal 
@@ -1594,6 +1985,7 @@ async function handleBeforeClose() {
     @config-change="handleProxyConfigChange"
     ref="proxyConfigRef"
   />
+
 </template>
 
 <style scoped lang="less">
@@ -1620,24 +2012,16 @@ async function handleBeforeClose() {
   font-weight: 500;
 }
 
-.minimize-icon {
-  font-size: 14px;
-}
-
-.close-icon {
-  font-size: 14px;
-}
-
-/* 调整容器以适应自定义标题栏 */
+/* 布局样式 */
 .container {
-  padding: 10px;
-  height: calc(100vh - 30px);
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: hidden; /* Prevent scrollbar during transitions */
+  padding: 50px 10px 50px 10px; /* 为顶部TitleBar和底部StatusBar留出空间 */
+  min-width: 1000px;
 }
 
-/* 隐藏滚动条但保持滚动功能 */
 .container::-webkit-scrollbar {
   display: none;
 }
@@ -1647,108 +2031,283 @@ async function handleBeforeClose() {
   scrollbar-width: none;
 }
 
-.pageTitle {
-  font-size: 24px;
-  font-weight: 600;
-  margin-bottom: 20px;
-  background: linear-gradient(120deg, #11c06f 0%, #165dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+/* 下拉菜单项样式 */
+:deep(.arco-dropdown-option-content) {
+  display: flex;
+  align-items: center;
+}
+
+/* 主内容区 */
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: visible;
   position: relative;
-  display: inline-block;
 }
 
-.pageTitle::after {
-  content: "";
-  position: absolute;
-  bottom: -5px;
-  left: 0;
-  width: 100%;
-  height: 3px;
-  background: linear-gradient(120deg, #11c06f 0%, #165dff 100%);
-  border-radius: 3px;
-}
-
-.pageTitle::before {
-  content: "💰";
-  margin-right: 10px;
-  user-select: none;
-  text-align: start;
-  line-height: 100px;
-  font-size: 100px;
-  background-image: linear-gradient(to bottom, #f2f3f5, #ffffff);
-  background-clip: text;
-  -webkit-background-clip: text;
-  font-weight: 600;
-  height: 120px;
-  right: -10px;
-  border-radius: 30px;
-  color: transparent;
-  top: 15px;
-  z-index: 0;
-}
-
-.mainTable {
-  margin-top: 15px;
-  height: 100%;
+/* 左侧面板 */
+.left-panel {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: visible;
+  min-width: 0;
 }
 
-.subTitle {
+/* 表格区域 */
+.table-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+
+.action-buttons-section {
+  flex-shrink: 0;
+  position: relative;
+  overflow: visible;
+  height: 10px;
+}
+
+.config-section { flex-shrink: 0; background: var(--card-bg, var(--color-bg-1, #ffffff)); border: 1px solid var(--color-border, #e5e6eb); border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
+
+
+.config-container {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+}
+
+.config-item {
+  display: flex;
+  align-items: center;
+}
+
+.config-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border, #e5e6eb);
+}
+
+.config-label {
+  font-size: 14px;
+  color: var(--text-color-secondary, #4e5969);
+}
+
+/* 右侧工具栏面板 */
+.right-panel {
+  width: 50px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+  overflow: visible;
+}
+
+.side-actions-panel-fixed {
+  width: 50px;
+  background: var(--color-bg-2, #ffffff);
+  border: 1px solid var(--color-border, #e5e6eb);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px;
+  pointer-events: none; /* 让鼠标事件穿透到下层，除了内容 */
+  box-shadow: 3px 0px 6px 0px rgba(0, 0, 0, 0.06), -1px 0 4px rgba(0, 0, 0, 0.03);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 100%;
+}
+
+.side-actions-content-fixed {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  opacity: 1;
+  pointer-events: auto; /* 恢复内容交互 */
+  flex: 1;
+  justify-content: center;
+}
+
+.side-actions-divider {
+  width: 30px;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--color-border, #e2e4e8), transparent);
+  margin: 8px 0;
+}
+
+/* 侧边栏按钮样式 */
+.side-actions-content-fixed :deep(.arco-btn) {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #e2e4e8);
+  background: var(--color-fill-1, #f7f8fa);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.side-actions-content-fixed :deep(.arco-btn:hover) {
+  background: var(--color-primary-light-1, #e8f0ff);
+  border-color: var(--color-primary-5, #4086ff);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(22, 93, 255, 0.15);
+}
+
+.side-actions-content-fixed :deep(.arco-btn[type='primary']) {
+  background: linear-gradient(135deg, var(--color-primary-6, #165dff) 0%, var(--color-primary-5, #4086ff) 100%);
+  border-color: var(--color-primary-6, #165dff);
+  box-shadow: 0 2px 6px rgba(22, 93, 255, 0.25);
+}
+
+.side-actions-content-fixed :deep(.arco-btn[type='primary']:hover) {
+  background: linear-gradient(135deg, var(--color-primary-5, #4086ff) 0%, var(--color-primary-6, #165dff) 100%);
+  box-shadow: 0 4px 12px rgba(22, 93, 255, 0.35);
+}
+
+.side-actions-content-fixed :deep(.arco-btn[status='success']) {
+  background: linear-gradient(135deg, var(--color-success-6, #0fa962) 0%, var(--color-success-5, #12b576) 100%);
+  border-color: var(--color-success-6, #0fa962);
+  box-shadow: 0 2px 6px rgba(15, 169, 98, 0.25);
+}
+
+.side-actions-content-fixed :deep(.arco-btn[status='success']:hover) {
+  background: linear-gradient(135deg, var(--color-success-5, #12b576) 0%, var(--color-success-6, #0fa962) 100%);
+  box-shadow: 0 4px 12px rgba(15, 169, 98, 0.35);
+}
+
+.side-actions-content-fixed :deep(.arco-btn[status='danger']) {
+  background: linear-gradient(135deg, var(--color-danger-6, #f53f3f) 0%, var(--color-danger-5, #ff7d7d) 100%);
+  border-color: var(--color-danger-6, #f53f3f);
+  box-shadow: 0 2px 6px rgba(245, 63, 63, 0.25);
+}
+
+.side-actions-content-fixed :deep(.arco-btn[status='danger']:hover) {
+  background: linear-gradient(135deg, var(--color-danger-5, #ff7d7d) 0%, var(--color-danger-6, #f53f3f) 100%);
+  box-shadow: 0 4px 12px rgba(245, 63, 63, 0.35);
+}
+
+/* 表格与侧边栏联动 */
+.table-with-side-actions {
+  margin-right: 60px;
+  margin-top: 0;
+  height: 100%;
+  transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.table-with-side-actions.expanded {
+  margin-right: 0;
+}
+
+/* 悬浮操作栏 */
+.floating-action-bar { position: relative; z-index: 10; width: 100%; display: flex; justify-content: center; pointer-events: none; margin-top: -24px;}
+
+.floating-action-content {
+  display: flex;
+  gap: 40px;
+  align-items: center;
+  pointer-events: auto;
+  background: var(--bg-color, #ffffff);
+  padding: 6px 12px;
+  border-radius: 50px;
+  /* 只有内容部分有背景和阴影，看起来像悬浮 */
+  box-shadow: none; 
+  background: transparent;
+}
+
+.btn-wrapper {
+  min-width: 140px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floating-btn {
+  min-width: 140px;
+  height: 44px;
+  font-size: 15px;
   font-weight: 600;
-  font-size: 16px;
-  margin: 10px 0 0 10px;
-}
-
-.arco-form-item {
-  padding: 5px 10px;
-  margin-bottom: 10px;
-}
-
-.arco-btn-secondary.arco-btn-loading {
-  color: #ffffff;
-  background-color: #11c06f;
-}
-
-.arco-btn-secondary.arco-btn-loading:hover {
-  color: #ffffff;
-  background-color: #fc0934;
-}
-
-.arco-btn-outline.arco-btn-loading:hover {
-  color: #ffffff;
-  background-color: #fc0934;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
   border: none;
+  cursor: pointer;
 }
 
-.arco-radio-button.arco-radio-checked {
+.floating-btn.success-btn {
+  background: linear-gradient(135deg, #00b42a 0%, #009624 100%);
   color: #ffffff;
-  background-color: #165dff;
+  box-shadow: 0 4px 12px rgba(0, 180, 42, 0.3);
 }
 
-.execute-btn {
-  width: 150px;
-  height: 50px;
-  font-size: 16px;
-  color: #ffffff;
-  background-color: #0fa962;
-  border: none;
+.floating-btn.success-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 180, 42, 0.4);
 }
 
-.toolBar {
-  margin-top: 45px;
+.btn-stop-wrapper .floating-btn.stopping {
+  background: linear-gradient(135deg, #ff7d00 0%, #e67000 100%) !important;
+  box-shadow: 0 4px 12px rgba(255, 125, 0, 0.3) !important;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-/* 悬浮进度条样式 */
+.btn-stop-wrapper .floating-btn.stopping:hover {
+  background: linear-gradient(135deg, #ff4d4f 0%, #e64547 100%) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(255, 77, 79, 0.3);
+}
+
+.btn-text-stop {
+  position: relative;
+  display: inline-block;
+  min-width: 60px;
+  text-align: center;
+}
+
+.btn-text-normal, .btn-text-hover {
+  display: block;
+  transition: all 0.15s ease;
+}
+
+.btn-text-hover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
+.btn-stop-wrapper .floating-btn.stopping:hover .btn-text-normal {
+  opacity: 0;
+  transform: translateY(5px);
+}
+
+.btn-stop-wrapper .floating-btn.stopping:hover .btn-text-hover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 悬浮进度条 */
 .floating-progress-bar {
   position: fixed;
-  top: 45px;
+  top: 50px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1000;
+  z-index: 10000;
   width: 90%;
   max-width: 600px;
   background: var(--card-bg, #ffffff);
@@ -1784,7 +2343,6 @@ async function handleBeforeClose() {
   width: 100%;
 }
 
-/* 进度条动画 */
 .progress-slide-enter-active {
   transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
@@ -1807,5 +2365,361 @@ async function handleBeforeClose() {
 .progress-slide-leave-from {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* 底部状态栏 */
+.status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(to bottom, var(--color-bg-2, #ffffff), var(--color-bg-1, #f7f8fa));
+  border-top: 1px solid var(--color-border, #e5e6eb);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 1000;
+  font-size: 12px;
+}
+
+.status-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-gas-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  background: var(--color-fill-1, #f2f3f5);
+  border-radius: 12px;
+  margin-left: 4px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-color-secondary, #6b778c);
+}
+
+.status-label {
+  font-weight: 500;
+  color: var(--text-color, #1d2129);
+}
+
+.status-explorer-tag {
+  margin-left: 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-fill-1, #f2f3f5);
+  border: 1px solid var(--color-border-2, #e5e6eb);
+  color: var(--text-color-tertiary, #8c8f94);
+  transition: all 0.2s ease;
+}
+
+.status-explorer-tag:hover {
+  background: var(--primary-1, #e8f1ff);
+  border-color: var(--primary-3, #94bfff);
+  color: var(--primary-6, #165dff);
+}
+
+.status-chain {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-chain:hover {
+  background: linear-gradient(135deg, var(--primary-1, #e8f1ff), var(--color-fill-2, #f2f3f5));
+}
+
+.status-chain:hover .status-label {
+  color: var(--primary-6, #165dff);
+}
+
+.status-chain:hover .status-explorer-tag {
+  background: var(--primary-1, #e8f1ff);
+  border-color: var(--primary-3, #94bfff);
+  color: var(--primary-6, #165dff);
+}
+
+.status-token {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-token:hover {
+  background: linear-gradient(135deg, var(--success-1, #e6fffb), var(--color-fill-2, #f2f3f5));
+}
+
+.status-token:hover .status-label {
+  color: var(--success-6, #0fa962);
+}
+
+.status-gas-label {
+  color: var(--text-color-tertiary, #8c8f94);
+  font-size: 11px;
+}
+
+.status-gas-value {
+  font-weight: 600;
+  color: var(--primary-6, #165dff);
+  font-size: 13px;
+}
+
+.status-gas-unit {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-color-tertiary, #8c8f94);
+}
+
+.status-divider {
+  width: 1px;
+  height: 18px;
+  background: linear-gradient(to bottom, transparent, var(--color-border, #e5e6eb) 30%, var(--color-border, #e5e6eb) 70%, transparent);
+  margin: 0 2px;
+}
+
+.status-divider-vertical {
+  width: 1px;
+  height: 24px;
+  background: linear-gradient(to bottom, transparent, var(--color-border-2, #d9d9d9) 30%, var(--color-border-2, #d9d9d9) 70%, transparent);
+  margin: 0 8px;
+}
+
+.status-menu-btn {
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color-secondary, #6b778c);
+}
+
+.status-menu-btn:hover {
+  background: var(--color-fill-2, #f2f3f5);
+  color: var(--primary-6, #165dff);
+}
+
+.status-menu-btn.menu-btn-expanded {
+  color: var(--primary-6, #165dff);
+  background: var(--primary-1, #e8f1ff);
+}
+
+.status-settings-btn {
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color-secondary, #6b778c);
+}
+
+.status-settings-btn:hover {
+  background: var(--color-fill-2, #f2f3f5);
+  color: var(--primary-6, #165dff);
+  transform: rotate(90deg);
+}
+
+.status-proxy-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--color-fill-1, #f2f3f5);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.status-proxy-indicator:hover {
+  background: var(--color-fill-2, #e5e6eb);
+}
+
+.status-proxy-indicator.proxy-active {
+  background: var(--success-1, #e6fffb);
+}
+
+.status-proxy-indicator.proxy-active:hover {
+  background: var(--success-2, #b7f0e6);
+}
+
+.proxy-status-text {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.proxy-count-text {
+  font-size: 11px;
+  color: var(--text-color-tertiary, #8c8f94);
+}
+
+.status-chain-active {
+  background: linear-gradient(135deg, var(--primary-1, #e8f1ff), var(--color-fill-2, #f2f3f5)) !important;
+}
+
+.status-chain-active .status-label {
+  color: var(--primary-6, #165dff) !important;
+}
+
+.status-token-active {
+  background: linear-gradient(135deg, var(--success-1, #e6fffb), var(--color-fill-2, #f2f3f5)) !important;
+}
+
+.status-token-active .status-label {
+  color: var(--success-6, #0fa962) !important;
+}
+
+.status-item-disabled {
+  cursor: not-allowed !important;
+  opacity: 0.6;
+}
+
+.status-item-disabled:hover {
+  background: transparent !important;
+}
+
+.status-item-disabled:hover .status-label {
+  color: var(--text-color, #1d2129) !important;
+}
+
+.status-item-disabled .status-explorer-tag {
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+/* 下拉选择器 */
+.selector-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--color-border, #e5e6eb);
+  border-radius: 12px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15), 0 -2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 10000;
+  margin-bottom: 8px;
+  min-width: 360px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.selector-dropdown-up {
+  border-radius: 12px 12px 4px 4px;
+}
+
+.selector-search {
+  padding: 12px 12px 8px 12px;
+  border-bottom: 1px solid var(--color-border-2, #f0f0f0);
+  background: var(--color-fill-1, #f7f8fa);
+}
+
+.selector-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 240px;
+  padding: 8px;
+}
+
+.selector-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-bottom: 2px;
+}
+
+.selector-item:hover {
+  background: var(--color-fill-2, #f2f3f5);
+}
+
+.selector-item-selected {
+  background: var(--primary-1, #e8f1ff);
+}
+
+.selector-item-selected:hover {
+  background: var(--primary-2, #d4e4ff);
+}
+
+.selector-item-name {
+  font-weight: 500;
+  color: var(--text-color, #1d2129);
+  flex: 1;
+  overflow: visible;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selector-item-url {
+  font-size: 11px;
+  color: var(--text-color-tertiary, #8c8f94);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.selector-item-symbol {
+  font-size: 11px;
+  color: var(--text-color-secondary, #6b778c);
+  margin-left: 4px;
+}
+
+.selector-slide-enter-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.selector-slide-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.selector-slide-enter-from, .selector-slide-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.selector-slide-enter-to, .selector-slide-leave-from {
+  opacity: 1;
+  transform: translateY(0);
 }
 </style>

@@ -51,7 +51,7 @@
     --primary-color: #1890ff;
     --text-color: #333333;
     --text-color-secondary: #86909c;
-    --bg-color: #ffffff;
+    --bg-color: #f7f8f9;
     --bg-gradient: linear-gradient(135deg, #f0f2f5 0%, #ffffff 50%, #f5f7fa 100%);
     --card-bg: #ffffff;
     --border-color: #e5e5e5;
@@ -61,7 +61,7 @@
     --table-header-text-color: #1d2129;
     --table-text-color: #1d2129;
     --table-border-color: #e5e6eb;
-    --table-hover-bg: #f7f8fa;
+    --table-hover-bg: #fff9e6;
     --table-zebra-bg: #fafafa;
     --table-selected-bg: #e8f4ff;
     --loading-bg: rgba(255, 255, 255, 0.8);
@@ -75,7 +75,7 @@
     --text-color-secondary: #86909c;
     --bg-color: rgb(42, 42, 43);
     --bg-gradient: rgb(42, 42, 43);
-    --card-bg: rgb(53 56 61);
+    --card-bg: rgb(35 35 36);
     --border-color: #3a3a4e;
     --shadow-color: rgba(0, 0, 0, 0.3);
     --table-bg: rgb(35, 35, 36);
@@ -83,7 +83,7 @@
     --table-header-text-color: #ffffff;
     --table-text-color: #ffffff;
     --table-border-color: #3a3a4e;
-    --table-hover-bg: rgb(45, 45, 46);
+    --table-hover-bg: #4a4520;
     --table-zebra-bg: #4b4b4b;
     --table-selected-bg: rgba(51, 112, 255, 0.2);
     --loading-bg: rgba(42, 42, 43, 0.8);
@@ -161,11 +161,83 @@ body.fonts-loaded {
   font-feature-settings: 'liga' 1, 'kern' 1;
 }
 
-/* 全局覆盖 */
-.arco-notification {
-  max-width: 300px !important;
-  width: 300px !important;
-  top: 20px !important; /* 向下移动20px避免遮挡窗口栏 */
+/* 全局覆盖 - Notification位置改为左上角 */
+.arco-notification-container,
+.arco-notification-wrapper,
+[class*="arco-notification-container"] {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.arco-notification,
+.arco-notification-list,
+[class*="arco-notification"],
+div[class*="notification"] {
+  top: 50px !important;
+  left: 10px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+
+/* 入场动画 */
+@keyframes notificationSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 覆盖 Arco Design 内置动画 */
+.arco-notification-fade-enter-active,
+.arco-notification-fade-leave-active {
+  animation: none !important;
+  transition: none !important;
+}
+
+.arco-notification-fade-enter-from,
+.arco-notification-fade-leave-to {
+  opacity: 0 !important;
+}
+
+/* 成功通知 - 绿色虚线边框 */
+.arco-notification-success {
+  border: 1px solid #3db96b !important;
+}
+
+/* 警告通知 - 黄色虚线边框 */
+.arco-notification-warning {
+  border: 1px solid #cc9a1d !important;
+}
+
+/* 错误通知 - 红色虚线边框 */
+.arco-notification-error {
+  border: 1px solid #c94f4f !important;
+}
+
+/* 通知弹出动画容器 */
+.arco-notification-fade {
+  top: 50px !important;
+  left: 10px !important;
+  right: auto !important;
+  bottom: auto !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+/* 强制覆盖所有可能的通知位置 */
+body > div:last-child > div[class*="notification"],
+body > div[class*="notification"] {
+  top: 50px !important;
+  left: 10px !important;
+  right: auto !important;
+  bottom: auto !important;
+  animation: none !important;
+  transition: none !important;
 }
 
 /* 虚拟滚动容器滚动条样式 */

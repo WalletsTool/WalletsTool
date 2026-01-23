@@ -1,5 +1,5 @@
 <script setup name="wallet-import-modal">
-import { ref, reactive, computed, nextTick } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { ethers } from 'ethers';
 import CodeEditor from './CodeEditor.vue';
 
@@ -81,7 +81,7 @@ function validateAddress(address) {
     }
 
     // 使用ethers.js进行最终验证
-    return ethers.utils.isAddress(trimmedAddress);
+    return ethers.isAddress(trimmedAddress);
   } catch (error) {
     return false;
   }
@@ -278,7 +278,7 @@ defineExpose({
       </div>
       
       <!-- 左侧：私钥输入 -->
-      <div style="width: 660px; height: 100%; display: flex; flex-direction: column;">
+      <div style="width: 640px; height: 100%; display: flex; flex-direction: column;">
         <div class="input-label" style="margin-bottom: 8px; font-weight: 500;">发送方私钥</div>
         <CodeEditor 
           ref="privateKeyEditorRef"
@@ -293,7 +293,7 @@ defineExpose({
       </div>
 
       <!-- 右侧：接收地址输入 -->
-      <div style="width: 430px; height: 100%; display: flex; flex-direction: column;">
+      <div style="width: 450px; height: 100%; display: flex; flex-direction: column;">
         <div class="input-label" style="margin-bottom: 8px; font-weight: 500;">接收地址</div>
         <CodeEditor 
           ref="addressEditorRef"

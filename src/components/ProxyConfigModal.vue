@@ -2,7 +2,7 @@
   <a-modal
     v-model:visible="modalVisible"
     title="代理配置"
-    width="600px"
+    width="580px"
     :mask-closable="true"
     :closable="true"
     :keyboard="true"
@@ -12,160 +12,80 @@
     @cancel="handleCancel"
   >
     <div class="proxy-config-modal">
-      <!-- 代理开关 -->
-      <div class="config-section">
-        <a-row align="middle" :gutter="16">
-          <a-col :span="4">
-            <label class="config-label">启用代理:</label>
-          </a-col>
-          <a-col :span="20">
-            <a-switch v-model="proxyConfig.enabled" />
-            <span class="switch-text">{{ proxyConfig.enabled ? '已启用' : '已禁用' }}</span>
-          </a-col>
-        </a-row>
+      <!-- 头部：开关 -->
+      <div class="config-header">
+        <span class="label">启用代理服务</span>
+        <a-switch v-model="proxyConfig.enabled" checked-text="开" unchecked-text="关" />
       </div>
 
       <!-- 代理列表输入 -->
-      <div class="config-section">
-        <a-row :gutter="16">
-          <a-col :span="4">
-            <label class="config-label">代理列表:</label>
-          </a-col>
-          <a-col :span="20">
-            <a-textarea
-              v-model="proxyListText"
-              placeholder="请输入代理地址，每行一个，支持格式：&#10;http://proxy.example.com:8080&#10;https://proxy.example.com:8080&#10;socks5://proxy.example.com:1080&#10;&#10;支持用户名密码认证：&#10;http://username:password@proxy.example.com:8080"
-              :rows="8"
-              :auto-size="false"
-              class="proxy-textarea"
-              @input="updateProxyCount"
-              @change="updateProxyCount"
-              @blur="updateProxyCount"
-            />
-            <div class="proxy-count">
-              当前代理数量: {{ validProxiesCount }}
-              <span v-if="totalLines > 0" class="proxy-count-detail">
-                (总行数: {{ totalLines }}<span v-if="filteredLinesCount > 0">, 过滤: {{ filteredLinesCount }} 行空白/注释</span>)
-              </span>
-            </div>
-          </a-col>
-        </a-row>
-      </div>
-
-      <!-- 代理测试 -->
-      <div class="config-section" v-if="proxyConfig.enabled && proxyConfig.proxies.length > 0">
-        <a-row :gutter="16">
-          <a-col :span="4">
-            <label class="config-label">连接测试:</label>
-          </a-col>
-          <a-col :span="8">
-            <div class="test-controls">
-              <div class="test-buttons">
-                <a-button 
-                  type="primary" 
-                  @click="testAllProxies"
-                  :loading="testing"
-                  :disabled="proxyConfig.proxies.length === 0"
-                >
-                  {{ testing ? '测试中...' : '测试所有代理' }}
-                </a-button>
-                <a-button 
-                  v-if="testing"
-                  type="default"
-                  @click="cancelTesting"
-                  :disabled="!testing"
-                >
-                  取消测试
-                </a-button>
-              </div>
-              
-              <!-- <div class="thread-config">
-                <label class="thread-label">并发线程数:</label>
-                <a-input-number
-                  v-model:value="threadCount"
-                  :min="1"
-                  :max="100"
-                  :disabled="testing"
-                  :style="{ width: '80px' }"
-                />
-                <span class="thread-hint">（1-100）</span>
-              </div> -->
-            </div>
-            
-            <!-- 测试进度 -->
-            <div v-if="testing || testResults.length > 0" class="test-progress">
-              <div v-if="testing" class="progress-info">
-                <a-progress 
-                  :percent="testProgress" 
-                  :show-info="true"
-                  :format="(percent) => `${testCompletedCount}/${testTotalCount}`"
-                />
-                <div class="progress-details">
-                  <span>进度: {{ testCompletedCount }}/{{ testTotalCount }}</span>
-                  <span v-if="testSpeed > 0">速度: {{ testSpeed.toFixed(1) }} 个/秒</span>
-                  <span v-if="estimatedTime > 0">预计剩余: {{ formatEstimatedTime(estimatedTime) }}</span>
-                </div>
-              </div>
-              
-              <div v-if="testResults.length > 0" class="test-summary">
-                <span class="test-info">
-                  成功: <span class="success-count">{{ successCount }}</span> / 
-                  失败: <span class="failure-count">{{ failureCount }}</span>
-                </span>
-                <span v-if="!testing && testResults.length > 0" class="test-duration">
-                  耗时: {{ formatDuration(testDuration) }}
-                </span>
-              </div>
-            </div>
-          </a-col>
-        </a-row>
-      </div>
-
-      <!-- 测试结果 -->
-      <div class="config-section" v-if="testResults.length > 0">
-        <div class="test-results">
-          <h4>测试结果</h4>
-          <div class="result-list">
-            <div 
-              v-for="result in testResults" 
-              :key="result.proxy"
-              class="result-item"
-              :class="{ 'success': result.success, 'failure': !result.success }"
-            >
-              <div class="proxy-url">{{ result.proxy }}</div>
-              <div class="result-status">
-                <a-tag :color="result.success ? 'green' : 'red'">
-                  {{ result.success ? '成功' : '失败' }}
-                </a-tag>
-                <span v-if="result.success" class="latency">
-                  {{ result.latency }}ms
-                </span>
-                <span v-else class="error-msg">
-                  {{ result.error }}
-                </span>
-              </div>
-            </div>
-          </div>
+      <div class="config-content">
+        <div class="section-title">
+          <span>代理列表</span>
+          <span class="proxy-count" v-if="validProxiesCount > 0">
+            (共 {{ validProxiesCount }} 个)
+          </span>
+        </div>
+        <a-textarea
+          v-model="proxyListText"
+          placeholder="请输入代理地址，每行一个
+格式示例：
+http://127.0.0.1:7890
+socks5://user:pass@127.0.0.1:1080"
+          :auto-size="{ minRows: 8, maxRows: 12 }"
+          class="proxy-textarea"
+          @input="updateProxyCount"
+          @change="updateProxyCount"
+          @blur="updateProxyCount"
+        />
+        <div class="input-tip" v-if="totalLines > 0">
+          已识别 {{ totalLines }} 行 <span v-if="filteredLinesCount > 0"> (过滤 {{ filteredLinesCount }} 行空白/注释)</span>
         </div>
       </div>
 
-      <!-- 代理统计 -->
-      <div class="config-section" v-if="proxyStats && Object.keys(proxyStats).length > 0">
-        <div class="proxy-stats">
-          <h4>代理统计</h4>
-          <div class="stats-list">
-            <div 
-              v-for="(stats, proxyUrl) in proxyStats" 
-              :key="proxyUrl"
-              class="stats-item"
+      <!-- 代理测试区域 -->
+      <div class="test-section" v-if="proxyConfig.enabled && proxyConfig.proxies.length > 0">
+        <div class="test-header">
+          <div class="test-controls">
+             <a-button 
+              :type="testing ? 'secondary' : 'primary'" 
+              status="success"
+              size="small"
+              @click="testing ? cancelTesting() : testAllProxies()"
             >
-              <div class="proxy-url">{{ proxyUrl }}</div>
-              <div class="stats-info">
-                <span class="stat">成功: {{ stats.success_count }}</span>
-                <span class="stat">失败: {{ stats.failure_count }}</span>
-                <span class="stat">平均延迟: {{ stats.avg_latency.toFixed(0) }}ms</span>
-                <span class="stat">最后使用: {{ formatTime(stats.last_used) }}</span>
-              </div>
+              <template #icon>
+                <icon-stop v-if="testing" />
+                <icon-play-arrow v-else />
+              </template>
+              {{ testing ? '停止测试' : '测试连接' }}
+            </a-button>
+            <div v-if="testing || testResults.length > 0" class="test-summary">
+              <span class="summary-item success"><icon-check-circle /> {{ successCount }}</span>
+              <span class="summary-item failure"><icon-close-circle /> {{ failureCount }}</span>
+              <span class="summary-item time" v-if="!testing && testDuration > 0">耗时: {{ formatDuration(testDuration) }}</span>
+            </div>
+          </div>
+          <div class="test-progress-bar" v-if="testing">
+             <a-progress 
+              :percent="testProgress" 
+              size="small" 
+              :show-text="false"
+              :color="{ '0%': 'rgb(var(--primary-6))', '100%': 'rgb(var(--success-6))' }"
+            />
+          </div>
+        </div>
+
+        <!-- 测试结果列表 -->
+        <div class="test-results-list" v-if="testResults.length > 0">
+          <div 
+            v-for="result in testResults" 
+            :key="result.proxy"
+            class="result-row"
+          >
+            <div class="result-proxy" :title="result.proxy">{{ result.proxy }}</div>
+            <div class="result-status">
+              <span v-if="result.success" class="status-success">{{ result.latency }} ms</span>
+              <span v-else class="status-failure" :title="result.error">连接失败</span>
             </div>
           </div>
         </div>
@@ -177,6 +97,7 @@
 <script setup>
 import { ref, reactive, watch, computed, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { IconPlayArrow, IconStop, IconCheckCircle, IconCloseCircle } from '@arco-design/web-vue/es/icon'
 
 // Props
 const props = defineProps({
@@ -254,6 +175,13 @@ watch(proxyListText, () => {
   updateProxyCount()
 })
 
+// 生成唯一的窗口ID
+const generateWindowId = () => {
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 9);
+  return `window_${timestamp}_${randomPart}`;
+}
+
 // 加载代理配置
 const loadProxyConfig = async () => {
   try {
@@ -265,6 +193,32 @@ const loadProxyConfig = async () => {
     }
 
     const { invoke } = await import('@tauri-apps/api/core')
+    
+    // 获取当前窗口的唯一ID
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const currentWindow = await getCurrentWindow()
+    
+    // 优先使用窗口标签，如果没有则生成唯一ID
+    let windowId = currentWindow.label
+    if (!windowId || windowId.trim() === '') {
+      windowId = generateWindowId()
+    }
+    
+    // 检查是否有持久化的窗口ID
+    const storageKey = `proxy_window_id_${currentWindow.label}`
+    const storedWindowId = localStorage.getItem(storageKey)
+    if (storedWindowId) {
+      windowId = storedWindowId
+    } else {
+      // 存储窗口ID供后续使用
+      localStorage.setItem(storageKey, windowId)
+    }
+    
+    console.log('ProxyConfigModal - 当前窗口ID:', windowId, 'label:', currentWindow.label)
+    
+    // 先设置窗口ID，确保后端使用正确的配置
+    await invoke('set_proxy_window_id', { windowId })
+    
     const config = await invoke('get_proxy_config')
     proxyConfig.enabled = config.enabled
     proxyConfig.proxies = config.proxies || []
@@ -272,6 +226,8 @@ const loadProxyConfig = async () => {
     
     // 输出当前加载的代理配置到日志
     console.log('代理配置已加载:', {
+      windowId,
+      label: currentWindow.label,
       enabled: config.enabled,
       proxyCount: config.proxies ? config.proxies.length : 0,
       proxies: config.enabled && config.proxies ? config.proxies : '代理已禁用或无代理'
@@ -292,7 +248,26 @@ const loadProxyStats = async () => {
     }
 
     const { invoke } = await import('@tauri-apps/api/core')
-    const stats = await invoke('get_proxy_stats')
+    
+    // 获取当前窗口ID
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const currentWindow = await getCurrentWindow()
+    
+    // 优先使用窗口标签，如果没有则生成唯一ID
+    let windowId = currentWindow.label
+    if (!windowId || windowId.trim() === '') {
+      windowId = generateWindowId()
+    }
+    
+    // 检查是否有持久化的窗口ID
+    const storageKey = `proxy_window_id_${currentWindow.label}`
+    const storedWindowId = localStorage.getItem(storageKey)
+    if (storedWindowId) {
+      windowId = storedWindowId
+    }
+    
+    // 使用窗口ID特定的统计命令
+    const stats = await invoke('get_proxy_stats_for_window', { windowId })
     proxyStats.value = stats
   } catch (error) {
     console.error('加载代理统计失败:', error)
@@ -414,7 +389,7 @@ const testAllProxies = async () => {
     if (testCancelled.value) {
       Message.warning(`测试已取消，已完成 ${testCompletedCount.value}/${testTotalCount.value} 个代理的测试`)
     } else {
-      Message.success(`代理测试完成，成功: ${successCount.value}，失败: ${failureCount.value}，耗时: ${formatDuration(testDuration.value)}`)
+      Message.success(`测试完成: ${successCount.value} 成功, ${failureCount.value} 失败`)
     }
 
   } catch (error) {
@@ -465,13 +440,36 @@ const handleSave = async () => {
     }
 
     const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('save_proxy_config', {
+    
+    // 获取当前窗口ID
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const currentWindow = await getCurrentWindow()
+    
+    // 优先使用窗口标签，如果没有则生成唯一ID
+    let windowId = currentWindow.label
+    if (!windowId || windowId.trim() === '') {
+      windowId = generateWindowId()
+    }
+    
+    // 检查是否有持久化的窗口ID
+    const storageKey = `proxy_window_id_${currentWindow.label}`
+    const storedWindowId = localStorage.getItem(storageKey)
+    if (storedWindowId) {
+      windowId = storedWindowId
+    } else {
+      localStorage.setItem(storageKey, windowId)
+    }
+    
+    // 使用窗口ID特定的保存命令
+    await invoke('save_proxy_config_for_window', {
+      windowId,
       proxies: proxyConfig.proxies,
       enabled: proxyConfig.enabled
     })
     
     // 输出保存的代理配置到日志
     console.log('代理配置已保存:', {
+      windowId,
       enabled: proxyConfig.enabled,
       proxyCount: proxyConfig.proxies.length,
       proxies: proxyConfig.enabled ? proxyConfig.proxies : '代理已禁用'
@@ -551,11 +549,8 @@ const formatDuration = (milliseconds) => {
   
   const seconds = Math.floor(milliseconds / 1000)
   const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
   
-  if (hours > 0) {
-    return `${hours}小时${minutes % 60}分${seconds % 60}秒`
-  } else if (minutes > 0) {
+  if (minutes > 0) {
     return `${minutes}分${seconds % 60}秒`
   } else {
     return `${seconds}秒`
@@ -587,241 +582,125 @@ onMounted(() => {
 
 <style scoped>
 .proxy-config-modal {
-  padding: 16px 0;
+  padding: 8px 0;
 }
 
-.config-section {
-  margin-bottom: 24px;
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px 16px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 16px;
 }
 
-.config-label {
-  font-weight: 500;
-  color: #1d2129;
-  display: inline-block;
-  text-align: right;
-  padding-right: 8px;
-}
-
-.switch-text {
-  margin-left: 8px;
-  color: #86909c;
+.label {
   font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-1);
 }
 
-.proxy-textarea {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.4;
-  resize: vertical;
-  box-sizing: border-box;
-}
-
-.proxy-textarea :deep(.arco-textarea) {
-  height: calc(8 * 1.4em + 16px) !important;
-  min-height: calc(8 * 1.4em + 16px) !important;
-  max-height: none !important;
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: var(--color-text-1);
 }
 
 .proxy-count {
-  margin-top: 8px;
-  color: #86909c;
+  font-weight: normal;
   font-size: 12px;
+  color: var(--color-text-3);
 }
 
-.proxy-count-detail {
-  margin-left: 8px;
-  color: #c9cdd4;
-  font-size: 11px;
+.proxy-textarea {
+  font-family: 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  background-color: var(--color-fill-1);
 }
 
-/* 测试控制区域样式 */
-.test-controls {
+.input-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-4);
+  text-align: right;
+}
+
+.test-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.test-header {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.test-buttons {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.thread-config {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.thread-label {
-  font-size: 14px;
-  color: #4e5969;
-  white-space: nowrap;
-}
-
-.thread-hint {
-  font-size: 12px;
-  color: #86909c;
-}
-
-/* 测试进度区域样式 */
-.test-progress {
-  margin-top: 16px;
-}
-
-.progress-info {
   margin-bottom: 12px;
 }
 
-.progress-details {
+.test-controls {
   display: flex;
-  gap: 16px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: #86909c;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .test-summary {
   display: flex;
-  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
   align-items: center;
-  padding: 8px 12px;
-  background-color: #f7f8fa;
-  border-radius: 4px;
-  font-size: 14px;
 }
 
-.success-count {
-  color: #00b42a;
-  font-weight: 500;
+.summary-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.failure-count {
-  color: #f53f3f;
-  font-weight: 500;
-}
+.summary-item.success { color: rgb(var(--green-6)); }
+.summary-item.failure { color: rgb(var(--red-6)); }
+.summary-item.time { color: var(--color-text-3); font-size: 12px; }
 
-.test-duration {
-  color: #4e5969;
-  font-size: 12px;
-}
-
-.proxy-count-detail {
-  color: #c9cdd4;
-  font-size: 11px;
-  margin-left: 4px;
-}
-
-.test-info {
-  margin-left: 12px;
-  color: #86909c;
-  font-size: 14px;
-}
-
-.test-results {
-  margin-top: 16px;
-}
-
-.test-results h4 {
-  margin: 0 0 12px 0;
-  color: #1d2129;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.result-list {
-  max-height: 200px;
+.test-results-list {
+  max-height: 180px;
   overflow-y: auto;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
+  padding: 4px 0;
 }
 
-.result-item {
+.result-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid #f2f3f5;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-fill-2);
 }
 
-.result-item:last-child {
+.result-row:last-child {
   border-bottom: none;
 }
 
-.result-item.success {
-  background-color: #f6ffed;
-}
-
-.result-item.failure {
-  background-color: #fff2f0;
-}
-
-.proxy-url {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  color: #4e5969;
+.result-proxy {
   flex: 1;
-  margin-right: 12px;
-  word-break: break-all;
-}
-
-.result-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.latency {
-  color: #00b42a;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.error-msg {
-  color: #f53f3f;
-  font-size: 12px;
-  max-width: 200px;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--color-text-2);
+  margin-right: 12px;
+  font-family: 'Consolas', monospace;
 }
 
-.proxy-stats {
-  margin-top: 16px;
-}
-
-.proxy-stats h4 {
-  margin: 0 0 12px 0;
-  color: #1d2129;
-  font-size: 14px;
+.status-success {
+  color: rgb(var(--green-6));
   font-weight: 500;
 }
 
-.stats-list {
-  max-height: 150px;
-  overflow-y: auto;
-  border: 1px solid #e5e6eb;
-  border-radius: 4px;
-}
-
-.stats-item {
-  padding: 8px 12px;
-  border-bottom: 1px solid #f2f3f5;
-}
-
-.stats-item:last-child {
-  border-bottom: none;
-}
-
-.stats-info {
-  margin-top: 4px;
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.stat {
-  color: #86909c;
-  font-size: 12px;
+.status-failure {
+  color: rgb(var(--red-6));
 }
 </style>

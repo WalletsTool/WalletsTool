@@ -2,13 +2,14 @@
 import { useRouter } from 'vue-router'
 import { useEcosystemStore } from '@/stores/ecosystem'
 import { Notification, Modal } from "@arco-design/web-vue";
-import { onMounted, onBeforeUnmount, ref, h, computed, nextTick } from "vue";
+import { onMounted, onBeforeUnmount, ref, h, computed } from "vue";
 import party from "party-js";
 import { confettiStore, useThemeStore } from '@/stores'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { WINDOW_CONFIG } from '@/utils/windowNames'
 
 const router = useRouter()
 const ecoStore = useEcosystemStore()
@@ -76,24 +77,8 @@ onMounted(async () => {
     console.error('Failed to listen for close event:', error)
   }
 
-  // 页面加载完成后显示主窗口
-  nextTick(() => {
-    // 延迟显示主窗口，确保所有组件都已渲染
-    setTimeout(() => {
-      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-      if (isTauri) {
-        try {
-          const currentWindow = getCurrentWindow();
-          // 显示主窗口
-          currentWindow.show();
-          // 发送页面加载完成事件
-          currentWindow.emit('page-loaded');
-        } catch (error) {
-          console.error('窗口操作错误:', error)
-        }
-      }
-    }, 100);
-  });
+  // 注意：主窗口的显示由 SplashScreen 组件控制，这里不需要再次调用 show()
+  // 启动窗口会在加载完成后自动显示主窗口并关闭自己
 })
 
 // 组件卸载时清理事件监听器
@@ -138,7 +123,7 @@ const funcList = [
 // 跳转到批量转账
 function goPage(pageName) {
   if (pageName === 'distribution') {
-    Notification.success('功能建设中，敬请期待')
+    Notification.success({ content: '功能建设中，敬请期待', position: 'topLeft' })
     return
   }
 
@@ -154,24 +139,29 @@ function goPage(pageName) {
     // 正确实现多窗口
     const count = windowCount.value[pageName] ?? 0
     windowCount.value[pageName] = count + 1
+    const newCount = windowCount.value[pageName]
     if (!windowListObj.value[pageName]) {
       windowListObj.value[pageName] = new Map()
     }
-    const title = funcList.filter(item => item.pageName === pageName)[0].title
-    const windowLabel = pageName + windowCount.value[pageName]
-    const windowUrl = `/#/${ecoStore.currentEco}/${pageName}`
+    const windowLabel = WINDOW_CONFIG.generateLabel(pageName, newCount)
+    const windowUrl = `/#/${ecoStore.currentEco}/${pageName}?count=${newCount}`
+    
+    // 生成窗口标题：统一格式 "WalletsTool - {图标} {功能名} [{序号}]"
+    const moduleIcons = { transfer: '💸', balance: '💰', monitor: '👁️' }
+    const moduleNames = { transfer: '批量转账', balance: '余额查询', monitor: '链上监控' }
+    const title = newCount > 1 
+      ? `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName} [${newCount}]`
+      : `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName}`
 
     const webview = new WebviewWindow(windowLabel, {
       url: windowUrl,
       width: 1350,
       height: 900,
-      title: `${title}-${windowCount.value[pageName]}`,
+      title: title,
       resizable: true,
       center: true,
-      decorations: false,  // 移除Windows原生窗口边框
-      backgroundColor: document.documentElement.getAttribute('data-theme') === 'light' ? '#FFFFFF' : '#2A2A2B',  // 设置窗口背景色
-      // visible: false,  // 初始隐藏窗口
-      // skipTaskbar: false
+      decorations: false,
+      backgroundColor: document.documentElement.getAttribute('data-theme') === 'light' ? '#FFFFFF' : '#2A2A2B',
     })
 
     windowListObj.value[pageName].set(windowLabel, webview)
@@ -214,9 +204,9 @@ function goPage(pageName) {
 function toggleDebugMode() {
   debugMode.value = !debugMode.value
   if (debugMode.value) {
-    Notification.success('调试模式开启')
+    Notification.success({ content: '调试模式开启', position: 'topLeft' })
   } else {
-    Notification.error('调试模式关闭')
+    Notification.error({ content: '调试模式关闭', position: 'topLeft' })
   }
 }
 
@@ -224,9 +214,9 @@ function toggleDebugMode() {
 function toggleTheme() {
   themeStore.toggleTheme()
   // if (isDarkTheme.value) {
-  //   Notification.success('已切换到暗黑主题')
+  //   Notification.success({ content: '已切换到暗黑主题', position: 'topLeft' })
   // } else {
-  //   Notification.success('已切换到明亮主题')
+  //   Notification.success({ content: '已切换到明亮主题', position: 'topLeft' })
   // }
 }
 
@@ -280,20 +270,20 @@ async function checkDatabaseStatus() {
     databaseStatus.value = statusText
 
     if (notificationType === 'success') {
-      Notification.success({
+      Notification.success({ 
         title: '数据库状态检查完成',
         content: statusText
-      })
+      , position: 'topLeft' })
     } else if (notificationType === 'warning') {
-      Notification.warning({
+      Notification.warning({ 
         title: '数据库状态检查完成',
         content: statusText
-      })
+      , position: 'topLeft' })
     } else {
-      Notification.error({
+      Notification.error({ 
         title: '数据库状态检查完成',
         content: statusText
-      })
+      , position: 'topLeft' })
     }
 
     // 数据库状态检查完成
@@ -301,10 +291,10 @@ async function checkDatabaseStatus() {
     console.error('检查数据库状态失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
     databaseStatus.value = '检查失败: ' + errorText
-    Notification.error({
+    Notification.error({ 
       title: '检查数据库状态失败',
       content: errorText
-    })
+    , position: 'topLeft' })
   } finally {
     databaseLoading.value = false
   }
@@ -326,10 +316,10 @@ async function reloadDatabase() {
     // 确保result是字符串格式
     const resultText = typeof result === 'string' ? result : JSON.stringify(result)
 
-    Notification.success({
+    Notification.success({ 
       title: '数据库重载完成',
       content: resultText
-    })
+    , position: 'topLeft' })
 
     // 重新检查数据库状态
     setTimeout(async () => {
@@ -339,10 +329,10 @@ async function reloadDatabase() {
   } catch (error) {
     console.error('重载数据库失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
-    Notification.error({
+    Notification.error({ 
       title: '重载数据库失败',
       content: errorText
-    })
+    , position: 'topLeft' })
   } finally {
     databaseLoading.value = false
   }
@@ -360,10 +350,10 @@ async function refreshPageData() {
     // 重置数据库状态
     databaseStatus.value = null
 
-    Notification.success({
+    Notification.success({ 
       title: '页面数据已刷新',
       content: '所有状态已重置'
-    })
+    , position: 'topLeft' })
 
     // 自动重新检查数据库状态
     setTimeout(async () => {
@@ -373,10 +363,10 @@ async function refreshPageData() {
   } catch (error) {
     console.error('刷新页面数据失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
-    Notification.error({
+    Notification.error({ 
       title: '刷新页面数据失败',
       content: errorText
-    })
+    , position: 'topLeft' })
   }
 }
 
@@ -396,20 +386,20 @@ async function exportDatabaseToInitSql() {
     // 确保result是字符串格式
     const resultText = typeof result === 'string' ? result : JSON.stringify(result)
 
-    Notification.success({
+    Notification.success({ 
       title: '数据库导出完成',
       content: resultText
-    })
+    , position: 'topLeft' })
 
     // 数据库导出完成
 
   } catch (error) {
     console.error('导出数据库失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
-    Notification.error({
+    Notification.error({ 
       title: '导出数据库失败',
       content: errorText
-    })
+    , position: 'topLeft' })
   } finally {
     databaseLoading.value = false
   }
@@ -453,6 +443,36 @@ async function closeWindow() {
   }
 }
 
+// 清除所有代理配置缓存
+async function clearAllProxyConfigs() {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  
+  // 清除前端localStorage
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith('proxy_config_') || key.startsWith('proxy_window_id_'))) {
+      keysToRemove.push(key);
+    }
+  }
+  keysToRemove.forEach(key => {
+    localStorage.removeItem(key);
+    console.log(`已清除缓存: ${key}`);
+  });
+  console.log(`已清除 ${keysToRemove.length} 个代理配置缓存`);
+  
+  // 清除后端文件缓存和内存缓存
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow();
+      await invoke('clear_proxy_config_for_window', { windowId: currentWindow.label });
+      console.log(`已清除窗口 ${currentWindow.label} 的后端代理配置`);
+    } catch (error) {
+      console.error('清除后端代理配置失败:', error);
+    }
+  }
+}
+
 // 处理主窗口关闭请求
 async function handleMainWindowCloseRequest() {
   try {
@@ -477,7 +497,7 @@ async function handleMainWindowCloseRequest() {
 
     // 先获取所有子窗口
     const childWindows = await invoke('get_all_child_windows', {
-      mainWindowLabel: 'WalletsTool'
+      mainWindowLabel: 'main'
     })
 
     // 获取子窗口列表
@@ -510,11 +530,14 @@ async function handleMainWindowCloseRequest() {
             // 设置关闭确认标记位
             closeConfirmed.value = true
 
+            // 清除所有代理配置缓存
+            await clearAllProxyConfigs()
+
             // 先关闭所有子窗口
             if (childWindows && childWindows.length > 0) {
               // 正在关闭子窗口
               await invoke('close_all_child_windows', {
-                mainWindowLabel: 'WalletsTool'
+                mainWindowLabel: 'main'
               })
               // 已关闭子窗口
 
@@ -532,10 +555,10 @@ async function handleMainWindowCloseRequest() {
             // 发生错误时重置标记位
             closeConfirmed.value = false
             isConfirmModalVisible.value = false
-            Notification.error({
+            Notification.error({ 
               title: '错误',
               content: '关闭窗口时发生错误，请重试'
-            })
+            , position: 'topLeft' })
             reject(false) // 操作失败
           } finally {
             // 无论成功还是失败，都重置弹窗状态
@@ -576,10 +599,10 @@ async function handleMainWindowCloseRequest() {
             resolve(true) // 操作成功
           } catch (closeError) {
             console.error('强制关闭窗口时发生错误:', closeError)
-            Notification.error({
+            Notification.error({ 
               title: '错误',
               content: '强制关闭窗口时发生错误，请重试'
-            })
+            , position: 'topLeft' })
             reject(false) // 操作失败
           } finally {
             // 无论成功还是失败，都重置弹窗状态

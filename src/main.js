@@ -36,7 +36,8 @@ import {
   Doption,
   InputGroup,
   Notification,
-  Message
+  Message,
+  Popover
 } from '@arco-design/web-vue';
 import '@arco-design/web-vue/dist/arco.css';
 import "./style.css";
@@ -51,8 +52,16 @@ const preloadResources = () => {
   fontLink.type = 'font/woff2';
   fontLink.crossOrigin = 'anonymous';
   document.head.appendChild(fontLink);
-  
+
   // CSS已通过import语句正确导入，无需预加载
+};
+
+// 确保路由准备就绪
+const setupRoutePreloading = () => {
+  // 等待路由准备就绪
+  router.isReady().then(() => {
+    // 路由已准备就绪，可以执行后续操作
+  });
 };
 
 // 优化字体加载
@@ -118,6 +127,7 @@ app.use(Textarea)
 app.use(Dropdown)
 app.use(Doption)
 app.use(InputGroup)
+app.use(Popover)
 
 app.use(PrimeVue);
 app.component('VirtualScroller', VirtualScroller)
@@ -128,6 +138,7 @@ app.use(pinia)
 // 执行预加载和优化
 preloadResources();
 optimizeFonts();
+setupRoutePreloading();
 
 // 禁用右键菜单
 document.addEventListener('contextmenu', function(e) {

@@ -21,7 +21,19 @@ export default defineConfig({
         ]
     },
     optimizeDeps: {
-        include: ['ethers', 'vue', 'vue-router'],
+        // 预构建依赖项，加速开发启动
+        include: [
+            'ethers',
+            'vue',
+            'vue-router',
+            'pinia',
+            '@arco-design/web-vue',
+            'primevue',
+            '@primevue/themes'
+        ],
+        // 依赖预构建后的缓存目录
+        cacheDir: 'node_modules/.vite-cache',
+        // esbuild 优化选项
         esbuildOptions: {
             // Node.js global to browser globalThis
             define: {
@@ -44,7 +56,26 @@ export default defineConfig({
     server: {
         port: 1422,
         strictPort: false,
+        // 允许访问项目根目录外的文件（用于Tauri）
+        fs: {
+            allow: ['.', '..'],
+        },
+        // 启用热更新优化
+        hmr: {
+            overlay: true,
+        },
+        // 开发服务器优化
+        warmup: {
+            // 预热常用的 transformed 文件
+            transformedFiles: [
+                '/src/main.js',
+                '/src/App.vue',
+                '/src/router/index.js'
+            ]
+        }
     },
+    // 缓存配置
+    cache: true,
     // to make use of `TAURI_DEBUG` and other env variables
     // https://tauri.studio/v1/api/config#buildconfig.beforedevcommand
     envPrefix: ["VITE_", "TAURI_"],
@@ -56,22 +87,19 @@ export default defineConfig({
             output: {
                 // 合并小chunk以减少HTTP请求数量
                 experimentalMinChunkSize: 20000,
-                // 重新启用手动分块，使用更安全的分块策略
+                // 手动分块策略 - 优化首屏加载
                 manualChunks: (id) => {
-                    // 第三方库分块
+                    // 第三方库分块 - 简化策略减少chunk数量
                     if (id.includes('node_modules')) {
-                        // Vue 相关库单独分块
-                        if (id.includes('vue') || id.includes('@vue')) {
-                            return 'vue-vendor';
+                        if (id.includes('ethers')) {
+                            return 'vendor-ethers';
                         }
-                        // Arco Design 组件库单独分块
-                        if (id.includes('@arco-design')) {
-                            return 'arco-vendor';
+                        if (id.includes('vue') || id.includes('vue-router') || id.includes('pinia')) {
+                            return 'vendor-vue';
                         }
-                        // ethers和其他第三方库合并到vendor包中避免循环依赖
                         return 'vendor';
                     }
-                    // 页面组件分块（兼容新结构）
+                    // 页面组件
                     if (
                         id.includes('/src/pages/') ||
                         id.includes('/src/views/') ||
@@ -79,12 +107,12 @@ export default defineConfig({
                     ) {
                         return 'pages';
                     }
-                    // 工具函数分块
-                    if (id.includes('/src/utils/') || id.includes('/src/composables/')) {
-                        return 'utils';
-                    }
-                    // 组件分块
-                    if (id.includes('/src/components/')) {
+                    // 组件和工具
+                    if (
+                        id.includes('/src/components/') ||
+                        id.includes('/src/utils/') ||
+                        id.includes('/src/composables/')
+                    ) {
                         return 'components';
                     }
                 },
@@ -113,57 +141,17 @@ export default defineConfig({
         // Tauri supports es2021
         target: process.env.TAURI_PLATFORM == "windows" ? "chrome105" : "safari14",
         // 启用压缩优化
-        minify: !process.env.TAURI_DEBUG ? "terser" : false,
-        terserOptions: {
-            compress: {
-                // 移除console和debugger语句
-                drop_console: true,
-                drop_debugger: true,
-                // 死代码消除
-                dead_code: true,
-                // 移除未使用的变量和函数
-                unused: true,
-                // 函数内联优化
-                inline: true,
-                // 条件表达式优化
-                conditionals: true,
-                // 比较运算符优化
-                comparisons: true,
-                // 序列优化
-                sequences: true,
-                // 属性访问优化
-                properties: true,
-                // 循环优化
-                loops: true,
-                // 合并变量声明
-                join_vars: true,
-                // 移除无用代码
-                side_effects: false,
-                // 纯函数调用优化
-                pure_funcs: ['console.log', 'console.info', 'console.debug', 'console.warn'],
-                // 移除纯函数调用
-                pure_getters: true,
-                // 常量折叠
-                evaluate: true,
-                // 布尔值优化
-                booleans: true,
-                // 类型推断
-                typeofs: true,
-                // if语句优化
-                if_return: true,
-                // 表达式优化
-                reduce_vars: true,
-                // 移除重复代码
-                collapse_vars: true
-            }
-        },
+        minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
+        // esbuild 压缩选项
         // produce sourcemaps for debug builds
         sourcemap: !!process.env.TAURI_DEBUG,
-        // 设置chunk大小警告限制
-        chunkSizeWarningLimit: 1000,
-        // 小于4KB的资源将被内联为base64
-        assetsInlineLimit: 4096,
+        // 设置chunk大小警告限制（桌面应用无需过度拆分）
+        chunkSizeWarningLimit: 2000,
+        // 增大内联限制，减少HTTP请求
+        assetsInlineLimit: 8192,
         // 启用CSS代码分割
-        cssCodeSplit: true
+        cssCodeSplit: true,
+        // 禁用 treeshake 加速构建
+        treeshake: false
     }
 });

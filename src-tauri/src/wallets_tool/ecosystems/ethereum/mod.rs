@@ -6,3 +6,4 @@ pub mod rpc_management;
 pub mod simple_balance_query;
 pub mod proxy_manager;
 pub mod proxy_commands;
+pub mod alloy_utils;

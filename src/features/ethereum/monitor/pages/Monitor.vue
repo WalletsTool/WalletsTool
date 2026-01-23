@@ -6,6 +6,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import TitleBar from '@/components/TitleBar.vue'
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue'
 import { ethers } from 'ethers'
+import { utils as xlUtils, read as xlRead } from 'xlsx'
+import { WINDOW_CONFIG } from '@/utils/windowNames'
+import { downloadWithDialog, openDirectory } from '@/utils/downloadWithDialog'
 
 // 懒加载组件
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'))
@@ -14,6 +17,7 @@ const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vu
 
 const chainManageRef = ref(null)
 const rpcManageRef = ref(null)
+const uploadInputRef = ref(null)
 
 // 表格列
 const columns = [
@@ -42,7 +46,30 @@ const monitoring = ref(false)
 const intervalSec = ref(15)
 let timer = null
 const showProgress = ref(false)
-const windowTitle = ref('链上地址监控')
+
+// 窗口标题定义
+const windowTitle = ref('链上地址监控');
+
+// 窗口标题初始化
+function initMonitorWindowTitle() {
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) {
+      const windowLabel = getCurrentWindow().label
+      const saved = WINDOW_CONFIG.getCustomTitle(windowLabel)
+      if (saved) {
+        windowTitle.value = saved
+        return
+      }
+    }
+  } catch (e) {
+    console.error('初始化监控窗口标题失败:', e)
+  }
+  
+  // 不再设置默认标题，由后端或调用方设置
+}
+
+initMonitorWindowTitle()
 
 // 链配置
 const chainOptions = ref([])
@@ -64,7 +91,7 @@ function validateAddress(address) {
     if (!trimmed.startsWith('0x') || trimmed.length !== 42) return false
     const hexPart = trimmed.slice(2)
     if (!/^[0-9a-fA-F]{40}$/.test(hexPart)) return false
-    return ethers.utils.isAddress(trimmed)
+    return ethers.isAddress(trimmed)
   } catch { return false }
 }
 
@@ -98,16 +125,89 @@ async function confirmImport() {
     data.value.push(...list.map(a => ({
       address: a, nonce: '', plat_balance: '', change_desc: '', last_change_at: '', error_msg: '', exec_status: '0'
     })))
-    Notification.success(`成功导入 ${list.length} 条地址`)
+    Notification.success({ content: `成功导入 ${list.length} 条地址`, position: 'topLeft' })
     importVisible.value = false
     importText.value = ''
     validationErrors.value = []
     addressErrorLines.value = []
     return true
   } catch (e) {
-    Notification.error('导入失败：' + (e.message || e))
+    Notification.error({ content: '导入失败：' + (e.message || e), position: 'topLeft' })
     return false
   } finally { importLoading.value = false }
+}
+
+// 手动录入地址
+function handleManualImport() {
+  importVisible.value = true;
+}
+
+// 上传文件导入
+function handleFileUpload() {
+  uploadInputRef.value.click();
+}
+
+// 下载模板
+function downloadTemplate() {
+  downloadWithDialog('import_model.xlsx', '导入模板.xlsx').then((path) => {
+    if (path) {
+      openDirectory(path);
+      Notification.success({
+        content: '模板已保存',
+        position: 'topLeft',
+      });
+    }
+  });
+}
+
+// 处理文件变化
+function handleFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = xlRead(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = xlUtils.sheet_to_json(firstSheet, { header: 1 });
+
+      const addresses = [];
+      jsonData.forEach((row, index) => {
+        if (row && row[0]) {
+          const addr = String(row[0]).trim();
+          if (validateAddress(addr)) {
+            addresses.push(addr);
+          }
+        }
+      });
+
+      if (addresses.length > 0) {
+        importText.value = addresses.join('\n');
+        validateImportData();
+        importVisible.value = true;
+        Notification.success({
+          content: `成功解析 ${addresses.length} 个地址`,
+          position: 'topLeft',
+        });
+      } else {
+        Notification.error({
+          content: '未在文件中找到有效的地址数据',
+          position: 'topLeft',
+        });
+      }
+    } catch (error) {
+      console.error('解析文件失败:', error);
+      Notification.error({
+        content: '解析文件失败，请确保文件格式正确',
+        position: 'topLeft',
+      });
+    } finally {
+      event.target.value = '';
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 // 链切换
@@ -162,15 +262,15 @@ async function pollOnce() {
 }
 
 async function startMonitoring() {
-  if (data.value.length === 0) { Notification.warning('请先导入地址'); return }
-  if (!chainValue.value) { Notification.warning('请先选择区块链'); return }
+  if (data.value.length === 0) { Notification.warning({ content: '请先导入地址', position: 'topLeft' }); return }
+  if (!chainValue.value) { Notification.warning({ content: '请先选择区块链', position: 'topLeft' }); return }
   if (monitoring.value) return
   monitoring.value = true
   showProgress.value = true
   await pollOnce()
   const sec = Number(intervalSec.value) > 0 ? Number(intervalSec.value) : 15
   timer = setInterval(pollOnce, sec * 1000)
-  Notification.success('已开始监控')
+  Notification.success({ content: '已开始监控', position: 'topLeft' })
 }
 
 function stopMonitoring() {
@@ -178,13 +278,13 @@ function stopMonitoring() {
   monitoring.value = false
   showProgress.value = false
   if (timer) { clearInterval(timer); timer = null }
-  Notification.info('已停止监控')
+  Notification.info({ content: '已停止监控', position: 'topLeft' })
 }
 
 function deleteSelected() {
-  if (monitoring.value) { Notification.warning('请先停止监控后再删除'); return }
+  if (monitoring.value) { Notification.warning({ content: '请先停止监控后再删除', position: 'topLeft' }); return }
   data.value = data.value.filter(i => !selectedKeys.value.includes(i.address))
-  Notification.success('删除成功')
+  Notification.success({ content: '删除成功', position: 'topLeft' })
 }
 
 function clearAll() {
@@ -250,7 +350,19 @@ const statistics = computed(() => {
     </div>
 
     <div class="mainTable" style="flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0;">
-      <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :selected-keys="selectedKeys" row-key="address" height="100%">
+      <VirtualScrollerTable 
+        :columns="columns" 
+        :data="data" 
+        :row-selection="rowSelection" 
+        :selected-keys="selectedKeys" 
+        row-key="address" 
+        height="100%"
+        page-type="monitor"
+        :empty-data="data.length === 0"
+        @open-manual-import="handleManualImport"
+        @open-file-upload="handleFileUpload"
+        @download-template="downloadTemplate"
+      >
         <template #optional="{ record }">
           <a-button type="text" size="small" status="danger" @click.stop="data = data.filter(i => i.address !== record.address)">删除</a-button>
         </template>
@@ -281,6 +393,15 @@ const statistics = computed(() => {
   <!-- 管理弹窗 -->
   <ChainManagement ref="chainManageRef" />
   <RpcManagement ref="rpcManageRef" :chain-value="chainValue" />
+
+  <!-- 隐藏的文件输入框 -->
+  <input
+    type="file"
+    ref="uploadInputRef"
+    accept=".xlsx,.xls,.csv"
+    style="display: none"
+    @change="handleFileChange"
+  />
 </template>
 
 <style scoped>

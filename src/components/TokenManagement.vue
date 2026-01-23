@@ -180,7 +180,7 @@ async function loadTokenData() {
     })) || []
   } catch (error) {
     console.error('加载代币数据失败:', error)
-    Notification.error('加载代币数据失败')
+    Notification.error({ content: '加载代币数据失败', position: 'topLeft' })
   } finally {
     tokenTableLoading.value = false
   }
@@ -233,22 +233,22 @@ async function submitTokenForm() {
   try {
     // 验证必填字段
     if (!tokenForm.name || !tokenForm.symbol) {
-      Notification.warning('请填写代币名称和符号')
+      Notification.warning({ content: '请填写代币名称和符号', position: 'topLeft' })
       return false
     }
 
     if (!isTokenEditMode.value && !tokenForm.key) {
-      Notification.warning('请填写代币标识')
+      Notification.warning({ content: '请填写代币标识', position: 'topLeft' })
       return false
     }
 
     if (tokenForm.type === 'token' && !tokenForm.contract_address) {
-      Notification.warning('合约代币必须填写合约地址')
+      Notification.warning({ content: '合约代币必须填写合约地址', position: 'topLeft' })
       return false
     }
 
     if (tokenForm.type === 'token' && !tokenForm.abi) {
-      Notification.warning('合约代币必须填写ABI')
+      Notification.warning({ content: '合约代币必须填写ABI', position: 'topLeft' })
       return false
     }
 
@@ -257,7 +257,7 @@ async function submitTokenForm() {
       try {
         JSON.parse(tokenForm.abi)
       } catch (error) {
-        Notification.warning('ABI格式不正确，请输入有效的JSON字符串')
+        Notification.warning({ content: 'ABI格式不正确，请输入有效的JSON字符串', position: 'topLeft' })
         return false
       }
     }
@@ -277,18 +277,18 @@ async function submitTokenForm() {
     }
 
     if (isTokenEditMode.value) {
-      await invoke('update_coin', { 
+      await invoke('update_coin', {
         chain: props.chainValue,
         key: tokenForm.key,
         objJson: JSON.stringify(tokenData)
       })
-      Notification.success('代币信息更新成功')
+      Notification.success({ content: '代币信息更新成功', position: 'topLeft' })
     } else {
-      await invoke('add_coin', { 
+      await invoke('add_coin', {
         chain: props.chainValue,
         objJson: JSON.stringify(tokenData)
       })
-      Notification.success('代币添加成功')
+      Notification.success({ content: '代币添加成功', position: 'topLeft' })
     }
 
     tokenFormVisible.value = false
@@ -297,7 +297,7 @@ async function submitTokenForm() {
     return true
   } catch (error) {
     console.error('保存代币信息失败:', error)
-    Notification.error('保存代币信息失败: ' + error.message)
+    Notification.error({ content: '保存代币信息失败: ' + error.message, position: 'topLeft' })
     return false
   }
 }
@@ -305,16 +305,16 @@ async function submitTokenForm() {
 // 删除代币
 async function deleteTokenFromManage(tokenKey) {
   try {
-    await invoke('remove_coin', { 
-      chain: props.chainValue, 
-      key: tokenKey 
+    await invoke('remove_coin', {
+      chain: props.chainValue,
+      key: tokenKey
     })
-    Notification.success('代币删除成功')
+    Notification.success({ content: '代币删除成功', position: 'topLeft' })
     await loadTokenData()
     emit('token-updated')
   } catch (error) {
     console.error('删除代币失败:', error)
-    Notification.error('删除代币失败: ' + error.message)
+    Notification.error({ content: '删除代币失败: ' + error.message, position: 'topLeft' })
   }
 }
 

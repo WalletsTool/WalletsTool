@@ -90,7 +90,7 @@ jobs:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
           releaseName: 'Wallets Tool ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
-            ## 🎉 新版本发布 v0.3.9
+            ## 🎉 新版本发布 v0.3.10
             
             ### 📦 安装包下载
             - **Windows**: 下载 `.exe` 文件
@@ -98,11 +98,14 @@ jobs:
             ### 🔄 更新说明
             ### 📝 Documentation | 文档
             
+            - 从发布说明模板中移除冗余分隔符和下载提示
             - 更新Windows安装包说明，移除.msi格式
             
             ### Other | 其他
             
             - style(ui): 调整表格列宽以优化布局和可读性
+            
+
             
 
             

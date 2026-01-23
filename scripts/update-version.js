@@ -168,9 +168,6 @@ ${indent}
 ${indent}### 🔄 更新说明
 ${indent}${indentedNotes}
 ${indent}
-${indent}---
-${indent}
-${indent}See the assets below to download and install this version.
 `;
 
     // 使用正则替换 releaseBody 内容

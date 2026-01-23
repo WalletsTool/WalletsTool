@@ -39,7 +39,6 @@ const columns = [
   {
     title: '钱包地址',
     align: 'center',
-    width: 390,
     dataIndex: 'address',
     ellipsis: true,
     tooltip: true
@@ -56,7 +55,7 @@ const columns = [
     title: '平台币余额',
     align: 'center',
     dataIndex: 'plat_balance',
-    width: 95,
+    width: 105,
     ellipsis: true,
     tooltip: true
   },
@@ -64,7 +63,7 @@ const columns = [
     title: '代币余额',
     align: 'center',
     dataIndex: 'coin_balance',
-    width: 85,
+    width: 100,
     ellipsis: true,
     tooltip: true
   },
@@ -88,7 +87,7 @@ const columns = [
   {
     title: '错误信息',
     align: 'center',
-     width: 320,
+     width: 300,
     dataIndex: 'error_msg',
     ellipsis: true,
     tooltip: true,

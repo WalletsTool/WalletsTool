@@ -53,13 +53,13 @@ initSolanaTransferWindowTitle()
 // 表格列定义
 const columns = [
   { title: "序号", width: 55, slotName: "index" },
-  { title: "发送方私钥", width: 250, dataIndex: "private_key", ellipsis: true, tooltip: true },
-  { title: "接收地址", width: 250, dataIndex: "to_addr", ellipsis: true, tooltip: true },
+  { title: "发送方私钥", dataIndex: "private_key", ellipsis: true, tooltip: true },
+  { title: "接收地址", width: 200, dataIndex: "to_addr", ellipsis: true, tooltip: true },
   { title: "转账数量", width: 95, dataIndex: "amount", ellipsis: true, tooltip: true },
   { title: "SOL余额", width: 95, dataIndex: "plat_balance", ellipsis: true, tooltip: true },
   { title: "代币余额", width: 85, dataIndex: "coin_balance", ellipsis: true, tooltip: true },
   { title: "状态", width: 90, slotName: "exec_status", ellipsis: true, tooltip: true },
-  { title: "返回信息", width: 320, dataIndex: "error_msg", ellipsis: true, tooltip: true },
+  { title: "返回信息", width: 300, dataIndex: "error_msg", ellipsis: true, tooltip: true },
   { title: "操作", width: 55, slotName: "optional", ellipsis: true, tooltip: true }
 ];
 

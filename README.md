@@ -1,8 +1,10 @@
-# Wallets Tool
-
 [![GitHub release](https://img.shields.io/github/v/release/WalletsTool/WalletsTool)](https://github.com/WalletsTool/WalletsTool/releases)
 [![Release](https://github.com/WalletsTool/WalletsTool/actions/workflows/release.yml/badge.svg)](https://github.com/WalletsTool/WalletsTool/actions/workflows/release.yml)
 ![Tauri](https://img.shields.io/badge/Tauri-Rust-orange) ![Vue 3](https://img.shields.io/badge/Vue-3-42b883) ![Desktop](https://img.shields.io/badge/Platform-Desktop-blue)
+
+<div align="center" style="margin-bottom: 20px;">
+    <img src="app-icon.png" width="80" height="80" alt="应用logo"/>
+</div>
 
 <p align="center">
   <a href="https://github.com/WalletsTool/WalletsTool/releases">快速开始 | Download</a>
@@ -11,15 +13,10 @@
 > [!WARNING]
 > 本项目仅供区块链工作室交流学习使用。使用本工具需自行承担风险，请确保在使用前充分了解相关区块链网络的规则和风险，谨慎操作您的数字资产。
 
-<div align="center" style="margin-bottom: 20px;">
-    <img src="app-icon.png" width="80" height="80" alt="应用logo"/>
-</div>
 
 **Web3 多链钱包管理工具** —— 专为工作室和专业用户打造的桌面端神器。
 
 基于 Vue 3 + Tauri (Rust) 构建，以**极致安全**和**工业级性能**为核心，打破 EVM 与 Solana 生态壁垒，提供批量归集、分发、查询的一站式解决方案。
-
----
 
 ## 🌟 核心优势
 
@@ -45,8 +42,6 @@
 ### 🔗 全栈多链支持
 - **Ethereum 生态**：完美支持 ETH 主网及所有 EVM 兼容链（BSC, Arbitrum, Optimism, Polygon 等）。
 - **Solana 生态**：原生支持 Solana 高性能链，打破生态隔阂，统一管理多链资产。
-
----
 
 ## 🚀 快速开始
 
@@ -86,7 +81,7 @@ yarn start
 
 ## 📄 许可证
 
-Copyright © 2025 EzBan. All rights reserved.
+Copyright © 2026 EzBan. All rights reserved.
 
 ---
 

@@ -58,14 +58,14 @@ function initWindowTitle() {
 initWindowTitle()
 
 const columns = [
-  { title: '序号', align: 'center', width: 55, slotName: 'index' },
+  { title: '序号', align: 'center', width: 53, slotName: 'index' },
   { title: '发送方私钥', align: 'center', dataIndex: 'private_key', ellipsis: true, tooltip: true },
-  { title: '接收地址', align: 'center', width: 200, dataIndex: 'to_addr', ellipsis: true, tooltip: true },
+  { title: '接收地址', align: 'center', dataIndex: 'to_addr', ellipsis: true, tooltip: true },
   { title: '转账数量', align: 'center', dataIndex: 'amount', width: 85, ellipsis: true, tooltip: true },
   { title: '平台币余额', align: 'center', dataIndex: 'plat_balance', width: 95, ellipsis: true, tooltip: true },
   { title: '代币余额', align: 'center', dataIndex: 'coin_balance', width: 85, ellipsis: true, tooltip: true },
-  { title: '状态', align: 'center', slotName: 'exec_status', width: 100, ellipsis: true, tooltip: true },
-  { title: '返回信息', align: 'center', dataIndex: 'error_msg', width: 300, ellipsis: true, tooltip: true },
+  { title: '状态', align: 'center', slotName: 'exec_status', width: 90, ellipsis: true, tooltip: true },
+  { title: '返回信息', align: 'center', dataIndex: 'error_msg', ellipsis: true, tooltip: true },
   { title: '操作', align: 'center', slotName: 'optional', width: 55, ellipsis: true, tooltip: true },
 ];
 
@@ -771,7 +771,7 @@ async function queryFromAddressBalance(item) {
       } else throw new Error('代币余额查询失败');
     }
     const coinSymbol = currentCoin.value?.coin_symbol || (currentCoin.value?.coin_type === 'base' ? 'ETH' : '代币');
-    const walletShort = item.private_key ? item.private_key.substring(0, 8) + '...' : address.substring(0, 8) + '...';
+    const walletShort = address.substring(0, 8) + '...';
     Notification.success({ title: '出账账号余额', content: `钱包: ${walletShort}\n余额: ${balance} ${coinSymbol}`, duration: 4000, position: 'topLeft' });
   } catch (error) { Notification.error('查询出账账号余额失败: ' + error); }
 }
@@ -1609,7 +1609,7 @@ function handleClickOutside(event) {
       <template #footer><a-button @click="deleteTokenCancel">取消</a-button><a-button type="primary" status="danger" @click="deleteTokenConfirm" style="margin-left: 10px">确定</a-button></template>
     </a-modal>
     <a-modal v-model:visible="deleteItemVisible" title="删除确认">
-      <div>确认删除私钥为【 {{ currentItemPrivateKey.substring(0, 15) + '......' }} 】的数据？</div>
+      <div>确认删除私钥为【 {{ currentItemPrivateKey.substring(0, 25) + '...' }} 】的数据？</div>
       <template #footer><a-button @click="deleteItemCancel">取消</a-button><a-button type="primary" status="danger" @click="debouncedDeleteItemConfirm" style="margin-left: 10px">确定</a-button></template>
     </a-modal>
     <a-modal v-model:visible="transferConfirmVisible" title="转账确认" :mask-closable="false" :closable="true" @close="handleTransferConfirmClose" @cancel="handleTransferConfirmClose">

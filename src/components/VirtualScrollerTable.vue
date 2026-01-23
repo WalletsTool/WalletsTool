@@ -1,8 +1,8 @@
 <template>
-  <div class="virtual-scroller-table" :style="{ height: height, width: '100%' }">
+  <div ref="tableContainerRef" class="virtual-scroller-table" :style="{ height: height, width: '100%' }">
     <!-- 表头 -->
     <div class="table-header">
-      <div class="header-row">
+      <div class="header-row" :style="{ paddingRight: hasScrollbar ? scrollbarWidth + 'px' : '0' }">
         <!-- 选择列 -->
         <div v-if="rowSelection" class="header-cell checkbox-cell">
           <input
@@ -103,6 +103,7 @@
 
       <VirtualScroller
         v-else
+        ref="scrollerRef"
         :items="data"
         :itemSize="35"
         class="virtual-scroller"
@@ -209,10 +210,10 @@
 </template>
 
 <script setup>
-import { computed, ref, shallowRef, watch, onMounted, onUnmounted } from "vue";
+import { computed, ref, shallowRef, watch, onMounted, onUnmounted, h, nextTick } from "vue";
 import VirtualScroller from "primevue/virtualscroller";
 import { Icon } from "@iconify/vue";
-import { Message, Tooltip } from "@arco-design/web-vue";
+import { Message, Tooltip, Modal } from "@arco-design/web-vue";
 
 // Props
 const props = defineProps({
@@ -260,6 +261,25 @@ const props = defineProps({
 
 // Emits
 const emit = defineEmits(["row-click", "update:selectedKeys", "open-manual-import", "open-file-upload", "download-template"]);
+
+// 私钥脱敏工具函数
+const maskPrivateKey = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  if (value.length <= 25) return '*'.repeat(value.length);
+  return value.substring(0, 25) + '...';
+};
+
+const getPrivateKeyWithoutSuffix = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  if (value.length <= 6) return value;
+  return value.substring(0, value.length - 6);
+};
+
+const getPrivateKeySuffix = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  if (value.length <= 6) return value;
+  return value.substring(value.length - 6);
+};
 
 // 处理空数据页面按钮点击
 const handleEmptyAction = (type) => {
@@ -331,18 +351,60 @@ const showEmptyData = computed(() => {
   return !props.loading && props.data.length === 0;
 });
 
-// 检测是否会产生滚动条
-const hasScrollbar = computed(() => {
-  if (!props.data.length || !props.height) return false;
+// 滚动条相关状态
+const scrollerRef = ref(null);
+const tableContainerRef = ref(null);
+const scrollbarWidth = ref(0);
+const hasScrollbar = ref(false);
+let resizeObserver = null;
 
-  // 计算容器高度（减去表头高度40px）
-  const containerHeight = props.height === "100%" ? 400 : parseInt(props.height) - 40;
+const checkScrollbar = () => {
+  if (scrollerRef.value && scrollerRef.value.$el) {
+    const el = scrollerRef.value.$el;
+    // 检查是否有垂直滚动条
+    hasScrollbar.value = el.scrollHeight > el.clientHeight;
+  } else {
+    hasScrollbar.value = false;
+  }
+};
 
-  // 计算内容总高度（数据项数量 * 行高35px）
-  const contentHeight = props.data.length * 35;
+onMounted(() => {
+  // 计算滚动条宽度
+  const outer = document.createElement('div');
+  outer.style.visibility = 'hidden';
+  outer.style.overflow = 'scroll';
+  outer.style.msOverflowStyle = 'scrollbar';
+  document.body.appendChild(outer);
+  const inner = document.createElement('div');
+  outer.appendChild(inner);
+  scrollbarWidth.value = (outer.offsetWidth - inner.offsetWidth);
+  outer.parentNode.removeChild(outer);
 
-  return contentHeight > containerHeight;
+  // 监听窗口大小变化
+  window.addEventListener('resize', checkScrollbar);
+  
+  // 监听容器大小变化
+  if (tableContainerRef.value) {
+    resizeObserver = new ResizeObserver(() => {
+      checkScrollbar();
+    });
+    resizeObserver.observe(tableContainerRef.value);
+  }
+  
+  // 初始检查
+  nextTick(checkScrollbar);
 });
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkScrollbar);
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+  }
+});
+
+watch(() => props.data, () => {
+  nextTick(checkScrollbar);
+}, { deep: true, immediate: true });
 
 // 计算表头列宽度（保持原始设置不变）
 const getHeaderColumnStyle = (column) => {
@@ -353,15 +415,10 @@ const getHeaderColumnStyle = (column) => {
   return { flex: 1, minWidth: "100px" };
 };
 
-// 计算虚拟滚动内容列宽度（只在optional列检测到滚动条时调整）
+// 计算虚拟滚动内容列宽度
 const getContentColumnStyle = (column) => {
   if (column.width) {
-    let width = column.width;
-    // 如果是optional列且有滚动条，减少10px宽度来补偿滚动条占用的空间
-    if (column.slotName === "optional" && hasScrollbar.value) {
-      width = Math.max(width - 15, 30); // 最小宽度30px
-    }
-    return { width: width + "px", flexShrink: 0 };
+    return { width: column.width + "px", flexShrink: 0 };
   }
   // 没有设置宽度的列使用flex: 1来占满剩余空间
   return { flex: 1, minWidth: "100px" };
@@ -419,6 +476,11 @@ const getDisplayText = (column, item) => {
   const value = item[column.dataIndex];
   if (!value) return "";
 
+  // 私钥列脱敏显示
+  if (column.dataIndex === 'private_key') {
+    return maskPrivateKey(value);
+  }
+
   // 特殊处理error_msg字段，只显示前20个字符
   if (column.dataIndex === "error_msg" && value.length > 25) {
     return value.substring(0, 25) + "...";
@@ -435,14 +497,18 @@ const isLastRow = (item) => {
 
 // 获取tooltip文本
 const getTooltipText = (column, item) => {
-  // 最后一行总是显示tooltip
-  if (isLastRow(item)) {
-    const value = item[column.dataIndex];
-    if (value) return value;
-  }
-
   const value = item[column.dataIndex];
   if (!value) return "";
+
+  // 私钥列Tooltip也脱敏
+  if (column.dataIndex === 'private_key') {
+    return maskPrivateKey(value);
+  }
+
+  // 最后一行总是显示tooltip
+  if (isLastRow(item)) {
+    return value;
+  }
 
   // 如果设置了ellipsis或者是error_msg字段，显示完整内容作为tooltip
   if (column.ellipsis || column.dataIndex === "error_msg") {
@@ -466,7 +532,6 @@ const isCopyableColumn = (column) => {
 
 // 处理单元格双击事件
 const handleCellDoubleClick = async (event, column, item) => {
-  // 阻止事件冒泡和默认行为，避免触发行选择
   event.stopPropagation();
   event.preventDefault();
 
@@ -475,6 +540,116 @@ const handleCellDoubleClick = async (event, column, item) => {
   const value = item[column.dataIndex];
   if (!value) return;
 
+  // 私钥列：复制不完整私钥 + 弹出提示
+  if (column.dataIndex === 'private_key') {
+    const incompleteKey = getPrivateKeyWithoutSuffix(value);
+    const suffix = getPrivateKeySuffix(value);
+    const suffixChars = suffix.split('');
+
+    const suffixBoxes = suffixChars.map((char, index) => {
+      return h('div', {
+        key: index,
+        style: {
+          width: '36px',
+          height: '44px',
+          border: '2px solid #165dff',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '20px',
+          fontWeight: 'bold',
+          color: '#165dff',
+          background: '#f7f8fa',
+          flexShrink: '0',
+        }
+      }, char);
+    });
+
+    await navigator.clipboard.writeText(incompleteKey);
+
+    const modalContent = h('div', {
+      style: {
+        textAlign: 'center',
+        padding: '10px 0',
+      }
+    }, [
+      h('div', {
+        style: {
+          color: 'gray',
+          marginBottom: '16px',
+          fontSize: '16px',
+        }
+      }, `为保障你的资产安全，复制后请手动补充私钥末尾6位字符，确保私钥可用`),
+      h('div', {
+        style: {
+          display: 'flex',
+          justifyContent: 'center',
+          gap: '8px',
+          marginBottom: '20px',
+        }
+      }, suffixBoxes),
+      h('div', {
+        id: 'copy-full-key-link',
+        onClick: async () => {
+          try {
+            await navigator.clipboard.writeText(value);
+            Message.warning({
+              content: '已复制完整私钥，请注意剪贴板泄露风险！',
+              position: 'top',
+              offset: 500,
+            });
+          } catch (error) {
+            Message.error({ content: '复制失败', position: 'top', offset: 500 });
+          }
+        },
+        onMouseenter: () => {
+          const el = document.getElementById('copy-full-key-link');
+          if (el) el.style.color = '#165dff';
+        },
+        onMouseleave: () => {
+          const el = document.getElementById('copy-full-key-link');
+          if (el) el.style.color = '#86909c';
+        },
+        style: {
+          color: '#86909c',
+          fontSize: '13px',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '4px',
+        }
+      }, [
+        h('svg', {
+          width: '14',
+          height: '14',
+          viewBox: '0 0 24 24',
+          fill: 'currentColor',
+        }, [
+          h('path', {
+            d: 'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z'
+          })
+        ]),
+        h('span', {}, '复制完整私钥（存在剪贴板泄露风险）')
+      ])
+    ]);
+
+    Modal.warning({
+      title: h('div', { style: { fontSize: '20px' } }, '安全复制'),
+      content: modalContent,
+      hideCancel: true,
+      maskClosable: true,
+      onOk: () => {},
+      footer: true,
+      okButtonProps: {
+        style: { width: '100%' }
+      }
+    });
+
+    return;
+  }
+
+  // 其他列保持原逻辑
   try {
     await navigator.clipboard.writeText(value);
     Message.success({

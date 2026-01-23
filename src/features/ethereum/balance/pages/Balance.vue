@@ -33,7 +33,7 @@ const columns = [
   {
     title: '序号',
     align: 'center',
-    width: 55,
+    width: 53,
     slotName: 'index'
   },
   {
@@ -87,7 +87,6 @@ const columns = [
   {
     title: '错误信息',
     align: 'center',
-     width: 300,
     dataIndex: 'error_msg',
     ellipsis: true,
     tooltip: true,
@@ -96,7 +95,7 @@ const columns = [
     title: '操作',
     align: 'center',
     slotName: 'optional',
-    width: 55,
+    width: 80,
     ellipsis: true,
     tooltip: true
   }
@@ -913,8 +912,6 @@ const handleBeforeOk = async () => {
     const original_count = importList.length
     
     // 第二步：去除导入文本中的重复地址（保持原始顺序，去除后面的重复项）
-    // 用户需求：允许导入重复地址进行测试，暂时注释掉去重逻辑
-    /*
     const uniqueAddresses = new Set()
     importList = importList.filter(item => {
       const trimmedAddr = item.trim()
@@ -924,24 +921,19 @@ const handleBeforeOk = async () => {
       uniqueAddresses.add(trimmedAddr)
       return true
     })
-    */
+    
     const after_dedup_count = importList.length
     const internal_dup_count = original_count - after_dedup_count
     
     // 第三步：过滤与现有数据重复的地址
-    // 用户需求：允许导入重复地址进行测试，暂时注释掉去重逻辑
-    /*
     const beforeFilterCount = importList.length
-    importList = importList.filter(item => data.value.length === 0 || !data.value.find(obj => obj.address === item.trim()))
+    // 使用Set优化查找性能
+    const existingAddresses = new Set(data.value.map(item => item.address));
+    importList = importList.filter(item => !existingAddresses.has(item.trim()))
+    
     const success_count = importList.length
     const existing_dup_count = beforeFilterCount - success_count
-    const total_filtered_count = original_count - success_count
-    */
-   
-    // 不去重直接使用
-    const success_count = importList.length
-    const existing_dup_count = 0
-    const total_filtered_count = 0
+    const total_filtered_count = internal_dup_count + existing_dup_count
     
     // 批量处理数据
     const newItems = importList.map(item => ({
@@ -1607,7 +1599,6 @@ async function handleBeforeClose() {
             page-type="balance"
             :empty-data="filteredData.length === 0"
             class="table-with-side-actions"
-            :class="{ 'expanded': !isSidePanelExpanded }"
           >
 
             <template #exec_status="{ record }">
@@ -2196,14 +2187,9 @@ async function handleBeforeClose() {
 
 /* 表格与侧边栏联动 */
 .table-with-side-actions {
-  margin-right: 60px;
+  margin-right: 0;
   margin-top: 0;
   height: 100%;
-  transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.table-with-side-actions.expanded {
-  margin-right: 0;
 }
 
 /* 悬浮操作栏 */

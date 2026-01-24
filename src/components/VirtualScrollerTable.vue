@@ -28,7 +28,6 @@
     <!-- 虚拟滚动内容 -->
     <div
       class="table-body"
-      :style="{ height: `calc(${height} - 40px)` }"
       @wheel="handleWheel"
     >
       <!-- 空数据提示 -->
@@ -381,18 +380,25 @@ onMounted(() => {
   outer.parentNode.removeChild(outer);
 
   // 监听窗口大小变化
-  window.addEventListener('resize', checkScrollbar);
+  window.addEventListener('resize', () => {
+    checkScrollbar();
+    updateScrollerHeight();
+  });
   
   // 监听容器大小变化
   if (tableContainerRef.value) {
     resizeObserver = new ResizeObserver(() => {
       checkScrollbar();
+      updateScrollerHeight();
     });
     resizeObserver.observe(tableContainerRef.value);
   }
   
   // 初始检查
-  nextTick(checkScrollbar);
+  nextTick(() => {
+    checkScrollbar();
+    updateScrollerHeight();
+  });
 });
 
 onUnmounted(() => {
@@ -401,6 +407,18 @@ onUnmounted(() => {
     resizeObserver.disconnect();
   }
 });
+
+// 更新虚拟滚动器高度
+const updateScrollerHeight = () => {
+  if (!scrollerRef.value || !scrollerRef.value.$el) return;
+  const scrollerEl = scrollerRef.value.$el;
+  const containerHeight = tableContainerRef.value?.clientHeight || 0;
+  // 减去表头高度(40)、边框误差(2)和底部状态栏预留空间(30)
+  const scrollerHeight = containerHeight - 40 - 2 - 30; 
+  if (scrollerHeight > 0) {
+    scrollerEl.style.height = `${scrollerHeight}px`;
+  }
+};
 
 watch(() => props.data, () => {
   nextTick(checkScrollbar);
@@ -719,11 +737,12 @@ const handleWheel = () => {
   overflow: hidden;
   background: var(--table-bg, #ffffff);
   width: 100%;
+  min-height: 0;
 }
 
 .virtual-scroller {
   width: 100%;
-  height: calc(100% - 30px);
+  height: 100%;
   border-bottom: 1px solid var(--table-border-color);
 }
 

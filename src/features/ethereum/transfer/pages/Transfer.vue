@@ -22,7 +22,7 @@ import { useDataOperations } from '../composables/useDataOperations';
 import { useTip } from '../composables/useTip';
 import { WINDOW_CONFIG } from '@/utils/windowNames';
 
-const TransferGuide = defineAsyncComponent(() => import('../components/TransferGuide.vue'));
+const TransferGuide = defineAsyncComponent(() => import('@/components/transfer/TransferGuide.vue'));
 
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'));
 const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagement.vue'));
@@ -1065,7 +1065,7 @@ async function handleChainUpdated() {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) {
       const result = await invoke('get_chain_list');
-      chainOptions.value = result || [];
+      chainOptions.value = (result || []).filter(item => item.key !== 'sol');
       const currentChainExists = chainOptions.value.find((chain) => chain.key === chainValue.value);
       if (!currentChainExists && chainOptions.value.length > 0) { chainValue.value = chainOptions.value[0].key; await chainChange(); }
       else if (currentChainExists) currentChain.value = currentChainExists;
@@ -1288,7 +1288,7 @@ onBeforeMount(async () => {
   if (isTauri) {
     try {
       const result = await invoke('get_chain_list');
-      chainOptions.value = result || [];
+      chainOptions.value = (result || []).filter(item => item.key !== 'sol');
       chainOptions.value.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       if (sharedConfig) {
         applySharedConfig(sharedConfig);
@@ -1370,7 +1370,7 @@ function handleClickOutside(event) {
 </script>
 
 <template>
-  <TitleBar :title="windowTitle" :custom-close="true" @before-close="handleBeforeClose" />
+  <TitleBar :title="windowTitle" :custom-close="true" ecosystem="EVM" @before-close="handleBeforeClose" />
   <div class="container transfer" style="height: 100vh; display: flex; flex-direction: column; overflow: hidden" @paste="handleGlobalPaste">
     <div class="toolBar" style="flex-shrink: 0; height: 0; overflow: visible; margin-top: 0">
       <input type="file" ref="uploadInputRef" @change="UploadFile" id="btn_file" style="display: none" />
@@ -1600,7 +1600,7 @@ function handleClickOutside(event) {
         </div>
       </div>
     </div>
-    <WalletImportModal ref="walletImportRef" @confirm="handleWalletImportConfirm" @cancel="handleWalletImportCancel" />
+    <WalletImportModal ref="walletImportRef" ecosystem="evm" @confirm="handleWalletImportConfirm" @cancel="handleWalletImportCancel" />
     <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel" :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
       <a-input v-model="coinAddress" placeholder="请输入代币合约地址" allow-clear />
     </a-modal>
@@ -1634,7 +1634,7 @@ function handleClickOutside(event) {
       </a-form>
       <template #footer><a-button @click="advancedFilterVisible = false">取消</a-button><a-button type="primary" @click="applyAdvancedFilter" style="margin-left: 10px">应用筛选</a-button></template>
     </a-modal>
-    <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" />
+    <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" ecosystem-filter="evm" />
     <TokenManagement ref="tokenManageRef" :chain-value="chainValue" :chain-options="chainOptions" @token-updated="handleTokenUpdated" />
     <RpcManagement ref="rpcManageRef" :chain-value="chainValue" :chain-options="chainOptions" @rpc-updated="handleRpcUpdated" />
     <div v-if="showCelebration" class="celebration-overlay">

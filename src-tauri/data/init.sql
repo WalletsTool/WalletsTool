@@ -15,6 +15,7 @@ CREATE TABLE chains (
     scan_api TEXT,
     verify_api TEXT,
     check_verify_api TEXT,
+    ecosystem TEXT NOT NULL DEFAULT 'evm',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP

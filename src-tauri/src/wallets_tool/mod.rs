@@ -13,7 +13,10 @@ pub mod ecosystems {
         pub mod proxy_commands;
         pub mod alloy_utils;
     }
-    pub mod solana;
+    pub mod solana {
+        pub mod provider;
+        pub mod transfer;
+    }
 }
 
 // Backward compatible re-exports (existing command paths)

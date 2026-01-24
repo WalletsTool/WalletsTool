@@ -24,9 +24,7 @@ const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vu
 const ProxyConfigModal = defineAsyncComponent(() => import('@/components/ProxyConfigModal.vue'))
 
 // 组件配置参数（props）：是否查询最后交易时间，默认 false
-const props = defineProps({
-  queryLastTransactionTime: { type: Boolean, default: false }
-})
+const props = defineProps({})
 
 // table列名
 const columns = [
@@ -66,15 +64,6 @@ const columns = [
     width: 100,
     ellipsis: true,
     tooltip: true
-  },
-  {
-    title: '最后交易时间',
-    align: 'center',
-    dataIndex: 'last_transaction_time',
-    width: 120,
-    ellipsis: true,
-    tooltip: true,
-    slotName: 'last_transaction_time'
   },
   {
     title: '状态',
@@ -164,9 +153,7 @@ let balanceLoading = ref(false)
 let balanceStopFlag = ref(false)
 // 详细配置
 const form = reactive({
-  thread_count: 3,
-  // 是否查询最后交易时间（默认关闭），可由组件外部通过 props 控制初始值
-  queryLastTransactionTime: props.queryLastTransactionTime
+  thread_count: 3
 })
 // 录入 钱包地址 弹窗
 let visible = ref(false)
@@ -405,37 +392,6 @@ const debouncedFilterUpdate = debounce(() => {
   // 触发筛选数据的重新计算
   // filteredData computed属性会自动响应filterForm的变化
 }, 300);
-
-// 时间格式化函数
-function formatTransactionTime(timestamp) {
-  if (!timestamp || timestamp === 0) {
-    return '暂无交易';
-  }
-  
-  try {
-    // 将Unix时间戳转换为毫秒
-    const date = new Date(timestamp * 1000);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    
-    if (diffMinutes < 60) {
-      return `${diffMinutes}分钟前`;
-    } else if (diffHours < 24) {
-      return `${diffHours}小时前`;
-    } else if (diffDays < 30) {
-      return `${diffDays}天前`;
-    } else {
-      // 超过30天显示具体日期
-      return date.toLocaleDateString('zh-CN');
-    }
-  } catch (error) {
-    console.error('时间格式化错误:', error);
-    return '时间错误';
-  }
-}
 
 // a-table行选择配置
 const rowSelection = reactive({
@@ -942,8 +898,7 @@ const handleBeforeOk = async () => {
       plat_balance: '',
       coin_balance: '',
       exec_status: '0',
-      error_msg: '',
-      last_transaction_time: null
+      error_msg: ''
     }));
 
     if (newItems.length > 0) {
@@ -1077,7 +1032,6 @@ async function executeBalanceQuery(queryData) {
       item.coin_balance = ''
       item.error_msg = ''
       item.exec_status = '0'
-      item.last_transaction_time = null
     })
 
     showProgress.value = true
@@ -1184,9 +1138,7 @@ async function queryBalanceBatch(batchData, startIndex) {
         retry_flag: false
       })),
       only_coin_config: onlyCoin.value,
-      thread_count: form.thread_count,
-      // 将配置参数传递给后端，按需查询最后交易时间
-      query_last_transaction_time: !!form.queryLastTransactionTime
+      thread_count: form.thread_count
     };
 
     // 检查是否需要停止查询
@@ -1332,10 +1284,9 @@ function exportExcel(target_data) {
     return;
   }
   const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
-  const export_data = [['地址', 'Nonce', '平台余额', '代币余额', '查询状态', '错误信息', '最后交易时间']];
+  const export_data = [['地址', 'Nonce', '平台余额', '代币余额', '查询状态', '错误信息']];
   target_data.forEach(item => {
-    const transactionTime = formatTransactionTime(item.last_transaction_time);
-    export_data.push([item.address, item.nonce, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg, transactionTime]);
+    export_data.push([item.address, item.nonce, item.plat_balance, item.coin_balance, item.exec_status, item.error_msg]);
   });
 
   exportWithDialog(export_data, `balance_data_${timestamp}.xlsx`).then((path) => {
@@ -1564,7 +1515,7 @@ async function handleBeforeClose() {
 
 <template>
   <!-- 标题栏组件 -->
-  <TitleBar :title="windowTitle" @before-close="handleBeforeClose" />
+  <TitleBar :title="windowTitle" ecosystem="EVM" @before-close="handleBeforeClose" />
 
   <div class="container balance" @click="handleClickOutside">
     <!-- 隐藏的文件输入框 -->
@@ -1610,9 +1561,6 @@ async function handleBeforeClose() {
               </a-tag>
               <a-tag v-if="record.exec_status === '3'" color="#f53f3f">查询失败
               </a-tag>
-            </template>
-            <template #last_transaction_time="{ record }">
-              <span>{{ formatTransactionTime(record.last_transaction_time) }}</span>
             </template>
             <template #optional="{ record }">
               <a-button type="text" size="small" @click.stop="deleteItem(record)" status="danger">
@@ -1676,13 +1624,6 @@ async function handleBeforeClose() {
              <div class="config-item">
                <span class="config-label">线程数</span>
                <a-input-number :max="999" :min="1" mode="button" v-model="form.thread_count" style="width: 120px; margin-left: 8px;" />
-             </div>
-             
-             <div class="config-divider"></div>
-             
-             <div class="config-item">
-               <span class="config-label">查询最后交易时间</span>
-               <a-switch v-model="form.queryLastTransactionTime" style="margin-left: 8px;" />
              </div>
              
              <div class="config-divider"></div>

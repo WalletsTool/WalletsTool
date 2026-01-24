@@ -3,6 +3,7 @@ const routes = [
     // 主窗口页面
     { path: "/", name: "main", component: () => import('@/features/home/pages/Home.vue') },
     // 其他功能页面
+    { path: "/entry", name: "entry", component: () => import('@/features/common/pages/EcosystemEntry.vue') },
     { path: "/transfer", redirect: "/eth/transfer" },
     { path: "/balance", redirect: "/eth/balance" },
     { path: "/monitor", redirect: "/eth/monitor" },

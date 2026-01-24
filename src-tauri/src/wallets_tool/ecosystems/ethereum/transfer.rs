@@ -91,7 +91,6 @@ pub struct TransferItem {
     pub private_key: SecureMemory,
     pub to_addr: String,
     pub error_msg: String,
-    pub error_count: u32,
     pub retry_flag: bool,
 }
 

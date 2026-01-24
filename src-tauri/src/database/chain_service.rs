@@ -30,6 +30,7 @@ impl<'a> ChainService<'a> {
             chain_infos.push(ChainInfo {
                 key: chain.chain_key,
                 chain: chain.chain_name,
+                ecosystem: chain.ecosystem,
                 chain_id: chain.chain_id,
                 symbol: chain.native_currency_symbol,
                 currency_name: chain.native_currency_name,
@@ -78,6 +79,8 @@ impl<'a> ChainService<'a> {
 
     /// 添加新链
     pub async fn add_chain(&self, request: CreateChainRequest) -> Result<i64> {
+        println!("正在添加新链: key={}, name={}, ecosystem={}", request.chain_key, request.chain_name, request.ecosystem);
+        
         // 检查链标识符是否已存在
         let exists = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM chains WHERE chain_key = ?"
@@ -94,15 +97,16 @@ impl<'a> ChainService<'a> {
         let chain_id = sqlx::query_scalar::<_, i64>(
             r#"
             INSERT INTO chains (
-                chain_key, chain_name, chain_id, native_currency_symbol, 
+                chain_key, chain_name, ecosystem, chain_id, native_currency_symbol, 
                 native_currency_name, native_currency_decimals, pic_data,
                 scan_url, scan_api, verify_api, check_verify_api, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             "#
         )
         .bind(&request.chain_key)
         .bind(&request.chain_name)
+        .bind(&request.ecosystem)
         .bind(request.chain_id)
         .bind(&request.native_currency_symbol)
         .bind(&request.native_currency_name)
@@ -172,13 +176,14 @@ impl<'a> ChainService<'a> {
         sqlx::query(
             r#"
             UPDATE chains SET 
-                chain_name = ?, chain_id = ?, native_currency_symbol = ?, 
+                chain_name = ?, ecosystem = ?, chain_id = ?, native_currency_symbol = ?, 
                 native_currency_name = ?, native_currency_decimals = ?, pic_data = ?,
                 scan_url = ?, scan_api = ?, verify_api = ?, check_verify_api = ?, updated_at = ?
             WHERE id = ?
             "#
         )
         .bind(&request.chain_name)
+        .bind(&request.ecosystem)
         .bind(request.chain_id)
         .bind(&request.native_currency_symbol)
         .bind(&request.native_currency_name)

@@ -147,6 +147,7 @@ async fn main() {
     }
     
     // 创建数据库服务
+    // Force rebuild: ecosystem field added
     let db_manager = database::get_database_manager();
     let chain_service = database::chain_service::ChainService::new(db_manager.get_pool());
     
@@ -341,6 +342,15 @@ async fn main() {
             wallets_tool::transfer::check_wallet_recent_transfers,
             wallets_tool::transfer::stop_transfer,
             wallets_tool::transfer::reset_transfer_stop,
+            // solana transfer functions
+            wallets_tool::ecosystems::solana::transfer::sol_transfer,
+            wallets_tool::ecosystems::solana::transfer::sol_token_transfer,
+            wallets_tool::ecosystems::solana::transfer::sol_transfer_fast,
+            wallets_tool::ecosystems::solana::transfer::sol_token_transfer_fast,
+            wallets_tool::ecosystems::solana::transfer::sol_check_recent_transfers,
+            wallets_tool::ecosystems::solana::transfer::sol_check_transactions_status_batch,
+            wallets_tool::ecosystems::solana::transfer::sol_query_balances_with_updates,
+
             // token transfer functions
             wallets_tool::token_transfer::token_transfer,
             wallets_tool::token_transfer::token_transfer_fast,

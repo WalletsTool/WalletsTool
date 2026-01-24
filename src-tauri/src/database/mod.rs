@@ -178,6 +178,39 @@ impl DatabaseManager {
     
 }
 
+/// 执行数据库迁移
+async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+    // 检查chains表是否包含ecosystem列
+    let ecosystem_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('chains') WHERE name = 'ecosystem'"
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if ecosystem_exists == 0 {
+        println!("正在迁移数据库: 添加 ecosystem 列到 chains 表");
+        sqlx::query("ALTER TABLE chains ADD COLUMN ecosystem TEXT NOT NULL DEFAULT 'evm'")
+            .execute(pool)
+            .await?;
+        println!("迁移完成: ecosystem 列已添加");
+    }
+
+    // 数据修复：将 Solana 链的 ecosystem 设置为 solana
+    // 即使列已存在，也执行此修复以确保历史数据正确
+    sqlx::query("UPDATE chains SET ecosystem = 'solana' WHERE chain_key IN ('sol', 'solana') AND ecosystem != 'solana'")
+        .execute(pool)
+        .await
+        .ok(); // 忽略错误
+
+    // 数据修复：确保没有空值
+    sqlx::query("UPDATE chains SET ecosystem = 'evm' WHERE (ecosystem IS NULL OR ecosystem = '')")
+        .execute(pool)
+        .await
+        .ok();
+
+    Ok(())
+}
+
 /// 全局数据库管理器实例
 static DATABASE_MANAGER: OnceLock<DatabaseManager> = OnceLock::new();
 
@@ -199,6 +232,12 @@ pub async fn init_database() -> Result<()> {
     
     // 始终创建数据库管理器
     let manager = DatabaseManager::new(&database_url).await?;
+    
+    // 执行自动迁移
+    if let Err(e) = run_migrations(manager.get_pool()).await {
+        eprintln!("数据库迁移失败: {}", e);
+    }
+
     DATABASE_MANAGER.set(manager)
         .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
 
@@ -434,6 +473,14 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     .fetch_one(pool)
     .await
     .map_err(|e| format!("检查数据库结构失败: {}", e))?;
+
+    // 检查chains表是否包含ecosystem列
+    let ecosystem_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('chains') WHERE name = 'ecosystem'"
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("检查数据库结构失败: {}", e))?;
     
     let schema_info = serde_json::json!({
         "db_exists": true, // 数据库连接成功意味着数据库文件存在
@@ -442,7 +489,8 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
         "rpc_table_exists": rpc_table_exists > 0,
         "contract_type_column_exists": contract_type_exists > 0,
         "abi_column_exists": abi_exists > 0,
-        "needs_migration": contract_type_exists == 0 || abi_exists == 0
+        "ecosystem_column_exists": ecosystem_exists > 0,
+        "needs_migration": contract_type_exists == 0 || abi_exists == 0 || ecosystem_exists == 0
     });
     
     Ok(schema_info)

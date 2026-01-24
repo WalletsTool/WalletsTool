@@ -1,6 +1,8 @@
 <script setup name="wallet-import-modal">
 import { ref, computed, nextTick } from 'vue';
 import { ethers } from 'ethers';
+import { Keypair, PublicKey } from '@solana/web3.js';
+import bs58 from 'bs58';
 import CodeEditor from './CodeEditor.vue';
 
 // Props
@@ -8,6 +10,10 @@ const props = defineProps({
   title: {
     type: String,
     default: '钱包信息录入'
+  },
+  ecosystem: {
+    type: String,
+    default: 'evm'
   }
 });
 
@@ -33,26 +39,45 @@ const addressEditorRef = ref(null);
 const isScrollSyncing = ref(false);
 const isLineSelectionSyncing = ref(false);
 
-// 计算属性：显示的错误信息
-const displayedErrors = computed(() => {
-  if (errorsExpanded.value || validationErrors.value.length <= 3) {
-    return validationErrors.value;
-  }
-  return validationErrors.value.slice(0, 3);
+// 计算属性：动态提示文本
+const privateKeyPlaceholder = computed(() => {
+  return props.ecosystem === 'solana' 
+    ? '请输入私钥，一行一个\n格式：Base58编码字符串\n示例：5Mokk...' 
+    : '请输入私钥，一行一个\n格式：0x开头的64位十六进制字符串\n示例：0x1234567890abcdef...';
+});
+
+const addressPlaceholder = computed(() => {
+  return props.ecosystem === 'solana'
+    ? '请输入接收地址，一行一个\n格式：Base58编码地址\n示例：Gwgh...'
+    : '请输入接收地址，一行一个\n格式：0x开头的40位十六进制地址\n示例：0x742d35Cc6634C0532925a3b8D4...';
 });
 
 // 验证私钥格式
 function validatePrivateKey(privateKey) {
   try {
-    // 移除前缀0x（如果有）
-    const cleanKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
-    // 检查是否为64位十六进制字符串
-    if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
-      return false;
+    const cleanKey = privateKey.trim();
+    
+    if (props.ecosystem === 'solana') {
+      // Solana 私钥验证 (Base58)
+      try {
+        const secretKey = bs58.decode(cleanKey);
+        if (secretKey.length !== 64) return false;
+        Keypair.fromSecretKey(secretKey);
+        return true;
+      } catch {
+        return false;
+      }
+    } else {
+      // EVM 私钥验证
+      const keyPart = cleanKey.startsWith('0x') ? cleanKey.slice(2) : cleanKey;
+      // 检查是否为64位十六进制字符串
+      if (!/^[0-9a-fA-F]{64}$/.test(keyPart)) {
+        return false;
+      }
+      // 尝试创建钱包实例验证私钥有效性
+      new ethers.Wallet(cleanKey.startsWith('0x') ? cleanKey : '0x' + cleanKey);
+      return true;
     }
-    // 尝试创建钱包实例验证私钥有效性
-    new ethers.Wallet(privateKey);
-    return true;
   } catch (error) {
     return false;
   }
@@ -66,22 +91,32 @@ function validateAddress(address) {
       return false;
     }
 
-    // 去除首尾空格
     const trimmedAddress = address.trim();
 
-    // 检查是否以0x开头且长度为42
-    if (!trimmedAddress.startsWith('0x') || trimmedAddress.length !== 42) {
-      return false;
-    }
+    if (props.ecosystem === 'solana') {
+      // Solana 地址验证
+      try {
+        const pubKey = new PublicKey(trimmedAddress);
+        return PublicKey.isOnCurve(pubKey.toBytes());
+      } catch {
+        return false;
+      }
+    } else {
+      // EVM 地址验证
+      // 检查是否以0x开头且长度为42
+      if (!trimmedAddress.startsWith('0x') || trimmedAddress.length !== 42) {
+        return false;
+      }
 
-    // 检查除0x外的部分是否为有效的十六进制字符
-    const hexPart = trimmedAddress.slice(2);
-    if (!/^[0-9a-fA-F]{40}$/.test(hexPart)) {
-      return false;
-    }
+      // 检查除0x外的部分是否为有效的十六进制字符
+      const hexPart = trimmedAddress.slice(2);
+      if (!/^[0-9a-fA-F]{40}$/.test(hexPart)) {
+        return false;
+      }
 
-    // 使用ethers.js进行最终验证
-    return ethers.isAddress(trimmedAddress);
+      // 使用ethers.js进行最终验证
+      return ethers.isAddress(trimmedAddress);
+    }
   } catch (error) {
     return false;
   }
@@ -285,7 +320,7 @@ defineExpose({
           v-model="privateKeyText" 
           :error-lines="privateKeyErrorLines"
           :disabled="importLoading"
-          placeholder="请输入私钥，一行一个&#10;格式：0x开头的64位十六进制字符串&#10;示例：0x1234567890abcdef..." 
+          :placeholder="privateKeyPlaceholder" 
           @input="validateImportData"
           @scroll="handlePrivateKeyScroll"
           @line-select="handlePrivateKeyLineSelect"
@@ -300,7 +335,7 @@ defineExpose({
           v-model="addressText" 
           :error-lines="addressErrorLines"
           :disabled="importLoading"
-          placeholder="请输入接收地址，一行一个&#10;格式：0x开头的40位十六进制地址&#10;示例：0x742d35Cc6634C0532925a3b8D4..." 
+          :placeholder="addressPlaceholder" 
           @input="validateImportData"
           @scroll="handleAddressScroll"
           @line-select="handleAddressLineSelect"
@@ -340,13 +375,13 @@ defineExpose({
         </div>
         <div class="usage-column">
           <ul>
-            <li>私钥格式：64位十六进制字符串（可选0x前缀）</li>
+            <li>{{ props.ecosystem === 'solana' ? '私钥格式：Base58编码字符串' : '私钥格式：64位十六进制字符串（可选0x前缀）' }}</li>
             <li>重复数据会在导入时给出提示信息</li>
           </ul>
         </div>
         <div class="usage-column">
           <ul>
-            <li>地址格式：40位十六进制地址（必须0x前缀）</li>
+            <li>{{ props.ecosystem === 'solana' ? '地址格式：Base58编码地址' : '地址格式：40位十六进制地址（必须0x前缀）' }}</li>
           </ul>
         </div>
       </div>

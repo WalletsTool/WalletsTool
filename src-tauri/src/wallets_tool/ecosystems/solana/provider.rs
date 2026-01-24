@@ -63,7 +63,7 @@ impl SolanaProvider {
 
     pub async fn send_transaction(&self, transaction: &Transaction) -> Result<Signature, String> {
         let serialized = bincode::serialize(transaction).map_err(|e| e.to_string())?;
-        let base64_tx = base64::encode(serialized);
+        let base64_tx = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, serialized);
         
         let res = self.request("sendTransaction", json!([base64_tx, {"encoding": "base64"}])).await?;
         let sig_str = res.as_str().ok_or("Invalid signature format")?;

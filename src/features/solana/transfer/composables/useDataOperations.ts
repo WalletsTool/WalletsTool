@@ -1,5 +1,6 @@
 import { ref } from 'vue';
-import { ethers } from 'ethers';
+import { Keypair, PublicKey } from '@solana/web3.js';
+import bs58 from 'bs58';
 import { read, utils as xlUtils, writeFile } from 'xlsx';
 import { Notification, Modal } from '@arco-design/web-vue';
 import { debounce as customDebounce } from '@/utils/debounce.js';
@@ -25,21 +26,16 @@ export function useDataOperations(options = {}) {
         return false;
       }
 
-      let cleanKey = privateKey.trim();
-
-      if (cleanKey.startsWith('0x') || cleanKey.startsWith('0X')) {
-        cleanKey = cleanKey.slice(2);
-      }
-
-      if (cleanKey.length !== 64) {
+      const cleanKey = privateKey.trim();
+      
+      // 尝试Base58解码
+      const secretKey = bs58.decode(cleanKey);
+      if (secretKey.length !== 64) {
         return false;
       }
 
-      if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
-        return false;
-      }
-
-      new ethers.Wallet(privateKey);
+      // 验证是否能生成密钥对
+      Keypair.fromSecretKey(secretKey);
       return true;
     } catch (error) {
       return false;
@@ -53,17 +49,10 @@ export function useDataOperations(options = {}) {
       }
 
       const trimmedAddress = address.trim();
-
-      if (!trimmedAddress.startsWith('0x') || trimmedAddress.length !== 42) {
-        return false;
-      }
-
-      const hexPart = trimmedAddress.slice(2);
-      if (!/^[0-9a-fA-F]{40}$/.test(hexPart)) {
-        return false;
-      }
-
-      return ethers.isAddress(trimmedAddress);
+      
+      // 验证地址格式 (Base58)
+      const pubKey = new PublicKey(trimmedAddress);
+      return PublicKey.isOnCurve(pubKey.toBytes());
     } catch (error) {
       return false;
     }
@@ -132,13 +121,16 @@ export function useDataOperations(options = {}) {
 
       if (isPrivateKeyValid && isAddressValid) {
         try {
-          const wallet = new ethers.Wallet(privateKey);
-          const address = wallet.address;
-
+          const secretKey = bs58.decode(privateKey);
+          const keypair = Keypair.fromSecretKey(secretKey);
+          // 再次验证地址是否匹配（可选，但推荐）
+          // const derivedAddress = keypair.publicKey.toBase58();
+          // if (derivedAddress !== address) { ... }
+          
           validItems.push({
             key: `transfer_${validItems.length}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             private_key: privateKey,
-            address,
+            address: keypair.publicKey.toBase58(), // 使用导出的公钥作为address
             to_addr: toAddress,
             amount: amount ? String(amount) : '0',
             plat_balance: '',

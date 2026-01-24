@@ -1,91 +1,46 @@
-# Ethereum Transfer Feature
+# Solana Transfer Feature
 
 **Parent:** [AGENTS.md](../../AGENTS.md)
 
 ## OVERVIEW
 
-Batch transfer composables for Ethereum (native + ERC-20). Largest frontend feature (848 lines in `useTransfer.ts`).
+Batch transfer composables for Solana (native + SPL tokens). Mirror of Ethereum feature but uses Solana-specific logic (ATA creation, rent exemption).
 
 ## STRUCTURE
 
 ```
 ./
-├── pages/Transfer.vue    # Route target (~116KB)
-├── components/
-│   ├── TransferTable.vue
-│   ├── TransferConfigForm.vue
-│   ├── TransferStatusBar.vue
-│   └── index.ts          # Barrel exports
+├── pages/Transfer.vue    # Route target
 ├── composables/
-│   ├── useTransfer.ts    # Core logic (848 lines)
-│   ├── useBalanceQuery.ts
-│   ├── useValidation.ts
-│   ├── useDataOperations.ts
-│   ├── useTip.ts
-│   └── index.ts
-└── styles/index.ts       # Barrel export
+│   ├── useTransfer.ts    # Core logic (Solana specific)
+│   ├── useBalanceQuery.ts # Batch balance fetcher
+│   ├── useValidation.ts  # Address/Amount validation
+│   ├── useDataOperations.ts # Excel I/O
+│   ├── useTip.ts         # Notification helper
+│   └── index.ts          # Barrel export
+└── styles/index.ts       # Shared styles
 ```
 
 ## WHERE TO LOOK
 
 | Task | File | Notes |
 |------|------|-------|
-| Transfer loop | `composables/useTransfer.ts` | `iterTransfer()` function |
-| Multi-thread | `iterTransfer()` lines 431-609 | Thread pool with `Promise.all` |
-| Fury mode | `iterTransferFuryMode()` lines 612-828 | >90 threads, fast submit + batch confirm |
-| Validation | `useValidation.ts` | Form rules |
-| Data I/O | `useDataOperations.ts` | Excel import/export |
-| UI | `TransferTable.vue` | Virtual scrolling for large lists |
+| **Core Logic** | `useTransfer.ts` | `iterTransfer` handles the main loop |
+| **Validation** | `useValidation.ts` | Checks SOL address format (Base58) |
+| **Data I/O** | `useDataOperations.ts` | Handles Excel import/export |
+| **UI** | `../pages/Transfer.vue` | Main view component |
 
 ## CONVENTIONS
 
-- **Import alias:** Use `@/` for imports from `src/`
-- **UI library:** PrimeVue for core components
-- **State:** Props passed from parent, not Pinia
-- **Notifications:** `@arco-design/web-vue` Notification component
-- **Tauri invoke:** All backend calls via `@tauri-apps/api/core`
-
-## COMPOSABLES
-
-**useTransfer.ts (main):**
-```typescript
-export function useTransfer(options = {}) {
-  // Options: data, form, chainValue, currentChain, currentCoin,
-  //          threadCount, enableMultiThread, transferConfig,
-  //          transferProgress, validateForm, executeTransfer, ...
-
-  // Returns: transferFnc, stopTransfer, performIntelligentRetry,
-  //          iterTransfer, iterTransferFuryMode
-}
-```
-
-**Key functions:**
-- `transferFnc(inputData)` - Main entry, handles async flow
-- `iterTransfer(accountData)` - Single/multi-thread mode
-- `iterTransferFuryMode(accountData)` - High-concurrency batch
-- `performIntelligentRetry(failedData)` - On-chain tx detection
+- **Address Format**: Validate Base58 string length (32-44 chars).
+- **Backend Calls**: Prefix commands with `sol_` (e.g., `sol_transfer`).
+- **State**: Local state only; no global Pinia store for transient transfer data.
 
 ## BACKEND COMMANDS
 
 ```javascript
-invoke('base_coin_transfer', { index, item, config })
-invoke('token_transfer', { index, item, config })
-invoke('base_coin_transfer_fast', { ... }) // Fury mode
-invoke('token_transfer_fast', { ... })
-invoke('check_transaction_status', { chain, txHash })
-invoke('check_wallet_recent_transfers', { ... })
+invoke('sol_transfer', { index, item, config })
+invoke('sol_token_transfer', { index, item, config })
+invoke('sol_transfer_fast', { ... }) // Fury mode
+invoke('sol_token_transfer_fast', { ... })
 ```
-
-## MODES
-
-| Mode | Threshold | Behavior |
-|------|-----------|----------|
-| Single-thread | `enableMultiThread === '0'` | Sequential execution |
-| Multi-thread | 1-90 threads | Wallet-grouped concurrency |
-| Fury mode | >90 threads | Fast submit → batch confirm |
-
-## ANTI-PATTERNS
-
-- Never pass `stopFlag` directly to backend
-- Never skip `updateTransferProgress()` calls
-- Never use `form` properties without default checks

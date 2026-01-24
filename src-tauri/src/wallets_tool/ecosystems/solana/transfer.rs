@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::wallets_tool::security::SecureMemory;
+#[allow(deprecated)]
 use solana_sdk::{
     signature::{Keypair, Signer},
     pubkey::Pubkey,
@@ -48,8 +49,8 @@ pub async fn sol_transfer(
     
     let keypair = item.private_key.use_secret(|secret_str| {
         let bytes = bs58::decode(secret_str).into_vec().map_err(|e| e.to_string())?;
-        Keypair::from_bytes(&bytes).map_err(|e| e.to_string())
-    }).map_err(|e| e.to_string())?;
+        Keypair::try_from(bytes.as_slice()).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())??;
 
     let to_pubkey = Pubkey::from_str(&item.to_addr).map_err(|e| e.to_string())?;
     
@@ -90,14 +91,14 @@ pub async fn sol_token_transfer(
 ) -> Result<TransferResult, String> {
     let client = get_rpc_client("sol").await?;
     let mint_str = config.contract_address.ok_or("Missing Mint Address")?;
-    let mint = Pubkey::from_str(&mint_str).map_err(|e| "Invalid Mint Address")?;
+    let mint = Pubkey::from_str(&mint_str).map_err(|_| "Invalid Mint Address")?;
     
     let keypair = item.private_key.use_secret(|secret_str| {
         let bytes = bs58::decode(secret_str).into_vec().map_err(|e| e.to_string())?;
-        Keypair::from_bytes(&bytes).map_err(|e| e.to_string())
-    }).map_err(|e| e.to_string())?;
+        Keypair::try_from(bytes.as_slice()).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())??;
 
-    let to_pubkey = Pubkey::from_str(&item.to_addr).map_err(|e| "Invalid To Address")?;
+    let to_pubkey = Pubkey::from_str(&item.to_addr).map_err(|_| "Invalid To Address")?;
     
     let from_ata = get_associated_token_address(&keypair.pubkey(), &mint);
     let to_ata = get_associated_token_address(&to_pubkey, &mint);
@@ -201,7 +202,6 @@ pub async fn sol_token_transfer_fast(
 
 #[derive(Deserialize)]
 pub struct BalanceQueryParams {
-    pub chain: String,
     pub items: Vec<BalanceItem>,
     pub window_id: String,
     pub query_id: String,

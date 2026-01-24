@@ -421,7 +421,10 @@ const updateScrollerHeight = () => {
 };
 
 watch(() => props.data, () => {
-  nextTick(checkScrollbar);
+  nextTick(() => {
+    checkScrollbar();
+    updateScrollerHeight();
+  });
 }, { deep: true, immediate: true });
 
 // 计算表头列宽度（保持原始设置不变）

@@ -1,12 +1,8 @@
-### 🐛 Bug Fixes | 修复
+### ✨ New Features | 新功能
 
-- **VirtualScrollerTable:** 修复虚拟滚动表格高度计算问题
+- **ecosystem:** 支持Solana生态并重构多链管理功能
 
-### ♻️ Refactoring | 重构
+### Other | 其他
 
-- **table:** 优化虚拟滚动表格组件性能
-
-### 📝 Documentation | 文档
-
-- 更新README文档格式与内容
+- removes(solana): 删除Solana转账相关组件
 

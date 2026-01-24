@@ -126,7 +126,7 @@ jobs:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
           releaseName: 'Wallets Tool ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
-            ## 🎉 新版本发布 v0.4.1
+            ## 🎉 新版本发布 v0.4.2
             
             ### 📦 安装包下载
             - **Windows**: 下载 `.exe` 文件
@@ -134,11 +134,9 @@ jobs:
             ### 🔄 更新说明
             ### ✨ New Features | 新功能
             
-            - **ecosystem:** 支持Solana生态并重构多链管理功能
+            - **ci:** 添加Windows平台的vcpkg和OpenSSL缓存及安装步骤
             
-            ### Other | 其他
-            
-            - removes(solana): 删除Solana转账相关组件
+
             
 
             

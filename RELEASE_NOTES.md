@@ -1,4 +1,12 @@
+### 🐛 Bug Fixes | 修复
+
+- **VirtualScrollerTable:** 修复虚拟滚动表格高度计算问题
+
 ### ♻️ Refactoring | 重构
 
-- **ui:** 优化表格列宽与侧边栏布局，增强私钥安全复制功能
+- **table:** 优化虚拟滚动表格组件性能
+
+### 📝 Documentation | 文档
+
+- 更新README文档格式与内容
 

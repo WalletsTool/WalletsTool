@@ -4,11 +4,13 @@ import { useRouter, useRoute } from 'vue-router'
 import { useEcosystemStore } from '@/stores/ecosystem'
 import { useThemeStore } from '@/stores'
 import { Notification } from '@arco-design/web-vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 const router = useRouter()
 const route = useRoute()
 const ecoStore = useEcosystemStore()
 const themeStore = useThemeStore()
+const appWindow = getCurrentWindow()
 
 const target = ref(route.query.target || 'transfer')
 
@@ -50,12 +52,10 @@ const selectEcosystem = (eco) => {
 // 主题相关
 const isDarkTheme = computed(() => themeStore.currentTheme === 'dark')
 
-onMounted(() => {
-  // 确保主题已初始化
-  if (!themeStore.currentTheme) {
-    themeStore.initTheme()
-  }
-})
+// 关闭页面
+const closeWindow = async () => {
+  await appWindow.destroy()
+}
 </script>
 
 <template>
@@ -68,6 +68,11 @@ onMounted(() => {
     </div>
 
     <div class="content-wrapper">
+      <button class="close-btn" @click="closeWindow" title="关闭窗口">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      </button>
       <h1 class="page-title">选择生态网络</h1>
       <p class="page-subtitle">请选择您要操作的区块链网络</p>
 
@@ -153,6 +158,45 @@ onMounted(() => {
   max-width: 900px;
   padding: 20px;
   animation: fadeIn 0.6s ease-out;
+}
+
+.close-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.close-btn:hover {
+  background: rgba(255, 100, 100, 0.3);
+  color: #fff;
+  transform: scale(1.1);
+}
+
+.close-btn svg {
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+}
+
+.light-theme .close-btn {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.light-theme .close-btn:hover {
+  background: rgba(255, 100, 100, 0.2);
+  color: #e74c3c;
 }
 
 .page-title {

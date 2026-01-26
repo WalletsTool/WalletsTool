@@ -125,10 +125,20 @@ const mergedFuncList = [
   },
 ]
 
+const airdropFuncList = [
+  {
+    title: "浏览器自动化",
+    desc: "使用 Playwright + 钱包并发执行交互任务 (抗检测环境)",
+    picture: "avatar/optimized/monitor.webp",
+    pageName: "airdrop-browser",
+    isNew: true
+  }
+]
+
 // 跳转逻辑
 function goPage(pageName) {
 
-  const targetModule = mergedFuncList.find(item => item.pageName === pageName);
+  const targetModule = [...mergedFuncList, ...airdropFuncList].find(item => item.pageName === pageName);
   if (targetModule?.isBuilding) {
     Message.warning('功能建设中，敬请期待')
     return
@@ -153,12 +163,14 @@ function goPage(pageName) {
     const windowLabel = WINDOW_CONFIG.generateLabel(pageName, newCount)
     
     // 修改：指向 entry 页面，而不是具体的 eth/sol 页面
-    const windowUrl = `/#/entry?target=${pageName}&count=${newCount}`
+    const windowUrl = pageName === 'airdrop-browser'
+      ? `/#/airdrop/browser?count=${newCount}`
+      : `/#/entry?target=${pageName}&count=${newCount}`
     
     // 生成窗口标题：统一格式 "WalletsTool - {图标} {功能名} [{序号}]"
-    const moduleIcons = { transfer: '💸', balance: '💰', monitor: '👁️' }
-    const moduleNames = { transfer: '批量转账', balance: '余额查询', monitor: '链上监控' }
-    const title = newCount > 1 
+    const moduleIcons = { transfer: '💸', balance: '💰', monitor: '👁️', 'airdrop-browser': '🤖' }
+    const moduleNames = { transfer: '批量转账', balance: '余额查询', monitor: '链上监控', 'airdrop-browser': '浏览器自动化' }
+    const title = newCount > 1
       ? `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName} [${newCount}]`
       : `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName}`
 
@@ -747,6 +759,51 @@ async function handleMainWindowCloseRequest() {
             </div>
 
             <!-- 悬浮效果 -->
+            <div class="card-hover-effect"></div>
+          </div>
+        </div>
+      </a-tab-pane>
+
+      <a-tab-pane key="airdrop">
+        <template #title>
+          <span style="display: flex; align-items: center; gap: 6px; font-size: 16px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+            空投交互
+          </span>
+        </template>
+        
+        <div class="func-grid">
+          <div class="func-card" :class="{
+            'func-card--disabled': item.isBuilding,
+            'func-card--new': item.isNew
+          }" @click="goPage(item.pageName)" v-for="(item, idx) in airdropFuncList" :key="idx"
+            :style="{ '--delay': idx * 0.1 + 's' }">
+            
+            <div v-if="item.isNew" class="new-badge"><span>NEW</span></div>
+            <div v-if="item.isBuilding" class="building-badge"><span>建设中</span></div>
+
+            <div class="card-content">
+              <div class="card-icon">
+                <img :src="item.picture" alt="功能图标" />
+              </div>
+
+              <div class="card-info">
+                <h3 class="card-title">{{ item.title }}</h3>
+                <p class="card-desc">{{ item.desc }}</p>
+              </div>
+            </div>
+
+            <div class="card-footer">
+              <div class="card-arrow">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </div>
+            </div>
             <div class="card-hover-effect"></div>
           </div>
         </div>

@@ -16,6 +16,10 @@ const routes = [
     { path: "/sol/transfer", name: "sol-transfer", component: () => import('@/features/solana/transfer/pages/Transfer.vue') },
     { path: "/sol/balance", name: "sol-balance", component: () => import('@/features/solana/balance/pages/Balance.vue') },
 
+    // Airdrop
+    { path: "/airdrop", name: "airdrop", component: () => import('@/features/airdrop/pages/Airdrop.vue') },
+    { path: "/airdrop/browser", name: "airdrop-browser", component: () => import('@/features/airdrop/pages/BrowserAutomation.vue') },
+
     // EVM Monitor
     { path: "/eth/monitor", name: "eth-monitor", component: () => import('@/features/ethereum/monitor/pages/Monitor.vue') },
 ];

@@ -2,7 +2,7 @@
   <div ref="tableContainerRef" class="virtual-scroller-table" :style="{ height: height, width: '100%' }">
     <!-- 表头 -->
     <div class="table-header">
-      <div class="header-row" :style="{ paddingRight: hasScrollbar ? scrollbarWidth + 'px' : '0' }">
+      <div class="header-row" :style="{ paddingRight: scrollbarPadding }">
         <!-- 选择列 -->
         <div v-if="rowSelection" class="header-cell checkbox-cell">
           <input
@@ -355,6 +355,9 @@ const scrollerRef = ref(null);
 const tableContainerRef = ref(null);
 const scrollbarWidth = ref(0);
 const hasScrollbar = ref(false);
+const scrollbarPadding = computed(() => {
+  return hasScrollbar.value ? scrollbarWidth.value + 'px' : '0';
+});
 let resizeObserver = null;
 
 const checkScrollbar = () => {
@@ -502,7 +505,7 @@ const getDisplayText = (column, item) => {
     return maskPrivateKey(value);
   }
 
-  // 特殊处理error_msg字段，只显示前20个字符
+  // 特殊处理error_msg字段，只显示前25个字符
   if (column.dataIndex === "error_msg" && value.length > 25) {
     return value.substring(0, 25) + "...";
   }
@@ -713,6 +716,9 @@ const handleWheel = () => {
   background: var(--table-header-bg, #f7f8fa);
   border-bottom: 1px solid var(--table-border-color, #e5e6eb);
   flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .header-row {
@@ -720,6 +726,8 @@ const handleWheel = () => {
   height: 40px;
   align-items: center;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .header-cell {
@@ -747,6 +755,16 @@ const handleWheel = () => {
   width: 100%;
   height: 100%;
   border-bottom: 1px solid var(--table-border-color);
+}
+
+:deep(.p-virtualscroller-content) {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+
+:deep(.p-virtualscroller-item) {
+  width: 100% !important;
+  box-sizing: border-box;
 }
 
 .table-row {

@@ -200,6 +200,14 @@ export function useTransfer(options = {}) {
   }
 
   async function transferFnc(inputData) {
+    try {
+      if (transferConfig.value && transferConfig.value.window_id) {
+        await invoke('reset_transfer_stop', { windowId: transferConfig.value.window_id });
+      }
+    } catch (e) {
+      console.error('重置停止标志失败:', e);
+    }
+
     await iterTransfer(inputData)
         .then(async () => {
           if (stopFlag.value) {
@@ -894,6 +902,12 @@ export function useTransfer(options = {}) {
     stopFlag.value = true;
     stopStatus.value = true;
     showProgress.value = false;
+    
+    if (transferConfig.value && transferConfig.value.window_id) {
+      invoke('stop_transfer', { windowId: transferConfig.value.window_id }).catch(e => {
+        console.error('发送停止命令失败:', e);
+      });
+    }
   }
 
   return {

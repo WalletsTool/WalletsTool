@@ -61,7 +61,7 @@ initWindowTitle()
 
 const columns = [
   { title: '序号', align: 'center', width: 53, slotName: 'index' },
-  { title: '发送方私钥', align: 'center', dataIndex: 'private_key', ellipsis: true, tooltip: true },
+  { title: '发送方私钥', align: 'center', dataIndex: 'private_key', width: 180, ellipsis: true, tooltip: true },
   { title: '接收地址', align: 'center', dataIndex: 'to_addr', ellipsis: true, tooltip: true },
   { title: '转账数量', align: 'center', dataIndex: 'amount', width: 85, ellipsis: true, tooltip: true },
   { title: '平台币余额', align: 'center', dataIndex: 'plat_balance', width: 95, ellipsis: true, tooltip: true },
@@ -1501,28 +1501,28 @@ function handleClickOutside(event) {
             <a-row class="config-row">
               <div class="config-column column-first">
                 <a-form-item field="send_type" label="发送模式" :label-col-props="{ span: 6 }">
-                  <a-radio-group v-model="form.send_type" type="button"><a-radio value="1">全部</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio><a-radio value="4">剩余随机</a-radio></a-radio-group>
+                  <a-radio-group v-model="form.send_type" size="small" type="button"><a-radio value="1">全部</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio><a-radio value="4">剩余随机</a-radio></a-radio-group>
                 </a-form-item>
                 <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" :label-col-props="{ span: 6 }">
-                  <a-radio-group v-model="form.amount_from" type="button"><a-radio value="1">表格数据</a-radio><a-radio value="2">自定义</a-radio></a-radio-group>
+                  <a-radio-group v-model="form.amount_from" size="small" type="button"><a-radio size="small" value="1">表格数据</a-radio><a-radio size="small" value="2">自定义</a-radio></a-radio-group>
                 </a-form-item>
                 <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量" :label-col-props="{ span: 6 }">
-                  <a-input v-model="form.send_count" />
+                  <a-input size="small" v-model="form.send_count" />
                 </a-form-item>
                 <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope" :label="form.send_type === '3' ? '发送数量从' : '剩余数量从'" :label-col-props="{ span: 6 }">
-                  <a-space><a-input v-model="form.send_min_count" placeholder="最小" style="width: 66px" /><span style="margin: 0 8px">至</span><a-input v-model="form.send_max_count" placeholder="最大" style="width: 85px" /><span style="margin-left: 10px">范围内随机生成</span></a-space>
+                  <a-space><a-input v-model="form.send_min_count" size="small" placeholder="最小" style="width: 66px" /><span style="margin: 0 8px">至</span><a-input size="small" v-model="form.send_max_count" placeholder="最大" style="width: 85px" /><span style="margin-left: 10px">范围内随机生成</span></a-space>
                 </a-form-item>
                 <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度" :label-col-props="{ span: 6 }">
-                  <a-input v-model="form.amount_precision" />
+                  <a-input size="small" v-model="form.amount_precision" />
                 </a-form-item>
               </div>
               <div class="config-divider"></div>
               <div class="config-column column-second">
                 <a-form-item field="gas_price_type" label="优先费设置" :label-col-props="{ span: 7 }">
-                  <a-radio-group v-model="form.gas_price_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio></a-radio-group>
+                  <a-radio-group size="small" v-model="form.gas_price_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio></a-radio-group>
                 </a-form-item>
                 <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" label="优先费 (uLamports)" :label-col-props="{ span: 7 }">
-                  <a-input v-model="form.gas_price" />
+                  <a-input size="small" v-model="form.gas_price" />
                 </a-form-item>
               </div>
               <div class="config-divider"></div>
@@ -1534,19 +1534,19 @@ function handleClickOutside(event) {
                       <span>线程数</span><a-input-number v-model="threadCount" :min="1" :max="999" :step="1" :default-value="1" size="small" style="width: 90px; margin-left: 10px" /><a-tag v-if="threadCount > 90" color="#ff4d4f" style="font-size: 10px; margin-left: 10px">狂暴</a-tag>
                     </template>
                     <template v-else>
-                      <span>时间间隔</span><a-input v-model="form.min_interval" placeholder="最小" style="width: 55px; margin-left: 10px" /><span style="margin: 0 8px">至</span><a-input v-model="form.max_interval" placeholder="最大" style="width: 55px; margin-right: 10px" />秒
+                      <span>时间间隔</span><a-input size="small" v-model="form.min_interval" placeholder="最小" style="width: 55px; margin-left: 10px" /><span style="margin: 0 8px">至</span><a-input size="small" v-model="form.max_interval" placeholder="最大" style="width: 55px; margin-right: 10px" />秒
                     </template>
                   </a-space>
                 </a-form-item>
                 <a-form-item field="error_retry" label="失败自动重试" tooltip="开启失败自动重试功能后，存在多次转账风险，请谨慎使用。建议渡过bate阶段后再用" :label-col-props="{ span: 9 }" :wrapper-col-props="{ span: 15 }">
                   <a-space :size="6" align="center" class="error-retry-control">
-                    <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0"><template #checked>开启</template><template #unchecked>关闭</template></a-switch>
+                    <a-switch size="small" v-model="form.error_retry" checked-value="1" unchecked-value="0"><template #checked>开启</template><template #unchecked>关闭</template></a-switch>
                     <a-tag color="orange" class="beta-tag">BATE</a-tag>
                   </a-space>
                 </a-form-item>
                 <a-form-item field="multi_window" label="窗口多开" tooltip="相同配置参数多开窗口，方便分组执行转账" :label-col-props="{ span: 7 }" :wrapper-col-props="{ span: 16 }">
                   <a-input-group style="width: 100%">
-                    <a-input-number v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1" placeholder="窗口数" style="width: 50%" />
+                    <a-input-number size="small" v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1" placeholder="窗口数" style="width: 50%" />
                     <a-button status="success" @click="debouncedOpenMultipleWindow"><template #icon><Icon icon="mdi:content-copy" /></template></a-button>
                   </a-input-group>
                 </a-form-item>
@@ -1841,9 +1841,9 @@ export default {
 .config-section { flex-shrink: 0; background: var(--card-bg, var(--color-bg-1, #ffffff)); border: 1px solid var(--color-border, #e5e6eb); border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
 .config-row { display: flex; align-items: stretch; height: 100%; min-height: 150px; }
 .config-column { display: flex; flex-direction: column; min-height: 150px; }
-.column-first { padding-right: 8px; flex: 9; }
-.column-second { padding: 0 8px; flex: 8; }
-.column-third { padding-left: 8px; flex: 7; }
+.column-first { padding-right: 8px; flex: 26; }
+.column-second { padding: 0 8px; flex: 24; }
+.column-third { padding-left: 8px; flex: 19; }
 .config-divider { width: 1px; min-height: 150px; height: 100%; background: linear-gradient(to bottom, transparent, var(--color-border, #e5e6eb) 20%, var(--color-border, #e5e6eb) 80%, transparent); margin: 0; align-self: center; }
 .arco-form-item { padding: 5px 10px; margin-bottom: 8px; }
 .container :deep(.arco-form-item-label-col) { margin-bottom: 0; }
@@ -1955,8 +1955,7 @@ export default {
 .side-actions-content-fixed .arco-btn[status='danger'] > .arco-btn-icon { color: #ffffff; }
 .side-actions-content-fixed .arco-btn[status='danger']:hover { background: linear-gradient(135deg, var(--color-danger-5, #ff7d7d) 0%, var(--color-danger-6, #f53f3f) 100%); box-shadow: 0 4px 12px rgba(245, 63, 63, 0.35); transform: translateY(-2px); }
 .table-container { flex: 1; display: flex; position: relative; overflow: visible; width: 100%; }
-.table-with-side-actions { margin-right: 60px; margin-top: 0; height: 100%; transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-.table-with-side-actions.expanded { margin-right: 0; }
+.table-with-side-actions { margin-top: 0; height: 100%; }
 .exec-actions { display: flex; gap: 4px; padding: 4px 6px; }
 .action-btn { padding: 2px 10px; font-size: 12px; color: #e0e0e0; background: #2a2a2b; border-radius: 3px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .action-btn:hover { background: #3d3d3d; color: #fff; }

@@ -61,8 +61,8 @@ hex = "0.4"
 # Solana (Agave SDK - OpenSSL-free with rustls-tls)
 solana-sdk = "2.2"
 bs58 = "0.5"
-spl-token = "7.0"
-spl-associated-token-account = "7.0"
+spl-token = { version = "7.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "7.0", features = ["no-entrypoint"] }
 bincode = "1.3"
 # 明确指定兼容版本
 base64 = "0.22.1"

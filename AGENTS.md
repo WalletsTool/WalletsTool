@@ -1,6 +1,6 @@
 # WalletsTool Development Guide
 
-**Generated:** 2026-01-24
+**Generated:** 2026-01-27
 **Commit:** d1f52e9 (dev branch)
 
 ## OVERVIEW
@@ -35,6 +35,7 @@ Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch
 | **Frontend Entry** | `src/main.js` | PrimeVue + Arco + Router setup |
 | **Backend Entry** | `src-tauri/src/main.rs` | Security init + Command registry |
 | **Transfer Logic** | `src/features/{chain}/transfer/` | Feature-scoped pages/composables |
+| **Balance Logic** | `src/features/{chain}/balance/` | Feature-scoped pages |
 | **Chain Backend** | `src-tauri/src/wallets_tool/ecosystems/` | Modularized by chain (eth/sol) |
 | **Security Core** | `src-tauri/src/wallets_tool/security/` | `SecureMemory` implementation |
 | **Database Ops** | `src-tauri/src/database/` | `ChainService`, `RpcService` |

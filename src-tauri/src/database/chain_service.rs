@@ -170,7 +170,7 @@ impl<'a> ChainService<'a> {
         
         // 检查链是否存在
         let chain = self.get_chain_by_key(chain_key).await?
-            .ok_or_else(|| anyhow::anyhow!("链不存在: {}", chain_key))?;
+            .ok_or_else(|| anyhow::anyhow!("链不存在: {chain_key}"))?;
         
         // 更新链基本信息
         sqlx::query(
@@ -251,7 +251,7 @@ impl<'a> ChainService<'a> {
     pub async fn remove_chain(&self, chain_key: &str) -> Result<()> {
         // 检查链是否存在
         let chain = self.get_chain_by_key(chain_key).await?
-            .ok_or_else(|| anyhow::anyhow!("链不存在: {}", chain_key))?;
+            .ok_or_else(|| anyhow::anyhow!("链不存在: {chain_key}"))?;
         
         // 开始事务
         let mut tx = self.pool.begin().await?;
@@ -389,7 +389,7 @@ impl<'a> ChainService<'a> {
     pub async fn update_token_abi(&self, chain_key: &str, token_key: &str, abi: Option<String>) -> Result<()> {
         // 获取链信息验证链是否存在
         let chain = self.get_chain_by_key(chain_key).await?
-            .ok_or_else(|| anyhow::anyhow!("链不存在: {}", chain_key))?;
+            .ok_or_else(|| anyhow::anyhow!("链不存在: {chain_key}"))?;
         
         let rows_affected = sqlx::query(
             r#"
@@ -406,7 +406,7 @@ impl<'a> ChainService<'a> {
         .rows_affected();
         
         if rows_affected == 0 {
-            return Err(anyhow::anyhow!("代币不存在: {}/{}", chain_key, token_key));
+            return Err(anyhow::anyhow!("代币不存在: {chain_key}/{token_key}"));
         }
         
         Ok(())
@@ -416,7 +416,7 @@ impl<'a> ChainService<'a> {
     pub async fn update_token(&self, chain_key: &str, token_key: &str, request: UpdateTokenRequest) -> Result<()> {
         // 获取链信息验证链是否存在
         let chain = self.get_chain_by_key(chain_key).await?
-            .ok_or_else(|| anyhow::anyhow!("链不存在: {}", chain_key))?;
+            .ok_or_else(|| anyhow::anyhow!("链不存在: {chain_key}"))?;
         
         let now = Utc::now();
         let rows_affected = sqlx::query(
@@ -442,7 +442,7 @@ impl<'a> ChainService<'a> {
         .rows_affected();
         
         if rows_affected == 0 {
-            return Err(anyhow::anyhow!("代币不存在: {}/{}", chain_key, token_key));
+            return Err(anyhow::anyhow!("代币不存在: {chain_key}/{token_key}"));
         }
         
         Ok(())
@@ -508,7 +508,7 @@ impl<'a> ChainService<'a> {
     pub async fn add_rpc_provider_by_chain_key(&self, chain_key: &str, request: &CreateRpcProviderRequest) -> Result<RpcProvider> {
         // 首先根据 chain_key 获取 chain_id
         let chain = self.get_chain_by_key(chain_key).await?
-            .ok_or_else(|| anyhow::anyhow!("链不存在: {}", chain_key))?;
+            .ok_or_else(|| anyhow::anyhow!("链不存在: {chain_key}"))?;
         
         // 调用原有的添加方法
         self.add_rpc_provider(chain.id, request).await

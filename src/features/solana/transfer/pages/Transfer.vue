@@ -283,7 +283,8 @@ const filteredCoinOptions = computed(() => {
     (coin) =>
       (coin.label && coin.label.toLowerCase().includes(keyword)) ||
       (coin.symbol && coin.symbol.toLowerCase().includes(keyword)) ||
-      (coin.key && coin.key.toLowerCase().includes(keyword))
+      (coin.key && coin.key.toLowerCase().includes(keyword)) ||
+      (coin.contract_address && coin.contract_address.toLowerCase().includes(keyword))
   );
 });
 
@@ -627,6 +628,31 @@ const { showCelebration, showTipModal, tipAmount, tipPrivateKey, tipLoading, dev
   chainValue, currentChain, currentCoin,
 });
 
+let timer = null;
+
+function fetchGas() {
+  if (!currentChain.value) return;
+  // 如果是solana链，可能不需要频繁查询或者显示方式不同，这里保留基本逻辑
+  invoke('get_chain_gas_price', { chain: chainValue.value })
+    .then((res) => {
+      if (currentChain.value) {
+        const gasPrice = res?.gas_price_gwei;
+        // Solana一般单位较小，保留更多小数位
+        currentChain.value.gas_price = isNaN(gasPrice) ? '数据格式错误' : gasPrice.toFixed(9);
+      }
+    })
+    .catch((err) => { if (currentChain.value) currentChain.value.gas_price = '查询错误'; });
+}
+
+function startGasTimer() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(fetchGas, 5000);
+}
+
+function stopGasTimer() {
+  if (timer) { clearInterval(timer); timer = null; }
+}
+
 async function chainChange() {
   const chainResult = chainOptions.value.filter((item) => item.key === chainValue.value);
   if (chainResult.length > 0) {
@@ -637,16 +663,57 @@ async function chainChange() {
     try {
       const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
       if (isTauri) {
-        const tokenList = await invoke('get_coin_list', { chainKey: chainValue.value });
-        coinOptions.value = tokenList.map((token) => ({ key: token.key, label: token.label, symbol: token.symbol, contract_address: token.contract_address, decimals: token.decimals, coin_type: token.coin_type, contract_type: token.contract_type, abi: token.abi }));
+        // 构造默认代币列表
+        const defaultTokens = [];
+        if (currentChain.value) {
+          defaultTokens.push({
+            key: `${currentChain.value.key}_base`,
+            label: currentChain.value.currency_name || currentChain.value.symbol || 'SOL',
+            symbol: currentChain.value.symbol || 'SOL',
+            contract_address: null,
+            decimals: currentChain.value.decimals || 9,
+            coin_type: 'base',
+            contract_type: null,
+            abi: null
+          });
+        }
+
+        try {
+          const tokenList = await invoke('get_coin_list', { chainKey: chainValue.value });
+          if (tokenList && tokenList.length > 0) {
+            coinOptions.value = tokenList.map((token) => ({
+              key: token.key,
+              label: token.label,
+              symbol: token.symbol,
+              contract_address: token.contract_address,
+              decimals: token.decimals,
+              coin_type: token.coin_type,
+              contract_type: token.contract_type,
+              abi: token.abi
+            }));
+          } else {
+            coinOptions.value = defaultTokens;
+          }
+        } catch (error) {
+          console.error('加载代币列表失败:', error);
+          coinOptions.value = defaultTokens;
+        }
+
         coinOptions.value.sort((a, b) => {
           if (a.coin_type === 'base' && b.coin_type !== 'base') return -1;
           if (a.coin_type !== 'base' && b.coin_type === 'base') return 1;
           return a.label.localeCompare(b.label);
         });
-        if (coinOptions.value.length > 0) { coinValue.value = coinOptions.value[0].key; currentCoin.value = coinOptions.value[0]; }
+        if (coinOptions.value.length > 0) { 
+          coinValue.value = coinOptions.value[0].key; 
+          currentCoin.value = coinOptions.value[0]; 
+        }
       }
-    } catch (error) { console.error('加载代币列表失败:', error); coinOptions.value = []; coinValue.value = ''; currentCoin.value = null; }
+    } catch (error) { 
+      console.error('执行链切换逻辑失败:', error); 
+      // 发生严重错误时的兜底
+      coinOptions.value = []; coinValue.value = ''; currentCoin.value = null; 
+    }
   } else {
     currentChain.value = null;
     coinOptions.value = [];
@@ -695,6 +762,62 @@ function clearData() { clearDataFn({ startLoading, balanceLoading }); }
 function handleManualImport() {
   if (walletImportRef.value) walletImportRef.value.show();
 }
+
+function handleWalletImportConfirm(importData) {
+  const { privateKeys, addresses } = importData;
+  const newData = [];
+  let successCount = 0;
+  let failCount = 0;
+
+  // 确保能处理只有地址或只有私钥的情况
+  const count = Math.max(privateKeys ? privateKeys.length : 0, addresses ? addresses.length : 0);
+
+  for (let i = 0; i < count; i++) {
+    const privateKey = privateKeys && privateKeys[i] ? privateKeys[i] : '';
+    const toAddress = addresses && addresses[i] ? addresses[i] : '';
+
+    if (privateKey) {
+      try {
+        const secretKey = bs58.decode(privateKey);
+        const keypair = Keypair.fromSecretKey(secretKey);
+        const fromAddress = keypair.publicKey.toBase58();
+        newData.push({ 
+          key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, 
+          private_key: privateKey, 
+          address: fromAddress, 
+          to_addr: toAddress, 
+          amount: '', 
+          plat_balance: '', 
+          coin_balance: '', 
+          exec_status: '0', 
+          error_msg: '' 
+        });
+        successCount++;
+      } catch (error) { console.error('处理数据失败:', error); failCount++; }
+    }
+  }
+  
+  if (newData.length > 0) {
+    // 使用解构赋值触发响应式更新
+    data.value = [...data.value, ...newData];
+    clearValidationCache();
+  }
+
+  const duplicateKeysCount = (privateKeys ? privateKeys.length : 0) - new Set(privateKeys || []).size;
+  const duplicateAddressesCount = (addresses ? addresses.length : 0) - new Set(addresses || []).size;
+  const totalCount = count;
+  let notificationContent = `成功导入${successCount}条数据`;
+  if (duplicateKeysCount > 0 || duplicateAddressesCount > 0) {
+    const duplicateInfo = [];
+    if (duplicateKeysCount > 0) duplicateInfo.push(`${duplicateKeysCount}个重复私钥`);
+    if (duplicateAddressesCount > 0) duplicateInfo.push(`${duplicateAddressesCount}个重复地址`);
+    notificationContent += `（包含${duplicateInfo.join('、')}）`;
+  }
+  if (failCount > 0) Notification.warning({ title: '导入完成！', content: `总计${totalCount}条，成功${successCount}条，失败${failCount}条（格式错误）。${duplicateKeysCount > 0 || duplicateAddressesCount > 0 ? '注意：已允许重复数据导入。' : ''}` });
+  else if (successCount > 0) Notification.success({ title: '导入成功！', content: notificationContent, position: 'topLeft' });
+}
+
+function handleWalletImportCancel() { console.log('钱包导入已取消'); }
 
 function handleFileUpload() { upload(); }
 
@@ -1042,7 +1165,7 @@ async function handleChainUpdated() {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) {
       const result = await invoke('get_chain_list');
-      chainOptions.value = (result || []).filter(item => item.key === 'sol');
+      chainOptions.value = (result || []).filter(item => item.ecosystem === 'solana');
       const currentChainExists = chainOptions.value.find((chain) => chain.key === chainValue.value);
       if (!currentChainExists && chainOptions.value.length > 0) { chainValue.value = chainOptions.value[0].key; await chainChange(); }
       else if (currentChainExists) currentChain.value = currentChainExists;
@@ -1270,17 +1393,24 @@ onBeforeMount(async () => {
       if (sharedConfig) {
         applySharedConfig(sharedConfig);
       } else {
-        const ethChain = chainOptions.value.find((c) => c.key === 'eth');
-        if (ethChain) { chainValue.value = 'eth'; currentChain.value = ethChain; }
-        else { chainValue.value = chainOptions.value[0]?.key; currentChain.value = chainOptions.value[0]; }
+        if (chainOptions.value.length > 0) {
+          chainValue.value = chainOptions.value[0].key;
+          currentChain.value = chainOptions.value[0];
+        }
         await chainChange();
       }
     } catch (error) { console.error('初始化链列表失败:', error); }
   } else {
-    chainOptions.value = [{ key: 'sol', name: 'Solana', scan_url: 'solscan.io', pic_url: 'sol.png' }];
+    chainOptions.value = [{ key: 'sol', name: 'Solana', scan_url: 'https://solscan.io', pic_url: 'sol.png', symbol: 'SOL', decimals: 9, currency_name: 'Solana' }];
     chainOptions.value.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     if (sharedConfig) applySharedConfig(sharedConfig);
-    else { const ethChain = chainOptions.value.find((c) => c.key === 'eth'); if (ethChain) { chainValue.value = 'eth'; currentChain.value = ethChain; } else { chainValue.value = chainOptions.value[0]?.key; currentChain.value = chainOptions.value[0]; } await chainChange(); }
+    else { 
+      if (chainOptions.value.length > 0) {
+        chainValue.value = chainOptions.value[0].key;
+        currentChain.value = chainOptions.value[0];
+      }
+      await chainChange(); 
+    }
   }
 });
 
@@ -1758,45 +1888,7 @@ function handleClickOutside(event) {
   </div>
 </template>
 
-<script>
-export default {
-  methods: {
-    handleWalletImportConfirm(importData) {
-      const { privateKeys, addresses } = importData;
-      const newData = [];
-      let successCount = 0;
-      let failCount = 0;
-      for (let i = 0; i < privateKeys.length; i++) {
-        const privateKey = privateKeys[i];
-        const toAddress = addresses[i];
-        try {
-          // Solana Keypair from Base58 Private Key
-          const secretKey = bs58.decode(privateKey);
-          const keypair = Keypair.fromSecretKey(secretKey);
-          const fromAddress = keypair.publicKey.toBase58();
-          newData.push({ key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, private_key: privateKey, address: fromAddress, to_addr: toAddress, amount: '', plat_balance: '', coin_balance: '', exec_status: '0', error_msg: '' });
-          successCount++;
-        } catch (error) { console.error('处理数据失败:', error); failCount++; }
-      }
-      data.value.push(...newData);
-      clearValidationCache();
-      const duplicateKeysCount = privateKeys.length - new Set(privateKeys).size;
-      const duplicateAddressesCount = addresses.length - new Set(addresses).size;
-      const totalCount = privateKeys.length;
-      let notificationContent = `成功导入${successCount}条数据`;
-      if (duplicateKeysCount > 0 || duplicateAddressesCount > 0) {
-        const duplicateInfo = [];
-        if (duplicateKeysCount > 0) duplicateInfo.push(`${duplicateKeysCount}个重复私钥`);
-        if (duplicateAddressesCount > 0) duplicateInfo.push(`${duplicateAddressesCount}个重复地址`);
-        notificationContent += `（包含${duplicateInfo.join('、')}）`;
-      }
-      if (failCount > 0) Notification.warning({ title: '导入完成！', content: `总计${totalCount}条，成功${successCount}条，失败${failCount}条（格式错误）。${duplicateKeysCount > 0 || duplicateAddressesCount > 0 ? '注意：已允许重复数据导入。' : ''}` });
-      else Notification.success({ title: '导入成功！', content: notificationContent, position: 'topLeft' });
-    },
-    handleWalletImportCancel() { console.log('钱包导入已取消'); },
-  },
-};
-</script>
+
 
 <style scoped>
 .container { height: 100vh; display: flex; flex-direction: column; overflow: visible; padding: 50px 10px 50px 10px; min-width: 1240px; }

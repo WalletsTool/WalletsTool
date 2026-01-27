@@ -78,20 +78,20 @@
         </a-col>
         <a-col :span="12">
           <a-form-item label="合约类型">
-            <a-input v-model="tokenForm.contract_type" placeholder="例如：ERC20, BEP20" />
+            <a-input v-model="tokenForm.contract_type" :placeholder="currentEcosystem === 'solana' ? '例如：SPL' : '例如：ERC20, BEP20'" />
           </a-form-item>
         </a-col>
       </a-row>
 
-      <a-form-item label="合约地址" :required="tokenForm.type === 'token'">
-        <a-input v-model="tokenForm.contract_address" placeholder="代币合约地址" />
+      <a-form-item :label="currentEcosystem === 'solana' ? 'Mint地址' : '合约地址'" :required="tokenForm.type === 'token'">
+        <a-input v-model="tokenForm.contract_address" :placeholder="currentEcosystem === 'solana' ? '代币Mint地址' : '代币合约地址'" />
       </a-form-item>
 
-      <a-form-item :label="tokenForm.type === 'token' ? 'ABI' : 'ABI (可选)'" :required="tokenForm.type === 'token'">
+      <a-form-item v-if="currentEcosystem !== 'solana'" :label="tokenForm.type === 'token' ? 'ABI' : 'ABI (可选)'" :required="tokenForm.type === 'token'">
         <a-textarea v-model="tokenForm.abi" placeholder="合约ABI JSON字符串" :auto-size="{ minRows: 3, maxRows: 6 }" />
       </a-form-item>
       
-      <div style="margin-top: 8px; text-align: left;">
+      <div v-if="currentEcosystem !== 'solana'" style="margin-top: 8px; text-align: left;">
         <a-button size="small" @click="setDefaultAbi">默认值</a-button>
       </div>
     </a-form>
@@ -143,6 +143,13 @@ const tokenForm = reactive({
 const chainName = computed(() => {
   const chain = props.chainOptions.find(c => c.key === props.chainValue)
   return chain?.name || '当前区块链'
+})
+
+const currentEcosystem = computed(() => {
+  const chain = props.chainOptions.find(c => c.key === props.chainValue)
+  // 如果没有找到chain，或者chain没有ecosystem字段，默认为evm
+  // 注意：后端返回的字段是 ecosystem
+  return chain?.ecosystem || 'evm'
 })
 
 // 监听 visible 变化
@@ -216,13 +223,14 @@ function showEditToken(record) {
 
 // 重置代币表单
 function resetTokenForm() {
+  const isSolana = currentEcosystem.value === 'solana';
   Object.assign(tokenForm, {
     key: '',
     name: '',
     symbol: '',
-    decimals: 18,
+    decimals: isSolana ? 9 : 18, // Solana默认9位小数
     type: 'token',
-    contract_type: '',
+    contract_type: isSolana ? 'SPL' : '', // Solana默认SPL
     contract_address: '',
     abi: ''
   })
@@ -243,11 +251,12 @@ async function submitTokenForm() {
     }
 
     if (tokenForm.type === 'token' && !tokenForm.contract_address) {
-      Notification.warning({ content: '合约代币必须填写合约地址', position: 'topLeft' })
+      const addrLabel = currentEcosystem.value === 'solana' ? 'Mint地址' : '合约地址';
+      Notification.warning({ content: `合约代币必须填写${addrLabel}`, position: 'topLeft' })
       return false
     }
 
-    if (tokenForm.type === 'token' && !tokenForm.abi) {
+    if (currentEcosystem.value !== 'solana' && tokenForm.type === 'token' && !tokenForm.abi) {
       Notification.warning({ content: '合约代币必须填写ABI', position: 'topLeft' })
       return false
     }

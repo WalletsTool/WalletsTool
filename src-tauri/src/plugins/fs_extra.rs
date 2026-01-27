@@ -44,12 +44,14 @@ pub fn open_file(path: &str) {
     Command::new("explorer")
         .args(["/select,", path])
         .spawn()
+        .unwrap()
+        .wait()
         .unwrap();
 
     #[cfg(target_os = "macos")]
-    Command::new("open").args(["-R", path]).spawn().unwrap();
+    Command::new("open").args(["-R", path]).spawn().unwrap().wait().unwrap();
 
     // https://askubuntu.com/a/31071
     #[cfg(target_os = "linux")]
-    Command::new("xdg-open").arg(path).spawn().unwrap();
+    Command::new("xdg-open").arg(path).spawn().unwrap().wait().unwrap();
 }

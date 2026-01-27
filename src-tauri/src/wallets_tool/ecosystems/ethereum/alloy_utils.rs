@@ -14,14 +14,14 @@ pub fn format_wei_to_ether(wei: U256) -> String {
     let wei_str = wei.to_string();
     let wei_u128: u128 = wei_str.parse().unwrap_or(0);
     let ether = wei_u128 as f64 / 1e18;
-    format!("{:.6}", ether)
+    format!("{ether:.6}")
 }
 
 pub fn format_wei_to_gwei(wei: U256) -> String {
     let wei_str = wei.to_string();
     let wei_u128: u128 = wei_str.parse().unwrap_or(0);
     let gwei = wei_u128 as f64 / 1e9;
-    format!("{:.2}", gwei)
+    format!("{gwei:.2}")
 }
 
 pub fn u256_to_f64(wei: U256) -> f64 {

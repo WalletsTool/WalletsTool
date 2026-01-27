@@ -509,7 +509,7 @@ async function chainChange() {
         { key: 'sol', label: 'SOL', symbol: 'SOL', coin_type: 'base', decimals: 9 }
       ];
       try {
-        const tokenList = await invoke('get_coin_list', { chainKey: 'sol' });
+        const tokenList = await invoke('get_coin_list', { chainKey: chainValue.value || 'sol' });
         if(tokenList && tokenList.length > 0) {
            coinOptions.value = tokenList;
         } else {
@@ -559,7 +559,7 @@ function deleteTokenCancel() {
 
 async function deleteTokenConfirm() {
   deleteTokenVisible.value = false
-  await invoke("remove_coin", { chain: 'sol', key: currentCoin.value.key }).then(() => {
+  await invoke("remove_coin", { chain: chainValue.value || 'sol', key: currentCoin.value.key }).then(() => {
     Notification.success({ content: '删除成功！', position: 'topLeft' });
     chainChange()
   }).catch(() => {
@@ -590,7 +590,7 @@ function addCoinFunc() {
       }
       
       await invoke('add_coin', {
-        chain: 'sol',
+        chain: chainValue.value || 'sol',
         objJson: JSON.stringify(json)
       })
 
@@ -953,7 +953,8 @@ async function queryBalanceBatch(batchData, startIndex) {
         retry_flag: false
       })),
       window_id: currentWindowId.value,
-      query_id: `query_${Date.now()}_${startIndex}`
+      query_id: `query_${Date.now()}_${startIndex}`,
+      chain_key: chainValue.value || 'sol'
     };
 
     if (balanceStopFlag.value) return;
@@ -1071,8 +1072,11 @@ function showChainManage() {
 }
 
 function showRpcManage() {
-  // Solana RPC manage? Reuse generic?
-   Notification.info({ content: "Solana RPC管理暂未开放", position: 'topLeft' });
+  if (!chainValue.value) {
+    Notification.warning({ content: '请先选择区块链！', position: 'topLeft' });
+    return;
+  }
+  rpcManageRef.value?.show();
 }
 
 function showTokenManage() {

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::wallets_tool::security::SecureMemory;
+use crate::database::chain_service::ChainService;
 #[allow(deprecated)]
 use solana_sdk::{
     signature::{Keypair, Signer},
@@ -7,7 +8,9 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
     compute_budget::ComputeBudgetInstruction,
+    program_pack::Pack,
 };
+use spl_token::state::Mint;
 use spl_associated_token_account::{
     get_associated_token_address,
     instruction::create_associated_token_account,
@@ -16,6 +19,7 @@ use std::str::FromStr;
 use crate::wallets_tool::ecosystems::solana::provider::get_rpc_client;
 use tauri::Emitter;
 use serde_json::json;
+use base64::Engine;
 
 #[derive(Deserialize)]
 pub struct TransferItem {
@@ -30,6 +34,7 @@ pub struct TransferConfig {
     pub gas_price: Option<u64>,
     pub contract_address: Option<String>,
     pub amount_precision: Option<u8>,
+    pub chain: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -44,8 +49,13 @@ pub async fn sol_transfer(
     _index: usize,
     item: TransferItem,
     config: TransferConfig,
+    chain_service: tauri::State<'_, ChainService<'_>>,
 ) -> Result<TransferResult, String> {
-    let client = get_rpc_client("sol").await?;
+    let chain = config.chain.as_deref().unwrap_or("sol");
+    let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {
+        Ok(c) => c,
+        Err(e) => return Ok(TransferResult { success: false, tx_hash: None, error: Some(format!("RPC连接失败: {e}")) }),
+    };
     
     let keypair = item.private_key.use_secret(|secret_str| {
         let bytes = bs58::decode(secret_str).into_vec().map_err(|e| e.to_string())?;
@@ -88,8 +98,13 @@ pub async fn sol_token_transfer(
     _index: usize,
     item: TransferItem,
     config: TransferConfig,
+    chain_service: tauri::State<'_, ChainService<'_>>,
 ) -> Result<TransferResult, String> {
-    let client = get_rpc_client("sol").await?;
+    let chain = config.chain.as_deref().unwrap_or("sol");
+    let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {
+        Ok(c) => c,
+        Err(e) => return Ok(TransferResult { success: false, tx_hash: None, error: Some(format!("RPC连接失败: {e}")) }),
+    };
     let mint_str = config.contract_address.ok_or("Missing Mint Address")?;
     let mint = Pubkey::from_str(&mint_str).map_err(|_| "Invalid Mint Address")?;
     
@@ -108,7 +123,23 @@ pub async fn sol_token_transfer(
     } else {
         config.transfer_amount
     };
-    let decimals = config.amount_precision.unwrap_or(6);
+    
+    let decimals = if let Some(d) = config.amount_precision {
+        d
+    } else {
+        // 自动获取代币精度
+        let account_info = client.get_account(&mint).await.map_err(|e| format!("无法获取代币信息: {e}"))?;
+        if account_info["value"].is_null() {
+            return Ok(TransferResult { success: false, tx_hash: None, error: Some("代币Mint账户不存在".to_string()) });
+        }
+        let data_str = account_info["value"]["data"][0].as_str().ok_or("无效的代币数据格式")?;
+        let data_bytes = base64::engine::general_purpose::STANDARD.decode(data_str)
+            .map_err(|_| "Base64解码失败")?;
+            
+        let mint_state = Mint::unpack(&data_bytes).map_err(|_| "无法解析Mint数据")?;
+        mint_state.decimals
+    };
+
     let amount_u64 = (amount_val * 10f64.powi(decimals as i32)) as u64;
 
     let mut instructions = vec![];
@@ -162,24 +193,106 @@ pub struct CheckResult {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn sol_check_recent_transfers(
-    _chain: String,
-    _private_key: SecureMemory,
+    chain: String,
+    private_key: SecureMemory,
     _target_address: String,
-    _start_timestamp: Option<i64>,
+    start_timestamp: Option<i64>,
     _coin_type: String,
     _contract_address: Option<String>,
     _amount: Option<String>,
+    chain_service: tauri::State<'_, ChainService<'_>>,
 ) -> Result<CheckResult, String> {
+    let client = match get_rpc_client(&chain, Some(chain_service.get_pool())).await {
+        Ok(c) => c,
+        Err(e) => return Err(format!("RPC连接失败: {e}")),
+    };
+
+    let keypair = private_key.use_secret(|secret_str| {
+        let bytes = bs58::decode(secret_str).into_vec().map_err(|e| e.to_string())?;
+        Keypair::try_from(bytes.as_slice()).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())??;
+
+    // 获取最近的20条交易记录
+    let signatures = client.get_signatures_for_address(&keypair.pubkey(), 20).await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(start_ts) = start_timestamp {
+        // 自动判断时间戳单位 (毫秒转秒)
+        let start_seconds = if start_ts > 10_000_000_000 {
+            start_ts / 1000
+        } else {
+            start_ts
+        };
+
+        for sig_info in signatures {
+            if let Some(block_time) = sig_info.get("blockTime").and_then(|t| t.as_i64()) {
+                // 如果交易时间晚于或等于开始时间，且没有错误（成功交易）
+                if block_time >= start_seconds
+                    && (sig_info.get("err").is_none() || sig_info["err"].is_null()) {
+                         return Ok(CheckResult { has_recent_transfer: true });
+                    }
+            }
+        }
+    }
+
     Ok(CheckResult { has_recent_transfer: false })
 }
 
 #[tauri::command]
 pub async fn sol_check_transactions_status_batch(
-    _chain: String,
-    _tx_hashes: Vec<String>,
+    chain: String,
+    tx_hashes: Vec<String>,
+    chain_service: tauri::State<'_, ChainService<'_>>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    Ok(vec![])
+    if tx_hashes.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let client = match get_rpc_client(&chain, Some(chain_service.get_pool())).await {
+        Ok(c) => c,
+        Err(e) => return Err(format!("RPC连接失败: {e}")),
+    };
+
+    let statuses = client.get_signature_statuses_batch(&tx_hashes).await
+        .map_err(|e| e.to_string())?;
+        
+    let mut results = vec![];
+    for (i, status_val) in statuses.iter().enumerate() {
+        if i >= tx_hashes.len() { break; }
+        let hash = &tx_hashes[i];
+        
+        let mut confirmed = false;
+        let mut success = false;
+        let mut error = serde_json::Value::Null;
+
+        if !status_val.is_null() {
+            if let Some(confirmation_status) = status_val.get("confirmationStatus").and_then(|s| s.as_str()) {
+                if confirmation_status == "confirmed" || confirmation_status == "finalized" {
+                    confirmed = true;
+                    let err_val = status_val.get("err");
+                    if err_val.is_none() || err_val.unwrap().is_null() {
+                        success = true;
+                    } else {
+                        success = false;
+                        error = err_val.unwrap().clone();
+                    }
+                }
+            }
+        }
+
+        results.push(json!({
+            "hash": hash,
+            "status": {
+                "confirmed": confirmed,
+                "success": success,
+                "error": error
+            }
+        }));
+    }
+
+    Ok(results)
 }
 
 #[tauri::command]
@@ -187,8 +300,9 @@ pub async fn sol_transfer_fast(
     index: usize,
     item: TransferItem,
     config: TransferConfig,
+    chain_service: tauri::State<'_, ChainService<'_>>,
 ) -> Result<TransferResult, String> {
-    sol_transfer(index, item, config).await
+    sol_transfer(index, item, config, chain_service).await
 }
 
 #[tauri::command]
@@ -196,8 +310,9 @@ pub async fn sol_token_transfer_fast(
     index: usize,
     item: TransferItem,
     config: TransferConfig,
+    chain_service: tauri::State<'_, ChainService<'_>>,
 ) -> Result<TransferResult, String> {
-    sol_token_transfer(index, item, config).await
+    sol_token_transfer(index, item, config, chain_service).await
 }
 
 #[derive(Deserialize)]
@@ -205,6 +320,7 @@ pub struct BalanceQueryParams {
     pub items: Vec<BalanceItem>,
     pub window_id: String,
     pub query_id: String,
+    pub chain_key: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -222,10 +338,12 @@ pub struct BalanceItem {
 pub async fn sol_query_balances_with_updates(
     params: BalanceQueryParams,
     window: tauri::Window,
+    chain_service: tauri::State<'_, ChainService<'_>>,
 ) -> Result<serde_json::Value, String> {
-    let client = match get_rpc_client("sol").await {
+    let chain = params.chain_key.as_deref().unwrap_or("sol");
+    let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {
         Ok(c) => c,
-        Err(e) => return Err(e),
+        Err(e) => return Err(format!("无法连接到 Solana RPC: {e}")),
     };
     
     let mut results = vec![];

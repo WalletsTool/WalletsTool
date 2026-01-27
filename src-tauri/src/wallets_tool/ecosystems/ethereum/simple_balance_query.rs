@@ -171,16 +171,16 @@ impl SimpleBalanceQueryService {
         
         // 优先使用代理客户端，如果没有代理则使用默认客户端
         let client = if let Some(pc) = proxy_client {
-            println!("[DEBUG] 使用代理发送RPC请求 (余额查询): {}, window_id: {:?}", rpc_url, window_id);
+            println!("[DEBUG] 使用代理发送RPC请求 (余额查询): {rpc_url}, window_id: {window_id:?}");
             if using_proxy {
                 println!("[INFO] 代理已启用，当前有 {} 个代理可用", proxy_config.proxies.len());
             }
             pc
         } else {
             if proxy_config.enabled {
-                println!("[WARN] 代理已启用但没有可用代理，使用直连模式: {}", rpc_url);
+                println!("[WARN] 代理已启用但没有可用代理，使用直连模式: {rpc_url}");
             } else {
-                println!("[DEBUG] 代理未启用，使用直连模式发送RPC请求 (余额查询): {}", rpc_url);
+                println!("[DEBUG] 代理未启用，使用直连模式发送RPC请求 (余额查询): {rpc_url}");
             }
             self.client.clone()
         };
@@ -196,18 +196,18 @@ impl SimpleBalanceQueryService {
                     .json(&request)
                     .send()
             ).await
-            .map_err(|_| anyhow!("RPC请求超时（10秒），RPC地址: {}", rpc_url))??;
+            .map_err(|_| anyhow!("RPC请求超时（10秒），RPC地址: {rpc_url}"))??;
 
             // 检查是否为429错误
             if response.status().as_u16() == 429 {
                 retry_count += 1;
                 if retry_count > max_retries {
-                    return Err(anyhow!("RPC请求速率限制（429错误），已达到最大重试次数，RPC地址: {}", rpc_url));
+                    return Err(anyhow!("RPC请求速率限制（429错误），已达到最大重试次数，RPC地址: {rpc_url}"));
                 }
                 
                 // 指数退避：等待时间随重试次数增加而增加
                 let wait_time = Duration::from_secs(2_u64.pow(retry_count as u32));
-                println!("[WARN] 遇到429速率限制，等待 {:?} 后重试（第 {} 次重试），RPC: {}", wait_time, retry_count, rpc_url);
+                println!("[WARN] 遇到429速率限制，等待 {wait_time:?} 后重试（第 {retry_count} 次重试），RPC: {rpc_url}");
                 sleep(wait_time).await;
                 continue;
             }
@@ -215,7 +215,7 @@ impl SimpleBalanceQueryService {
             let json_response: JsonRpcResponse = tokio::time::timeout(timeout,
                 response.json::<JsonRpcResponse>()
             ).await
-            .map_err(|_| anyhow!("RPC响应解析超时（10秒），RPC地址: {}", rpc_url))??;
+            .map_err(|_| anyhow!("RPC响应解析超时（10秒），RPC地址: {rpc_url}"))??;
 
             if let Some(error) = json_response.error {
                 return Err(anyhow!("RPC Error: {} - {}", error.code, error.message));
@@ -269,10 +269,10 @@ impl SimpleBalanceQueryService {
             match u128::from_str_radix(hex_without_prefix, 16) {
                 Ok(balance_wei) => {
                     let balance_eth = balance_wei as f64 / 1e18;
-                    item.plat_balance = Some(format!("{:.6}", balance_eth));
+                    item.plat_balance = Some(format!("{balance_eth:.6}"));
                 }
                 Err(e) => {
-                    return Err(anyhow!("余额数值转换失败: {} (原始值: {})", e, balance_hex));
+                    return Err(anyhow!("余额数值转换失败: {e} (原始值: {balance_hex})"));
                 }
             }
         }
@@ -287,51 +287,50 @@ impl SimpleBalanceQueryService {
         println!("[DEBUG] 开始查询代币余额 - 链: {}, 地址: {}, 合约: {}", chain, item.address, contract_address);
         
         // 首先尝试从数据库获取代币的 decimals 配置
-        let decimals = match get_database_manager().get_pool() {
-            pool => {
-                let chain_service = ChainService::new(pool);
-                match chain_service.get_token_decimals_by_contract(chain, contract_address).await {
-                    Ok(Some(db_decimals)) => {
-                        println!("[DEBUG] 从数据库获取到代币decimals - 链: {}, 合约: {}, decimals: {}", chain, contract_address, db_decimals);
-                        db_decimals as u8
-                    }
-                    Ok(None) | Err(_) => {
-                        println!("[DEBUG] 数据库中未找到代币配置，回退到合约查询 - 链: {}, 合约: {}", chain, contract_address);
-                        // 回退到从合约查询 decimals
-                        let decimals_method = "313ce567"; // decimals() 函数的方法ID
-                        let decimals_data = format!("0x{}", decimals_method);
-                        
-                        match self.send_rpc_request(
-                            &rpc_url,
-                            "eth_call",
-                            serde_json::json!([{
-                                "to": contract_address,
-                                "data": decimals_data
-                            }, "latest"]),
-                            window_id
-                        ).await {
-                            Ok(decimals_result) => {
-                                if let Some(decimals_hex) = decimals_result.as_str() {
-                                    let hex_without_prefix = &decimals_hex[2..];
-                                    match u8::from_str_radix(hex_without_prefix, 16) {
-                                        Ok(d) => {
-                                            println!("[DEBUG] 从合约查询到代币decimals - 链: {}, 合约: {}, decimals: {}", chain, contract_address, d);
-                                            d
-                                        }
-                                        Err(e) => {
-                                            println!("[WARNING] decimals查询失败，使用默认值18 - 链: {}, 合约: {}, 错误: {}", chain, contract_address, e);
-                                            18 // 默认使用18位小数
-                                        }
+        let decimals = {
+            let pool = get_database_manager().get_pool();
+            let chain_service = ChainService::new(pool);
+            match chain_service.get_token_decimals_by_contract(chain, contract_address).await {
+                Ok(Some(db_decimals)) => {
+                    println!("[DEBUG] 从数据库获取到代币decimals - 链: {chain}, 合约: {contract_address}, decimals: {db_decimals}");
+                    db_decimals as u8
+                }
+                Ok(None) | Err(_) => {
+                    println!("[DEBUG] 数据库中未找到代币配置，回退到合约查询 - 链: {chain}, 合约: {contract_address}");
+                    // 回退到从合约查询 decimals
+                    let decimals_method = "313ce567"; // decimals() 函数的方法ID
+                    let decimals_data = format!("0x{decimals_method}");
+                    
+                    match self.send_rpc_request(
+                        &rpc_url,
+                        "eth_call",
+                        serde_json::json!([{
+                            "to": contract_address,
+                            "data": decimals_data
+                        }, "latest"]),
+                        window_id
+                    ).await {
+                        Ok(decimals_result) => {
+                            if let Some(decimals_hex) = decimals_result.as_str() {
+                                let hex_without_prefix = &decimals_hex[2..];
+                                match u8::from_str_radix(hex_without_prefix, 16) {
+                                    Ok(d) => {
+                                        println!("[DEBUG] 从合约查询到代币decimals - 链: {chain}, 合约: {contract_address}, decimals: {d}");
+                                        d
                                     }
-                                } else {
-                                    println!("[WARNING] decimals查询返回空值，使用默认值18 - 链: {}, 合约: {}", chain, contract_address);
-                                    18 // 默认使用18位小数
+                                    Err(e) => {
+                                        println!("[WARNING] decimals查询失败，使用默认值18 - 链: {chain}, 合约: {contract_address}, 错误: {e}");
+                                        18 // 默认使用18位小数
+                                    }
                                 }
-                            }
-                            Err(e) => {
-                                println!("[WARNING] decimals查询失败，使用默认值18 - 链: {}, 合约: {}, 错误: {}", chain, contract_address, e);
+                            } else {
+                                println!("[WARNING] decimals查询返回空值，使用默认值18 - 链: {chain}, 合约: {contract_address}");
                                 18 // 默认使用18位小数
                             }
+                        }
+                        Err(e) => {
+                            println!("[WARNING] decimals查询失败，使用默认值18 - 链: {chain}, 合约: {contract_address}, 错误: {e}");
+                            18 // 默认使用18位小数
                         }
                     }
                 }
@@ -343,7 +342,7 @@ impl SimpleBalanceQueryService {
         
         // 编码地址参数（去掉0x前缀，左填充到32字节）
         let address_param = format!("{:0>64}", &item.address[2..]);
-        let data = format!("0x{}{}", balance_of_method, address_param);
+        let data = format!("0x{balance_of_method}{address_param}");
 
         let balance_result = self.send_rpc_request(
             &rpc_url,
@@ -376,7 +375,7 @@ impl SimpleBalanceQueryService {
                     println!("[DEBUG] 余额计算过程 - 链: {}, 地址: {}, 合约: {}, 原始余额: {}, decimals: {}, 除数: {}, 最终余额: {}", 
                             chain, item.address, contract_address, balance_wei, decimals, divisor, balance_tokens);
                     
-                    item.coin_balance = Some(format!("{:.6}", balance_tokens)); // 显示6位小数
+                    item.coin_balance = Some(format!("{balance_tokens:.6}")); // 显示6位小数
                     
                     println!("[DEBUG] 代币余额查询完成 - 链: {}, 地址: {}, 合约: {}, 格式化余额: {}", 
                             chain, item.address, contract_address, item.coin_balance.as_ref().unwrap());
@@ -384,7 +383,7 @@ impl SimpleBalanceQueryService {
                 Err(e) => {
                     println!("[ERROR] 代币余额十六进制转换失败 - 链: {}, 地址: {}, 合约: {}, 十六进制: {}, 错误: {}", 
                             chain, item.address, contract_address, balance_hex, e);
-                    return Err(anyhow!("代币余额数值转换失败: {} (原始值: {})", e, balance_hex));
+                    return Err(anyhow!("代币余额数值转换失败: {e} (原始值: {balance_hex})"));
                 }
             }
         } else {
@@ -461,7 +460,7 @@ impl SimpleBalanceQueryService {
             let rpc_url = match self.get_rpc_url(&params.chain).await {
                 Ok(url) => url,
                 Err(e) => {
-                    last_error = format!("获取RPC地址失败: {}", e);
+                    last_error = format!("获取RPC地址失败: {e}");
                     println!("[ERROR] 获取RPC地址失败: {}, 错误: {}", params.chain, e);
                     item.exec_status = "3".to_string();
                     item.error_msg = Some(last_error.clone());
@@ -492,8 +491,8 @@ impl SimpleBalanceQueryService {
                         // 平台币查询失败时记录错误，但不立即返回
                         if let Err(e) = self.query_base_balance_with_retry(&mut item, &params.chain, 3, Some(window_id)).await {
                             base_query_success = false;
-                            errors.push(format!("平台币查询失败: {}", e));
-                            println!("[WARN] 平台币查询最终失败: {}", e);
+                            errors.push(format!("平台币查询失败: {e}"));
+                            println!("[WARN] 平台币查询最终失败: {e}");
                         } else {
                             println!("[SUCCESS] 平台币查询成功");
                         }
@@ -503,8 +502,8 @@ impl SimpleBalanceQueryService {
                     if let Some(contract_address) = &params.coin_config.contract_address {
                         if let Err(e) = self.query_token_balance(&mut item, &params.chain, contract_address, Some(window_id)).await {
                             token_query_success = false;
-                            errors.push(format!("代币查询失败: {}", e));
-                            println!("[WARN] 代币查询失败: {}", e);
+                            errors.push(format!("代币查询失败: {e}"));
+                            println!("[WARN] 代币查询失败: {e}");
                         } else {
                             println!("[SUCCESS] 代币查询成功");
                         }
@@ -534,12 +533,12 @@ impl SimpleBalanceQueryService {
                     return item; // 成功后直接返回
                 }
                 Ok(Err(e)) => {
-                    last_error = format!("查询失败: {}", e);
+                    last_error = format!("查询失败: {e}");
                     println!("[ERROR] 余额查询失败 (尝试 {}/{}) - 地址: {}, RPC: {}, 错误: {}", 
                             retry_count + 1, max_retries, item.address, last_rpc_url, e);
                 }
                 Err(_) => {
-                    last_error = format!("查询超时（15秒）");
+                    last_error = "查询超时（15秒）".to_string();
                     println!("[ERROR] 余额查询超时 (尝试 {}/{}) - 地址: {}, RPC: {}", 
                             retry_count + 1, max_retries, item.address, last_rpc_url);
                 }
@@ -558,7 +557,7 @@ impl SimpleBalanceQueryService {
 
     // 批量查询余额（多线程）
     pub async fn query_balances(&self, params: QueryParams) -> QueryResult {
-        let thread_count = params.thread_count.max(1).min(99); // 限制线程数在1-99之间
+        let thread_count = params.thread_count.clamp(1, 99); // 限制线程数在1-99之间
         let semaphore = Arc::new(Semaphore::new(thread_count));
 
         println!("开始批量查询余额，线程数: {}, 总任务数: {}", thread_count, params.items.len());
@@ -590,7 +589,7 @@ impl SimpleBalanceQueryService {
             Some("部分查询失败".to_string())
         };
 
-        println!("查询完成，成功: {}", success);
+        println!("查询完成，成功: {success}");
 
         QueryResult {
             success,
@@ -609,7 +608,7 @@ impl SimpleBalanceQueryService {
         // 重置停止标志
         reset_stop_flag(&window_id);
 
-        let thread_count = params.thread_count.max(1).min(99); // 限制线程数在1-99之间
+        let thread_count = params.thread_count.clamp(1, 99); // 限制线程数在1-99之间
         let semaphore = Arc::new(Semaphore::new(thread_count));
 
         println!("开始批量查询余额（实时更新），线程数: {}, 总任务数: {}", thread_count, params.items.len());
@@ -634,7 +633,7 @@ impl SimpleBalanceQueryService {
             tokio::spawn(async move {
                 // 在获取信号量前检查停止标志
                 if get_stop_flag(&window_id) {
-                    println!("[DEBUG] 任务 {} 因停止标志取消", original_index);
+                    println!("[DEBUG] 任务 {original_index} 因停止标志取消");
                     return original_index;
                 }
 
@@ -642,7 +641,7 @@ impl SimpleBalanceQueryService {
 
                 // 获取信号量后再次检查停止标志
                 if get_stop_flag(&window_id) {
-                    println!("[DEBUG] 任务 {} 获取信号量后因停止标志取消", original_index);
+                    println!("[DEBUG] 任务 {original_index} 获取信号量后因停止标志取消");
                     return original_index;
                 }
 
@@ -660,7 +659,7 @@ impl SimpleBalanceQueryService {
                     "window_id": window_id,
                     "query_id": query_id
                 })) {
-                    println!("发送开始执行事件失败: {}", e);
+                    println!("发送开始执行事件失败: {e}");
                 }
 
                 // 直接调用查询函数（已在 tokio 运行时中）
@@ -679,7 +678,7 @@ impl SimpleBalanceQueryService {
                     "window_id": window_id,
                     "query_id": query_id
                 })) {
-                    println!("发送查询完成事件失败: {}", e);
+                    println!("发送查询完成事件失败: {e}");
                 }
 
                 original_index
@@ -694,7 +693,7 @@ impl SimpleBalanceQueryService {
                     // 任务正常完成，结果已在results中
                 }
                 Err(e) => {
-                    println!("[ERROR] 任务执行失败: {}", e);
+                    println!("[ERROR] 任务执行失败: {e}");
                     join_errors += 1;
                 }
             }
@@ -717,7 +716,7 @@ impl SimpleBalanceQueryService {
                     nonce: None,
                     retry_flag: true,
                     exec_status: "3".to_string(),
-                    error_msg: Some(format!("任务执行失败{}", if join_errors > 0 { format!("（{}个任务异常）", join_errors) } else { String::new() })),
+                    error_msg: Some(format!("任务执行失败{}", if join_errors > 0 { format!("（{join_errors}个任务异常）") } else { String::new() })),
                 };
                 ordered_results.push(error_item);
             }
@@ -733,7 +732,7 @@ impl SimpleBalanceQueryService {
             Some(first_error.unwrap_or_else(|| "查询失败".to_string()))
         };
 
-        println!("查询完成，成功: {}", success);
+        println!("查询完成，成功: {success}");
 
         QueryResult {
             success,
@@ -758,7 +757,7 @@ pub async fn query_balances_with_updates<R: tauri::Runtime>(
     params: QueryParams,
     app_handle: tauri::AppHandle<R>,
 ) -> Result<QueryResult, String> {
-    let window_id = params.window_id.clone().unwrap_or_else(|| "".to_string());
+    let window_id = params.window_id.clone().unwrap_or_default();
     let service = SimpleBalanceQueryService::new();
     
     let result = service.query_balances_with_updates(params, app_handle, window_id).await;
@@ -769,7 +768,7 @@ pub async fn query_balances_with_updates<R: tauri::Runtime>(
 #[tauri::command]
 pub async fn stop_balance_query(window_id: String) -> Result<(), String> {
     set_stop_flag(&window_id, true);
-    println!("收到停止余额查询请求，窗口ID: {}", window_id);
+    println!("收到停止余额查询请求，窗口ID: {window_id}");
     Ok(())
 }
 
@@ -777,6 +776,6 @@ pub async fn stop_balance_query(window_id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn reset_balance_query_stop(window_id: String) -> Result<(), String> {
     reset_stop_flag(&window_id);
-    println!("重置余额查询停止标志，窗口ID: {}", window_id);
+    println!("重置余额查询停止标志，窗口ID: {window_id}");
     Ok(())
 }

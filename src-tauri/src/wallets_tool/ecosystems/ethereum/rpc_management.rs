@@ -37,7 +37,7 @@ pub async fn get_rpc_providers(
     chain_service: State<'_, ChainService<'_>>,
 ) -> Result<Vec<RpcProviderInfo>, String> {
     let providers = chain_service.get_rpc_providers_by_chain(&chain_key).await
-        .map_err(|e| format!("获取 RPC 提供商失败: {}", e))?;
+        .map_err(|e| format!("获取 RPC 提供商失败: {e}"))?;
     
     let provider_infos = providers.into_iter().map(|p| RpcProviderInfo {
         id: p.id,
@@ -68,7 +68,7 @@ pub async fn add_rpc_provider(
     };
     
     let provider = chain_service.add_rpc_provider_by_chain_key(&chain_key, &request).await
-        .map_err(|e| format!("添加 RPC 提供商失败: {}", e))?;
+        .map_err(|e| format!("添加 RPC 提供商失败: {e}"))?;
     
     Ok(RpcProviderInfo {
         id: provider.id,
@@ -90,7 +90,7 @@ pub async fn update_rpc_provider(
     chain_service: State<'_, ChainService<'_>>,
 ) -> Result<RpcProviderInfo, String> {
     let provider = chain_service.update_rpc_provider(id, &request.rpc_url, request.is_active, request.priority).await
-        .map_err(|e| format!("更新 RPC 提供商失败: {}", e))?;
+        .map_err(|e| format!("更新 RPC 提供商失败: {e}"))?;
     
     Ok(RpcProviderInfo {
         id: provider.id,
@@ -111,7 +111,7 @@ pub async fn delete_rpc_provider(
     chain_service: State<'_, ChainService<'_>>,
 ) -> Result<(), String> {
     chain_service.delete_rpc_provider(id).await
-        .map_err(|e| format!("删除 RPC 提供商失败: {}", e))?;
+        .map_err(|e| format!("删除 RPC 提供商失败: {e}"))?;
     
     Ok(())
 }
@@ -123,7 +123,7 @@ pub async fn test_rpc_connection(
 ) -> Result<RpcTestResult, String> {
     use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
     
-    println!("[RPC测试] 开始测试RPC连接: {}", rpc_url);
+    println!("[RPC测试] 开始测试RPC连接: {rpc_url}");
     
     // 检查代理状态
     let proxy_config = PROXY_MANAGER.get_config();
@@ -153,7 +153,7 @@ pub async fn test_rpc_connection(
         
         if let Some(proxy_client) = PROXY_MANAGER.get_random_proxy_client() {
             println!("[RPC测试] 使用代理客户端发送请求");
-            (proxy_client, format!("代理: {}", selected_proxy))
+            (proxy_client, format!("代理: {selected_proxy}"))
         } else {
             println!("[RPC测试] 代理客户端创建失败，使用直连模式");
             let default_client = reqwest::Client::builder()
@@ -178,7 +178,7 @@ pub async fn test_rpc_connection(
         "id": 1
     });
     
-    println!("[RPC测试] 发送请求到: {} [{}]", rpc_url, proxy_info);
+    println!("[RPC测试] 发送请求到: {rpc_url} [{proxy_info}]");
     
     let success = match client.post(&rpc_url)
         .json(&payload)
@@ -190,13 +190,13 @@ pub async fn test_rpc_connection(
             if response.status().is_success() {
                 match response.json::<serde_json::Value>().await {
                     Ok(json) => {
-                        println!("[RPC测试] 响应JSON: {}", json);
+                        println!("[RPC测试] 响应JSON: {json}");
                         let has_result = json.get("result").is_some();
-                        println!("[RPC测试] 是否包含result字段: {}", has_result);
+                        println!("[RPC测试] 是否包含result字段: {has_result}");
                         has_result
                     }
                     Err(e) => {
-                        println!("[RPC测试] 解析JSON失败: {}", e);
+                        println!("[RPC测试] 解析JSON失败: {e}");
                         false
                     }
                 }
@@ -206,14 +206,14 @@ pub async fn test_rpc_connection(
             }
         }
         Err(e) => {
-            println!("[RPC测试] 请求失败: {}", e);
+            println!("[RPC测试] 请求失败: {e}");
             false
         }
     };
     
     let response_time_ms = start_time.elapsed().as_millis() as u64;
     
-    println!("[RPC测试] 测试完成 - 成功: {}, 响应时间: {}ms", success, response_time_ms);
+    println!("[RPC测试] 测试完成 - 成功: {success}, 响应时间: {response_time_ms}ms");
     
     Ok(RpcTestResult {
         success,

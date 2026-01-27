@@ -6,16 +6,53 @@ import {
   IconPublic, 
   IconRight, 
   IconSettings, 
-  IconEdit 
+  IconEdit,
+  IconRobot 
 } from '@arco-design/web-vue/es/icon';
 
 const profiles = ref([
-  { id: 1, name: 'Default Profile', userAgent: 'Mozilla/5.0...', viewport: '1920x1080', proxy: 'Direct', canvasSpoof: true },
-  { id: 2, name: 'Mobile Profile', userAgent: 'Mozilla/5.0 (iPhone...)', viewport: '390x844', proxy: 'Type: HTTP', canvasSpoof: true },
+  { id: 1, name: 'Default Profile', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', viewport: '1920x1080', proxy: 'Direct', canvasSpoof: true },
+  { id: 2, name: 'Mobile Profile', userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1', viewport: '390x844', proxy: 'Type: HTTP', canvasSpoof: true },
 ]);
 
 const activeProfile = ref(null);
 const isEditing = ref(false);
+const showBatchModal = ref(false);
+const batchCount = ref(100);
+
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15"
+];
+
+const VIEWPORTS = ["1920x1080", "1366x768", "1440x900", "1536x864", "2560x1440", "1280x720"];
+
+const handleBatchGenerate = () => {
+  const newProfiles = [];
+  const startId = profiles.value.length > 0 ? Math.max(...profiles.value.map(p => p.id)) + 1 : 1;
+  
+  for (let i = 0; i < batchCount.value; i++) {
+    const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+    const vp = VIEWPORTS[Math.floor(Math.random() * VIEWPORTS.length)];
+    
+    newProfiles.push({
+      id: startId + i,
+      name: `Auto-Profile-${String(startId + i).padStart(3, '0')}`,
+      userAgent: ua,
+      viewport: vp,
+      proxy: 'Direct',
+      canvasSpoof: true,
+    });
+  }
+  
+  profiles.value.push(...newProfiles);
+  Message.success(`成功生成 ${batchCount.value} 个配置`);
+  showBatchModal.value = false;
+};
 
 const handleEdit = (profile) => {
   activeProfile.value = { ...profile };
@@ -44,10 +81,16 @@ const handleCancel = () => {
     <div class="profile-list">
       <div class="list-header">
         <h3>环境配置列表</h3>
-        <a-button type="primary" size="small" @click="Message.info('新建功能开发中')">
-          <template #icon><icon-plus /></template>
-          新建配置
-        </a-button>
+        <a-space>
+          <a-button type="outline" size="small" @click="showBatchModal = true">
+             <template #icon><icon-robot /></template>
+             批量生成
+          </a-button>
+          <a-button type="primary" size="small" @click="Message.info('新建功能开发中')">
+            <template #icon><icon-plus /></template>
+            新建配置
+          </a-button>
+        </a-space>
       </div>
       
       <div class="list-content">
@@ -129,6 +172,22 @@ const handleCancel = () => {
       <icon-settings style="font-size: 48px; color: var(--color-text-4)" />
       <p>请选择左侧配置进行编辑</p>
     </div>
+
+    <a-modal v-model:visible="showBatchModal" title="批量生成环境配置" @ok="handleBatchGenerate">
+      <a-form :model="{ batchCount }">
+        <a-form-item label="生成数量">
+          <a-input-number v-model="batchCount" :min="1" :max="1000" />
+        </a-form-item>
+        <div style="color: var(--color-text-3); font-size: 12px;">
+          <p>将随机生成以下配置项：</p>
+          <ul>
+            <li>User Agent (Chrome/Firefox/Safari)</li>
+            <li>分辨率 (1920x1080 等常用分辨率)</li>
+            <li>指纹保护 (默认开启)</li>
+          </ul>
+        </div>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 

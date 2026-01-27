@@ -14,7 +14,8 @@ Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch
 ├── src/                      # Vue 3 frontend (Feature-based)
 │   ├── features/             # Business domains (Deep nesting)
 │   │   ├── ethereum/         # EVM logic
-│   │   └── solana/           # SVM logic
+│   │   ├── solana/           # SVM logic
+│   │   └── airdrop/          # Browser Automation & Scripting
 │   ├── main.js               # Entry (Plugins + Config)
 │   └── App.vue               # Root + Global Events
 ├── src-tauri/                # Tauri backend (Library-style)
@@ -56,6 +57,7 @@ Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch
 - **JS over TS**: Frontend is strictly `.js` (legacy decision).
 - **No Comments**: Code must be self-documenting. Comments only for complex algos.
 - **Async Backend**: All Tauri commands return `Result<T, String>`.
+- **Chain Filtering**: Frontend components must filter `get_chain_list` results by `ecosystem` ('evm' or 'solana').
 
 ## ANTI-PATTERNS (THIS PROJECT)
 

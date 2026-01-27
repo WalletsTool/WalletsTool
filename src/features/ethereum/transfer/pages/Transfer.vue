@@ -1283,7 +1283,7 @@ onBeforeMount(async () => {
   if (isTauri) {
     try {
       const result = await invoke('get_chain_list');
-      chainOptions.value = (result || []).filter(item => item.key !== 'sol');
+      chainOptions.value = (result || []).filter(item => item.ecosystem === 'evm');
       chainOptions.value.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       if (sharedConfig) {
         applySharedConfig(sharedConfig);

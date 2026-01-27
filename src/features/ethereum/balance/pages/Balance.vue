@@ -450,7 +450,7 @@ function processUpdates() {
 // 初始化Chain列表
 onBeforeMount(async () => {
   const result = await invoke('get_chain_list');
-  chainOptions.value = result || [];
+  chainOptions.value = (result || []).filter(item => item.ecosystem === 'evm');
   chainOptions.value.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   if (chainOptions.value && chainOptions.value.length > 0) {
     // 优先选择eth
@@ -1903,7 +1903,7 @@ async function handleBeforeClose() {
   </a-modal>
 
   <!-- 链管理组件 -->
-  <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" />
+  <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" ecosystem-filter="evm" />
   <!-- RPC管理组件 -->
   <RpcManagement ref="rpcManageRef" :chain-value="chainValue" :chain-options="chainOptions" @rpc-updated="handleRpcUpdated" />
   <!-- 代币管理组件 -->

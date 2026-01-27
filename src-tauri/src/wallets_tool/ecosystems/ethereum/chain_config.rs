@@ -24,6 +24,7 @@ pub async fn get_chain_list() -> Vec<Value> {
                     "scan_api": chain.scan_api,
                     "verify_api": chain.verify_api,
                     "check_verify_api": chain.check_verify_api,
+                    "ecosystem": chain.ecosystem,
                     "rpc_urls": chain.rpc_urls
                 })
             }).collect()

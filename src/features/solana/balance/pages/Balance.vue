@@ -209,7 +209,6 @@ const chainSearchKeyword = ref('');
 const tokenSearchKeyword = ref('');
 const chainSearchInputRef = ref(null);
 const tokenSearchInputRef = ref(null);
-let timer = null; // Gas查询定时器 (Solana暂不使用)
 
 // 计算属性：过滤后的链列表
 const filteredChainOptions = computed(() => {
@@ -407,7 +406,21 @@ function processUpdates() {
 
 // 初始化Chain列表
 onBeforeMount(async () => {
-  // Solana直接使用固定Chain配置
+  try {
+    const result = await invoke('get_chain_list')
+    if (result && result.length > 0) {
+      // 过滤出Solana生态的链
+      const solanaChains = result.filter(item => item.ecosystem === 'solana')
+      if (solanaChains.length > 0) {
+        chainOptions.value = solanaChains
+        // 默认选中第一个
+        chainValue.value = solanaChains[0].key
+        currentChain.value = solanaChains[0]
+      }
+    }
+  } catch (e) {
+    console.error('获取链列表失败:', e)
+  }
   chainChange()
 })
 
@@ -1382,15 +1395,6 @@ async function handleBeforeClose() {
             </Transition>
           </div>
         </div>
-        
-        <div class="status-divider-vertical"></div>
-        
-        <!-- Gas Price (Hidden for Solana) -->
-        <div class="status-group status-gas-group" v-show="false">
-          <Icon icon="mdi:gas-station" style="font-size: 14px; color: var(--text-color-tertiary, #c9cdd4)" />
-          <span class="status-gas-label">Gas:</span>
-          <span class="status-gas-value">--<span class="status-gas-unit">Gwei</span></span>
-        </div>
       </div>
       
       <div class="status-bar-right">
@@ -1531,7 +1535,7 @@ async function handleBeforeClose() {
   </a-modal>
 
   <!-- 链管理组件 -->
-  <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" />
+  <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" ecosystem-filter="solana" />
   <!-- RPC管理组件 -->
   <RpcManagement ref="rpcManageRef" :chain-value="chainValue" :chain-options="chainOptions" @rpc-updated="handleRpcUpdated" />
   <!-- 代币管理组件 -->

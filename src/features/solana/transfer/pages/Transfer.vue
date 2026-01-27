@@ -345,7 +345,6 @@ const gasPriceTimer = ref(null);
 const transferPaused = ref(false);
 const pausedTransferData = ref(null);
 
-let timer = null;
 let currentWindowId = ref('');
 
 const uploadInputRef = ref(null);
@@ -628,29 +627,6 @@ const { showCelebration, showTipModal, tipAmount, tipPrivateKey, tipLoading, dev
   chainValue, currentChain, currentCoin,
 });
 
-function fetchGas() {
-  const temp = chainValue.value;
-  if (!currentChain.value) return;
-  if (temp === 'sol') { currentChain.value.gas_price = ''; return; }
-  invoke('get_chain_gas_price', { chain: chainValue.value })
-    .then((res) => {
-      if (temp === chainValue.value && currentChain.value) {
-        const gasPrice = res?.gas_price_gwei;
-        currentChain.value.gas_price = isNaN(gasPrice) ? '数据格式错误' : chainValue.value === 'eth' ? gasPrice.toFixed(3) : gasPrice.toFixed(7);
-      }
-    })
-    .catch((err) => { if (currentChain.value) currentChain.value.gas_price = '查询错误'; });
-}
-
-function startGasTimer() {
-  if (timer) clearInterval(timer);
-  timer = setInterval(fetchGas, 5000);
-}
-
-function stopGasTimer() {
-  if (timer) { clearInterval(timer); timer = null; }
-}
-
 async function chainChange() {
   const chainResult = chainOptions.value.filter((item) => item.key === chainValue.value);
   if (chainResult.length > 0) {
@@ -676,7 +652,6 @@ async function chainChange() {
     coinOptions.value = [];
     coinValue.value = '';
     currentCoin.value = null;
-    stopGasTimer();
   }
 }
 
@@ -1290,7 +1265,7 @@ onBeforeMount(async () => {
   if (isTauri) {
     try {
       const result = await invoke('get_chain_list');
-      chainOptions.value = (result || []).filter(item => item.key === 'sol');
+      chainOptions.value = (result || []).filter(item => item.ecosystem === 'solana');
       chainOptions.value.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       if (sharedConfig) {
         applySharedConfig(sharedConfig);
@@ -1756,12 +1731,6 @@ function handleClickOutside(event) {
               </div>
             </Transition>
           </div>
-        </div>
-        <div class="status-divider-vertical"></div>
-        <div class="status-group status-gas-group" v-show="chainValue && chainValue !== 'sol'">
-          <Icon icon="mdi:gas-station" style="font-size: 14px; color: var(--text-color-tertiary, #c9cdd4)" />
-          <span class="status-gas-label">Gas:</span>
-          <span class="status-gas-value">{{ currentChain?.gas_price ?? '--' }}<span class="status-gas-unit">Gwei</span></span>
         </div>
       </div>
       <div class="status-bar-right">

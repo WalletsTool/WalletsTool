@@ -463,9 +463,11 @@ export function useBalanceQuery(options = {}) {
             if (dataIndex !== -1) {
               const originalPrivateKey = data.value[dataIndex].private_key;
               const originalToAddr = data.value[dataIndex].to_addr;
+              const originalAddress = data.value[dataIndex].address;
               Object.assign(data.value[dataIndex], resultItem);
               data.value[dataIndex].private_key = originalPrivateKey;
               data.value[dataIndex].to_addr = originalToAddr;
+              data.value[dataIndex].address = originalAddress;
             }
           });
         }

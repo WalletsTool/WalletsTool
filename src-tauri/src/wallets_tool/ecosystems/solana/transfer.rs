@@ -64,19 +64,50 @@ pub async fn sol_transfer(
 
     let to_pubkey = Pubkey::from_str(&item.to_addr).map_err(|e| e.to_string())?;
     
-    let amount_sol = if let Some(amt) = &item.amount {
+    let input_amount = if let Some(amt) = &item.amount {
          if !amt.is_empty() { amt.parse::<f64>().unwrap_or(config.transfer_amount) } else { config.transfer_amount }
     } else {
         config.transfer_amount
     };
-    let lamports = (amount_sol * 1_000_000_000.0) as u64;
 
     let mut instructions = vec![];
-    if let Some(fee) = config.gas_price {
-        if fee > 0 {
-             instructions.push(ComputeBudgetInstruction::set_compute_unit_price(fee));
+    let lamports;
+
+    if input_amount < 0.0 {
+        // Send All Logic
+        let balance = client.get_balance(&keypair.pubkey()).await.map_err(|e| e.to_string())?;
+        
+        let base_fee = 5000;
+        let mut priority_fee = 0;
+        // Simple transfer usually takes < 500 CU. Set 1000 to be safe and deterministic.
+        let compute_unit_limit = 1000; 
+
+        if let Some(price) = config.gas_price {
+            if price > 0 {
+                instructions.push(ComputeBudgetInstruction::set_compute_unit_price(price));
+                instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(compute_unit_limit));
+                priority_fee = (compute_unit_limit as u64 * price + 999_999) / 1_000_000;
+            }
+        }
+
+        let total_fee = base_fee + priority_fee;
+        
+        if balance <= total_fee {
+            return Ok(TransferResult { success: false, tx_hash: None, error: Some(format!("余额不足支付手续费 (余额: {}, 手续费: {})", balance, total_fee)) });
+        }
+
+        lamports = balance - total_fee;
+    } else {
+        // Normal Transfer
+        lamports = (input_amount * 1_000_000_000.0) as u64;
+        
+        if let Some(fee) = config.gas_price {
+            if fee > 0 {
+                 instructions.push(ComputeBudgetInstruction::set_compute_unit_price(fee));
+            }
         }
     }
+
     instructions.push(system_instruction::transfer(&keypair.pubkey(), &to_pubkey, lamports));
 
     let recent_blockhash = client.get_latest_blockhash().await?;
@@ -320,7 +351,7 @@ pub struct BalanceQueryParams {
     pub items: Vec<BalanceItem>,
     pub window_id: String,
     pub query_id: String,
-    pub chain_key: Option<String>,
+    pub chain: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -340,7 +371,7 @@ pub async fn sol_query_balances_with_updates(
     window: tauri::Window,
     chain_service: tauri::State<'_, ChainService<'_>>,
 ) -> Result<serde_json::Value, String> {
-    let chain = params.chain_key.as_deref().unwrap_or("sol");
+    let chain = params.chain.as_deref().unwrap_or("sol");
     let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {
         Ok(c) => c,
         Err(e) => return Err(format!("无法连接到 Solana RPC: {e}")),

@@ -954,7 +954,7 @@ async function queryBalanceBatch(batchData, startIndex) {
       })),
       window_id: currentWindowId.value,
       query_id: `query_${Date.now()}_${startIndex}`,
-      chain_key: chainValue.value || 'sol'
+      chain: chainValue.value || 'sol'
     };
 
     if (balanceStopFlag.value) return;

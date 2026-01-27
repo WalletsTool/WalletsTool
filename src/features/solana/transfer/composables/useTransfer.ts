@@ -177,6 +177,69 @@ export function useTransfer(options = {}) {
     }
   }
 
+  async function ensureBalance(item) {
+    if (form.send_type !== '1' && form.send_type !== '4') return;
+
+    const isBase = currentCoin.value.coin_type === 'base';
+    const balanceKey = isBase ? 'plat_balance' : 'coin_balance';
+    
+    // 检查是否有有效余额
+    if (item[balanceKey] !== '' && item[balanceKey] !== null && item[balanceKey] !== undefined) {
+        return;
+    }
+
+    const address = item.address;
+    if (!address) return;
+
+    try {
+        if (isBase) {
+             const bal = await invoke('query_balance', { 
+                 chain: chainValue.value, 
+                 address: address 
+             });
+             item.plat_balance = bal;
+             const realIndex = data.value.findIndex(d => d.key === item.key);
+             if (realIndex !== -1) {
+                 data.value[realIndex].plat_balance = bal;
+             }
+        } else {
+             const params = {
+                 chain: chainValue.value,
+                 coin_config: {
+                     coin_type: currentCoin.value.coin_type,
+                     contract_address: currentCoin.value.contract_address || null,
+                     abi: currentCoin.value.abi || null
+                 },
+                 items: [{
+                     key: item.key,
+                     address: address,
+                     private_key: null,
+                     plat_balance: null,
+                     coin_balance: null,
+                     nonce: null,
+                     exec_status: '0',
+                     error_msg: null,
+                     retry_flag: false
+                 }],
+                 only_coin_config: true,
+                 thread_count: 1
+             };
+             
+             const result = await invoke('query_balances_simple', { params });
+             if (result && result.success && result.items && result.items.length > 0) {
+                 const resItem = result.items[0];
+                 item.coin_balance = resItem.coin_balance;
+                 const realIndex = data.value.findIndex(d => d.key === item.key);
+                 if (realIndex !== -1) {
+                     data.value[realIndex].coin_balance = resItem.coin_balance;
+                 }
+             }
+        }
+    } catch (e) {
+        console.error("自动查询余额失败", e);
+    }
+  }
+
   async function checkRecentTransfer(privateKey, targetAddress, startTime, amount = null) {
     try {
       const result = await invoke('sol_check_recent_transfers', {
@@ -197,6 +260,73 @@ export function useTransfer(options = {}) {
       console.error('查询链上交易失败:', error);
       throw error;
     }
+  }
+
+  function getTransferAmount(item) {
+    if (form.send_type === '2') {
+      // 指定数量
+      if (form.amount_from === '1') {
+        return item.amount && item.amount.trim() !== ''
+          ? Number(item.amount)
+          : 0;
+      } else {
+        return form.send_count && form.send_count.trim() !== ''
+          ? Number(form.send_count)
+          : 0;
+      }
+    } else if (form.send_type === '3') {
+      // 范围随机
+      const min = Number(form.send_min_count) || 0;
+      const max = Number(form.send_max_count) || 0;
+      const precision = Number(form.amount_precision) || 6;
+
+      if (min === 0 && max === 0) return 0;
+
+      // 生成随机数
+      const random = Math.random() * (max - min) + min;
+      // 处理精度
+      return Number(random.toFixed(precision));
+    } else if (form.send_type === '4') {
+      // 剩余随机
+      const min = Number(form.send_min_count) || 0;
+      const max = Number(form.send_max_count) || 0;
+      const precision = Number(form.amount_precision) || 6;
+      
+      let balance = 0;
+      // 根据币种类型获取余额
+      if (currentCoin.value && currentCoin.value.coin_type === 'base') {
+        balance = (item.plat_balance !== '' && item.plat_balance !== undefined && item.plat_balance !== null) ? Number(item.plat_balance) : 0;
+      } else {
+        balance = (item.coin_balance !== '' && item.coin_balance !== undefined && item.coin_balance !== null) ? Number(item.coin_balance) : 0;
+      }
+      
+      if (balance <= 0) return 0;
+      
+      // 生成随机保留数
+      const retain = Math.random() * (max - min) + min;
+      
+      // 计算转账金额 = 余额 - 保留数
+      // 注意：如果是SOL转账，这里未精确扣除Gas，实际剩余会比retain略少(少一个Gas费)
+      // 但由于保留范围通常较大，这通常是可以接受的
+      let amount = balance - retain;
+      if (amount < 0) amount = 0;
+      
+      return Number(amount.toFixed(precision));
+    } else if (form.send_type === '1') {
+      // 全部发送
+      if (currentCoin.value && currentCoin.value.coin_type === 'base') {
+        // Native SOL: Send -1 to trigger backend "Send All" logic (Precise fee calculation)
+        return -1;
+      }
+      
+      let balance = (item.coin_balance !== '' && item.coin_balance !== undefined && item.coin_balance !== null) ? Number(item.coin_balance) : 0;
+      
+      if (balance < 0) return 0;
+      
+      const precision = Number(form.amount_precision) || 9;
+      return Number(balance.toFixed(precision));
+    }
+    return 0;
   }
 
   async function transferFnc(inputData) {
@@ -276,6 +406,9 @@ export function useTransfer(options = {}) {
           continue;
         }
 
+        // 自动查询余额逻辑
+        await ensureBalance(item);
+
         if (form.max_gas_price && form.max_gas_price.trim()) {
           const gasPriceOk = await checkGasPriceForTransfer();
           if (!gasPriceOk) {
@@ -305,14 +438,7 @@ export function useTransfer(options = {}) {
 
         const config = {
           ...transferConfig.value,
-          transfer_amount:
-              form.amount_from === '1'
-                  ? item.amount && item.amount.trim() !== ''
-                      ? Number(item.amount)
-                      : 0
-                  : form.send_count && form.send_count.trim() !== ''
-                      ? Number(form.send_count)
-                      : 0,
+          transfer_amount: getTransferAmount(item),
         };
 
         try {
@@ -515,17 +641,13 @@ export function useTransfer(options = {}) {
           console.error('无法找到对应的数据项');
           continue;
         }
+        
+        // 自动查询余额逻辑
+        await ensureBalance(item);
 
         const config = {
           ...transferConfig.value,
-          transfer_amount:
-              form.amount_from === '1'
-                  ? item.amount && item.amount.trim() !== ''
-                      ? Number(item.amount)
-                      : 0
-                  : form.send_count && form.send_count.trim() !== ''
-                      ? Number(form.send_count)
-                      : 0,
+          transfer_amount: getTransferAmount(item),
         };
 
         try {
@@ -707,14 +829,7 @@ export function useTransfer(options = {}) {
 
         const config = {
           ...transferConfig.value,
-          transfer_amount:
-              form.amount_from === '1'
-                  ? item.amount && item.amount.trim() !== ''
-                      ? Number(item.amount)
-                      : 0
-                  : form.send_count && form.send_count.trim() !== ''
-                      ? Number(form.send_count)
-                      : 0,
+          transfer_amount: getTransferAmount(item),
         };
 
         try {

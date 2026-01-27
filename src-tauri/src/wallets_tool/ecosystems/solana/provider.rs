@@ -83,12 +83,12 @@ impl SolanaProvider {
     }
 
     pub async fn get_balance(&self, pubkey: &Pubkey) -> Result<u64, String> {
-        let res = self.request("getBalance", json!([pubkey.to_string()])).await?;
+        let res = self.request("getBalance", json!([pubkey.to_string(), {"commitment": "confirmed"}])).await?;
         res["value"].as_u64().ok_or_else(|| "无效的余额格式".to_string())
     }
 
     pub async fn get_account(&self, pubkey: &Pubkey) -> Result<Value, String> {
-         self.request("getAccountInfo", json!([pubkey.to_string(), {"encoding": "base64"}])).await
+         self.request("getAccountInfo", json!([pubkey.to_string(), {"encoding": "base64", "commitment": "confirmed"}])).await
     }
 
     pub async fn send_transaction(&self, transaction: &Transaction) -> Result<Signature, String> {
@@ -136,7 +136,8 @@ impl SolanaProvider {
         let params = json!([
             address.to_string(),
             {
-                "limit": limit
+                "limit": limit,
+                "commitment": "confirmed"
             }
         ]);
         let res = self.request("getSignaturesForAddress", params).await?;

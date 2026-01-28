@@ -204,7 +204,7 @@ const filterForm = reactive({
 });
 
 // 界面控制变量
-const isSidePanelExpanded = ref(false);
+const isSidePanelExpanded = ref(true);
 const chainSelectorExpanded = ref(false);
 const tokenSelectorExpanded = ref(false);
 const chainSearchKeyword = ref('');

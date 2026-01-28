@@ -1,4 +1,9 @@
 ### ✨ New Features | 新功能
 
-- **ci:** 添加Windows平台的vcpkg和OpenSSL缓存及安装步骤
+- **solana:** 支持代币转账的"发送全部"功能并优化余额查询
+- **transfer:** 实现Solana转账的"发送全部"功能并优化余额查询
+- **solana:** 完善Solana链支持并修复字符串格式化问题
+- 为前端组件添加基于生态系统的链过滤功能
+- **airdrop:** 新增浏览器自动化空投交互功能
+- **ecosystem:** 添加窗口关闭功能
 

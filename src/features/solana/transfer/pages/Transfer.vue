@@ -152,7 +152,7 @@ let threadCount = ref(1);
 let enableMultiThread = ref(false);
 let multiWindowCount = ref(1);
 
-const isSidePanelExpanded = ref(false);
+const isSidePanelExpanded = ref(true);
 
 const floatingActionBarStyle = computed(() => {
   const sidePanelWidth = isSidePanelExpanded.value ? 60 : 0;

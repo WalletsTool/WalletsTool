@@ -68,7 +68,7 @@
               @click="handleEmptyAction('manual')"
             >
               <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
-              手动录入钱包
+              手动录入（慎用）
             </a-button>
             <a-button
               type="primary"
@@ -77,7 +77,7 @@
               @click="handleEmptyAction('upload')"
             >
               <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
-              上传文件导入
+              上传文件导入（推荐）
             </a-button>
           </div>
           <div style="margin-top: 15px; display: flex; align-items: center; justify-content: center;">

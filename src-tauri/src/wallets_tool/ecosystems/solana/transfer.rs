@@ -33,6 +33,7 @@ pub struct TransferConfig {
     pub transfer_amount: f64,
     pub gas_price: Option<u64>,
     pub contract_address: Option<String>,
+    #[allow(dead_code)]
     pub amount_precision: Option<u8>,
     pub chain: Option<String>,
 }
@@ -367,6 +368,7 @@ pub async fn sol_token_transfer_fast(
 pub struct CoinConfig {
     pub coin_type: String, // "base" or "token"
     pub contract_address: Option<String>,
+    #[allow(dead_code)]
     pub abi: Option<String>,
 }
 

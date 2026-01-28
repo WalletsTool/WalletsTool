@@ -291,7 +291,7 @@ defineExpose({
   <a-modal 
     class="import-modal" 
     :visible="visible" 
-    :width="1150" 
+    :width="1250" 
     :title="title" 
     @cancel="handleCancel"
     :on-before-ok="handleBeforeOk" 
@@ -301,8 +301,11 @@ defineExpose({
     :mask-closable="!importLoading"
     :closable="!importLoading"
   >
+    <a-alert type="warning" closable style="margin-bottom: 10px">
+      当前方式存在剪切板泄露私钥数据风险，为了防止电脑中其他恶意程序监听剪切板导致私钥泄露不推荐使用这个方式！！
+    </a-alert>
     <div
-      :style="{ display: 'flex', gap: '10px', marginTop: '10px', width: '1100px', height: showUsageInstructions ? '400px' : '500px', position: 'relative' }">
+      :style="{ display: 'flex', gap: '10px', marginTop: '10px', width: '1200px', height: showUsageInstructions ? '400px' : '500px', position: 'relative' }">
       <!-- Loading遮罩层 -->
       <div v-if="importLoading" class="loading-overlay">
         <a-spin size="large">
@@ -313,7 +316,7 @@ defineExpose({
       </div>
       
       <!-- 左侧：私钥输入 -->
-      <div style="width: 640px; height: 100%; display: flex; flex-direction: column;">
+      <div style="width: 740px; height: 100%; display: flex; flex-direction: column;">
         <div class="input-label" style="margin-bottom: 8px; font-weight: 500;">发送方私钥</div>
         <CodeEditor 
           ref="privateKeyEditorRef"

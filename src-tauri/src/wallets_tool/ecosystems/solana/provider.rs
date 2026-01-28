@@ -25,6 +25,7 @@ pub struct RpcTestResult {
 #[derive(Debug, Deserialize, Clone)]
 pub struct TokenBalance {
     pub amount: String,
+    #[allow(dead_code)]
     pub decimals: u8,
     #[serde(rename = "uiAmount")]
     pub ui_amount: Option<f64>,

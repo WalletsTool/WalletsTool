@@ -75,6 +75,7 @@ zeroize = { version = "^1.8", features = ["derive"] }
 sha2 = "0.10"
 winapi = { version = "0.3", features = ["memoryapi", "debugapi", "sysinfoapi", "processthreadsapi", "errhandlingapi"] }
 block-padding = "0.3"
+openssl = { version = "0.10", features = ["vendored"] }
 
 # Release模式优化配置
 [profile.release]

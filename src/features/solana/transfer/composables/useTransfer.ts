@@ -278,7 +278,9 @@ export function useTransfer(options = {}) {
       // 范围随机
       const min = Number(form.send_min_count) || 0;
       const max = Number(form.send_max_count) || 0;
-      const precision = Number(form.amount_precision) || 6;
+      const precision = !isNaN(parseFloat(form.amount_precision))
+        ? Number(form.amount_precision)
+        : 6;
 
       if (min === 0 && max === 0) return 0;
 
@@ -290,7 +292,9 @@ export function useTransfer(options = {}) {
       // 剩余随机
       const min = Number(form.send_min_count) || 0;
       const max = Number(form.send_max_count) || 0;
-      const precision = Number(form.amount_precision) || 6;
+      const precision = !isNaN(parseFloat(form.amount_precision))
+        ? Number(form.amount_precision)
+        : 6;
       
       let balance = 0;
       // 根据币种类型获取余额
@@ -321,10 +325,11 @@ export function useTransfer(options = {}) {
       
       let balance = (item.coin_balance !== '' && item.coin_balance !== undefined && item.coin_balance !== null) ? Number(item.coin_balance) : 0;
       
-      if (balance < 0) return 0;
+      if (balance <= 0) return 0;
       
-      const precision = Number(form.amount_precision) || 9;
-      return Number(balance.toFixed(precision));
+      // Token Transfer: Send All means sending the entire balance (no gas deduction from token amount)
+      // Pass -1 to backend to handle "Send All" for tokens as well, ensuring precision
+      return -1;
     }
     return 0;
   }

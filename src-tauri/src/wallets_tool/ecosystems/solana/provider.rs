@@ -11,7 +11,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use crate::wallets_tool::ecosystems::ethereum::proxy_manager::PROXY_MANAGER;
 
 static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
@@ -20,6 +20,16 @@ static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 pub struct RpcTestResult {
     pub success: bool,
     pub response_time_ms: u64,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TokenBalance {
+    pub amount: String,
+    pub decimals: u8,
+    #[serde(rename = "uiAmount")]
+    pub ui_amount: Option<f64>,
+    #[serde(rename = "uiAmountString")]
+    pub ui_amount_string: Option<String>,
 }
 
 pub struct SolanaProvider {
@@ -89,6 +99,11 @@ impl SolanaProvider {
 
     pub async fn get_account(&self, pubkey: &Pubkey) -> Result<Value, String> {
          self.request("getAccountInfo", json!([pubkey.to_string(), {"encoding": "base64", "commitment": "confirmed"}])).await
+    }
+
+    pub async fn get_token_account_balance(&self, pubkey: &Pubkey) -> Result<TokenBalance, String> {
+        let res = self.request("getTokenAccountBalance", json!([pubkey.to_string()])).await?;
+        serde_json::from_value(res["value"].clone()).map_err(|e| format!("解析Token余额失败: {}", e))
     }
 
     pub async fn send_transaction(&self, transaction: &Transaction) -> Result<Signature, String> {

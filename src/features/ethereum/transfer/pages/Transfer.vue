@@ -3,6 +3,7 @@ import { ref, reactive, computed, watch, onBeforeMount, onMounted, onBeforeUnmou
 import { useRouter, useRoute } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import { IconDelete } from '@arco-design/web-vue/es/icon';
+import { ethers } from 'ethers';
 import { defineAsyncComponent } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -1362,6 +1363,59 @@ function handleClickOutside(event) {
   if (!isInChainSelector) chainSelectorExpanded.value = false;
   if (!isInTokenSelector) tokenSelectorExpanded.value = false;
 }
+
+function handleWalletImportConfirm(importData) {
+  const { privateKeys, addresses } = importData;
+  const newData = [];
+  let successCount = 0;
+  let failCount = 0;
+
+  const count = Math.max(privateKeys ? privateKeys.length : 0, addresses ? addresses.length : 0);
+
+  for (let i = 0; i < count; i++) {
+    const privateKey = privateKeys && privateKeys[i] ? privateKeys[i] : '';
+    const toAddress = addresses && addresses[i] ? addresses[i] : '';
+    
+    if (privateKey) {
+      try {
+        const wallet = new ethers.Wallet(privateKey);
+        const fromAddress = wallet.address;
+        newData.push({ 
+          key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, 
+          private_key: privateKey, 
+          address: fromAddress, 
+          to_addr: toAddress, 
+          amount: '', 
+          plat_balance: '', 
+          coin_balance: '', 
+          exec_status: '0', 
+          error_msg: '' 
+        });
+        successCount++;
+      } catch (error) { console.error('处理数据失败:', error); failCount++; }
+    }
+  }
+  
+  if (newData.length > 0) {
+    data.value = [...data.value, ...newData];
+    clearValidationCache();
+  }
+
+  const duplicateKeysCount = (privateKeys ? privateKeys.length : 0) - new Set(privateKeys || []).size;
+  const duplicateAddressesCount = (addresses ? addresses.length : 0) - new Set(addresses || []).size;
+  const totalCount = count;
+  let notificationContent = `成功导入${successCount}条数据`;
+  if (duplicateKeysCount > 0 || duplicateAddressesCount > 0) {
+    const duplicateInfo = [];
+    if (duplicateKeysCount > 0) duplicateInfo.push(`${duplicateKeysCount}个重复私钥`);
+    if (duplicateAddressesCount > 0) duplicateInfo.push(`${duplicateAddressesCount}个重复地址`);
+    notificationContent += `（包含${duplicateInfo.join('、')}）`;
+  }
+  if (failCount > 0) Notification.warning({ title: '导入完成！', content: `总计${totalCount}条，成功${successCount}条，失败${failCount}条（格式错误）。${duplicateKeysCount > 0 || duplicateAddressesCount > 0 ? '注意：已允许重复数据导入。' : ''}` });
+  else if (successCount > 0) Notification.success({ title: '导入成功！', content: notificationContent, position: 'topLeft' });
+}
+
+function handleWalletImportCancel() { console.log('钱包导入已取消'); }
 </script>
 
 <template>
@@ -1797,43 +1851,7 @@ function handleClickOutside(event) {
   </div>
 </template>
 
-<script>
-export default {
-  methods: {
-    handleWalletImportConfirm(importData) {
-      const { privateKeys, addresses } = importData;
-      const newData = [];
-      let successCount = 0;
-      let failCount = 0;
-      for (let i = 0; i < privateKeys.length; i++) {
-        const privateKey = privateKeys[i];
-        const toAddress = addresses[i];
-        try {
-          const wallet = new ethers.Wallet(privateKey);
-          const fromAddress = wallet.address;
-          newData.push({ key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, private_key: privateKey, address: fromAddress, to_addr: toAddress, amount: '', plat_balance: '', coin_balance: '', exec_status: '0', error_msg: '' });
-          successCount++;
-        } catch (error) { console.error('处理数据失败:', error); failCount++; }
-      }
-      data.value.push(...newData);
-      clearValidationCache();
-      const duplicateKeysCount = privateKeys.length - new Set(privateKeys).size;
-      const duplicateAddressesCount = addresses.length - new Set(addresses).size;
-      const totalCount = privateKeys.length;
-      let notificationContent = `成功导入${successCount}条数据`;
-      if (duplicateKeysCount > 0 || duplicateAddressesCount > 0) {
-        const duplicateInfo = [];
-        if (duplicateKeysCount > 0) duplicateInfo.push(`${duplicateKeysCount}个重复私钥`);
-        if (duplicateAddressesCount > 0) duplicateInfo.push(`${duplicateAddressesCount}个重复地址`);
-        notificationContent += `（包含${duplicateInfo.join('、')}）`;
-      }
-      if (failCount > 0) Notification.warning({ title: '导入完成！', content: `总计${totalCount}条，成功${successCount}条，失败${failCount}条（格式错误）。${duplicateKeysCount > 0 || duplicateAddressesCount > 0 ? '注意：已允许重复数据导入。' : ''}` });
-      else Notification.success({ title: '导入成功！', content: notificationContent, position: 'topLeft' });
-    },
-    handleWalletImportCancel() { console.log('钱包导入已取消'); },
-  },
-};
-</script>
+
 
 <style scoped>
 .container { height: 100vh; display: flex; flex-direction: column; overflow: visible; padding: 50px 10px 50px 10px; min-width: 1240px; }

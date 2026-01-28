@@ -155,10 +155,8 @@ pub async fn sol_token_transfer(
         config.transfer_amount
     };
     
-    let decimals = if let Some(d) = config.amount_precision {
-        d
-    } else {
-        // 自动获取代币精度
+    let decimals = {
+        // 自动获取代币精度 (忽略 config.amount_precision，因为它通常是前端UI的随机数保留位数，而非Token精度)
         let account_info = client.get_account(&mint).await.map_err(|e| format!("无法获取代币信息: {e}"))?;
         if account_info["value"].is_null() {
             return Ok(TransferResult { success: false, tx_hash: None, error: Some("代币Mint账户不存在".to_string()) });
@@ -171,7 +169,26 @@ pub async fn sol_token_transfer(
         mint_state.decimals
     };
 
-    let amount_u64 = (amount_val * 10f64.powi(decimals as i32)) as u64;
+    let amount_u64 = if amount_val < 0.0 {
+        // Send All Logic for Token
+        // 查询ATA余额
+        let from_ata = get_associated_token_address(&keypair.pubkey(), &mint);
+        match client.get_token_account_balance(&from_ata).await {
+            Ok(balance_res) => {
+                 // 优先使用 amount 字段（原始u64字符串），如果不存在则尝试从 uiAmount 计算（不推荐，有精度风险）
+                 if !balance_res.amount.is_empty() {
+                     balance_res.amount.parse::<u64>().unwrap_or(0)
+                 } else if let Some(ui_amt) = balance_res.ui_amount {
+                     (ui_amt * 10f64.powi(decimals as i32)) as u64
+                 } else {
+                     0
+                 }
+            },
+            Err(_) => 0,
+        }
+    } else {
+        (amount_val * 10f64.powi(decimals as i32)) as u64
+    };
 
     let mut instructions = vec![];
     if let Some(fee) = config.gas_price {
@@ -346,12 +363,20 @@ pub async fn sol_token_transfer_fast(
     sol_token_transfer(index, item, config, chain_service).await
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct CoinConfig {
+    pub coin_type: String, // "base" or "token"
+    pub contract_address: Option<String>,
+    pub abi: Option<String>,
+}
+
 #[derive(Deserialize)]
 pub struct BalanceQueryParams {
     pub items: Vec<BalanceItem>,
     pub window_id: String,
     pub query_id: String,
     pub chain: Option<String>,
+    pub coin_config: Option<CoinConfig>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -376,6 +401,21 @@ pub async fn sol_query_balances_with_updates(
         Ok(c) => c,
         Err(e) => return Err(format!("无法连接到 Solana RPC: {e}")),
     };
+
+    // Determine if we are querying a token
+    let mut mint_pubkey = None;
+    if let Some(config) = &params.coin_config {
+        if config.coin_type == "token" {
+            if let Some(addr) = &config.contract_address {
+                if !addr.is_empty() {
+                    match Pubkey::from_str(addr) {
+                        Ok(pk) => mint_pubkey = Some(pk),
+                        Err(_) => return Err("无效的代币合约地址".to_string()),
+                    }
+                }
+            }
+        }
+    }
     
     let mut results = vec![];
     
@@ -389,6 +429,26 @@ pub async fn sol_query_balances_with_updates(
                 Err(e) => {
                     item.exec_status = "3".to_string();
                     item.error_msg = Some(e.to_string());
+                }
+            }
+
+            // Query SPL Token Balance (If configured)
+            if let Some(mint) = mint_pubkey {
+                if item.exec_status != "3" { 
+                    let ata = get_associated_token_address(&pubkey, &mint);
+                    match client.get_token_account_balance(&ata).await {
+                        Ok(balance_res) => {
+                            if let Some(amount_str) = balance_res.ui_amount_string {
+                                item.coin_balance = Some(amount_str);
+                            } else {
+                                item.coin_balance = Some("0".to_string());
+                            }
+                        },
+                        Err(_) => {
+                            // If ATA doesn't exist or other error, usually means 0 balance for tokens
+                            item.coin_balance = Some("0".to_string());
+                        }
+                    }
                 }
             }
         } else {

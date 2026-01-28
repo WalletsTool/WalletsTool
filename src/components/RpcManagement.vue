@@ -69,26 +69,14 @@
             </span>
           </template>
         </a-table-column>
-        <a-table-column title="操作" :width="100" align="center">
+        <a-table-column title="操作" :width="140" align="center">
           <template #cell="{ record }">
             <a-space>
-              <!-- <a-tooltip :content="record.is_active ? '禁用' : '启用'">
-                <a-button 
-                  type="text" 
-                  @click="handleSwitchBeforeChange(record).then(res => { if(res) record.is_active = !record.is_active })"
-                  :status="record.is_active ? 'warning' : 'success'"
-                >
-                  <template #icon>
-                    <icon-stop v-if="record.is_active" :style="{ fontSize: '18px' }" />
-                    <icon-play-circle v-else :style="{ fontSize: '18px' }" />
-                  </template>
-                </a-button>
-              </a-tooltip>
               <a-tooltip content="测试连接">
                 <a-button type="text" @click="testRpcConnection(record)" :loading="isRecordTesting(record)">
                   <template #icon><icon-play-arrow :style="{ fontSize: '18px' }" /></template>
                 </a-button>
-              </a-tooltip> -->
+              </a-tooltip>
               <a-tooltip content="编辑">
                 <a-button type="text" @click="showEditRpc(record)">
                   <template #icon><icon-edit :style="{ fontSize: '18px' }" /></template>
@@ -510,7 +498,7 @@ async function submitSingleRpc() {
   } else {
     await invoke('add_rpc_provider', {
       chainKey: rpcData.chain_key,
-      rpc_url: rpcData.rpc_url,
+      rpcUrl: rpcData.rpc_url,
       priority: rpcData.priority
     })
     Notification.success({ content: 'RPC添加成功', position: 'topLeft' })
@@ -617,7 +605,7 @@ async function submitBatchRpcs() {
     try {
       await invoke('add_rpc_provider', {
         chainKey: props.chainValue,
-        rpc_url: url,
+        rpcUrl: url,
         priority: batchDefaultPriority.value
       })
       successCount++
@@ -656,7 +644,18 @@ async function testRpcConnection(record) {
     rpcManageData.value[index].testing = true
     
     console.log('开始测试RPC连接:', record.rpc_url)
-     const result = await invoke('test_rpc_connection', { rpcUrl: record.rpc_url })
+    
+    let result;
+    // 判断是否为Solana链，优先使用ecosystem字段判断
+    const currentChain = props.chainOptions.find(c => c.key === props.chainValue);
+    const isSolana = currentChain?.ecosystem === 'solana' || (props.chainValue && props.chainValue.toLowerCase().includes('sol'));
+    
+    if (isSolana) {
+      result = await invoke('test_solana_rpc_connection', { rpcUrl: record.rpc_url });
+    } else {
+      result = await invoke('test_rpc_connection', { rpcUrl: record.rpc_url, chainKey: props.chainValue });
+    }
+    
     console.log('RPC测试结果:', result)
     
     if (result.success) {
@@ -699,7 +698,17 @@ async function batchTestAllRpc() {
       try {
         rpcManageData.value[index].testing = true
         console.log('测试RPC:', item.rpc_url)
-         const result = await invoke('test_rpc_connection', { rpcUrl: item.rpc_url })
+        
+        let result;
+        const currentChain = props.chainOptions.find(c => c.key === props.chainValue);
+        const isSolana = currentChain?.ecosystem === 'solana' || (props.chainValue && props.chainValue.toLowerCase().includes('sol'));
+        
+        if (isSolana) {
+          result = await invoke('test_solana_rpc_connection', { rpcUrl: item.rpc_url });
+        } else {
+          result = await invoke('test_rpc_connection', { rpcUrl: item.rpc_url, chainKey: props.chainValue });
+        }
+
         
         if (result.success) {
           rpcManageData.value[index].response_time = result.response_time_ms

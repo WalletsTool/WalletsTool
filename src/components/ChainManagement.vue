@@ -13,6 +13,13 @@
       <template #columns>
         <a-table-column title="链标识" data-index="key" :width="80" />
         <a-table-column title="链名称" data-index="name" :width="100" />
+        <a-table-column title="生态" data-index="ecosystem" :width="80">
+          <template #cell="{ record }">
+            <a-tag :color="record.ecosystem === 'solana' ? 'purple' : 'blue'">
+              {{ record.ecosystem === 'solana' ? 'Solana' : 'EVM' }}
+            </a-tag>
+          </template>
+        </a-table-column>
         <a-table-column title="链ID" data-index="chain_id" :width="80" />
         <a-table-column title="原生代币" data-index="symbol" :width="80" />
         <a-table-column title="图标" :width="50">
@@ -66,11 +73,28 @@
         </a-col>
       </a-row>
 
+      <a-form-item label="生态系统" required>
+        <a-radio-group v-model="chainForm.ecosystem" type="button" :disabled="!!props.ecosystemFilter">
+          <a-radio value="evm">EVM (以太坊兼容)</a-radio>
+          <a-radio value="solana">Solana</a-radio>
+        </a-radio-group>
+      </a-form-item>
+
       <a-row :gutter="16">
-        <a-col :span="12">
+        <a-col :span="12" v-if="chainForm.ecosystem === 'evm'">
           <a-form-item label="链ID" required>
             <a-input v-model="chainForm.chain_id" placeholder="例如：1, 56, 137" />
           </a-form-item>
+        </a-col>
+        <!-- Solana生态下隐藏Chain ID字段，后台使用默认值 -->
+        <a-col :span="12" v-else>
+           <a-form-item label="Cluster (ID)" required>
+             <a-select v-model="chainForm.chain_id" placeholder="选择网络环境">
+               <a-option value="101">Mainnet Beta (101)</a-option>
+               <a-option value="102">Testnet (102)</a-option>
+               <a-option value="103">Devnet (103)</a-option>
+             </a-select>
+           </a-form-item>
         </a-col>
         <a-col :span="12">
           <a-form-item label="原生代币符号" required>
@@ -117,17 +141,19 @@
         <a-input v-model="chainForm.scan_url" placeholder="例如：https://etherscan.io" />
       </a-form-item>
 
-      <a-form-item label="浏览器API">
-        <a-input v-model="chainForm.scan_api" placeholder="例如：https://api.etherscan.io/api" />
-      </a-form-item>
+      <template v-if="chainForm.ecosystem === 'evm'">
+        <a-form-item label="浏览器API">
+          <a-input v-model="chainForm.scan_api" placeholder="例如：https://api.etherscan.io/api" />
+        </a-form-item>
 
-      <a-form-item label="验证API">
-        <a-input v-model="chainForm.verify_api" placeholder="验证合约的API地址" />
-      </a-form-item>
+        <a-form-item label="验证API">
+          <a-input v-model="chainForm.verify_api" placeholder="验证合约的API地址" />
+        </a-form-item>
 
-      <a-form-item label="检查验证API">
-        <a-input v-model="chainForm.check_verify_api" placeholder="检查合约验证状态的API地址" />
-      </a-form-item>
+        <a-form-item label="检查验证API">
+          <a-input v-model="chainForm.check_verify_api" placeholder="检查合约验证状态的API地址" />
+        </a-form-item>
+      </template>
 
       <a-form-item label="RPC URLs">
         <div class="rpc-urls">
@@ -194,6 +220,14 @@ import { Notification } from '@arco-design/web-vue'
 import { invoke } from '@tauri-apps/api/core'
 import ChainIcon from './ChainIcon.vue'
 
+// Props
+const props = defineProps({
+  ecosystemFilter: {
+    type: String,
+    default: ''
+  }
+})
+
 // Emits
 const emit = defineEmits(['refresh', 'chain-updated'])
 
@@ -221,6 +255,7 @@ const batchRpcStats = reactive({
 const chainForm = reactive({
   chain_key: '',
   chain_name: '',
+  ecosystem: 'evm',
   chain_id: '',
   native_currency_symbol: '',
   native_currency_name: '',
@@ -230,6 +265,36 @@ const chainForm = reactive({
   verify_api: '',
   check_verify_api: '',
   rpc_urls: ['']
+})
+
+// 监听生态系统变化，自动调整默认值
+watch(() => chainForm.ecosystem, (newVal) => {
+  if (newVal === 'solana') {
+    if (chainForm.native_currency_decimals === 18) {
+      chainForm.native_currency_decimals = 9
+    }
+    if (!chainForm.native_currency_symbol) {
+      chainForm.native_currency_symbol = 'SOL'
+    }
+    if (!chainForm.native_currency_name) {
+      chainForm.native_currency_name = 'Solana'
+    }
+    // Solana通常不需要用户手动输入Chain ID，这里给一个默认值占位，或者隐藏该字段
+    if (!chainForm.chain_id) {
+      chainForm.chain_id = '101' // Solana Mainnet-beta default
+    }
+  } else {
+    // 切换回EVM默认值
+    if (chainForm.native_currency_decimals === 9) {
+      chainForm.native_currency_decimals = 18
+    }
+    if (chainForm.native_currency_symbol === 'SOL') {
+      chainForm.native_currency_symbol = ''
+    }
+    if (chainForm.native_currency_name === 'Solana') {
+      chainForm.native_currency_name = ''
+    }
+  }
 })
 
 // 监听 visible 变化，当弹窗打开时加载数据
@@ -244,7 +309,35 @@ async function loadChainData() {
   try {
     chainTableLoading.value = true
     const result = await invoke('get_chain_list')
-    chainManageData.value = result || []
+    let chains = result || []
+    
+    // 如果后端未返回ecosystem字段（旧版API），根据key进行推断
+    chains = chains.map(chain => {
+      if (!chain.ecosystem) {
+        if (chain.key === 'sol' || chain.key === 'solana' || (chain.name && chain.name.toLowerCase().includes('solana'))) {
+          chain.ecosystem = 'solana'
+        } else {
+          chain.ecosystem = 'evm'
+        }
+      }
+      return chain
+    })
+
+    // 如果有生态系统过滤，只显示对应生态的链
+    if (props.ecosystemFilter) {
+      chains = chains.filter(chain => {
+        const chainEco = (chain.ecosystem || '').trim()
+        const filterEco = props.ecosystemFilter.trim()
+        
+        // 兼容旧数据：如果是EVM过滤，同时也显示没有生态标识或标识为空的链
+        if (filterEco === 'evm') {
+          return !chainEco || chainEco === 'evm'
+        }
+        return chainEco === filterEco
+      })
+    }
+    
+    chainManageData.value = chains
   } catch (error) {
     console.error('加载链数据失败:', error)
     Notification.error({ content: '加载链数据失败', position: 'topLeft' })
@@ -258,6 +351,12 @@ function showAddChain() {
   isEditMode.value = false
   currentEditChain.value = null
   resetChainForm()
+  
+  // 如果有生态系统过滤，默认选中该生态
+  if (props.ecosystemFilter) {
+    chainForm.ecosystem = props.ecosystemFilter
+  }
+  
   chainFormVisible.value = true
 }
 
@@ -270,6 +369,7 @@ function showEditChain(record) {
   Object.assign(chainForm, {
     chain_key: record.key || record.chain_key || '',
     chain_name: record.name || record.chain_name || '',
+    ecosystem: record.ecosystem || 'evm',
     chain_id: String(record.chain_id || ''),
     native_currency_symbol: record.symbol || '',
     native_currency_name: record.currency_name || record.native_currency_name || '',
@@ -292,6 +392,7 @@ function resetChainForm() {
   Object.assign(chainForm, {
     chain_key: '',
     chain_name: '',
+    ecosystem: 'evm',
     chain_id: '',
     native_currency_symbol: '',
     native_currency_name: '',

@@ -1,5 +1,3 @@
-// Placeholder for Solana ecosystem modules
-// pub mod transfer;
-// pub mod token_transfer;
-// pub mod provider;
-
+pub mod transfer;
+pub mod provider;
+pub use provider::test_solana_rpc_connection;

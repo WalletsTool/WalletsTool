@@ -42,6 +42,11 @@
           
           <span v-if="isCustom" class="custom-badge" title="已自定义名称">★</span>
         </div>
+        
+        <!-- 生态标识 -->
+        <div v-if="ecosystem" class="ecosystem-badge" :class="ecosystem.toLowerCase()">
+          {{ ecosystem }}
+        </div>
       </template>
     </div>
     
@@ -108,6 +113,10 @@ const props = defineProps({
   customClose: {
     type: Boolean,
     default: false
+  },
+  ecosystem: {
+    type: String,
+    default: ''
   }
 })
 
@@ -440,6 +449,31 @@ watch(() => props.title, (newTitle) => {
 .reset-button:hover {
   background: rgba(59, 130, 246, 0.9);
   transform: scale(1.1);
+}
+
+.ecosystem-badge {
+  margin-left: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  -webkit-app-region: no-drag;
+  cursor: default;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.ecosystem-badge.solana {
+  background: linear-gradient(135deg, #9945FF 0%, #14F195 100%);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.ecosystem-badge.evm {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .title-editable {

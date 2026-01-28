@@ -3,6 +3,7 @@ import { ref, reactive, computed, watch, onBeforeMount, onMounted, onBeforeUnmou
 import { useRouter, useRoute } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import { IconDelete } from '@arco-design/web-vue/es/icon';
+import { ethers } from 'ethers';
 import { defineAsyncComponent } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -22,7 +23,7 @@ import { useDataOperations } from '../composables/useDataOperations';
 import { useTip } from '../composables/useTip';
 import { WINDOW_CONFIG } from '@/utils/windowNames';
 
-const TransferGuide = defineAsyncComponent(() => import('../components/TransferGuide.vue'));
+const TransferGuide = defineAsyncComponent(() => import('@/components/transfer/TransferGuide.vue'));
 
 const ChainManagement = defineAsyncComponent(() => import('@/components/ChainManagement.vue'));
 const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagement.vue'));
@@ -59,7 +60,7 @@ initWindowTitle()
 
 const columns = [
   { title: '序号', align: 'center', width: 53, slotName: 'index' },
-  { title: '发送方私钥', align: 'center', dataIndex: 'private_key', ellipsis: true, tooltip: true },
+  { title: '发送方私钥', align: 'center', dataIndex: 'private_key', width: 180, ellipsis: true, tooltip: true },
   { title: '接收地址', align: 'center', dataIndex: 'to_addr', ellipsis: true, tooltip: true },
   { title: '转账数量', align: 'center', dataIndex: 'amount', width: 85, ellipsis: true, tooltip: true },
   { title: '平台币余额', align: 'center', dataIndex: 'plat_balance', width: 95, ellipsis: true, tooltip: true },
@@ -150,12 +151,7 @@ let threadCount = ref(1);
 let enableMultiThread = ref(false);
 let multiWindowCount = ref(1);
 
-const isSidePanelExpanded = ref(false);
-
-const floatingActionBarStyle = computed(() => {
-  const sidePanelWidth = isSidePanelExpanded.value ? 60 : 0;
-  return { '--side-panel-offset': `${sidePanelWidth}px` };
-});
+const isSidePanelExpanded = ref(true);
 
 function expandSidePanel() { isSidePanelExpanded.value = true; }
 function collapseSidePanel() { isSidePanelExpanded.value = false; }
@@ -1065,7 +1061,7 @@ async function handleChainUpdated() {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
     if (isTauri) {
       const result = await invoke('get_chain_list');
-      chainOptions.value = result || [];
+      chainOptions.value = (result || []).filter(item => item.key !== 'sol');
       const currentChainExists = chainOptions.value.find((chain) => chain.key === chainValue.value);
       if (!currentChainExists && chainOptions.value.length > 0) { chainValue.value = chainOptions.value[0].key; await chainChange(); }
       else if (currentChainExists) currentChain.value = currentChainExists;
@@ -1288,7 +1284,7 @@ onBeforeMount(async () => {
   if (isTauri) {
     try {
       const result = await invoke('get_chain_list');
-      chainOptions.value = result || [];
+      chainOptions.value = (result || []).filter(item => item.ecosystem === 'evm');
       chainOptions.value.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       if (sharedConfig) {
         applySharedConfig(sharedConfig);
@@ -1367,10 +1363,63 @@ function handleClickOutside(event) {
   if (!isInChainSelector) chainSelectorExpanded.value = false;
   if (!isInTokenSelector) tokenSelectorExpanded.value = false;
 }
+
+function handleWalletImportConfirm(importData) {
+  const { privateKeys, addresses } = importData;
+  const newData = [];
+  let successCount = 0;
+  let failCount = 0;
+
+  const count = Math.max(privateKeys ? privateKeys.length : 0, addresses ? addresses.length : 0);
+
+  for (let i = 0; i < count; i++) {
+    const privateKey = privateKeys && privateKeys[i] ? privateKeys[i] : '';
+    const toAddress = addresses && addresses[i] ? addresses[i] : '';
+    
+    if (privateKey) {
+      try {
+        const wallet = new ethers.Wallet(privateKey);
+        const fromAddress = wallet.address;
+        newData.push({ 
+          key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, 
+          private_key: privateKey, 
+          address: fromAddress, 
+          to_addr: toAddress, 
+          amount: '', 
+          plat_balance: '', 
+          coin_balance: '', 
+          exec_status: '0', 
+          error_msg: '' 
+        });
+        successCount++;
+      } catch (error) { console.error('处理数据失败:', error); failCount++; }
+    }
+  }
+  
+  if (newData.length > 0) {
+    data.value = [...data.value, ...newData];
+    clearValidationCache();
+  }
+
+  const duplicateKeysCount = (privateKeys ? privateKeys.length : 0) - new Set(privateKeys || []).size;
+  const duplicateAddressesCount = (addresses ? addresses.length : 0) - new Set(addresses || []).size;
+  const totalCount = count;
+  let notificationContent = `成功导入${successCount}条数据`;
+  if (duplicateKeysCount > 0 || duplicateAddressesCount > 0) {
+    const duplicateInfo = [];
+    if (duplicateKeysCount > 0) duplicateInfo.push(`${duplicateKeysCount}个重复私钥`);
+    if (duplicateAddressesCount > 0) duplicateInfo.push(`${duplicateAddressesCount}个重复地址`);
+    notificationContent += `（包含${duplicateInfo.join('、')}）`;
+  }
+  if (failCount > 0) Notification.warning({ title: '导入完成！', content: `总计${totalCount}条，成功${successCount}条，失败${failCount}条（格式错误）。${duplicateKeysCount > 0 || duplicateAddressesCount > 0 ? '注意：已允许重复数据导入。' : ''}` });
+  else if (successCount > 0) Notification.success({ title: '导入成功！', content: notificationContent, position: 'topLeft' });
+}
+
+function handleWalletImportCancel() { console.log('钱包导入已取消'); }
 </script>
 
 <template>
-  <TitleBar :title="windowTitle" :custom-close="true" @before-close="handleBeforeClose" />
+  <TitleBar :title="windowTitle" :custom-close="true" ecosystem="EVM" @before-close="handleBeforeClose" />
   <div class="container transfer" style="height: 100vh; display: flex; flex-direction: column; overflow: hidden" @paste="handleGlobalPaste">
     <div class="toolBar" style="flex-shrink: 0; height: 0; overflow: visible; margin-top: 0">
       <input type="file" ref="uploadInputRef" @change="UploadFile" id="btn_file" style="display: none" />
@@ -1379,7 +1428,7 @@ function handleClickOutside(event) {
       <div class="left-panel" style="flex: 1; display: flex; flex-direction: column; overflow: visible;">
         <div class="table-section" id="table-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative">
           <TableSkeleton v-if="(tableLoading || balanceLoading) && data.length === 0" :rows="8" />
-            <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick" @update:selected-keys="selectedKeys = $event" @open-manual-import="handleManualImport" @open-file-upload="handleFileUpload" @download-template="downloadTemplateAction" row-key="key" height="100%" :empty-data="data.length === 0" class="table-with-side-actions" :class="{ 'expanded': !isSidePanelExpanded }" :hover-keys="Object.keys(rowHoverStates).filter((key) => rowHoverStates[key])">
+            <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick" @update:selected-keys="selectedKeys = $event" @open-manual-import="handleManualImport" @open-file-upload="handleFileUpload" @download-template="downloadTemplateAction" row-key="key" height="100%" :empty-data="data.length === 0" class="table-with-side-actions" :hover-keys="Object.keys(rowHoverStates).filter((key) => rowHoverStates[key])">
             <template #exec_status="{ record }">
               <div class="exec-status-wrapper" @mouseenter="rowHoverStates[record.key] = true" @mouseleave="rowHoverStates[record.key] = false">
                 <a-tooltip content="" trigger="hover" :mouseEnterDelay="300" :mouseLeaveDelay="100" :popup-style="{ padding: 0, pointerEvents: 'auto' }">
@@ -1498,44 +1547,44 @@ function handleClickOutside(event) {
           <a-form ref="formRef" :model="form" :style="{ width: '100%' }" layout="horizontal" label-align="left">
             <a-row class="config-row">
               <div class="config-column column-first">
-                <a-form-item field="send_type" label="发送模式" :label-col-props="{ span: 6 }">
-                  <a-radio-group v-model="form.send_type" type="button"><a-radio value="1">全部</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio><a-radio value="4">剩余随机</a-radio></a-radio-group>
+                <a-form-item field="send_type" label="发送模式" :label-col-props="{ span: 5 }">
+                  <a-radio-group v-model="form.send_type" size="small" type="button"><a-radio value="1">全部</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio><a-radio value="4">剩余随机</a-radio></a-radio-group>
                 </a-form-item>
-                <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" :label-col-props="{ span: 6 }">
-                  <a-radio-group v-model="form.amount_from" type="button"><a-radio value="1">表格数据</a-radio><a-radio value="2">自定义</a-radio></a-radio-group>
+                <a-form-item v-if="form.send_type === '2'" field="amount_from" label="数量来源" :label-col-props="{ span: 5 }">
+                  <a-radio-group v-model="form.amount_from" size="small" type="button"><a-radio size="small" value="1">表格数据</a-radio><a-radio size="small" value="2">自定义</a-radio></a-radio-group>
                 </a-form-item>
-                <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量" :label-col-props="{ span: 6 }">
-                  <a-input v-model="form.send_count" />
+                <a-form-item v-if="form.send_type === '2' && form.amount_from === '2'" field="send_count" label="发送数量" :label-col-props="{ span: 5 }">
+                  <a-input size="small" v-model="form.send_count" />
                 </a-form-item>
-                <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope" :label="form.send_type === '3' ? '发送数量从' : '剩余数量从'" :label-col-props="{ span: 6 }">
-                  <a-space><a-input v-model="form.send_min_count" placeholder="最小" style="width: 66px" /><span style="margin: 0 8px">至</span><a-input v-model="form.send_max_count" placeholder="最大" style="width: 85px" /><span style="margin-left: 10px">范围内随机生成</span></a-space>
+                <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="send_count_scope" :label="form.send_type === '3' ? '发送数量从' : '剩余数量从'" :label-col-props="{ span: 5 }">
+                  <a-space><a-input v-model="form.send_min_count" size="small" placeholder="最小" style="width: 66px" /><span style="margin: 0 8px">至</span><a-input size="small" v-model="form.send_max_count" placeholder="最大" style="width: 85px" /><span style="margin-left: 10px">范围内随机生成</span></a-space>
                 </a-form-item>
-                <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度" :label-col-props="{ span: 6 }">
-                  <a-input v-model="form.amount_precision" />
+                <a-form-item v-if="form.send_type === '3' || form.send_type === '4'" field="amount_precision" label="金额精度" :label-col-props="{ span: 5 }">
+                  <a-input size="small" v-model="form.amount_precision" />
                 </a-form-item>
               </div>
               <div class="config-divider"></div>
               <div class="config-column column-second">
                 <a-form-item field="limit_type" label="Gas Limit 配置" :label-col-props="{ span: 7 }">
-                  <a-radio-group v-model="form.limit_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio></a-radio-group>
+                  <a-radio-group size="small" v-model="form.limit_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">范围随机</a-radio></a-radio-group>
                 </a-form-item>
                 <a-form-item v-if="form.limit_type === '2'" field="limit_count" label="Gas Limit 数量" :label-col-props="{ span: 7 }">
-                  <a-input v-model="form.limit_count" />
+                  <a-input size="small" v-model="form.limit_count" />
                 </a-form-item>
                 <a-form-item v-if="form.limit_type === '3'" field="limit_count_scope" label="Gas Limit 范围" :label-col-props="{ span: 7 }">
-                  <a-space><a-input v-model="form.limit_min_count" placeholder="最小" style="width: 90px" /><span style="margin: 0 8px">至</span><a-input v-model="form.limit_max_count" placeholder="最大" style="width: 90px" /></a-space>
+                  <a-space><a-input v-model="form.limit_min_count" size="small" placeholder="最小" style="width: 90px" /><span style="margin: 0 8px">至</span><a-input size="small" v-model="form.limit_max_count" placeholder="最大" style="width: 90px" /></a-space>
                 </a-form-item>
                 <a-form-item field="gas_price_type" label="Gas Price 方式" :label-col-props="{ span: 7 }">
-                  <a-radio-group v-model="form.gas_price_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">加价抢跑</a-radio></a-radio-group>
+                  <a-radio-group size="small" v-model="form.gas_price_type" type="button"><a-radio value="1">自动获取</a-radio><a-radio value="2">指定数值</a-radio><a-radio value="3">加价抢跑</a-radio></a-radio-group>
                 </a-form-item>
                 <a-form-item v-if="form.gas_price_type === '2'" field="gas_price" label="Gas Price" :label-col-props="{ span: 7 }">
-                  <a-input v-model="form.gas_price" />
+                  <a-input size="small" v-model="form.gas_price" />
                 </a-form-item>
                 <a-form-item v-if="form.gas_price_type === '3'" field="gas_price_rate" label="提高比例" :label-col-props="{ span: 7 }">
-                  <a-input v-model="form.gas_price_rate"><template #append>%</template></a-input>
+                  <a-input size="small" v-model="form.gas_price_rate"><template #append>%</template></a-input>
                 </a-form-item>
                 <a-form-item v-if="form.gas_price_type === '1' || form.gas_price_type === '3'" field="max_gas_price" label="最大 Gas Price" :label-col-props="{ span: 7 }">
-                  <a-input v-model="form.max_gas_price" placeholder="为空时则不设置上限（单位：Gwei）" />
+                  <a-input size="small" v-model="form.max_gas_price" placeholder="为空时则不设置上限（单位：Gwei）" />
                 </a-form-item>
               </div>
               <div class="config-divider"></div>
@@ -1547,19 +1596,19 @@ function handleClickOutside(event) {
                       <span>线程数</span><a-input-number v-model="threadCount" :min="1" :max="999" :step="1" :default-value="1" size="small" style="width: 90px; margin-left: 10px" /><a-tag v-if="threadCount > 90" color="#ff4d4f" style="font-size: 10px; margin-left: 10px">狂暴</a-tag>
                     </template>
                     <template v-else>
-                      <span>时间间隔</span><a-input v-model="form.min_interval" placeholder="最小" style="width: 55px; margin-left: 10px" /><span style="margin: 0 8px">至</span><a-input v-model="form.max_interval" placeholder="最大" style="width: 55px; margin-right: 10px" />秒
+                      <span>间隔</span><a-input size="small" v-model="form.min_interval" placeholder="最小" style="width: 50px; margin-left: 10px" /><span style="margin: 0 8px">至</span><a-input size="small" v-model="form.max_interval" placeholder="最大" style="width: 50px; margin-right: 10px" />秒
                     </template>
                   </a-space>
                 </a-form-item>
-                <a-form-item field="error_retry" label="失败自动重试" tooltip="开启失败自动重试功能后，存在多次转账风险，请谨慎使用。建议渡过bate阶段后再用" :label-col-props="{ span: 9 }" :wrapper-col-props="{ span: 15 }">
+                <a-form-item field="error_retry" label="失败自动重试" tooltip="开启失败自动重试功能后，存在多次转账风险，请谨慎使用。建议渡过bate阶段后再用" :label-col-props="{ span: 10 }" :wrapper-col-props="{ span: 14 }">
                   <a-space :size="6" align="center" class="error-retry-control">
-                    <a-switch v-model="form.error_retry" checked-value="1" unchecked-value="0"><template #checked>开启</template><template #unchecked>关闭</template></a-switch>
+                    <a-switch size="small" v-model="form.error_retry" checked-value="1" unchecked-value="0"><template #checked>开启</template><template #unchecked>关闭</template></a-switch>
                     <a-tag color="orange" class="beta-tag">BATE</a-tag>
                   </a-space>
                 </a-form-item>
-                <a-form-item field="multi_window" label="窗口多开" tooltip="相同配置参数多开窗口，方便分组执行转账" :label-col-props="{ span: 7 }" :wrapper-col-props="{ span: 16 }">
+                <a-form-item field="multi_window" label="窗口多开" tooltip="相同配置参数多开窗口，方便分组执行转账" :label-col-props="{ span: 9 }" :wrapper-col-props="{ span: 15 }">
                   <a-input-group style="width: 100%">
-                    <a-input-number v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1" placeholder="窗口数" style="width: 50%" />
+                    <a-input-number size="small" v-model="multiWindowCount" :min="1" :max="9" :step="1" :default-value="1" placeholder="窗口数" style="width: 50%" />
                     <a-button status="success" @click="debouncedOpenMultipleWindow"><template #icon><Icon icon="mdi:content-copy" /></template></a-button>
                   </a-input-group>
                 </a-form-item>
@@ -1600,7 +1649,7 @@ function handleClickOutside(event) {
         </div>
       </div>
     </div>
-    <WalletImportModal ref="walletImportRef" @confirm="handleWalletImportConfirm" @cancel="handleWalletImportCancel" />
+    <WalletImportModal ref="walletImportRef" ecosystem="evm" @confirm="handleWalletImportConfirm" @cancel="handleWalletImportCancel" />
     <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel" :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
       <a-input v-model="coinAddress" placeholder="请输入代币合约地址" allow-clear />
     </a-modal>
@@ -1634,7 +1683,7 @@ function handleClickOutside(event) {
       </a-form>
       <template #footer><a-button @click="advancedFilterVisible = false">取消</a-button><a-button type="primary" @click="applyAdvancedFilter" style="margin-left: 10px">应用筛选</a-button></template>
     </a-modal>
-    <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" />
+    <ChainManagement ref="chainManageRef" @chain-updated="handleChainUpdated" ecosystem-filter="evm" />
     <TokenManagement ref="tokenManageRef" :chain-value="chainValue" :chain-options="chainOptions" @token-updated="handleTokenUpdated" />
     <RpcManagement ref="rpcManageRef" :chain-value="chainValue" :chain-options="chainOptions" @rpc-updated="handleRpcUpdated" />
     <div v-if="showCelebration" class="celebration-overlay">
@@ -1802,43 +1851,7 @@ function handleClickOutside(event) {
   </div>
 </template>
 
-<script>
-export default {
-  methods: {
-    handleWalletImportConfirm(importData) {
-      const { privateKeys, addresses } = importData;
-      const newData = [];
-      let successCount = 0;
-      let failCount = 0;
-      for (let i = 0; i < privateKeys.length; i++) {
-        const privateKey = privateKeys[i];
-        const toAddress = addresses[i];
-        try {
-          const wallet = new ethers.Wallet(privateKey);
-          const fromAddress = wallet.address;
-          newData.push({ key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, private_key: privateKey, address: fromAddress, to_addr: toAddress, amount: '', plat_balance: '', coin_balance: '', exec_status: '0', error_msg: '' });
-          successCount++;
-        } catch (error) { console.error('处理数据失败:', error); failCount++; }
-      }
-      data.value.push(...newData);
-      clearValidationCache();
-      const duplicateKeysCount = privateKeys.length - new Set(privateKeys).size;
-      const duplicateAddressesCount = addresses.length - new Set(addresses).size;
-      const totalCount = privateKeys.length;
-      let notificationContent = `成功导入${successCount}条数据`;
-      if (duplicateKeysCount > 0 || duplicateAddressesCount > 0) {
-        const duplicateInfo = [];
-        if (duplicateKeysCount > 0) duplicateInfo.push(`${duplicateKeysCount}个重复私钥`);
-        if (duplicateAddressesCount > 0) duplicateInfo.push(`${duplicateAddressesCount}个重复地址`);
-        notificationContent += `（包含${duplicateInfo.join('、')}）`;
-      }
-      if (failCount > 0) Notification.warning({ title: '导入完成！', content: `总计${totalCount}条，成功${successCount}条，失败${failCount}条（格式错误）。${duplicateKeysCount > 0 || duplicateAddressesCount > 0 ? '注意：已允许重复数据导入。' : ''}` });
-      else Notification.success({ title: '导入成功！', content: notificationContent, position: 'topLeft' });
-    },
-    handleWalletImportCancel() { console.log('钱包导入已取消'); },
-  },
-};
-</script>
+
 
 <style scoped>
 .container { height: 100vh; display: flex; flex-direction: column; overflow: visible; padding: 50px 10px 50px 10px; min-width: 1240px; }
@@ -1852,14 +1865,14 @@ export default {
 .config-section { flex-shrink: 0; background: var(--card-bg, var(--color-bg-1, #ffffff)); border: 1px solid var(--color-border, #e5e6eb); border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
 .config-row { display: flex; align-items: stretch; height: 100%; min-height: 150px; }
 .config-column { display: flex; flex-direction: column; min-height: 150px; }
-.column-first { padding-right: 8px; flex: 9; }
-.column-second { padding: 0 8px; flex: 8; }
-.column-third { padding-left: 8px; flex: 7; }
+.column-first { padding-right: 8px; flex: 26; }
+.column-second { padding: 0 8px; flex: 24; }
+.column-third { padding-left: 8px; flex: 19; }
 .config-divider { width: 1px; min-height: 150px; height: 100%; background: linear-gradient(to bottom, transparent, var(--color-border, #e5e6eb) 20%, var(--color-border, #e5e6eb) 80%, transparent); margin: 0; align-self: center; }
 .arco-form-item { padding: 5px 10px; margin-bottom: 8px; }
-.container :deep(.arco-form-item-label-col) { margin-bottom: 0; }
+.container :deep(.arco-form-item-label-col) { margin-bottom: 0; padding-right: 5px;}
 .container :deep(.arco-form-item-wrapper-col) { flex: 1; }
-.container :deep(.arco-form-item) { margin-bottom: 8px; padding: 4px 10px; }
+.container :deep(.arco-form-item) { margin-bottom: 8px; padding: 5px; }
 .container :deep(.arco-form-item-label) { line-height: 32px; }
 .floating-action-bar { position: relative; z-index: 10; width: 100%; display: flex; justify-content: center; pointer-events: none; margin-top: -24px;}
 .floating-action-content { display: flex; gap: 40px; align-items: center; pointer-events: auto; background: var(--bg-color, #ffffff); padding: 8px 50px; border: 1px solid var(--table-border-color, #e5e6eb); border-radius: 50px; }
@@ -1966,8 +1979,7 @@ export default {
 .side-actions-content-fixed .arco-btn[status='danger'] > .arco-btn-icon { color: #ffffff; }
 .side-actions-content-fixed .arco-btn[status='danger']:hover { background: linear-gradient(135deg, var(--color-danger-5, #ff7d7d) 0%, var(--color-danger-6, #f53f3f) 100%); box-shadow: 0 4px 12px rgba(245, 63, 63, 0.35); transform: translateY(-2px); }
 .table-container { flex: 1; display: flex; position: relative; overflow: visible; width: 100%; }
-.table-with-side-actions { margin-right: 60px; margin-top: 0; height: 100%; transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-.table-with-side-actions.expanded { margin-right: 0; }
+.table-with-side-actions { margin-top: 0; height: 100%; }
 .exec-actions { display: flex; gap: 4px; padding: 4px 6px; }
 .action-btn { padding: 2px 10px; font-size: 12px; color: #e0e0e0; background: #2a2a2b; border-radius: 3px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .action-btn:hover { background: #3d3d3d; color: #fff; }

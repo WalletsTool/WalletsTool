@@ -29,7 +29,7 @@ pub async fn save_proxy_config(proxies: Vec<String>, enabled: bool) -> Result<St
 #[command]
 pub async fn save_proxy_config_for_window(window_id: String, proxies: Vec<String>, enabled: bool) -> Result<String, String> {
     PROXY_MANAGER.update_config_for_window(&window_id, proxies, enabled).await?;
-    Ok(format!("窗口 {} 的代理配置保存成功", window_id))
+    Ok(format!("窗口 {window_id} 的代理配置保存成功"))
 }
 
 /// Tauri命令：获取代理配置（当前窗口）
@@ -37,7 +37,7 @@ pub async fn save_proxy_config_for_window(window_id: String, proxies: Vec<String
 pub async fn get_proxy_config() -> Result<ProxyConfig, String> {
     // 确保当前窗口的配置已加载
     if let Err(e) = PROXY_MANAGER.load_current_window_config().await {
-        eprintln!("加载代理配置失败: {}", e);
+        eprintln!("加载代理配置失败: {e}");
     }
     
     Ok(PROXY_MANAGER.get_config())
@@ -48,7 +48,7 @@ pub async fn get_proxy_config() -> Result<ProxyConfig, String> {
 pub async fn get_proxy_config_for_window(window_id: String) -> Result<ProxyConfig, String> {
     // 确保指定窗口的配置已加载
     if let Err(e) = PROXY_MANAGER.load_config_for_window(&window_id).await {
-        eprintln!("加载代理配置失败: {}", e);
+        eprintln!("加载代理配置失败: {e}");
     }
     
     Ok(PROXY_MANAGER.get_config_for_window(&window_id))
@@ -89,5 +89,5 @@ pub async fn get_proxy_stats_for_window(_window_id: String) -> Result<std::colle
 #[command]
 pub async fn clear_proxy_config_for_window(window_id: String) -> Result<String, String> {
     PROXY_MANAGER.clear_config_for_window(&window_id).await?;
-    Ok(format!("窗口 {} 的代理配置已完全清除", window_id))
+    Ok(format!("窗口 {window_id} 的代理配置已完全清除"))
 }

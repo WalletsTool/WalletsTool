@@ -120,12 +120,18 @@ pub async fn delete_rpc_provider(
 #[tauri::command]
 pub async fn test_rpc_connection(
     rpc_url: String,
+    chain_key: Option<String>,
 ) -> Result<RpcTestResult, String> {
-    println!("[RPC测试] 开始测试RPC连接: {}", rpc_url);
+    println!("[RPC测试] 开始测试RPC连接: {}, 链: {:?}", rpc_url, chain_key);
     let start_time = std::time::Instant::now();
     
+    let is_solana = chain_key.as_deref().map(|k| k.to_lowercase().contains("sol")).unwrap_or(false);
+    println!("[RPC测试] 链标识: {:?}, 是否为Solana: {}", chain_key, is_solana);
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .http1_only() // 强制使用 HTTP/1.1，模拟 Python requests 行为
         .build()
         .map_err(|e| {
             let error_msg = format!("创建 HTTP 客户端失败: {}", e);
@@ -133,37 +139,66 @@ pub async fn test_rpc_connection(
             error_msg
         })?;
     
-    let payload = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "eth_blockNumber",
-        "params": [],
-        "id": 1
-    });
+    let payload = if is_solana {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getVersion",
+            "params": [],
+            "id": 1
+        })
+    } else {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "eth_blockNumber",
+            "params": [],
+            "id": 1
+        })
+    };
     
     println!("[RPC测试] 发送请求到: {}, 请求体: {}", rpc_url, payload);
     
-    let success = match client.post(&rpc_url)
-        .json(&payload)
-        .send()
-        .await
+    let request_builder = client.post(&rpc_url)
+        .header("Content-Type", "application/json") // 显式设置 Content-Type
+        .json(&payload);
+
+    // 移除 Origin 和 Referer 头，因为部分节点可能会校验，而测试显示仅 User-Agent 即可通过（Test Case 2）
+    // if is_solana {
+    //     request_builder = request_builder
+    //         .header("Origin", "https://explorer.solana.com")
+    //         .header("Referer", "https://explorer.solana.com/");
+    // }
+
+    let success = match request_builder.send().await
     {
         Ok(response) => {
             println!("[RPC测试] 收到响应，状态码: {}", response.status());
             if response.status().is_success() {
-                match response.json::<serde_json::Value>().await {
-                    Ok(json) => {
-                        println!("[RPC测试] 响应JSON: {}", json);
-                        let has_result = json.get("result").is_some();
-                        println!("[RPC测试] 是否包含result字段: {}", has_result);
-                        has_result
+                match response.text().await { // 先获取文本，方便调试
+                    Ok(text) => {
+                        println!("[RPC测试] 响应文本: {}", text);
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(json) => {
+                                let has_result = json.get("result").is_some();
+                                println!("[RPC测试] 是否包含result字段: {}", has_result);
+                                has_result
+                            }
+                            Err(e) => {
+                                println!("[RPC测试] 解析JSON失败: {}", e);
+                                false
+                            }
+                        }
                     }
                     Err(e) => {
-                        println!("[RPC测试] 解析JSON失败: {}", e);
+                        println!("[RPC测试] 读取响应文本失败: {}", e);
                         false
                     }
                 }
             } else {
                 println!("[RPC测试] HTTP状态码不成功: {}", response.status());
+                // 尝试打印错误响应体
+                if let Ok(text) = response.text().await {
+                     println!("[RPC测试] 错误响应体: {}", text);
+                }
                 false
             }
         }

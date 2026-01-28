@@ -29,7 +29,9 @@ export default defineConfig({
             'pinia',
             '@arco-design/web-vue',
             'primevue',
-            '@primevue/themes'
+            '@primevue/themes',
+            '@solana/web3.js',
+            'bs58'
         ],
         // 依赖预构建后的缓存目录
         cacheDir: 'node_modules/.vite-cache',

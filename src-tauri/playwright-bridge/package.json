@@ -1,0 +1,13 @@
+{
+  "name": "wallets-tool-playwright-bridge",
+  "version": "1.0.0",
+  "description": "Playwright automation bridge for WalletsTool",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "fs-extra": "^11.2.0"
+  }
+}

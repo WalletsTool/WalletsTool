@@ -84,7 +84,7 @@ impl SecureMemory {
                 .map_err(|_| "Decryption failed".to_string())?;
             
             let mut hasher = Sha256::new();
-            hasher.update(&plaintext);
+            hasher.update(plaintext);
             let hash_calc: [u8; 32] = hasher.finalize().into();
             
             if hash_calc != self.hash {

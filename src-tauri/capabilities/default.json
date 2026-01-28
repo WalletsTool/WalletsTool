@@ -30,6 +30,9 @@
     "core:app:allow-name",
     "core:app:allow-tauri-version",
     "shell:allow-open",
-    "dialog:allow-save"
+    "shell:allow-execute",
+    "shell:allow-spawn",
+    "dialog:allow-save",
+    "dialog:allow-open"
   ]
 }

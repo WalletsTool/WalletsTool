@@ -78,6 +78,42 @@ jobs:
           }
           "
 
+      - name: Cache vcpkg and OpenSSL (Windows)
+        if: runner.os == 'Windows'
+        id: cache-vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg
+            ~/.vcpkg
+          key: vcpkg-openssl-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            vcpkg-openssl-${{ runner.os }}-
+
+      - name: Setup vcpkg (Windows)
+        if: runner.os == 'Windows' && steps.cache-vcpkg.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git
+          cd vcpkg
+          .\bootstrap-vcpkg.bat
+          .\vcpkg integrate install
+        shell: pwsh
+
+      - name: Install OpenSSL (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd vcpkg
+          .\vcpkg install openssl:x64-windows-static-md --triplet x64-windows-static-md
+        shell: pwsh
+
+      - name: Set VCPKG_ROOT (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "OPENSSL_LIB_DIR=${{ github.workspace }}/vcpkg/installed/x64-windows-static-md/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "OPENSSL_INCLUDE_DIR=${{ github.workspace }}/vcpkg/installed/x64-windows-static-md/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        shell: pwsh
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -90,15 +126,25 @@ jobs:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
           releaseName: 'Wallets Tool ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
-            ## 🎉 新版本发布 v0.3.11
+            ## 🎉 新版本发布 v0.4.4
             
             ### 📦 安装包下载
             - **Windows**: 下载 `.exe` 文件
             
             ### 🔄 更新说明
-            ### ♻️ Refactoring | 重构
+            ### Other | 其他
             
-            - **ui:** 优化表格列宽与侧边栏布局，增强私钥安全复制功能
+            - style: 调整UI样式并添加代码警告注释
+            
+
+            
+
+            
+
+            
+
+            
+
             
 
             

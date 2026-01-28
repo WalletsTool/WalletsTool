@@ -138,12 +138,12 @@ fn load_database_config() -> DatabaseConfig {
                             }
                         }
                         Err(e) => {
-                            eprintln!("解析 {} 失败: {}", path, e);
+                            eprintln!("解析 {path} 失败: {e}");
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("读取 {} 失败: {}", path, e);
+                    eprintln!("读取 {path} 失败: {e}");
                 }
             }
         }
@@ -178,6 +178,39 @@ impl DatabaseManager {
     
 }
 
+/// 执行数据库迁移
+async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+    // 检查chains表是否包含ecosystem列
+    let ecosystem_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('chains') WHERE name = 'ecosystem'"
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if ecosystem_exists == 0 {
+        println!("正在迁移数据库: 添加 ecosystem 列到 chains 表");
+        sqlx::query("ALTER TABLE chains ADD COLUMN ecosystem TEXT NOT NULL DEFAULT 'evm'")
+            .execute(pool)
+            .await?;
+        println!("迁移完成: ecosystem 列已添加");
+    }
+
+    // 数据修复：将 Solana 链的 ecosystem 设置为 solana
+    // 即使列已存在，也执行此修复以确保历史数据正确
+    sqlx::query("UPDATE chains SET ecosystem = 'solana' WHERE chain_key IN ('sol', 'solana') AND ecosystem != 'solana'")
+        .execute(pool)
+        .await
+        .ok(); // 忽略错误
+
+    // 数据修复：确保没有空值
+    sqlx::query("UPDATE chains SET ecosystem = 'evm' WHERE (ecosystem IS NULL OR ecosystem = '')")
+        .execute(pool)
+        .await
+        .ok();
+
+    Ok(())
+}
+
 /// 全局数据库管理器实例
 static DATABASE_MANAGER: OnceLock<DatabaseManager> = OnceLock::new();
 
@@ -187,18 +220,24 @@ pub async fn init_database() -> Result<()> {
     let enable_debug = config.enable_debug_log.unwrap_or(false);
     
     if enable_debug {
-        println!("使用的数据库配置: {:?}", config);
+        println!("使用的数据库配置: {config:?}");
     }
 
     // 确保配置目录存在
     std::fs::create_dir_all("data")?;
 
     let database_path = "data/wallets_tool.db";
-    let database_url = format!("sqlite://{}", database_path);
+    let database_url = format!("sqlite://{database_path}");
     let db_exists = Path::new(&database_path).exists();
     
     // 始终创建数据库管理器
     let manager = DatabaseManager::new(&database_url).await?;
+    
+    // 执行自动迁移
+    if let Err(e) = run_migrations(manager.get_pool()).await {
+        eprintln!("数据库迁移失败: {e}");
+    }
+
     DATABASE_MANAGER.set(manager)
         .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
 
@@ -206,7 +245,7 @@ pub async fn init_database() -> Result<()> {
     if config.force_init.unwrap_or(false) || !db_exists {
         if enable_debug {
             println!("开始初始化数据库...");
-            println!("数据库路径: {}", database_path);
+            println!("数据库路径: {database_path}");
         }
 
         // 使用自定义路径加载初始 SQL 文件
@@ -229,7 +268,7 @@ pub async fn init_database() -> Result<()> {
             Err(e) => {
                 // 如果整体执行失败，尝试逐条执行
                 if enable_debug {
-                    println!("整体执行失败，尝试逐条执行: {}", e);
+                    println!("整体执行失败，尝试逐条执行: {e}");
                 }
                 
                 let mut executed_count = 0;
@@ -245,14 +284,14 @@ pub async fn init_database() -> Result<()> {
                             Ok(_) => {
                                 executed_count += 1;
                                 if enable_debug {
-                                    println!("执行 SQL 语句成功: {} 个", executed_count);
+                                    println!("执行 SQL 语句成功: {executed_count} 个");
                                 }
                             }
                             Err(e) => {
                                 // 忽略重复插入错误（UNIQUE constraint failed）
                                 if !e.to_string().contains("UNIQUE constraint failed") && !e.to_string().contains("already exists") {
-                                    eprintln!("执行 SQL 语句错误: {}", e);
-                                    eprintln!("错误语句: {}", statement);
+                                    eprintln!("执行 SQL 语句错误: {e}");
+                                    eprintln!("错误语句: {statement}");
                                     return Err(e.into());
                                 } else if enable_debug {
                                     println!("忽略重复创建/插入错误");
@@ -262,7 +301,7 @@ pub async fn init_database() -> Result<()> {
                     }
                 }
                 if enable_debug {
-                    println!("逐条执行完成，共执行 {} 个 SQL 语句", executed_count);
+                    println!("逐条执行完成，共执行 {executed_count} 个 SQL 语句");
                 }
             }
         }
@@ -293,7 +332,7 @@ pub async fn reload_database() -> Result<String, String> {
     sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(pool)
         .await
-        .map_err(|e| format!("禁用外键约束失败: {}", e))?;
+        .map_err(|e| format!("禁用外键约束失败: {e}"))?;
     
     // 获取所有表名
     let tables: Vec<String> = sqlx::query_scalar(
@@ -301,18 +340,18 @@ pub async fn reload_database() -> Result<String, String> {
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| format!("获取表名失败: {}", e))?;
+    .map_err(|e| format!("获取表名失败: {e}"))?;
     
     // 删除所有表（包括表结构）
     for table in &tables {
-        let drop_sql = format!("DROP TABLE IF EXISTS {}", table);
+        let drop_sql = format!("DROP TABLE IF EXISTS {table}");
         sqlx::query(&drop_sql)
             .execute(pool)
             .await
-            .map_err(|e| format!("删除表 {} 失败: {}", table, e))?;
+            .map_err(|e| format!("删除表 {table} 失败: {e}"))?;
         
         if enable_debug {
-            println!("已删除表: {}", table);
+            println!("已删除表: {table}");
         }
     }
     
@@ -329,7 +368,7 @@ pub async fn reload_database() -> Result<String, String> {
     // 从init.sql重新导入数据
     let init_sql_path = config.init_sql_path.unwrap_or_else(|| "data/init.sql".to_string());
     let init_sql = std::fs::read_to_string(&init_sql_path)
-        .map_err(|e| format!("读取init.sql文件失败: {}", e))?;
+        .map_err(|e| format!("读取init.sql文件失败: {e}"))?;
     
     if enable_debug {
         println!("已加载 SQL 文件，大小: {} 字节", init_sql.len());
@@ -360,18 +399,18 @@ pub async fn reload_database() -> Result<String, String> {
                         Ok(_) => {
                             executed_count += 1;
                             if enable_debug {
-                                println!("执行 SQL 语句成功: {} 个", executed_count);
+                                println!("执行 SQL 语句成功: {executed_count} 个");
                             }
                         }
                         Err(e) => {
-                            eprintln!("执行 SQL 语句错误: {}", e);
-                            eprintln!("错误语句: {}", statement);
+                            eprintln!("执行 SQL 语句错误: {e}");
+                            eprintln!("错误语句: {statement}");
                             // 重新启用外键约束检查
                             sqlx::query("PRAGMA foreign_keys = ON")
                                 .execute(pool)
                                 .await
                                 .ok();
-                            return Err(format!("执行SQL语句失败: {}", e));
+                            return Err(format!("执行SQL语句失败: {e}"));
                         }
                     }
                 }
@@ -383,13 +422,13 @@ pub async fn reload_database() -> Result<String, String> {
     sqlx::query("PRAGMA foreign_keys = ON")
         .execute(pool)
         .await
-        .map_err(|e| format!("启用外键约束失败: {}", e))?;
+        .map_err(|e| format!("启用外键约束失败: {e}"))?;
     
     if enable_debug {
-        println!("数据库重新加载完成，共执行 {} 个 SQL 语句", executed_count);
+        println!("数据库重新加载完成，共执行 {executed_count} 个 SQL 语句");
     }
     
-    Ok(format!("数据库重新加载成功，共执行 {} 个 SQL 语句", executed_count))
+    Ok(format!("数据库重新加载成功，共执行 {executed_count} 个 SQL 语句"))
 }
 
 /// 检查数据库结构是否需要更新
@@ -403,21 +442,21 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     )
     .fetch_one(pool)
     .await
-    .map_err(|e| format!("检查数据库结构失败: {}", e))?;
+    .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     let tokens_table_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tokens'"
     )
     .fetch_one(pool)
     .await
-    .map_err(|e| format!("检查数据库结构失败: {}", e))?;
+    .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     let rpc_table_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='rpc_providers'"
     )
     .fetch_one(pool)
     .await
-    .map_err(|e| format!("检查数据库结构失败: {}", e))?;
+    .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     // 检查tokens表是否包含contract_type列
     let contract_type_exists: i64 = sqlx::query_scalar(
@@ -425,7 +464,7 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     )
     .fetch_one(pool)
     .await
-    .map_err(|e| format!("检查数据库结构失败: {}", e))?;
+    .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     // 检查tokens表是否包含abi列
     let abi_exists: i64 = sqlx::query_scalar(
@@ -433,7 +472,15 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     )
     .fetch_one(pool)
     .await
-    .map_err(|e| format!("检查数据库结构失败: {}", e))?;
+    .map_err(|e| format!("检查数据库结构失败: {e}"))?;
+
+    // 检查chains表是否包含ecosystem列
+    let ecosystem_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('chains') WHERE name = 'ecosystem'"
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     let schema_info = serde_json::json!({
         "db_exists": true, // 数据库连接成功意味着数据库文件存在
@@ -442,7 +489,8 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
         "rpc_table_exists": rpc_table_exists > 0,
         "contract_type_column_exists": contract_type_exists > 0,
         "abi_column_exists": abi_exists > 0,
-        "needs_migration": contract_type_exists == 0 || abi_exists == 0
+        "ecosystem_column_exists": ecosystem_exists > 0,
+        "needs_migration": contract_type_exists == 0 || abi_exists == 0 || ecosystem_exists == 0
     });
     
     Ok(schema_info)
@@ -471,7 +519,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| format!("获取表名失败: {}", e))?;
+    .map_err(|e| format!("获取表名失败: {e}"))?;
     
     // 按照外键依赖关系排序表，确保被引用的表先创建
     let mut tables = Vec::new();
@@ -498,13 +546,13 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     }
     
     if enable_debug {
-        println!("表创建顺序: {:?}", tables);
+        println!("表创建顺序: {tables:?}");
     }
     
     // 为每个表生成CREATE TABLE语句和INSERT语句
     for table in &tables {
         if enable_debug {
-            println!("正在导出表: {}", table);
+            println!("正在导出表: {table}");
         }
         
         // 获取表结构
@@ -514,17 +562,17 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
         .bind(table)
         .fetch_one(pool)
         .await
-        .map_err(|e| format!("获取表 {} 结构失败: {}", table, e))?;
+        .map_err(|e| format!("获取表 {table} 结构失败: {e}"))?;
         
-        sql_content.push_str(&format!("-- 创建{}表\n", table));
+        sql_content.push_str(&format!("-- 创建{table}表\n"));
         sql_content.push_str(&create_sql);
         sql_content.push_str(";\n\n");
         
         // 获取表数据
-        let rows = sqlx::query(&format!("SELECT * FROM {}", table))
+        let rows = sqlx::query(&format!("SELECT * FROM {table}"))
             .fetch_all(pool)
             .await
-            .map_err(|e| format!("获取表 {} 数据失败: {}", table, e))?;
+            .map_err(|e| format!("获取表 {table} 数据失败: {e}"))?;
         
         if !rows.is_empty() {
             // 获取列名
@@ -534,9 +582,9 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
             .bind(table)
             .fetch_all(pool)
             .await
-            .map_err(|e| format!("获取表 {} 列名失败: {}", table, e))?;
+            .map_err(|e| format!("获取表 {table} 列名失败: {e}"))?;
             
-            sql_content.push_str(&format!("-- 插入{}表数据\n", table));
+            sql_content.push_str(&format!("-- 插入{table}表数据\n"));
             
             for row in rows {
                 let mut values = Vec::new();
@@ -558,7 +606,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
                         Some(v) => {
                             // 转义单引号并添加引号
                             let escaped = v.replace("'", "''");
-                            values.push(format!("'{}'", escaped));
+                            values.push(format!("'{escaped}'"));
                         }
                         None => values.push("NULL".to_string()),
                     }
@@ -572,7 +620,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
                 );
                 sql_content.push_str(&insert_sql);
             }
-            sql_content.push_str("\n");
+            sql_content.push('\n');
         }
     }
     
@@ -582,7 +630,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| format!("获取索引失败: {}", e))?;
+    .map_err(|e| format!("获取索引失败: {e}"))?;
     
     if !indexes.is_empty() {
         sql_content.push_str("-- 创建索引\n");
@@ -595,7 +643,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     // 写入文件
     let init_sql_path = config.init_sql_path.unwrap_or_else(|| "data/init.sql".to_string());
     std::fs::write(&init_sql_path, &sql_content)
-        .map_err(|e| format!("写入init.sql文件失败: {}", e))?;
+        .map_err(|e| format!("写入init.sql文件失败: {e}"))?;
     
     if enable_debug {
         println!("数据库导出完成，文件大小: {} 字节", sql_content.len());

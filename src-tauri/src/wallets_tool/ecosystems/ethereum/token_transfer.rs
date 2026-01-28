@@ -77,7 +77,7 @@ impl TokenTransferUtils {
         };
         
         TransferUtils::get_gas_limit(&transfer_config, provider, wallet_address, to_address, transfer_amount).await
-            .map_err(|e| format!("获取代币合约Gas Limit失败: {}", e).into())
+            .map_err(|e| format!("获取代币合约Gas Limit失败: {e}").into())
     }
 
     pub async fn get_token_balance(
@@ -87,7 +87,7 @@ impl TokenTransferUtils {
     ) -> Result<U256, Box<dyn std::error::Error>> {
         let method_id = "70a08231";
         let address_param = format!("{:0>64}", &hex::encode(wallet_address)[2..]);
-        let data = format!("0x{}{}", method_id, address_param);
+        let data = format!("0x{method_id}{address_param}");
         
         let tx = TransactionRequest {
             to: Some(TxKind::Call(contract_address)),
@@ -104,7 +104,7 @@ impl TokenTransferUtils {
         let result_hex = hex::encode(result);
         let balance_hex = result_hex.trim_start_matches("0x");
         let balance = U256::from_str_radix(balance_hex, 16)
-            .map_err(|e| format!("解析代币余额失败: {}", e))?;
+            .map_err(|e| format!("解析代币余额失败: {e}"))?;
         
         Ok(balance)
     }
@@ -114,7 +114,7 @@ impl TokenTransferUtils {
         contract_address: Address,
     ) -> Result<(String, u8), Box<dyn std::error::Error>> {
         let decimals_method = "313ce567";
-        let decimals_data = format!("0x{}", decimals_method);
+        let decimals_data = format!("0x{decimals_method}");
         
         let tx = TransactionRequest {
             to: Some(TxKind::Call(contract_address)),
@@ -126,10 +126,10 @@ impl TokenTransferUtils {
         let decimals_str = hex::encode(decimals_result);
         let decimals_hex = decimals_str.trim_start_matches("0x");
         let decimals = u8::from_str_radix(decimals_hex, 16)
-            .map_err(|e| format!("解析代币精度失败: {}", e))?;
+            .map_err(|e| format!("解析代币精度失败: {e}"))?;
         
         let symbol_method = "95d89b41";
-        let symbol_data = format!("0x{}", symbol_method);
+        let symbol_data = format!("0x{symbol_method}");
         
         let tx = TransactionRequest {
             to: Some(TxKind::Call(contract_address)),
@@ -139,8 +139,8 @@ impl TokenTransferUtils {
         
         let symbol_result = provider.call(tx).await?;
         let symbol_hex = hex::encode(symbol_result);
-        let symbol = hex::decode(symbol_hex.trim_start_matches("0x")).map_err(|e| format!("解析代币符号失败: {}", e))?;
-        let symbol = String::from_utf8(symbol).map_err(|e| format!("代币符号转换失败: {}", e))?;
+        let symbol = hex::decode(symbol_hex.trim_start_matches("0x")).map_err(|e| format!("解析代币符号失败: {e}"))?;
+        let symbol = String::from_utf8(symbol).map_err(|e| format!("代币符号转换失败: {e}"))?;
         
         Ok((symbol, decimals))
     }
@@ -186,8 +186,8 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         };
         private_key.parse::<PrivateKeySigner>().map_err(|e| e.to_string())
     })
-    .map_err(|e| format!("私钥解密失败: {}", e))?
-    .map_err(|e| format!("私钥格式错误: {}", e))?;
+    .map_err(|e| format!("私钥解密失败: {e}"))?
+    .map_err(|e| format!("私钥格式错误: {e}"))?;
     
     let chain_id = match ProviderUtils::get_chain_id(&config.chain).await {
         Ok(id) => id,
@@ -207,25 +207,25 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         return Err("目标地址不能为空".into());
     }
     let to_address: Address = item.to_addr.parse()
-        .map_err(|e| format!("目标地址格式错误: {}", e))?;
+        .map_err(|e| format!("目标地址格式错误: {e}"))?;
     
     let contract_address: Address = config.contract_address.parse()
-        .map_err(|e| format!("合约地址格式错误: {}", e))?;
+        .map_err(|e| format!("合约地址格式错误: {e}"))?;
     
     let rpc_url = if let Some(rpc_config) = get_rpc_config(&config.chain).await {
         match rpc_config.get_random_rpc() {
             Ok(url) => url.to_string(),
-            Err(e) => return Err(format!("获取RPC地址失败: {}", e).into()),
+            Err(e) => return Err(format!("获取RPC地址失败: {e}").into()),
         }
     } else {
         return Err(format!("无法获取链 '{}' 的RPC配置", config.chain).into());
     };
     
     let provider = create_provider(&config.chain, config.window_id.as_deref()).await
-        .map_err(|e| format!("获取RPC提供商失败: {}", e))?;
+        .map_err(|e| format!("获取RPC提供商失败: {e}"))?;
     
     let balance = TokenTransferUtils::get_token_balance(&provider, contract_address, wallet_address).await
-        .map_err(|e| format!("获取代币余额失败 (RPC: {}): {}", rpc_url, e))?;
+        .map_err(|e| format!("获取代币余额失败 (RPC: {rpc_url}): {e}"))?;
     
     let decimals = if let Ok((_, d)) = TokenTransferUtils::get_token_info(&provider, contract_address).await {
         d
@@ -235,7 +235,7 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     let balance_wei = u256_to_f64(balance);
     let balance_tokens = balance_wei / 10f64.powi(decimals as i32);
-    println!("序号：{}, 当前代币余额为: {} ({} wei)", index, balance_tokens, balance);
+    println!("序号：{index}, 当前代币余额为: {balance_tokens} ({balance} wei)");
     
     let gas_price = TransferUtils::get_gas_price(
         &TransferConfig {
@@ -259,7 +259,7 @@ async fn token_transfer_internal<R: tauri::Runtime>(
         },
         provider.clone()
     ).await
-        .map_err(|e| format!("获取Gas Price失败 (RPC: {}): {}", rpc_url, e))?;
+        .map_err(|e| format!("获取Gas Price失败 (RPC: {rpc_url}): {e}"))?;
     
     if gas_price.is_zero() {
         return Err("获取到的 gas price 为0".into());
@@ -327,7 +327,7 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     let method_id = "a9059cbb";
     let to_param = format!("{:0>64}", &hex::encode(to_address)[2..]);
     let amount_param = format!("{:0>64}", format!("{:x}", transfer_amount));
-    let data = format!("0x{}{}{}", method_id, to_param, amount_param);
+    let data = format!("0x{method_id}{to_param}{amount_param}");
     
     let tx = TransactionRequest {
         to: Some(TxKind::Call(contract_address)),
@@ -345,12 +345,12 @@ async fn token_transfer_internal<R: tauri::Runtime>(
     
     let signer_provider = create_signer_provider(&config.chain, config.window_id.as_deref(), &signer).await?;
     let pending_tx = signer_provider.send_transaction(tx).await
-        .map_err(|e| format!("发送交易失败: {}", e))?;
+        .map_err(|e| format!("发送交易失败: {e}"))?;
     
     let tx_hash = *pending_tx.tx_hash();
-    let tx_hash_str = format!("{:?}", tx_hash);
+    let tx_hash_str = format!("{tx_hash:?}");
     
-    println!("序号：{}, 交易 hash 为：{:?}", index, tx_hash);
+    println!("序号：{index}, 交易 hash 为：{tx_hash:?}");
     
     let _ = app_handle.emit("transfer_status_update", serde_json::json!({
         "index": index - 1,
@@ -368,12 +368,12 @@ pub async fn query_token_balance(
     address: String,
 ) -> Result<String, String> {
     let provider = create_provider(&chain, None).await
-        .map_err(|e| format!("获取RPC提供商失败: {}", e))?;
+        .map_err(|e| format!("获取RPC提供商失败: {e}"))?;
     
     let contract_addr: Address = contract_address.parse()
-        .map_err(|e| format!("合约地址格式错误: {}", e))?;
+        .map_err(|e| format!("合约地址格式错误: {e}"))?;
     let wallet_addr: Address = address.parse()
-        .map_err(|e| format!("钱包地址格式错误: {}", e))?;
+        .map_err(|e| format!("钱包地址格式错误: {e}"))?;
     
     let balance = TokenTransferUtils::get_token_balance(&provider, contract_addr, wallet_addr).await
         .map_err(|e| e.to_string())?;
@@ -386,7 +386,7 @@ pub async fn query_token_balance(
     
     let balance_wei = u256_to_f64(balance);
     let balance_tokens = balance_wei / 10f64.powi(decimals as i32);
-    Ok(format!("{:.6}", balance_tokens))
+    Ok(format!("{balance_tokens:.6}"))
 }
 
 #[tauri::command]
@@ -395,16 +395,16 @@ pub async fn get_token_info(
     contract_address: String,
 ) -> Result<TokenInfo, String> {
     let provider = create_provider(&chain, None).await
-        .map_err(|e| format!("获取RPC提供商失败: {}", e))?;
+        .map_err(|e| format!("获取RPC提供商失败: {e}"))?;
     
     let contract_addr: Address = contract_address.parse()
-        .map_err(|e| format!("合约地址格式错误: {}", e))?;
+        .map_err(|e| format!("合约地址格式错误: {e}"))?;
     
     let (symbol, decimals) = TokenTransferUtils::get_token_info(&provider, contract_addr).await
         .map_err(|e| e.to_string())?;
     
     let wallet_address = "0x0000000000000000000000000000000000000000".parse::<Address>()
-        .map_err(|e| format!("地址解析错误: {}", e))?;
+        .map_err(|e| format!("地址解析错误: {e}"))?;
     
     let balance = TokenTransferUtils::get_token_balance(&provider, contract_addr, wallet_address).await
         .map_err(|e| e.to_string())?;
@@ -415,7 +415,7 @@ pub async fn get_token_info(
     Ok(TokenInfo {
         symbol,
         decimals,
-        balance: format!("{:.6}", balance_tokens),
+        balance: format!("{balance_tokens:.6}"),
     })
 }
 
@@ -475,12 +475,12 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
         };
         private_key.parse::<PrivateKeySigner>().map_err(|e| e.to_string())
     })
-    .map_err(|e| format!("私钥解密失败: {}", e))?
-    .map_err(|e| format!("私钥格式错误: {}", e))?;
+    .map_err(|e| format!("私钥解密失败: {e}"))?
+    .map_err(|e| format!("私钥格式错误: {e}"))?;
     
     // 复用 Provider 逻辑
     let provider = create_provider(&config.chain, config.window_id.as_deref()).await
-        .map_err(|e| format!("获取RPC提供商失败: {}", e))?;
+        .map_err(|e| format!("获取RPC提供商失败: {e}"))?;
 
     let chain_id = match ProviderUtils::get_chain_id(&config.chain).await {
         Ok(id) => id,
@@ -505,10 +505,10 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
         return Err("目标地址不能为空".into());
     }
     let to_address: Address = item.to_addr.parse()
-        .map_err(|e| format!("目标地址格式错误: {}", e))?;
+        .map_err(|e| format!("目标地址格式错误: {e}"))?;
     
     let contract_address: Address = config.contract_address.parse()
-        .map_err(|e| format!("代币合约地址格式错误: {}", e))?;
+        .map_err(|e| format!("代币合约地址格式错误: {e}"))?;
     
     // 检查停止状态
     if !window_id.is_empty() && get_stop_flag(window_id) {
@@ -516,10 +516,10 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     }
 
     let (_symbol, decimals) = TokenTransferUtils::get_token_info(&provider, contract_address).await
-        .map_err(|e| format!("获取代币信息失败: {}", e))?;
+        .map_err(|e| format!("获取代币信息失败: {e}"))?;
     
     let balance = TokenTransferUtils::get_token_balance(&provider, contract_address, wallet_address).await
-        .map_err(|e| format!("获取钱包代币余额失败: {}", e))?;
+        .map_err(|e| format!("获取钱包代币余额失败: {e}"))?;
     
     let balance_wei = u256_to_f64(balance);
 
@@ -547,7 +547,7 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
         error_count_limit: config.error_count_limit,
         window_id: config.window_id.clone(),
     }, provider.clone()).await
-        .map_err(|e| format!("获取Gas Price失败: {}", e))?;
+        .map_err(|e| format!("获取Gas Price失败: {e}"))?;
         
     if gas_price.is_zero() {
         return Err("获取到的 gas price 为0".into());
@@ -617,7 +617,7 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
     let method_id = "a9059cbb";
     let to_param = format!("{:0>64}", &hex::encode(to_address)[2..]);
     let amount_param = format!("{:0>64}", format!("{:x}", transfer_amount));
-    let data = format!("0x{}{}{}", method_id, to_param, amount_param);
+    let data = format!("0x{method_id}{to_param}{amount_param}");
     
     let tx = TransactionRequest {
         to: Some(TxKind::Call(contract_address)),
@@ -635,12 +635,12 @@ async fn token_transfer_fast_internal<R: tauri::Runtime>(
 
     let signer_provider = create_signer_provider(&config.chain, config.window_id.as_deref(), &signer).await?;
     let pending_tx = signer_provider.send_transaction(tx).await
-        .map_err(|e| format!("发送交易失败: {}", e))?;
+        .map_err(|e| format!("发送交易失败: {e}"))?;
     
     let tx_hash = *pending_tx.tx_hash();
-    let tx_hash_str = format!("{:?}", tx_hash);
+    let tx_hash_str = format!("{tx_hash:?}");
     
-    println!("[狂暴模式] 序号：{}, 交易已提交，hash: {}", index, tx_hash_str);
+    println!("[狂暴模式] 序号：{index}, 交易已提交，hash: {tx_hash_str}");
     
     let _ = app_handle.emit("transfer_status_update", serde_json::json!({
         "index": index - 1,

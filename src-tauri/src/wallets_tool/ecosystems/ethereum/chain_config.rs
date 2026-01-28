@@ -24,12 +24,13 @@ pub async fn get_chain_list() -> Vec<Value> {
                     "scan_api": chain.scan_api,
                     "verify_api": chain.verify_api,
                     "check_verify_api": chain.check_verify_api,
+                    "ecosystem": chain.ecosystem,
                     "rpc_urls": chain.rpc_urls
                 })
             }).collect()
         },
         Err(e) => {
-            eprintln!("获取链列表失败: {:?}", e);
+            eprintln!("获取链列表失败: {e:?}");
             Vec::new()
         }
     }
@@ -38,6 +39,9 @@ pub async fn get_chain_list() -> Vec<Value> {
 #[command]
 pub async fn get_coin_list(chain_key: &str) -> Result<Vec<Value>, String> {
     let db_manager = get_database_manager();
+    
+    // Check if we need to fetch chain info for fallback
+    let chain_service = ChainService::new(db_manager.get_pool());
     
     // 直接查询Token结构体以获取symbol字段
     match sqlx::query_as::<_, crate::database::models::Token>(
@@ -52,7 +56,9 @@ pub async fn get_coin_list(chain_key: &str) -> Result<Vec<Value>, String> {
     .fetch_all(db_manager.get_pool())
     .await {
         Ok(tokens) => {
-            Ok(tokens.into_iter().map(|token| {
+            let has_base = tokens.iter().any(|t| t.token_type == "base");
+            
+            let mut json_list: Vec<Value> = tokens.into_iter().map(|token| {
                 json!({
                     "key": token.token_key,
                     "label": token.token_name,
@@ -63,10 +69,30 @@ pub async fn get_coin_list(chain_key: &str) -> Result<Vec<Value>, String> {
                     "contract_type": token.contract_type,
                     "abi": token.abi
                 })
-            }).collect())
+            }).collect();
+
+            // If base token is missing, synthesize it from chain info
+            if !has_base {
+                if let Ok(Some(chain)) = chain_service.get_chain_by_key(chain_key).await {
+                    let base_token_json = json!({
+                        "key": format!("{}_base", chain_key),
+                        "label": chain.native_currency_name,
+                        "symbol": chain.native_currency_symbol,
+                        "contract_address": Option::<String>::None,
+                        "decimals": chain.native_currency_decimals,
+                        "coin_type": "base",
+                        "contract_type": Option::<String>::None,
+                        "abi": Option::<String>::None
+                    });
+                    // Insert at the beginning
+                    json_list.insert(0, base_token_json);
+                }
+            }
+
+            Ok(json_list)
         },
         Err(e) => {
-            eprintln!("获取代币列表失败: {:?}", e);
+            eprintln!("获取代币列表失败: {e:?}");
             Ok(Vec::new())
         }
     }
@@ -75,7 +101,7 @@ pub async fn get_coin_list(chain_key: &str) -> Result<Vec<Value>, String> {
 #[command]
 pub async fn add_coin(chain: &str, obj_json: &str) -> Result<(), String> {
     let coin_data: Value = serde_json::from_str(obj_json)
-        .map_err(|e| format!("解析JSON失败: {}", e))?;
+        .map_err(|e| format!("解析JSON失败: {e}"))?;
     
     let request = CreateTokenRequest {
         chain_key: chain.to_string(),
@@ -93,7 +119,7 @@ pub async fn add_coin(chain: &str, obj_json: &str) -> Result<(), String> {
     let chain_service = ChainService::new(db_manager.get_pool());
     
     chain_service.add_token(request).await
-        .map_err(|e| format!("添加代币失败: {}", e))?;
+        .map_err(|e| format!("添加代币失败: {e}"))?;
     
     Ok(())
 }
@@ -104,7 +130,7 @@ pub async fn remove_coin(chain: &str, key: &str) -> Result<(), String> {
     let chain_service = ChainService::new(db_manager.get_pool());
     
     chain_service.remove_token(chain, key).await
-        .map_err(|e| format!("删除代币失败: {}", e))?;
+        .map_err(|e| format!("删除代币失败: {e}"))?;
     
     Ok(())
 }
@@ -112,7 +138,7 @@ pub async fn remove_coin(chain: &str, key: &str) -> Result<(), String> {
 #[command]
 pub async fn update_coin(chain: &str, key: &str, obj_json: &str) -> Result<(), String> {
     let coin_data: Value = serde_json::from_str(obj_json)
-        .map_err(|e| format!("解析JSON失败: {}", e))?;
+        .map_err(|e| format!("解析JSON失败: {e}"))?;
     
     let request = UpdateTokenRequest {
         token_name: coin_data["name"].as_str().unwrap_or("").to_string(),
@@ -128,7 +154,7 @@ pub async fn update_coin(chain: &str, key: &str, obj_json: &str) -> Result<(), S
     let chain_service = ChainService::new(db_manager.get_pool());
     
     chain_service.update_token(chain, key, request).await
-        .map_err(|e| format!("更新代币失败: {}", e))?;
+        .map_err(|e| format!("更新代币失败: {e}"))?;
     
     Ok(())
 }
@@ -148,7 +174,7 @@ pub async fn update_token_abi(chain: &str, token_key: &str, abi: Option<String>)
     let chain_service = ChainService::new(db_manager.get_pool());
     
     chain_service.update_token_abi(chain, token_key, abi).await
-        .map_err(|e| format!("更新代币ABI失败: {}", e))?;
+        .map_err(|e| format!("更新代币ABI失败: {e}"))?;
     
     Ok(())
 }
@@ -157,13 +183,13 @@ pub async fn update_token_abi(chain: &str, token_key: &str, abi: Option<String>)
 #[command]
 pub async fn add_chain(request_json: &str) -> Result<i64, String> {
     let request: CreateChainRequest = serde_json::from_str(request_json)
-        .map_err(|e| format!("解析请求JSON失败: {}", e))?;
+        .map_err(|e| format!("解析请求JSON失败: {e}"))?;
     
     let db_manager = get_database_manager();
     let chain_service = ChainService::new(db_manager.get_pool());
     
     chain_service.add_chain(request).await
-        .map_err(|e| format!("添加链失败: {}", e))
+        .map_err(|e| format!("添加链失败: {e}"))
 }
 
 /// 删除链
@@ -173,7 +199,7 @@ pub async fn remove_chain(chain_key: &str) -> Result<(), String> {
     let chain_service = ChainService::new(db_manager.get_pool());
     
     chain_service.remove_chain(chain_key).await
-        .map_err(|e| format!("删除链失败: {}", e))
+        .map_err(|e| format!("删除链失败: {e}"))
 }
 
 /// 获取链的详细信息（用于编辑）
@@ -185,7 +211,7 @@ pub async fn get_chain_detail(chain_key: &str) -> Result<Option<Value>, String> 
     match chain_service.get_chain_by_key(chain_key).await {
         Ok(Some(chain)) => {
             let rpc_urls = chain_service.get_chain_rpc_urls(chain.id).await
-                .map_err(|e| format!("获取RPC URLs失败: {}", e))?;
+                .map_err(|e| format!("获取RPC URLs失败: {e}"))?;
             
             Ok(Some(json!({
                 "id": chain.id,
@@ -204,7 +230,7 @@ pub async fn get_chain_detail(chain_key: &str) -> Result<Option<Value>, String> 
             })))
         },
         Ok(None) => Ok(None),
-        Err(e) => Err(format!("获取链详情失败: {}", e))
+        Err(e) => Err(format!("获取链详情失败: {e}"))
     }
 }
 
@@ -212,11 +238,11 @@ pub async fn get_chain_detail(chain_key: &str) -> Result<Option<Value>, String> 
 #[command]
 pub async fn update_chain(chain_key: &str, request_json: &str) -> Result<(), String> {
     let request: UpdateChainRequest = serde_json::from_str(request_json)
-        .map_err(|e| format!("解析请求JSON失败: {}", e))?;
+        .map_err(|e| format!("解析请求JSON失败: {e}"))?;
     
     let db_manager = get_database_manager();
     let chain_service = ChainService::new(db_manager.get_pool());
     
     chain_service.update_chain(chain_key, request).await
-        .map_err(|e| format!("更新链失败: {}", e))
+        .map_err(|e| format!("更新链失败: {e}"))
 }

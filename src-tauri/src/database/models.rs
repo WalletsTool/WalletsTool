@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 /// 链配置模型
@@ -8,11 +8,12 @@ pub struct Chain {
     pub id: i64,
     pub chain_key: String,
     pub chain_name: String,
+    pub ecosystem: String,
     pub chain_id: i64,
     pub native_currency_symbol: String,
     pub native_currency_name: String,
     pub native_currency_decimals: i32,
-    pub pic_data: Option<String>,  // Base64编码的图标数据
+    pub pic_data: Option<String>, // Base64编码的图标数据
     pub scan_url: Option<String>,
     pub scan_api: Option<String>,
     pub verify_api: Option<String>,
@@ -29,7 +30,7 @@ pub struct RpcProvider {
     pub chain_id: i64,
     pub rpc_url: String,
     pub is_active: bool,
-    pub priority: i32,  // 优先级，数值越小优先级越高
+    pub priority: i32, // 优先级，数值越小优先级越高
     pub last_success_at: Option<DateTime<Utc>>,
     pub failure_count: i32,
     pub avg_response_time_ms: Option<i32>,
@@ -47,26 +48,25 @@ pub struct Token {
     pub symbol: String,
     pub contract_address: Option<String>,
     pub decimals: i32,
-    pub token_type: String, // "base" or "token"
+    pub token_type: String,            // "base" or "token"
     pub contract_type: Option<String>, // 合约类型
-    pub abi: Option<String>, // 智能合约ABI JSON字符串
+    pub abi: Option<String>,           // 智能合约ABI JSON字符串
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
-
-
 
 /// 创建链的请求模型
 #[derive(Debug, Deserialize)]
 pub struct CreateChainRequest {
     pub chain_key: String,
     pub chain_name: String,
+    pub ecosystem: String,
     pub chain_id: i64,
     pub native_currency_symbol: String,
     pub native_currency_name: String,
     pub native_currency_decimals: i32,
-    pub pic_data: Option<String>,  // Base64编码的图标数据
+    pub pic_data: Option<String>, // Base64编码的图标数据
     pub scan_url: Option<String>,
     pub scan_api: Option<String>,
     pub verify_api: Option<String>,
@@ -78,11 +78,12 @@ pub struct CreateChainRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateChainRequest {
     pub chain_name: String,
+    pub ecosystem: String,
     pub chain_id: i64,
     pub native_currency_symbol: String,
     pub native_currency_name: String,
     pub native_currency_decimals: i32,
-    pub pic_data: Option<String>,  // Base64编码的图标数据
+    pub pic_data: Option<String>, // Base64编码的图标数据
     pub scan_url: Option<String>,
     pub scan_api: Option<String>,
     pub verify_api: Option<String>,
@@ -112,7 +113,7 @@ pub struct CreateTokenRequest {
     pub decimals: i32,
     pub token_type: String,
     pub contract_type: Option<String>, // 合约类型
-    pub abi: Option<String>, // 智能合约ABI JSON字符串
+    pub abi: Option<String>,           // 智能合约ABI JSON字符串
 }
 
 /// 更新代币的请求模型
@@ -124,7 +125,7 @@ pub struct UpdateTokenRequest {
     pub decimals: i32,
     pub token_type: String,
     pub contract_type: Option<String>, // 合约类型
-    pub abi: Option<String>, // 智能合约ABI JSON字符串
+    pub abi: Option<String>,           // 智能合约ABI JSON字符串
 }
 
 /// 简化的链配置（用于API返回）
@@ -132,6 +133,7 @@ pub struct UpdateTokenRequest {
 pub struct ChainInfo {
     pub key: String,
     pub chain: String,
+    pub ecosystem: String,
     pub chain_id: i64,
     pub symbol: String,
     pub currency_name: String,

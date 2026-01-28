@@ -30,7 +30,7 @@ impl<'a> RpcService<'a> {
         .bind(chain_key)
         .fetch_optional(self.pool)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("没有可用的RPC提供商: {}", chain_key))?;
+        .ok_or_else(|| anyhow::anyhow!("没有可用的RPC提供商: {chain_key}"))?;
 
         Ok(row.get::<String, _>("rpc_url"))
     }
@@ -51,7 +51,7 @@ impl<'a> RpcService<'a> {
         .await?;
 
         if rows.is_empty() {
-            return Err(anyhow::anyhow!("没有可用的RPC提供商: {}", chain_key));
+            return Err(anyhow::anyhow!("没有可用的RPC提供商: {chain_key}"));
         }
 
         let rpc_urls: Vec<String> = rows.into_iter().map(|row| {

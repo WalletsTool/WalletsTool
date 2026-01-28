@@ -8,7 +8,7 @@ use sqlx;
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 // 下载文件到指定路径
 #[command]
-pub fn download_file(_url: &str, _file_path: &Path) -> () {
+pub fn download_file(_url: &str, _file_path: &Path) {
     // let client = ClientBuilder::new().build().unwrap();
     // // 请求文件
     // let response = client.send(
@@ -38,7 +38,7 @@ pub async fn save_chain_icon(
     
     // 检查链是否存在
     let chain = chain_service.get_chain_by_key(&chain_key).await
-        .map_err(|e| format!("获取链信息失败: {}", e))?;
+        .map_err(|e| format!("获取链信息失败: {e}"))?;
     
     if let Some(chain) = chain {
         // 链已存在，更新图标数据
@@ -51,12 +51,12 @@ pub async fn save_chain_icon(
         .bind(chain.id)
         .execute(chain_service.get_pool())
         .await
-        .map_err(|e| format!("更新图标数据失败: {}", e))?;
+        .map_err(|e| format!("更新图标数据失败: {e}"))?;
         
-        println!("图标数据更新成功: {} -> {}", chain_key, file_name);
+        println!("图标数据更新成功: {chain_key} -> {file_name}");
     } else {
         // 链不存在，这是新增链的情况，直接返回base64数据供前端使用
-        println!("为新增链准备图标数据: {} -> {}", chain_key, file_name);
+        println!("为新增链准备图标数据: {chain_key} -> {file_name}");
     }
     
     Ok(base64_data)
@@ -69,7 +69,7 @@ pub async fn get_chain_icon(
     chain_service: State<'_, ChainService<'_>>
 ) -> Result<Option<String>, String> {
     let chain = chain_service.get_chain_by_key(&chain_key).await
-        .map_err(|e| format!("获取链信息失败: {}", e))?;
+        .map_err(|e| format!("获取链信息失败: {e}"))?;
     
     match chain {
         Some(chain) => Ok(chain.pic_data),
@@ -85,18 +85,18 @@ pub async fn read_resource_file(relative_path: String) -> Result<Vec<u8>, String
         .join(&relative_path);
 
     std::fs::read(&resource_path)
-        .map_err(|e| format!("读取资源文件失败: {}", e))
+        .map_err(|e| format!("读取资源文件失败: {e}"))
 }
 
 #[command]
 pub async fn save_file(file_path: String, content: Vec<u8>) -> Result<(), String> {
     if let Some(parent) = PathBuf::from(&file_path).parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("创建目录失败: {}", e))?;
+            .map_err(|e| format!("创建目录失败: {e}"))?;
     }
 
     std::fs::write(&file_path, content)
-        .map_err(|e| format!("保存文件失败: {}", e))?;
+        .map_err(|e| format!("保存文件失败: {e}"))?;
 
     Ok(())
 }
@@ -115,6 +115,8 @@ pub fn open_file_directory(file_path: String) {
             std::process::Command::new("explorer")
                 .args(["/select,", &file_path])
                 .spawn()
+                .unwrap()
+                .wait()
                 .unwrap();
         }
         #[cfg(target_os = "macos")]
@@ -122,6 +124,8 @@ pub fn open_file_directory(file_path: String) {
             std::process::Command::new("open")
                 .args(["-R", &file_path])
                 .spawn()
+                .unwrap()
+                .wait()
                 .unwrap();
         }
         #[cfg(target_os = "linux")]
@@ -130,6 +134,8 @@ pub fn open_file_directory(file_path: String) {
                 std::process::Command::new("xdg-open")
                     .arg(parent)
                     .spawn()
+                    .unwrap()
+                    .wait()
                     .unwrap();
             }
         }

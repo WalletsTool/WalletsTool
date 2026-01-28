@@ -362,7 +362,7 @@ onMounted(() => {
   color: #262626;
   position: relative;
   z-index: 2;
-  white-space: pre-wrap;
+  white-space: pre;
 }
 
 .content-textarea:disabled {

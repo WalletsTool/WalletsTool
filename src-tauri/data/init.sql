@@ -15,6 +15,7 @@ CREATE TABLE chains (
     scan_api TEXT,
     verify_api TEXT,
     check_verify_api TEXT,
+    ecosystem TEXT NOT NULL DEFAULT 'evm',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -314,3 +315,10 @@ CREATE INDEX idx_monitor_history_address ON monitor_history(wallet_address);
 CREATE INDEX idx_monitor_history_chain ON monitor_history(chain_key);
 CREATE INDEX idx_monitor_history_type ON monitor_history(monitor_type);
 CREATE INDEX idx_monitor_history_created_at ON monitor_history(created_at);
+
+-- 插入Solana链数据 (ID 26)
+INSERT OR IGNORE INTO chains (id, chain_key, chain_name, chain_id, native_currency_symbol, native_currency_name, native_currency_decimals, pic_data, scan_url, scan_api, verify_api, check_verify_api, is_active, created_at, updated_at) VALUES ('26', 'sol', 'Solana', '101', 'SOL', 'SOL', '9', 'sol.png', 'https://solscan.io', '', '', '', '1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+-- 插入Solana基础代币 (ID 48)
+INSERT OR IGNORE INTO tokens (id, chain_id, token_key, token_name, symbol, contract_address, decimals, token_type, contract_type, abi, is_active, created_at, updated_at) VALUES ('48', '26', 'sol_base', 'SOL', 'SOL', NULL, '9', 'base', NULL, NULL, '1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+

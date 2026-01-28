@@ -294,7 +294,8 @@ function clearAll() {
 
 // 生命周期
 onBeforeMount(async () => {
-  chainOptions.value = await invoke('get_chain_list')
+  const result = await invoke('get_chain_list')
+  chainOptions.value = (result || []).filter(item => item.ecosystem === 'evm')
   if (chainOptions.value && chainOptions.value.length > 0) {
     chainValue.value = chainOptions.value[0].key
     currentChain.value = chainOptions.value[0]
@@ -391,7 +392,7 @@ const statistics = computed(() => {
   </a-modal>
 
   <!-- 管理弹窗 -->
-  <ChainManagement ref="chainManageRef" />
+  <ChainManagement ref="chainManageRef" ecosystem-filter="evm" />
   <RpcManagement ref="rpcManageRef" :chain-value="chainValue" />
 
   <!-- 隐藏的文件输入框 -->

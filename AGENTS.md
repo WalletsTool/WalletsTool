@@ -1,150 +1,104 @@
 # WalletsTool Development Guide
 
-**Generated:** 2026-01-22
+**Generated:** 2026-01-27
 **Commit:** d1f52e9 (dev branch)
 
 ## OVERVIEW
 
-Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch import/transfer/balance, RPC/token config, Excel I/O, SQLite local storage (private keys in memory only).
+Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch import/transfer/balance, RPC/token config, Excel I/O, SQLite local storage. **Security-first architecture**: Private keys are memory-only, never persisted.
 
 ## STRUCTURE
 
 ```
 ./
-├── src/                      # Vue 3 frontend
-│   ├── features/{eth,sol}/   # Feature-based architecture
-│   ├── components/           # Shared components
-│   ├── stores/               # Pinia state
-│   └── router/               # Hash routing
-├── src-tauri/                # Tauri backend
-│   ├── src/wallets_tool/     # Business logic
-│   │   └── ecosystems/       # Chain implementations
-│   └── data/                 # SQLite DB + init.sql
-├── scripts/                  # Build utilities
-└── .github/workflows/        # CI (windows only)
+├── src/                      # Vue 3 frontend (Feature-based)
+│   ├── features/             # Business domains (Deep nesting)
+│   │   ├── ethereum/         # EVM logic
+│   │   ├── solana/           # SVM logic
+│   │   └── airdrop/          # Browser Automation & Scripting
+│   ├── main.js               # Entry (Plugins + Config)
+│   └── App.vue               # Root + Global Events
+├── src-tauri/                # Tauri backend (Library-style)
+│   ├── src/wallets_tool/     # Core Business Logic
+│   │   ├── ecosystems/       # Chain implementations
+│   │   └── security/         # AES-256 Memory Guard
+│   ├── src/database/         # SQLite Service Layer
+│   └── data/                 # DB file + init.sql
+├── vcpkg/                    # C++ Dependencies
+└── scripts/                  # Build/Version utilities
 ```
 
 ## WHERE TO LOOK
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Frontend entry | `src/main.js` | PrimeVue + Arco dual UI |
-| Backend entry | `src-tauri/src/main.rs` | 37+ Tauri commands |
-| Transfer logic | `src/features/ethereum/transfer/` | Composables-heavy |
-| Balance logic | src/features/ethereum/balance/ | VirtualScroller + Batch event processing + Filter duplicate imports |
-| Ethereum backend | `src-tauri/src/wallets_tool/ecosystems/ethereum/` | 9 modules (Alloy migration) |
-| Database ops | `src-tauri/src/database/` | Service pattern (ChainService, RpcService) |
-| Configs | `src-tauri/Cargo.toml` | Rust deps + profiles |
-| Build | `vite.config.js` | 213 lines, manual chunk splitting |
-
-## CONVENTIONS (DEVIATIONS FROM STANDARD)
-
-**JavaScript (not TypeScript):** Frontend uses `.js` despite 2025 project
-
-**Dual UI libraries:** PrimeVue (primary) + Arco Design (tabs/modals/tooltips)
-
-**Deep nesting:** `src/features/{ecosystem}/{feature}/{pages,components,composables,styles}/`
-
-**2-space indentation:** JavaScript/Vue; Rust uses standard
-
-**No comments:** "DO NOT ADD COMMENTS unless explicitly required"
-
-**Semicolons:** Required in JavaScript
-
-## ANTI-PATTERNS (THIS PROJECT)
-
-- Never log or expose private keys
-- Never persist private keys (memory-only)
-- Never remove `custom-protocol` feature from Cargo.toml
-
-## UNIQUE STYLES
-
-**Feature structure:**
-```
-features/{ecosystem}/{feature}/
-├── pages/          # Route targets
-├── components/     # Feature-local UI
-├── composables/    # Business logic (barrel exports)
-└── styles/         # Feature CSS (barrel exports)
-```
-
-**Backend module organization:**
-```
-ecosystems/{chain}/
-├── mod.rs          # Module declarations
-├── chain_config.rs # Chain metadata
-├── provider.rs     # RPC provider mgmt
-├── transfer.rs     # Native coin transfer
-├── token_transfer.rs # ERC-20 transfers
-├── rpc_management.rs # RPC load balancing
-├── simple_balance_query.rs
-└── proxy_manager/proxy_commands # HTTP proxy
-```
-
-**Tauri commands:** All async, return `Result<T, String>`
-
-**Database:** SQLite at `data/wallets_tool.db`, hot-reload via `reload_database()` command
-
-## COMMANDS
-
-```bash
-yarn start          # Auto-install deps + tauri-dev
-yarn tauri-dev      # Full dev (frontend + backend)
-yarn tauri-build    # Production desktop build
-yarn version:update <version> # Bump all versions
-```
-
-## TESTING
-
-Playwright installed (`@playwright/test` v1.57.0).
-Rust unit tests added in `src-tauri/src/wallets_tool/ecosystems/ethereum/alloy_utils.rs`.
-Run with `cargo test`.
+| **Frontend Entry** | `src/main.js` | PrimeVue + Arco + Router setup |
+| **Backend Entry** | `src-tauri/src/main.rs` | Security init + Command registry |
+| **Transfer Logic** | `src/features/{chain}/transfer/` | Feature-scoped pages/composables |
+| **Balance Logic** | `src/features/{chain}/balance/` | Feature-scoped pages |
+| **Chain Backend** | `src-tauri/src/wallets_tool/ecosystems/` | Modularized by chain (eth/sol) |
+| **Security Core** | `src-tauri/src/wallets_tool/security/` | `SecureMemory` implementation |
+| **Database Ops** | `src-tauri/src/database/` | `ChainService`, `RpcService` |
+| **Build Config** | `vite.config.js` | Manual chunks + Polyfills |
 
 ## CODE MAP
 
 | Symbol | Type | Location | Role |
 |--------|------|----------|------|
-| `useTransfer` | composable | `features/ethereum/transfer/composables/` | Batch transfer logic |
-| `ChainService` | struct | `database/chain_service.rs` | Chain CRUD |
-| `RpcService` | struct | `database/rpc_service.rs` | RPC CRUD |
-| `init_database` | fn | `database/mod.rs` | DB initialization |
+| `useTransfer` | composable | `*/transfer/composables/` | Core batch logic (Frontend) |
+| `ChainService` | struct | `database/chain_service.rs` | Chain CRUD (Backend) |
+| `SecureMemory` | struct | `security/mod.rs` | RAM-only key storage |
+| `iterTransfer` | func | `useTransfer.ts` | Batch loop executor |
+| `fury_mode` | logic | `*/transfer.rs` | High-concurrency executor |
+
+## CONVENTIONS
+
+- **Feature-First**: Frontend code lives in `src/features/{chain}/{domain}/`.
+- **Dual UI**: **PrimeVue** (Data/Lists) + **Arco Design** (Interactions/Modals).
+- **JS over TS**: Frontend is strictly `.js` (legacy decision).
+- **No Comments**: Code must be self-documenting. Comments only for complex algos.
+- **Async Backend**: All Tauri commands return `Result<T, String>`.
+- **Chain Filtering**: Frontend components must filter `get_chain_list` results by `ecosystem` ('evm' or 'solana').
+
+## ANTI-PATTERNS (THIS PROJECT)
+
+- **Security**: NEVER persist private keys to disk or DB. Memory ONLY.
+- **Logging**: NEVER log sensitive data (keys, mnemonics).
+- **State**: NEVER mix Pinia state with local feature state unnecessarily.
+- **Concurrency**: NEVER block the main thread; use `tokio` for heavy lifting.
+- **Config**: NEVER remove `custom-protocol` from `tauri.conf.json`.
+
+## UNIQUE STYLES
+
+**Frontend Feature Structure**:
+```
+features/{chain}/{domain}/
+├── pages/          # Route targets
+├── components/     # Local UI
+├── composables/    # Business logic
+└── styles/         # Local CSS
+```
+
+**Backend Ecosystem Structure**:
+```
+ecosystems/{chain}/
+├── mod.rs          # Exports
+├── transfer.rs     # Native logic
+├── token_transfer.rs # Token logic
+└── provider.rs     # Connection mgmt
+```
+
+## COMMANDS
+
+```bash
+yarn start          # Install deps + Dev server
+yarn tauri-dev      # Full dev stack
+yarn tauri-build    # Production build
+cargo test          # Backend unit tests
+```
 
 ## NOTES
 
-- Database config in `package.json` (`config.database`) - unusual coupling
-- Multi-window support (main + child windows)
-- System tray integration
-- "Fury mode" for high-concurrency transfers (>90 threads)
-- Frontend optimization: requestAnimationFrame batching for high-frequency backend events
-- Intelligent retry with on-chain tx detection
-- Proxy manager with HTTP/SOCKS5 support
-- Migrated to Alloy framework (Jan 2026)
-- **Security:** Private keys masked in UI.
-
-## SECURITY MODULE
-
-**Location:** `src-tauri/src/wallets_tool/security/`
-
-**Features:**
-- **SecureMemory:** AES-256-CBC encrypted memory storage for private keys.
-- **Zeroization:** Automatic memory wiping (zeroize) on drop.
-- **Anti-Debug:** Runtime debugger detection (Windows `IsDebuggerPresent`).
-- **Integrity:** SHA-256 integrity checks for sensitive data.
-- **Session Key:** Ephemeral RAM-only key generated on startup.
-
-**Usage Pattern:**
-```rust
-use crate::wallets_tool::security::SecureMemory;
-
-// Struct definition
-struct MyStruct {
-    secret: SecureMemory,
-}
-
-// Access
-my_struct.secret.use_secret(|s| {
-    // 's' is the plaintext slice, valid only within this closure
-    // 's' is zeroized immediately after closure returns
-    do_something(s);
-});
-```
+- **Fury Mode**: >90 threads for mass transfers.
+- **Database**: `package.json` config triggers `init.sql` checks.
+- **Alloy**: ETH backend migrated to Alloy framework (Jan 2026).

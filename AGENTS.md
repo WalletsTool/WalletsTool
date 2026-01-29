@@ -59,10 +59,15 @@ Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch
 - **No Comments**: Code must be self-documenting. Comments only for complex algos.
 - **Async Backend**: All Tauri commands return `Result<T, String>`.
 - **Chain Filtering**: Frontend components must filter `get_chain_list` results by `ecosystem` ('evm' or 'solana').
+- **Wallet Manager Groups**: `create_group` request requires `chain_type` and returns group id (`i64`).
+- **Wallet Manager Wallets**: 地址由后端根据私钥/助记词自动派生并落库；批量创建统一走 `create_wallets`，助记词派生钱包会记录 `mnemonic_index`；私钥/助记词入参使用 `sealed_*` 加密传输。
+- **Wallet Manager get_wallets**: `get_wallets(group_id, chain_type, password)` 支持按生态（chain_type）过滤；系统生态分组查询应传 `group_id=null` 且带 `chain_type`；不会返回明文私钥/助记词，仅返回 `has_private_key/has_mnemonic` 用于状态展示。
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
-- **Security**: NEVER persist private keys to disk or DB. Memory ONLY.
+- **Security**: 
+  - **General**: NEVER persist private keys to disk or DB in plain text.
+  - **Wallet Manager**: Encrypted persistence is allowed using Master Data Key (AES-256-CBC) derived from user password (PBKDF2). Keys are only decrypted in memory when unlocked.
 - **Logging**: NEVER log sensitive data (keys, mnemonics).
 - **State**: NEVER mix Pinia state with local feature state unnecessarily.
 - **Concurrency**: NEVER block the main thread; use `tokio` for heavy lifting.

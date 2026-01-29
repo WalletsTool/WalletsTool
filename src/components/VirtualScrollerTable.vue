@@ -55,6 +55,13 @@
           </div>
           <div class="empty-text">还没有监控数据</div>
         </template>
+        <template v-else-if="pageType === 'wallet_manager'">
+          <div class="empty-icon">
+            <Icon icon="icon-park-outline:wallet" style="width: 64px; height: 64px;"/>
+          </div>
+          <div class="empty-text">还没有钱包数据</div>
+          <div class="empty-text-second">请先添加钱包或批量导入</div>
+        </template>
         <template v-else-if="pageType === 'transfer'">
           <div class="empty-icon">
             <Icon icon="icon-park-outline:wallet" :style="{ width: '64px', height: '64px' }" />
@@ -98,6 +105,12 @@
             </span>
           </div>
         </template>
+        <template v-else>
+          <div class="empty-icon">
+            <Icon icon="icon-park-outline:wallet" style="width: 64px; height: 64px;"/>
+          </div>
+          <div class="empty-text">暂无数据</div>
+        </template>
       </div>
 
       <VirtualScroller
@@ -116,7 +129,7 @@
               clickable: true,
               'zebra-stripe': getItemIndex(item) % 2 === 1,
             }"
-            v-memo="[getRowKey(item), isRowSelected(item), isRowHovered(item), item.exec_status, item.private_key, item.to_addr, item.amount, item.plat_balance, item.coin_balance, item.error_msg]"
+            v-memo="getMemoDeps(item)"
             @click="handleRowClick(item, getItemIndex(item))"
           >
             <!-- 选择列 -->
@@ -456,6 +469,22 @@ const isRowSelected = (item) => {
 
 const isRowHovered = (item) => {
   return props.hoverKeys.includes(getRowKey(item));
+};
+
+const getMemoDeps = (item) => {
+  const deps = [getRowKey(item), isRowSelected(item), isRowHovered(item), getItemIndex(item)];
+  const cols = sortedColumns.value || [];
+  for (let i = 0; i < cols.length; i++) {
+    const col = cols[i];
+    if (col?.dataIndex) {
+      deps.push(item[col.dataIndex]);
+      continue;
+    }
+    if (col?.slotName && col.slotName !== 'index') {
+      deps.push(item[col.slotName]);
+    }
+  }
+  return deps;
 };
 
 const handleRowClick = (item, index) => {

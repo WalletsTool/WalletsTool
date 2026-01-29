@@ -995,6 +995,17 @@ const debouncedExportSelectToExcel = debounce(exportSelectToExcel, 600);
 const debouncedClearData = debounce(clearData, 600);
 const debouncedDeleteItemConfirm = debounce(deleteItemConfirm, 400);
 
+// 清空剪贴板功能
+async function clearClipboard() {
+  try {
+    await navigator.clipboard.writeText('');
+    Notification.success({ content: '剪贴板已清空', position: 'topLeft' });
+  } catch (error) {
+    console.error('清空剪贴板失败:', error);
+    Notification.error({ content: '清空剪贴板失败', position: 'topLeft' });
+  }
+}
+
 // 查询余额（改为使用Rust后端）
 async function queryBalance() {
   if (data.value.length === 0) {
@@ -1665,7 +1676,11 @@ async function handleBeforeClose() {
             <a-tooltip content="选中失败的数据" position="left"><a-button type="outline" status="danger" size="mini" @click="selectFailed"><template #icon><Icon icon="mdi:close-circle" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="反选" position="left"><a-button type="outline" size="mini" @click="InvertSelection"><template #icon><Icon icon="mdi:swap-horizontal" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="高级筛选" position="left"><a-button type="primary" size="mini" @click="showAdvancedFilter"><template #icon><Icon icon="mdi:filter" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
-            <a-tooltip content="删除选中" position="left"><a-button type="outline" status="danger" size="mini" @click="debouncedDeleteSelected"><template #icon><Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
+<a-tooltip content="删除选中" position="left"><a-button type="outline" status="danger" size="mini" @click="debouncedDeleteSelected"><template #icon><Icon icon="mdi:trash-can" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
+            
+            <div class="side-actions-divider"></div>
+            
+            <a-tooltip content="清空剪贴板" position="left"><a-button type="outline" status="warning" size="mini" @click="clearClipboard"><template #icon><Icon icon="mdi:clipboard-remove" style="color: #ff7d00; font-size: 20px" /></template></a-button></a-tooltip>
           </div>
         </div>
       </div>

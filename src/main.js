@@ -16,6 +16,7 @@ import {
   Input,
   InputNumber,
   Select,
+  Cascader,
   Option,
   Switch,
   Tabs,
@@ -37,7 +38,10 @@ import {
   InputGroup,
   Notification,
   Message,
-  Popover
+  Popover,
+  Tree,
+  List,
+  ListItem
 } from '@arco-design/web-vue';
 import '@arco-design/web-vue/dist/arco.css';
 import "./style.css";
@@ -109,6 +113,7 @@ app.use(FormItem)
 app.use(Input)
 app.use(InputNumber)
 app.use(Select)
+app.use(Cascader)
 app.use(Option)
 app.use(Switch)
 app.use(Tag)
@@ -128,6 +133,9 @@ app.use(Dropdown)
 app.use(Doption)
 app.use(InputGroup)
 app.use(Popover)
+app.use(Tree)
+app.use(List)
+app.use(ListItem)
 
 app.use(PrimeVue);
 app.component('VirtualScroller', VirtualScroller)

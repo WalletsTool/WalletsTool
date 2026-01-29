@@ -98,6 +98,13 @@ onBeforeUnmount(() => {
 // 功能菜单列表 - 合并版
 const mergedFuncList = [
   {
+    title: "钱包管理",
+    desc: "批量管理私钥/助记词/地址，支持分组和加密存储",
+    picture: "avatar/optimized/transfer.webp",
+    pageName: "wallet-manager",
+    isNew: true
+  },
+  {
     title: "多对多转账",
     desc: "支持 EVM 和 Solana 生态的批量转账，模拟真实用户行为，降低风控风险",
     picture: "avatar/optimized/transfer.webp",
@@ -165,11 +172,13 @@ function goPage(pageName) {
     // 修改：指向 entry 页面，而不是具体的 eth/sol 页面
     const windowUrl = pageName === 'airdrop-browser'
       ? `/#/airdrop/browser?count=${newCount}`
-      : `/#/entry?target=${pageName}&count=${newCount}`
+      : pageName === 'wallet-manager'
+        ? `/#/wallet-manager?count=${newCount}`
+        : `/#/entry?target=${pageName}&count=${newCount}`
     
     // 生成窗口标题：统一格式 "WalletsTool - {图标} {功能名} [{序号}]"
-    const moduleIcons = { transfer: '💸', balance: '💰', monitor: '👁️', 'airdrop-browser': '🤖' }
-    const moduleNames = { transfer: '批量转账', balance: '余额查询', monitor: '链上监控', 'airdrop-browser': '浏览器自动化' }
+    const moduleIcons = { transfer: '💸', balance: '💰', monitor: '👁️', 'airdrop-browser': '🤖', 'wallet-manager': '🔐' }
+    const moduleNames = { transfer: '批量转账', balance: '余额查询', monitor: '链上监控', 'airdrop-browser': '浏览器自动化', 'wallet-manager': '钱包管理' }
     const title = newCount > 1
       ? `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName} [${newCount}]`
       : `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName}`

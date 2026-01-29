@@ -3,6 +3,7 @@ import { ref, computed, nextTick } from 'vue';
 import { ethers } from 'ethers';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import bs58 from 'bs58';
+import { Notification } from '@arco-design/web-vue';
 import CodeEditor from './CodeEditor.vue';
 
 // Props
@@ -224,6 +225,16 @@ function handleCancel() {
   addressText.value = '';
   validationErrors.value = [];
   errorsExpanded.value = false;
+  
+  // 提示用户清除剪贴板历史
+  setTimeout(() => {
+    Notification.warning({
+      title: '安全提示',
+      content: '为防止私钥泄露，建议您手动清除 Win+V 剪贴板历史记录',
+      duration: 5000,
+      position: 'topLeft'
+    });
+  }, 300);
 }
 
 // 处理弹窗确认前的验证
@@ -235,25 +246,38 @@ const handleBeforeOk = async () => {
     return false;
   }
   
-  importLoading.value = true;
-  
-  try {
-    const privateKeys = privateKeyText.value.split('\n').filter(line => line.trim() !== '');
-    const addresses = addressText.value.split('\n').filter(line => line.trim() !== '');
-    
-    // 添加一个短暂的延迟，让用户看到loading效果
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // 发送确认事件，传递数据
+   importLoading.value = true;
+
+   try {
+     const privateKeys = privateKeyText.value.split('\n').filter(line => line.trim() !== '');
+     const addresses = addressText.value.split('\n').filter(line => line.trim() !== '');
+
+     // 添加一个短暂的延迟，让用户看到loading效果
+     await new Promise(resolve => setTimeout(resolve, 800));
+
+     // 清空剪贴板
+     await clearClipboard();
+
+     // 发送确认事件，传递数据
     emit('confirm', {
       privateKeys: privateKeys.map(key => key.trim()),
       addresses: addresses.map(addr => addr.trim())
     });
     
-    // 关闭弹窗
-    visible.value = false;
-    
-    // 重置数据
+     // 关闭弹窗
+     visible.value = false;
+
+     // 提示用户清除剪贴板历史
+     setTimeout(() => {
+       Notification.warning({
+         title: '安全提示',
+         content: '为防止私钥泄露，建议您手动清除 Win+V 剪贴板历史记录',
+         duration: 5000,
+         position: 'topLeft'
+       });
+     }, 300);
+     
+     // 重置数据
     privateKeyText.value = '';
     addressText.value = '';
     validationErrors.value = [];
@@ -268,6 +292,15 @@ const handleBeforeOk = async () => {
   }
 };
 
+// 清空剪贴板功能
+async function clearClipboard() {
+  try {
+    await navigator.clipboard.writeText('');
+  } catch (error) {
+    console.error('清空剪贴板失败:', error);
+  }
+}
+
 // 显示弹窗的方法
 function show() {
   // 重置数据
@@ -276,7 +309,7 @@ function show() {
   validationErrors.value = [];
   errorsExpanded.value = false;
   showUsageInstructions.value = true;
-  
+
   // 显示弹窗
   visible.value = true;
 }
@@ -296,7 +329,7 @@ defineExpose({
     @cancel="handleCancel"
     :on-before-ok="handleBeforeOk" 
     :confirm-loading="importLoading"
-    :ok-text="importLoading ? '正在处理中...' : '确认导入'"
+    :ok-text="importLoading ? '正在处理中...' : '确认导入并清空剪贴板'"
     :cancel-button-props="{ disabled: importLoading }"
     :mask-closable="!importLoading"
     :closable="!importLoading"

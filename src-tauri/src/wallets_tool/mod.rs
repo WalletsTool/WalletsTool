@@ -1,5 +1,6 @@
 pub mod utils;
 pub mod security;
+pub mod wallet_manager;
 
 pub mod ecosystems {
     pub mod ethereum {

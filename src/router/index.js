@@ -22,6 +22,9 @@ const routes = [
 
     // EVM Monitor
     { path: "/eth/monitor", name: "eth-monitor", component: () => import('@/features/ethereum/monitor/pages/Monitor.vue') },
+
+    // Wallet Manager
+    { path: "/wallet-manager", name: "wallet-manager", component: () => import('@/features/wallet_manager/pages/WalletManager.vue') },
 ];
 
 const router = createRouter({

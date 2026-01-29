@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import { 
   IconPlus, 
@@ -10,15 +10,82 @@ import {
   IconDelete 
 } from '@arco-design/web-vue/es/icon';
 
-const scripts = ref([
-  { id: 1, name: 'OKX Daily Claim', content: '// Playwright script for OKX Daily Claim\nasync function run(page, wallet) {\n  await page.goto("https://www.okx.com");\n  // ...\n}' },
-  { id: 2, name: 'Uniswap Swap', content: '// Swap ETH for USDC\nasync function run(page, wallet) {\n  await page.goto("https://app.uniswap.org");\n  // ...\n}' },
-]);
+const STORAGE_KEY = 'browser_scripts';
+
+const loadScripts = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Failed to load scripts:', e);
+  }
+  return [
+    { id: 1, name: 'OKX Daily Claim', content: '// Playwright script for OKX Daily Claim\nasync function run(page, wallet) {\n  await page.goto("https://www.okx.com");\n  // ...\n}' },
+    { id: 2, name: 'Uniswap Swap', content: '// Swap ETH for USDC\nasync function run(page, wallet) {\n  await page.goto("https://app.uniswap.org");\n  // ...\n}' },
+  ];
+};
+
+const saveScripts = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(scripts.value));
+  } catch (e) {
+    console.error('Failed to save scripts:', e);
+    Message.error('保存失败');
+  }
+};
+
+const scripts = ref(loadScripts());
 
 const activeScript = ref(null);
 const scriptContent = ref('');
 const isNewModalVisible = ref(false);
 const newScriptName = ref('');
+
+const editingScriptId = ref(null);
+const editNameInput = ref(null);
+const editNameValue = ref('');
+
+const startEditName = async (script, event) => {
+  event?.stopPropagation();
+  editingScriptId.value = script.id;
+  editNameValue.value = script.name;
+  await nextTick();
+  if (editNameInput.value) {
+    editNameInput.value.focus();
+    editNameInput.value.select();
+  }
+};
+
+const saveEditName = () => {
+  const trimmedName = editNameValue.value.trim();
+  if (!trimmedName) {
+    editingScriptId.value = null;
+    return;
+  }
+  const script = scripts.value.find(s => s.id === editingScriptId.value);
+  if (script) {
+    script.name = trimmedName;
+    saveScripts();
+    Message.success('名称已更新');
+  }
+  editingScriptId.value = null;
+};
+
+const cancelEditName = () => {
+  editingScriptId.value = null;
+};
+
+const handleNameKeydown = (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    saveEditName();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    cancelEditName();
+  }
+};
 
 const handleSelectScript = (script) => {
   activeScript.value = script;
@@ -28,6 +95,7 @@ const handleSelectScript = (script) => {
 const handleSave = () => {
   if (activeScript.value) {
     activeScript.value.content = scriptContent.value;
+    saveScripts();
     Message.success('脚本已保存');
   } else {
     Message.warning('请先选择或创建一个脚本');
@@ -58,6 +126,7 @@ const confirmNewScript = () => {
   };
   
   scripts.value.push(newScript);
+  saveScripts();
   handleSelectScript(newScript);
   isNewModalVisible.value = false;
   Message.success('创建成功');
@@ -70,6 +139,7 @@ const handleDeleteScript = (e, scriptId) => {
     content: '确定要删除这个脚本吗？此操作不可恢复。',
     onOk: () => {
       scripts.value = scripts.value.filter(s => s.id !== scriptId);
+      saveScripts();
       if (activeScript.value && activeScript.value.id === scriptId) {
         activeScript.value = null;
         scriptContent.value = '';
@@ -100,7 +170,21 @@ const handleDeleteScript = (e, scriptId) => {
         >
           <div class="item-main">
             <icon-code />
-            <span>{{ script.name }}</span>
+            <template v-if="editingScriptId === script.id">
+              <input
+                ref="editNameInput"
+                v-model="editNameValue"
+                class="name-edit-input"
+                @blur="saveEditName"
+                @keydown="handleNameKeydown"
+                @click.stop
+              />
+            </template>
+            <template v-else>
+              <span class="script-name editable" @click="(e) => startEditName(script, e)" title="点击编辑名称">
+                {{ script.name }}
+              </span>
+            </template>
           </div>
           <div class="item-actions">
             <icon-delete class="delete-icon" @click="(e) => handleDeleteScript(e, script.id)" />
@@ -206,6 +290,41 @@ const handleDeleteScript = (e, scriptId) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.script-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.script-name.editable {
+  cursor: text;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.script-name.editable:hover {
+  background: var(--color-fill-2);
+}
+
+.name-edit-input {
+  background: var(--color-bg-1);
+  border: 1px solid rgb(var(--primary-6));
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 14px;
+  color: var(--color-text-1);
+  outline: none;
+  line-height: 1.2;
+  max-width: 150px;
+}
+
+.name-edit-input:focus {
+  border-color: rgb(var(--primary-6));
+  box-shadow: 0 0 0 2px rgba(var(--primary-6), 0.2);
 }
 
 .item-actions {

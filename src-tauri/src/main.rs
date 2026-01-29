@@ -149,11 +149,15 @@ async fn main() {
     // 创建数据库服务
     // Force rebuild: ecosystem field added
     let db_manager = database::get_database_manager();
+    println!("Initializing WalletManagerService...");
+    let wallet_manager_service = wallets_tool::wallet_manager::service::WalletManagerService::new(db_manager.get_pool().clone());
+    
     let chain_service = database::chain_service::ChainService::new(db_manager.get_pool());
     
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(wallet_manager_service)
         .manage(chain_service)
         .setup(|app| {
             // 主窗口直接显示
@@ -374,6 +378,21 @@ async fn main() {
             wallets_tool::ecosystems::ethereum::proxy_commands::get_proxy_stats,
             wallets_tool::ecosystems::ethereum::proxy_commands::get_proxy_stats_for_window,
             wallets_tool::ecosystems::ethereum::proxy_commands::clear_proxy_config_for_window,
+            // wallet manager commands
+            wallets_tool::wallet_manager::commands::init_wallet_manager_tables,
+            wallets_tool::wallet_manager::commands::is_password_set,
+            wallets_tool::wallet_manager::commands::init_password,
+            wallets_tool::wallet_manager::commands::verify_password,
+            wallets_tool::wallet_manager::commands::change_password,
+            wallets_tool::wallet_manager::commands::create_group,
+            wallets_tool::wallet_manager::commands::get_groups,
+            wallets_tool::wallet_manager::commands::update_group,
+            wallets_tool::wallet_manager::commands::delete_group,
+            wallets_tool::wallet_manager::commands::create_wallet,
+            wallets_tool::wallet_manager::commands::create_wallets,
+            wallets_tool::wallet_manager::commands::get_wallets,
+            wallets_tool::wallet_manager::commands::update_wallet,
+            wallets_tool::wallet_manager::commands::delete_wallet,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

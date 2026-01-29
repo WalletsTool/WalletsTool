@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { 
   IconPlus, 
@@ -10,15 +10,82 @@ import {
   IconRobot 
 } from '@arco-design/web-vue/es/icon';
 
-const profiles = ref([
-  { id: 1, name: 'Default Profile', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', viewport: '1920x1080', proxy: 'Direct', canvasSpoof: true },
-  { id: 2, name: 'Mobile Profile', userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1', viewport: '390x844', proxy: 'Type: HTTP', canvasSpoof: true },
-]);
+const STORAGE_KEY = 'browser_profiles';
+
+const loadProfiles = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Failed to load profiles:', e);
+  }
+  return [
+    { id: 1, name: 'Default Profile', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', viewport: '1920x1080', proxy: 'Direct', canvasSpoof: true },
+    { id: 2, name: 'Mobile Profile', userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1', viewport: '390x844', proxy: 'Type: HTTP', canvasSpoof: true },
+  ];
+};
+
+const saveProfiles = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles.value));
+  } catch (e) {
+    console.error('Failed to save profiles:', e);
+    Message.error('保存失败');
+  }
+};
+
+const profiles = ref(loadProfiles());
 
 const activeProfile = ref(null);
 const isEditing = ref(false);
 const showBatchModal = ref(false);
 const batchCount = ref(100);
+
+const editingProfileId = ref(null);
+const editNameInput = ref(null);
+const editNameValue = ref('');
+
+const startEditName = async (profile, event) => {
+  event?.stopPropagation();
+  editingProfileId.value = profile.id;
+  editNameValue.value = profile.name;
+  await nextTick();
+  if (editNameInput.value) {
+    editNameInput.value.focus();
+    editNameInput.value.select();
+  }
+};
+
+const saveEditName = () => {
+  const trimmedName = editNameValue.value.trim();
+  if (!trimmedName) {
+    editingProfileId.value = null;
+    return;
+  }
+  const profile = profiles.value.find(p => p.id === editingProfileId.value);
+  if (profile) {
+    profile.name = trimmedName;
+    saveProfiles();
+    Message.success('名称已更新');
+  }
+  editingProfileId.value = null;
+};
+
+const cancelEditName = () => {
+  editingProfileId.value = null;
+};
+
+const handleNameKeydown = (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    saveEditName();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    cancelEditName();
+  }
+};
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -50,6 +117,7 @@ const handleBatchGenerate = () => {
   }
   
   profiles.value.push(...newProfiles);
+  saveProfiles();
   Message.success(`成功生成 ${batchCount.value} 个配置`);
   showBatchModal.value = false;
 };
@@ -65,8 +133,22 @@ const handleSave = () => {
     if (index !== -1) {
       profiles.value[index] = { ...activeProfile.value };
     }
+    saveProfiles();
     isEditing.value = false;
     Message.success('配置已保存');
+  }
+};
+
+const handleDelete = () => {
+  if (activeProfile.value) {
+    const index = profiles.value.findIndex(p => p.id === activeProfile.value.id);
+    if (index !== -1) {
+      profiles.value.splice(index, 1);
+      saveProfiles();
+      Message.success('配置已删除');
+    }
+    isEditing.value = false;
+    activeProfile.value = null;
   }
 };
 
@@ -86,9 +168,9 @@ const handleCancel = () => {
              <template #icon><icon-robot /></template>
              批量生成
           </a-button>
-          <a-button type="primary" size="small" @click="Message.info('新建功能开发中')">
+          <a-button style="margin-left: 10px;" type="primary" size="small" @click="Message.info('新建功能开发中')">
             <template #icon><icon-plus /></template>
-            新建配置
+            新建
           </a-button>
         </a-space>
       </div>
@@ -98,13 +180,28 @@ const handleCancel = () => {
           v-for="profile in profiles" 
           :key="profile.id"
           class="profile-item"
+          :class="{ active: activeProfile && activeProfile.id === profile.id }"
           @click="handleEdit(profile)"
         >
           <div class="profile-icon">
             <icon-public />
           </div>
           <div class="profile-info">
-            <div class="profile-name">{{ profile.name }}</div>
+            <template v-if="editingProfileId === profile.id">
+              <input
+                ref="editNameInput"
+                v-model="editNameValue"
+                class="name-edit-input"
+                @blur="saveEditName"
+                @keydown="handleNameKeydown"
+                @click.stop
+              />
+            </template>
+            <template v-else>
+              <div class="profile-name editable" @click="(e) => startEditName(profile, e)" title="点击编辑名称">
+                {{ profile.name }}
+              </div>
+            </template>
             <div class="profile-desc">{{ profile.viewport }} | {{ profile.proxy }}</div>
           </div>
           <icon-right class="arrow" />
@@ -116,8 +213,9 @@ const handleCancel = () => {
       <div class="editor-header">
         <h3>编辑配置: {{ activeProfile.name }}</h3>
         <div class="actions">
-          <a-button @click="handleCancel">取消</a-button>
-          <a-button type="primary" @click="handleSave">保存</a-button>
+          <a-button status="danger" @click="handleDelete">删除</a-button>
+          <a-button style="margin-left: 10px;" @click="handleCancel">取消</a-button>
+          <a-button style="margin-left: 10px;" type="primary" @click="handleSave">保存</a-button>
         </div>
       </div>
 
@@ -150,18 +248,18 @@ const handleCancel = () => {
 
           <a-divider orientation="left">指纹保护 (Anti-Detect)</a-divider>
           
-          <a-space direction="vertical" size="large">
+          <a-space style="display: flex;" direction="vertical" size="large">
             <a-space>
                <a-switch v-model="activeProfile.canvasSpoof" />
-               <span>Canvas 指纹混淆</span>
+               <span style="margin-left: 5px;">Canvas 指纹混淆</span>
             </a-space>
-             <a-space>
+             <a-space style="margin-left: 20px;">
                <a-switch default-checked />
-               <span>WebGL 渲染伪装</span>
+               <span style="margin-left: 5px;">WebGL 渲染伪装</span>
             </a-space>
-             <a-space>
+             <a-space style="margin-left: 20px;"> 
                <a-switch default-checked />
-               <span>Audio Context 噪音</span>
+               <span style="margin-left: 5px;">Audio Context 噪音</span>
             </a-space>
           </a-space>
         </a-form>
@@ -199,7 +297,7 @@ const handleCancel = () => {
 }
 
 .profile-list {
-  width: 300px;
+  width: 350px;
   background: var(--color-bg-2);
   border-radius: 8px;
   display: flex;
@@ -242,6 +340,10 @@ const handleCancel = () => {
   background: var(--color-fill-2);
 }
 
+.profile-item.active {
+  background: rgba(var(--primary-6), 0.1);
+}
+
 .profile-icon {
   width: 32px;
   height: 32px;
@@ -261,6 +363,36 @@ const handleCancel = () => {
   font-size: 14px;
   font-weight: 500;
   color: var(--color-text-1);
+}
+
+.profile-name.editable {
+  cursor: text;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.profile-name.editable:hover {
+  background: var(--color-fill-2);
+}
+
+.name-edit-input {
+  width: 100%;
+  background: var(--color-bg-1);
+  border: 1px solid rgb(var(--primary-6));
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-1);
+  outline: none;
+  line-height: 1.2;
+}
+
+.name-edit-input:focus {
+  border-color: rgb(var(--primary-6));
+  box-shadow: 0 0 0 2px rgba(var(--primary-6), 0.2);
 }
 
 .profile-desc {

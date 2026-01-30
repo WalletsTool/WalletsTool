@@ -46,6 +46,23 @@ pub struct WalletInfo {
     pub remark: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateWalletsResult {
+    pub total: u32,
+    #[serde(default)]
+    pub preview: Vec<WalletInfo>,
+    pub sealed_mnemonic: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletSecrets {
+    pub id: i64,
+    pub name: Option<String>,
+    pub address: String,
+    pub sealed_private_key: Option<String>,
+    pub sealed_mnemonic: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AppConfig {
     pub key: String,
@@ -75,7 +92,10 @@ pub struct CreateWalletRequest {
     pub sealed_private_key: Option<String>,
     pub sealed_mnemonic: Option<String>,
     pub remark: Option<String>,
-    pub password: String,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub transport_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -101,7 +121,14 @@ pub struct CreateWalletsRequest {
     #[serde(default)]
     pub word_count: Option<u32>,
     pub remark: Option<String>,
-    pub password: String,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub preview_limit: Option<u32>,
+    #[serde(default)]
+    pub include_secrets: Option<bool>,
+    #[serde(default)]
+    pub transport_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,11 +136,15 @@ pub struct UpdateWalletRequest {
     pub id: i64,
     pub group_id: Option<i64>,
     pub name: Option<String>,
+    pub remark: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct InitPasswordRequest {
-    pub password: String,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub encrypted_password_b64: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,5 +155,28 @@ pub struct ChangePasswordRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct VerifyPasswordRequest {
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub encrypted_password_b64: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WalletExportData {
+    pub id: i64,
+    pub name: Option<String>,
+    pub address: String,
+    pub chain_type: String,
+    pub private_key: Option<String>,
+    pub mnemonic: Option<String>,
+    pub mnemonic_index: Option<i64>,
+    pub remark: Option<String>,
+    pub group_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ExportWalletsRequest {
+    pub ids: Vec<i64>,
     pub password: String,
 }

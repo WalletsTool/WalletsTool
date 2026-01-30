@@ -1,20 +1,74 @@
 <script setup>
-import { ref, onMounted, reactive, watch, nextTick } from 'vue';
+import { ref, onMounted, reactive, watch, nextTick, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Message, Notification, Modal } from '@arco-design/web-vue';
-import { IconPlus, IconDelete } from '@arco-design/web-vue/es/icon';
+import { IconPlus, IconDelete, IconEdit, IconDownload, IconLock } from '@arco-design/web-vue/es/icon';
 import { useRouter } from 'vue-router';
 import * as XLSX from 'xlsx';
 import TitleBar from '@/components/TitleBar.vue';
 import VirtualScrollerTable from '@/components/VirtualScrollerTable.vue';
+import SecretRevealModal from '@/components/SecretRevealModal.vue';
 import { downloadWithDialog, openDirectory } from '@/utils/downloadWithDialog';
-import { sealSecret, openSealedSecret } from '@/utils/secretCrypto';
+import { save } from '@tauri-apps/plugin-dialog';
+import { openSealedSecret } from '@/utils/secretCrypto';
+
+// 初始化加载遮罩
+const isLoading = ref(true);
+
+const showLoadingOverlay = () => {
+  let overlay = document.getElementById('wallet-manager-loading-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'wallet-manager-loading-overlay';
+    overlay.className = 'wallet-global-loading-overlay';
+    overlay.innerHTML = `
+      <div class="loading-spinner"></div>
+      <p>正在加载...</p>
+    `;
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display = 'flex';
+};
+
+const hideLoadingOverlay = () => {
+  const overlay = document.getElementById('wallet-manager-loading-overlay');
+  if (overlay) {
+    overlay.style.display = 'none';
+  }
+};
+
+onUnmounted(() => {
+  hideLoadingOverlay();
+});
 
 const router = useRouter();
 const windowTitle = ref('钱包管理');
 
-const handleBeforeClose = () => {
-  router.push({ name: 'main' });
+const handleBeforeClose = async () => {
+  // 关键操作进行中，不允许关闭
+  if (isCriticalOperation.value || bulkGenerating.value || isImporting.value) {
+    return;
+  }
+  try {
+    const currentWindow = getCurrentWindow();
+    await currentWindow.destroy();
+  } catch (e) {
+    console.error('关闭窗口失败:', e);
+  }
+};
+
+const handleExit = async () => {
+  // 关键操作进行中，不允许退出
+  if (isCriticalOperation.value || bulkGenerating.value || isImporting.value) {
+    return;
+  }
+  try {
+    const currentWindow = getCurrentWindow();
+    await currentWindow.destroy();
+  } catch (e) {
+    console.error('关闭窗口失败:', e);
+  }
 };
 
 const isUnlocked = ref(false);
@@ -25,6 +79,39 @@ const passwordInputRef = ref(null);
 const initPassword = ref('');
 const initPasswordConfirm = ref('');
 const sessionPassword = ref('');
+const transportToken = ref('');
+const transportAesKey = ref(null);
+let pageLoadedEmitted = false;
+
+// Change Password Modal
+const showChangePasswordModal = ref(false);
+const changePasswordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
+});
+const changePasswordLoading = ref(false);
+const changePasswordOldRef = ref(null);
+const changePasswordNewRef = ref(null);
+const changePasswordConfirmRef = ref(null);
+
+// 是否正在进行关键操作（修改密码等）
+const isCriticalOperation = ref(false);
+
+// 监听修改密码弹窗显示，自动聚焦输入框
+watch(showChangePasswordModal, (newVal) => {
+  if (newVal) {
+    nextTick(() => {
+      if (changePasswordOldRef.value) {
+        changePasswordOldRef.value.focus();
+      }
+    });
+  } else {
+    changePasswordForm.oldPassword = '';
+    changePasswordForm.newPassword = '';
+    changePasswordForm.confirmPassword = '';
+  }
+});
 
 // 监听弹窗显示，自动聚焦输入框
 watch(showUnlockModal, (newVal) => {
@@ -47,12 +134,44 @@ const walletLoadSeq = ref(0);
 const showRenameGroupModal = ref(false);
 const renameGroupName = ref('');
 const renamingGroupId = ref(null);
+const renameGroupNameRef = ref(null);
+
+// Export Modal
+const showExportModal = ref(false);
+const exportPassword = ref('');
+const exportPasswordRef = ref(null);
+const isExporting = ref(false);
+
+// 监听导出弹窗显示，自动聚焦输入框，关闭时清空密码
+watch(showExportModal, (newVal) => {
+  if (newVal) {
+    nextTick(() => {
+      if (exportPasswordRef.value) {
+        exportPasswordRef.value.focus();
+      }
+    });
+  } else {
+    exportPassword.value = '';
+  }
+});
+
+// 监听重命名弹窗显示，自动聚焦并选中文字
+watch(showRenameGroupModal, (newVal) => {
+  if (newVal && renameGroupNameRef.value) {
+    nextTick(() => {
+      renameGroupNameRef.value.focus();
+      renameGroupNameRef.value.select();
+    });
+  }
+});
 
 // Modals
 const showAddGroupModal = ref(false);
 const newGroupName = ref('');
 const newGroupNameRef = ref(null);
 const showAddWalletModal = ref(false);
+const showEditWalletModal = ref(false);
+const editingWallet = ref({ id: null, name: '', remark: '' });
 
 // 监听新建分组弹窗显示，自动聚焦输入框
 watch(showAddGroupModal, (newVal) => {
@@ -78,7 +197,7 @@ const newWallet = reactive({
 });
 
 const addWalletActiveTab = ref('import');
-const importKeyMode = ref('mnemonic');
+const importKeyMode = ref('private_key');
 const mnemonicWalletCount = ref(1);
 const mnemonicStartIndex = ref(0);
 
@@ -87,6 +206,9 @@ const bulkWordCount = ref(12);
 const bulkWalletCount = ref(10);
 const bulkStartIndex = ref(0);
 const bulkGenerating = ref(false);
+const bulkTotalCount = ref(0);
+const bulkSealedMnemonic = ref('');
+const bulkMnemonicMasked = ref('');
 const bulkResults = ref([]);
 
 const maskSecret = (val) => {
@@ -94,6 +216,101 @@ const maskSecret = (val) => {
   const s = String(val);
   if (s.length <= 12) return s;
   return `${s.slice(0, 6)}...${s.slice(-6)}`;
+};
+
+const bytesToHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+const hexToBytes = (hex) => {
+  const s = String(hex || '').trim();
+  if (!s || s.length % 2 !== 0) throw new Error('hex 格式错误');
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  return out;
+};
+const bytesToBase64 = (bytes) => {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+};
+const base64ToBytes = (b64) => {
+  const binary = atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+};
+const pemToSpkiBytes = (pem) => {
+  const clean = String(pem || '')
+    .replace(/-----BEGIN PUBLIC KEY-----/g, '')
+    .replace(/-----END PUBLIC KEY-----/g, '')
+    .replace(/\s+/g, '');
+  return base64ToBytes(clean);
+};
+
+const encryptWithWalletManagerRsa = async (plaintext) => {
+  const pem = await invoke('get_wallet_transport_public_key');
+  const spki = pemToSpkiBytes(pem);
+  const rsaKey = await crypto.subtle.importKey(
+    'spki',
+    spki,
+    { name: 'RSA-OAEP', hash: 'SHA-1' },
+    false,
+    ['encrypt']
+  );
+  const enc = new TextEncoder();
+  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, rsaKey, enc.encode(String(plaintext ?? ''))));
+  return bytesToBase64(encrypted);
+};
+
+const initTransport = async () => {
+  if (transportToken.value && transportAesKey.value) return;
+  const pem = await invoke('get_wallet_transport_public_key');
+  const spki = pemToSpkiBytes(pem);
+  const rsaKey = await crypto.subtle.importKey(
+    'spki',
+    spki,
+    { name: 'RSA-OAEP', hash: 'SHA-1' },
+    false,
+    ['encrypt']
+  );
+
+  const aesKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const raw = new Uint8Array(await crypto.subtle.exportKey('raw', aesKey));
+  const encryptedRaw = new Uint8Array(await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, rsaKey, raw));
+  const token = await invoke('register_wallet_transport_key', { encrypted_key_b64: bytesToBase64(encryptedRaw) });
+  transportAesKey.value = aesKey;
+  transportToken.value = token;
+};
+
+const sealTransportSecret = async (plaintext) => {
+  if (!transportToken.value || !transportAesKey.value) {
+    await initTransport();
+  }
+  const text = String(plaintext ?? '').trim();
+  if (!text) throw new Error('密文内容为空');
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const cipher = new Uint8Array(
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, transportAesKey.value, enc.encode(text))
+  );
+  return `t1:${transportToken.value}:${bytesToHex(iv)}:${bytesToBase64(cipher)}`;
+};
+
+const openTransportSecret = async (sealed) => {
+  const s = String(sealed ?? '').trim();
+  if (!s.startsWith('t1:')) throw new Error('必须使用加密格式传输');
+  const parts = s.slice(3).split(':');
+  if (parts.length !== 3) throw new Error('密文格式错误');
+  const [token, ivHex, cipherB64] = parts;
+  if (transportToken.value && token !== transportToken.value) throw new Error('传输令牌不匹配');
+  if (!transportAesKey.value) throw new Error('缺少传输密钥');
+  const iv = hexToBytes(ivHex);
+  const cipher = base64ToBytes(cipherB64);
+  const plainBytes = new Uint8Array(
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, transportAesKey.value, cipher)
+  );
+  return new TextDecoder().decode(plainBytes);
 };
 
 const parseDbId = (val) => {
@@ -128,16 +345,59 @@ const copyToClipboard = async (text) => {
 const copySealedSecret = async (sealed) => {
   if (!sealed) return;
   try {
-    const plain = await openSealedSecret(sealed, sessionPassword.value);
+    const plain = sealed.startsWith('t1:') ? await openTransportSecret(sealed) : await openSealedSecret(sealed, sessionPassword.value);
     await copyToClipboard(plain);
   } catch (e) {
     Message.error('解密失败: ' + (e?.message || e));
   }
 };
 
+const handleRevealPrivateKey = async (wallet) => {
+  if (!wallet?.has_private_key) {
+    Message.warning('该钱包没有私钥');
+    return;
+  }
+  try {
+    const secrets = await invoke('get_wallet_secrets', { id: wallet.id, password: null, transport_token: transportToken.value });
+    if (!secrets?.sealed_private_key) {
+      Message.warning('该钱包没有私钥');
+      return;
+    }
+    currentWalletName.value = wallet.name || wallet.address;
+    currentSealedPrivateKey.value = secrets.sealed_private_key;
+    showSecretRevealModal.value = true;
+  } catch (e) {
+    Message.error('解密失败: ' + (e?.message || e));
+  }
+};
+
+const handleBatchDeleteWallets = () => {
+  if (selectedWalletIds.value.length === 0) {
+    Message.warning('请先选择要删除的钱包');
+    return;
+  }
+
+  Modal.warning({
+    title: '确认批量删除',
+    content: `确定要删除选中的 ${selectedWalletIds.value.length} 个钱包吗？删除后无法恢复，确定继续吗？`,
+    onOk: async () => {
+      try {
+        for (const id of selectedWalletIds.value) {
+          await invoke('delete_wallet', { id });
+        }
+        selectedWalletIds.value = [];
+        await loadWallets();
+        Message.success('批量删除成功');
+      } catch (e) {
+        Message.error('删除失败: ' + e);
+      }
+    }
+  });
+};
+
 const resetAddWalletForm = () => {
   addWalletActiveTab.value = 'import';
-  importKeyMode.value = 'mnemonic';
+  importKeyMode.value = 'private_key';
   mnemonicWalletCount.value = 1;
   mnemonicStartIndex.value = 0;
   bulkMode.value = 'same_mnemonic';
@@ -176,12 +436,12 @@ watch(importKeyMode, (mode) => {
 
 const walletColumns = [
   { title: '序号', align: 'center', width: 53, slotName: 'index' },
-  { title: '名称', align: 'center', dataIndex: 'name', width: 120, ellipsis: true, tooltip: true },
-  { title: '地址', align: 'center', dataIndex: 'address', width: 220, ellipsis: true, tooltip: true },
-  { title: '类型', align: 'center', dataIndex: 'chain_type', width: 80, ellipsis: true, tooltip: true },
+  { title: '名称', align: 'center', dataIndex: 'name', width: 100, ellipsis: true, tooltip: true },
+  { title: '地址', align: 'center', dataIndex: 'address', width: 380, ellipsis: true, tooltip: true },
+  { title: '类型', align: 'center', slotName: 'chain_type', width: 70 },
+  { title: '私钥', align: 'center', slotName: 'private_key', width: 95, ellipsis: true, tooltip: true },
   { title: '备注', align: 'center', dataIndex: 'remark', ellipsis: true, tooltip: true },
-  { title: '私钥状态', align: 'center', slotName: 'private_key_status', width: 90, ellipsis: true, tooltip: true },
-  { title: '操作', align: 'center', slotName: 'optional', width: 55, ellipsis: true, tooltip: true },
+  { title: '操作', align: 'center', slotName: 'optional', width: 80, ellipsis: true, tooltip: true },
 ];
 
 const walletRowSelection = { type: 'checkbox' };
@@ -330,6 +590,9 @@ const handleCreateGroupInAddWallet = async () => {
 
 // Batch Import
 const showBatchImportModal = ref(false);
+const showSecretRevealModal = ref(false);
+const currentSealedPrivateKey = ref('');
+const currentWalletName = ref('');
 const importedWallets = ref([]);
 const importProgress = ref(0);
 const isImporting = ref(false);
@@ -346,22 +609,41 @@ const importColumns = ref([
 ]);
 
 onMounted(async () => {
+  showLoadingOverlay();
   try {
     await invoke('init_wallet_manager_tables');
     const isSet = await invoke('is_password_set');
+    hideLoadingOverlay();
+    isLoading.value = false;
     if (!isSet) {
       showInitModal.value = true;
     } else {
       showUnlockModal.value = true;
     }
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri && !pageLoadedEmitted) {
+      await nextTick();
+      pageLoadedEmitted = true;
+      getCurrentWindow().emit('page-loaded');
+    }
   } catch (e) {
+    hideLoadingOverlay();
+    isLoading.value = false;
     Message.error('初始化失败: ' + e);
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+    if (isTauri && !pageLoadedEmitted) {
+      await nextTick();
+      pageLoadedEmitted = true;
+      getCurrentWindow().emit('page-loaded');
+    }
   }
 });
 
   const handleUnlock = async () => {
     try {
-      const success = await invoke('verify_password', { request: { password: passwordInput.value } });
+      await initTransport();
+      const encryptedPasswordB64 = await encryptWithWalletManagerRsa(passwordInput.value);
+      const success = await invoke('verify_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
       if (success) {
         sessionPassword.value = passwordInput.value;
         isUnlocked.value = true;
@@ -386,7 +668,9 @@ onMounted(async () => {
       return;
     }
     try {
-      await invoke('init_password', { request: { password: initPassword.value } });
+      await initTransport();
+      const encryptedPasswordB64 = await encryptWithWalletManagerRsa(initPassword.value);
+      await invoke('init_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
       sessionPassword.value = initPassword.value;
       isUnlocked.value = true;
       showInitModal.value = false;
@@ -394,6 +678,48 @@ onMounted(async () => {
       loadWallets();
     } catch (e) {
       Message.error('初始化失败: ' + e);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!changePasswordForm.oldPassword) {
+      Message.error('请输入当前密码');
+      return;
+    }
+    if (!changePasswordForm.newPassword) {
+      Message.error('请输入新密码');
+      return;
+    }
+    if (changePasswordForm.newPassword.length < 6) {
+      Message.error('新密码长度不能少于6位');
+      return;
+    }
+    if (changePasswordForm.newPassword !== changePasswordForm.confirmPassword) {
+      Message.error('两次密码不一致');
+      return;
+    }
+
+    changePasswordLoading.value = true;
+    isCriticalOperation.value = true;
+
+    try {
+      await invoke('change_password', {
+        request: {
+          old_password: changePasswordForm.oldPassword,
+          new_password: changePasswordForm.newPassword
+        }
+      });
+
+      // 更新会话密码
+      sessionPassword.value = changePasswordForm.newPassword;
+
+      showChangePasswordModal.value = false;
+      Message.success('密码修改成功');
+    } catch (e) {
+      Message.error('密码修改失败: ' + (e?.message || e));
+    } finally {
+      changePasswordLoading.value = false;
+      isCriticalOperation.value = false;
     }
   };
 
@@ -655,7 +981,7 @@ onMounted(async () => {
     
     Modal.warning({
         title: '确认删除',
-        content: '确定要删除该分组吗？删除后该分组下的子分组将被一并删除，该分组下的钱包将变为未分组状态。',
+        content: '确定要删除该分组吗？删除后该分组下的子分组将被一并删除，所有分组下的钱包信息将被删除。',
         onOk: async () => {
             try {
                 await invoke('delete_group', { id: groupId });
@@ -693,11 +1019,53 @@ onMounted(async () => {
     });
   };
 
+  const handleEditWallet = (wallet) => {
+    editingWallet.value = {
+      id: wallet.id,
+      name: wallet.name || '',
+      remark: wallet.remark || '',
+      group_id: wallet.group_id
+    };
+    showEditWalletModal.value = true;
+  };
+
+  const handleSaveWallet = async () => {
+    if (!editingWallet.value.id) {
+      Message.error('缺少钱包ID');
+      return;
+    }
+    try {
+      await invoke('update_wallet', {
+        request: {
+          id: editingWallet.value.id,
+          group_id: editingWallet.value.group_id,
+          name: editingWallet.value.name || null,
+          remark: editingWallet.value.remark || null
+        }
+      });
+      await loadWallets();
+      showEditWalletModal.value = false;
+      Message.success('保存成功');
+    } catch (e) {
+      Message.error('保存失败: ' + e);
+    }
+  };
+
+  const handleRowClick = (record) => {
+    const key = record.id;
+    const index = selectedWalletIds.value.indexOf(key);
+    if (index >= 0) {
+      selectedWalletIds.value.splice(index, 1);
+    } else {
+      selectedWalletIds.value.push(key);
+    }
+  };
+
   const handleAddWallet = async () => {
     try {
       if (!newWallet.chain_type || !Array.isArray(newWallet.group_path) || newWallet.group_path.length === 0) {
         Message.error('请选择链类型与分组');
-        return;
+        return false;
       }
       
       let groupId = newWallet.group_id;
@@ -712,7 +1080,7 @@ onMounted(async () => {
             Message.error('请输入助记词');
             return false;
           }
-          const sealedMnemonic = await sealSecret(mnemonic, sessionPassword.value);
+          const sealedMnemonic = await sealTransportSecret(mnemonic);
           const count = Number(mnemonicWalletCount.value) || 1;
           const startIndex = Number(mnemonicStartIndex.value) || 0;
           await invoke('create_wallets', {
@@ -727,7 +1095,9 @@ onMounted(async () => {
               start_index: startIndex,
               word_count: null,
               remark: newWallet.remark || null,
-              password: sessionPassword.value
+              preview_limit: 0,
+              include_secrets: false,
+              transport_token: transportToken.value
             }
           });
         } else {
@@ -736,7 +1106,7 @@ onMounted(async () => {
             Message.error('请输入私钥');
             return false;
           }
-          const sealedPrivateKey = await sealSecret(privateKey, sessionPassword.value);
+          const sealedPrivateKey = await sealTransportSecret(privateKey);
           await invoke('create_wallets', {
             request: {
               group_id: groupId,
@@ -749,7 +1119,9 @@ onMounted(async () => {
               start_index: null,
               word_count: null,
               remark: newWallet.remark || null,
-              password: sessionPassword.value
+              preview_limit: 0,
+              include_secrets: false,
+              transport_token: transportToken.value
             }
           });
         }
@@ -762,11 +1134,15 @@ onMounted(async () => {
 
       bulkGenerating.value = true;
       bulkResults.value = [];
+      bulkTotalCount.value = 0;
+      bulkSealedMnemonic.value = '';
+      bulkMnemonicMasked.value = '';
       const mode = bulkMode.value === 'same_mnemonic' ? 'generate_same_mnemonic' : 'generate_different_mnemonic';
       const count = Number(bulkWalletCount.value) || 1;
       const startIndex = Number(bulkStartIndex.value) || 0;
       const wordCount = Number(bulkWordCount.value) || 12;
 
+      const previewLimit = count > 1000 ? 200 : count;
       const created = await invoke('create_wallets', {
         request: {
           group_id: groupId,
@@ -779,31 +1155,34 @@ onMounted(async () => {
           start_index: startIndex,
           word_count: wordCount,
           remark: newWallet.remark || null,
-          password: sessionPassword.value
+          preview_limit: previewLimit,
+          include_secrets: true,
+          transport_token: transportToken.value
         }
       });
 
-      const list = Array.isArray(created) ? created : [];
-      bulkResults.value = await Promise.all(
-        list.map(async (w) => {
-          let mnemonicMasked = '';
-          let privateKeyMasked = '';
-          try {
-            if (w?.sealed_mnemonic) {
-              mnemonicMasked = maskSecret(await openSealedSecret(w.sealed_mnemonic, sessionPassword.value));
-            }
-          } catch (_) {}
-          try {
-            if (w?.sealed_private_key) {
-              privateKeyMasked = maskSecret(await openSealedSecret(w.sealed_private_key, sessionPassword.value));
-            }
-          } catch (_) {}
-          return { ...w, mnemonic_masked: mnemonicMasked, private_key_masked: privateKeyMasked };
-        })
-      );
+      const total = Number(created?.total || 0);
+      bulkTotalCount.value = total;
+      bulkSealedMnemonic.value = created?.sealed_mnemonic || '';
+      if (bulkSealedMnemonic.value) {
+        try {
+          bulkMnemonicMasked.value = maskSecret(
+            bulkSealedMnemonic.value.startsWith('t1:')
+              ? await openTransportSecret(bulkSealedMnemonic.value)
+              : await openSealedSecret(bulkSealedMnemonic.value, sessionPassword.value)
+          );
+        } catch (_) {}
+      }
+
+      const list = Array.isArray(created?.preview) ? created.preview : [];
+      bulkResults.value = list.map((w) => {
+        const mnemonicMasked = bulkMnemonicMasked.value || (w?.sealed_mnemonic ? '******' : '');
+        const privateKeyMasked = w?.sealed_private_key ? '******' : '';
+        return { ...w, mnemonic_masked: mnemonicMasked, private_key_masked: privateKeyMasked };
+      });
       bulkGenerating.value = false;
       await loadWallets();
-      Message.success(`已生成并保存 ${bulkResults.value.length} 个钱包`);
+      Message.success(`已生成并保存 ${bulkTotalCount.value} 个钱包（预览 ${bulkResults.value.length} 个）`);
       return false;
     } catch (e) {
       bulkGenerating.value = false;
@@ -929,8 +1308,9 @@ const startBatchImport = async () => {
 
       const mnemonic = (wallet.mnemonic || '').trim();
       const privateKey = (wallet.private_key || '').trim();
-      const sealedMnemonic = mnemonic ? await sealSecret(mnemonic, sessionPassword.value) : null;
-      const sealedPrivateKey = privateKey ? await sealSecret(privateKey, sessionPassword.value) : null;
+      const walletAddress = (wallet.address || '').trim();
+      const sealedMnemonic = mnemonic ? await sealTransportSecret(mnemonic) : null;
+      const sealedPrivateKey = privateKey ? await sealTransportSecret(privateKey) : null;
       
       await invoke('create_wallets', {
         request: {
@@ -944,8 +1324,11 @@ const startBatchImport = async () => {
           start_index: 0,
           word_count: null,
           remark: wallet.remark || null,
-          password: sessionPassword.value
-        }
+          preview_limit: 0,
+          include_secrets: false,
+          transport_token: transportToken.value
+        },
+        address: walletAddress || null  // 传入地址用于验证（可选）
       });
       
       importResult.value.success++;
@@ -973,10 +1356,10 @@ const closeBatchImportModal = () => {
 const downloadTemplate = async () => {
   // 使用xlsx库动态生成模板文件
   const worksheet = XLSX.utils.aoa_to_sheet([
-    ['name', 'chain_type', 'group_name', 'private_key', 'mnemonic', 'remark'],
-    ['示例钱包1', 'evm', '个人钱包', '0x(64位十六进制私钥)', '', ''],
-    ['示例钱包2', 'evm', '个人钱包', '', 'work man father ...', ''],
-    ['示例钱包3', 'solana', 'Solana钱包', '(base58 keypair)', '', '']
+    ['name', 'chain_type', 'group_name', 'address', 'private_key', 'mnemonic', 'remark'],
+    ['示例钱包1', 'evm', '个人钱包', '', '0x(64位十六进制私钥)', '', ''],
+    ['示例钱包2', 'evm', '个人钱包', '', '', 'work man father ...', ''],
+    ['示例钱包3', 'solana', 'Solana钱包', '', '(base58 keypair)', '', '']
   ]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
@@ -1000,20 +1383,101 @@ const downloadTemplate = async () => {
     });
   }
 };
+
+// Export Function
+const handleExportWallets = async () => {
+  if (selectedWalletIds.value.length === 0) {
+    Message.warning('请先选择要导出的钱包');
+    return;
+  }
+  showExportModal.value = true;
+};
+
+const confirmExport = async () => {
+  if (!exportPassword.value) {
+    Message.error('请输入密码');
+    return;
+  }
+
+  isExporting.value = true;
+  try {
+    const data = await invoke('export_wallets', {
+      ids: selectedWalletIds.value,
+      password: exportPassword.value
+    });
+
+    const exportData = data.map(w => ({
+      名称: w.name || '',
+      地址: w.address,
+      类型: w.chain_type === 'evm' ? 'EVM' : 'SOL',
+      私钥: w.private_key || '',
+      助记词: w.mnemonic || '',
+      助记词序号: w.mnemonic_index ?? '',
+      备注: w.remark || '',
+      钱包ID: w.id
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '钱包数据');
+
+    const filePath = await save({
+      defaultPath: '钱包数据导出.xlsx',
+      filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+    });
+
+    if (filePath) {
+      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      await invoke('save_file', {
+        filePath,
+        content: new Uint8Array(excelBuffer)
+      });
+
+      openDirectory(filePath);
+      Notification.success({
+        content: `成功导出 ${exportData.length} 个钱包`,
+        duration: 5000,
+        position: 'topLeft',
+      });
+    }
+
+    showExportModal.value = false;
+    exportPassword.value = '';
+  } catch (e) {
+    Message.error('导出失败: ' + (e?.message || e));
+  } finally {
+    isExporting.value = false;
+  }
+};
 </script>
 
 <template>
-  <TitleBar :title="windowTitle" :custom-close="true" @before-close="handleBeforeClose" />
+  <TitleBar
+    :title="windowTitle"
+    :custom-close="true"
+    :disable-close="isCriticalOperation || bulkGenerating || isImporting"
+    @before-close="handleBeforeClose"
+  />
+  <!-- 全屏遮罩层 - 关键操作进行中 -->
+  <div v-if="isCriticalOperation || bulkGenerating || isImporting" class="critical-operation-overlay" @click.stop>
+    <div class="critical-operation-content">
+      <a-spin size="large" />
+      <p class="critical-operation-text">
+        {{ isCriticalOperation ? '正在修改密码并重新加密数据...' : (bulkGenerating ? '正在生成并保存钱包...' : '正在批量导入钱包...') }}
+      </p>
+      <p class="critical-operation-hint">请勿关闭程序或刷新页面</p>
+    </div>
+  </div>
   <div class="wallet-manager-page">
     <div v-if="isUnlocked" class="main-layout">
         <div class="sidebar">
             <div class="sidebar-header">
                 <span>分组列表</span>
                 <div>
-                    <a-button type="text" size="mini" status="danger" @click="handleDeleteGroup" :disabled="!selectedGroupKeys[0] || ['SYSTEM_EVM', 'SYSTEM_SOLANA'].includes(selectedGroupKeys[0])">
+                    <a-button type="text" size="mini" @click="handleDeleteGroup" :disabled="!selectedGroupKeys[0] || ['SYSTEM_EVM', 'SYSTEM_SOLANA'].includes(selectedGroupKeys[0])" class="group-action-btn delete-btn">
                         <template #icon><icon-delete style="font-size: 18px;" /></template>
                     </a-button>
-                    <a-button type="text" size="mini" status="success" @click="showAddGroupModal = true">
+                    <a-button type="text" size="mini" @click="showAddGroupModal = true" class="group-action-btn add-btn">
                         <template #icon><icon-plus style="font-size: 18px;"/></template>
                     </a-button>
                 </div>
@@ -1055,6 +1519,30 @@ const downloadTemplate = async () => {
                 <a-button type="primary" @click="showAddWalletModal = true">添加钱包</a-button>
                 <a-button style="margin-left: 10px;" type="primary" status="success" @click="showBatchImportModal = true">批量导入</a-button>
                 <a-button style="margin-left: 10px;" type="outline" @click="downloadTemplate">下载模板</a-button>
+                <a-button
+                  style="margin-left: 10px;"
+                  type="outline"
+                  :disabled="selectedWalletIds.length === 0"
+                  @click="handleExportWallets"
+                >
+                  导出 ({{ selectedWalletIds.length }})
+                </a-button>
+                <a-button
+                  style="margin-left: 10px;"
+                  type="primary"
+                  status="danger"
+                  :disabled="selectedWalletIds.length === 0"
+                  @click="handleBatchDeleteWallets"
+                >
+                  批量删除 ({{ selectedWalletIds.length }})
+                </a-button>
+                <a-button
+                  style="float: right;;"
+                  type="outline"
+                  @click="showChangePasswordModal = true"
+                >
+                  修改密码
+                </a-button>
             </div>
             <VirtualScrollerTable
               class="wallet-table"
@@ -1063,6 +1551,7 @@ const downloadTemplate = async () => {
               :row-selection="walletRowSelection"
               :selected-keys="selectedWalletIds"
               @update:selected-keys="selectedWalletIds = $event"
+              @row-click="handleRowClick"
               row-key="id"
               height="100%"
               page-type="wallet_manager"
@@ -1072,11 +1561,28 @@ const downloadTemplate = async () => {
                 <a-tag v-if="record.has_private_key" color="green">已加密</a-tag>
                 <a-tag v-else color="arcoblue">无私钥</a-tag>
               </template>
+              <template #private_key="{ record }">
+                <a-button v-if="record.has_private_key" type="primary" status="success" size="mini" @click.stop="handleRevealPrivateKey(record)">安全复制</a-button>
+                <span v-else>-</span>
+              </template>
+              <template #chain_type="{ record }">
+                <a-tag :color="record.chain_type === 'evm' ? 'blue' : 'purple'">
+                  {{ record.chain_type === 'evm' ? 'EVM' : 'SOL' }}
+                </a-tag>
+              </template>
               <template #optional="{ record }">
                 <a-button
-                  type="text"
+                  type="secondary"
+                  size="mini"
+                  @click.stop="handleEditWallet(record)"
+                >
+                  <template #icon><icon-edit style="font-size: 16px;" /></template>
+                </a-button>
+                <a-button
+                  type="secondary"
                   size="mini"
                   status="danger"
+                  style="margin-left: 10px;"
                   @click.stop="handleDeleteWallet(record)"
                 >
                   <template #icon><icon-delete style="font-size: 16px;" /></template>
@@ -1087,31 +1593,99 @@ const downloadTemplate = async () => {
     </div>
 
     <!-- Init Modal -->
-    <a-modal v-model:visible="showInitModal" title="设置主密码" :closable="false" :mask-closable="false" :footer="false">
+    <a-modal
+      :visible="showInitModal"
+      title="设置主密码"
+      :closable="false"
+      :mask-closable="false"
+      :esc-to-close="false"
+      :footer="false"
+      mask-animation-name="none"
+      modal-animation-name="none"
+      :mask-style="{ background: 'rgba(0, 0, 0, 0.6)' }"
+    >
         <a-form layout="vertical">
             <a-alert type="warning" style="margin-bottom: 10px;">
                 此密码用于加密存储所有私钥，请务必牢记。丢失密码将无法找回数据！
             </a-alert>
             <a-form-item label="主密码">
-                <a-input-password v-model="initPassword" />
+                <a-input-password v-model="initPassword" class="styled-password-input">
+                    <template #prefix>
+                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
+                    </template>
+                </a-input-password>
             </a-form-item>
             <a-form-item label="确认密码">
-                <a-input-password v-model="initPasswordConfirm" />
+                <a-input-password v-model="initPasswordConfirm" class="styled-password-input">
+                    <template #prefix>
+                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
+                    </template>
+                </a-input-password>
             </a-form-item>
-            <div style="text-align: right; margin-top: 20px;">
+            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+                <a-button @click="handleExit">退出</a-button>
                 <a-button type="primary" @click="handleInit">初始化</a-button>
             </div>
         </a-form>
     </a-modal>
 
     <!-- Unlock Modal -->
-    <a-modal v-model:visible="showUnlockModal" title="解锁钱包管理" :closable="false" :mask-closable="false" :footer="false">
+    <a-modal
+      :visible="showUnlockModal"
+      title="解锁钱包管理"
+      :closable="false"
+      :mask-closable="false"
+      :esc-to-close="false"
+      :footer="false"
+      mask-animation-name="none"
+      modal-animation-name="none"
+      :mask-style="{ background: 'rgba(0, 0, 0, 0.6)' }"
+    >
         <a-form layout="vertical">
             <a-form-item label="主密码">
-                <a-input-password v-model="passwordInput" ref="passwordInputRef" @keyup.enter="handleUnlock" />
+                <a-input-password v-model="passwordInput" ref="passwordInputRef" @keyup.enter="handleUnlock" class="styled-password-input">
+                    <template #prefix>
+                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
+                    </template>
+                </a-input-password>
+            </a-form-item>
+            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+                <a-button @click="handleExit">退出</a-button>
+                <a-button type="primary" @click="handleUnlock">解锁</a-button>
+            </div>
+        </a-form>
+    </a-modal>
+
+    <!-- Change Password Modal -->
+    <a-modal v-model:visible="showChangePasswordModal" title="修改主密码" :footer="false" @before-open="() => {
+        nextTick(() => {
+            if (changePasswordOldRef.value) changePasswordOldRef.value.focus();
+        });
+    }">
+        <a-form layout="vertical" :model="changePasswordForm">
+            <a-form-item label="当前密码">
+                <a-input-password v-model="changePasswordForm.oldPassword" ref="changePasswordOldRef" @keyup.enter="() => changePasswordNewRef.value?.focus()" class="styled-password-input">
+                    <template #prefix>
+                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
+                    </template>
+                </a-input-password>
+            </a-form-item>
+            <a-form-item label="新密码">
+                <a-input-password v-model="changePasswordForm.newPassword" ref="changePasswordNewRef" @keyup.enter="() => changePasswordConfirmRef.value?.focus()" class="styled-password-input">
+                    <template #prefix>
+                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
+                    </template>
+                </a-input-password>
+            </a-form-item>
+            <a-form-item label="确认新密码">
+                <a-input-password v-model="changePasswordForm.confirmPassword" ref="changePasswordConfirmRef" @keyup.enter="handleChangePassword" class="styled-password-input">
+                    <template #prefix>
+                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
+                    </template>
+                </a-input-password>
             </a-form-item>
             <div style="text-align: right; margin-top: 20px;">
-                <a-button type="primary" @click="handleUnlock">解锁</a-button>
+                <a-button type="primary" :loading="changePasswordLoading" @click="handleChangePassword">确认修改</a-button>
             </div>
         </a-form>
     </a-modal>
@@ -1129,25 +1703,60 @@ const downloadTemplate = async () => {
     </a-modal>
 
     <!-- Rename Group Modal -->
-    <a-modal v-model:visible="showRenameGroupModal" title="重命名分组" @before-ok="handleRenameGroup">
+    <a-modal v-model:visible="showRenameGroupModal" title="重命名分组" @before-ok="handleRenameGroup" @opened="handleRenameGroupOpened">
         <a-form layout="vertical">
             <a-form-item label="分组名称">
-                <a-input v-model="renameGroupName" placeholder="请输入新的分组名称" />
+                <a-input ref="renameGroupNameRef" v-model="renameGroupName" placeholder="请输入新的分组名称" @keyup.enter="handleRenameGroup" />
             </a-form-item>
         </a-form>
     </a-modal>
 
+    <!-- Export Modal -->
+    <a-modal v-model:visible="showExportModal" title="导出钱包数据" :footer="false">
+        <a-alert type="warning" style="margin-bottom: 16px;">
+            为保障数据安全，导出需要二次认证。请输入当前主密码解密私钥后导出。
+        </a-alert>
+        <a-form layout="vertical">
+            <a-form-item label="主密码">
+                <a-input-password ref="exportPasswordRef" v-model="exportPassword" @keyup.enter="confirmExport" class="styled-password-input">
+                    <template #prefix>
+                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
+                    </template>
+                </a-input-password>
+            </a-form-item>
+            <div style="text-align: right; margin-top: 20px;">
+                <a-button type="primary" :loading="isExporting" @click="confirmExport">确认导出</a-button>
+            </div>
+        </a-form>
+    </a-modal>
+
     <!-- Add Wallet Modal -->
-    <a-modal v-model:visible="showAddWalletModal" title="添加钱包" width="980px" :body-style="{ maxHeight: '72vh', overflowY: 'auto' }" @before-ok="handleAddWallet" @before-open="async () => {
-        // Auto-select chain type based on system group
-        const key = selectedGroupKeys[0];
-        if (key === 'SYSTEM_EVM') newWallet.chain_type = 'evm';
-        else if (key === 'SYSTEM_SOLANA') newWallet.chain_type = 'solana';
-        // Build group options for cascader
-        await buildGroupOptions();
-    }">
+    <a-modal
+      v-model:visible="showAddWalletModal"
+      title="添加钱包"
+      width="980px"
+      :body-style="{ maxHeight: '72vh', overflowY: 'auto' }"
+      :closable="!bulkGenerating"
+      :mask-closable="false"
+      :esc-to-close="false"
+      :footer="bulkGenerating ? false : undefined"
+      @before-ok="handleAddWallet"
+      @before-open="async () => {
+          // Auto-select chain type based on system group
+          const key = selectedGroupKeys[0];
+          if (key === 'SYSTEM_EVM') newWallet.chain_type = 'evm';
+          else if (key === 'SYSTEM_SOLANA') newWallet.chain_type = 'solana';
+          // Build group options for cascader
+          await buildGroupOptions();
+      }"
+      @close="() => {
+          if (bulkGenerating) {
+              return false;
+          }
+      }"
+    >
         <a-tabs v-model:active-key="addWalletActiveTab">
-            <a-tab-pane key="import" title="导入/添加">
+            <a-tab-pane key="import" title="手动添加">
                 <a-form layout="vertical" :model="newWallet">
                     <div class="add-wallet-two-col">
                         <div class="add-wallet-col">
@@ -1157,6 +1766,8 @@ const downloadTemplate = async () => {
                                     <a-option value="solana">Solana</a-option>
                                 </a-select>
                             </a-form-item>
+                         
+                           
                             <a-form-item label="组名称" required>
                                 <a-cascader 
                                     v-model="newWallet.group_path" 
@@ -1172,40 +1783,41 @@ const downloadTemplate = async () => {
                                     :style="{ width: '100%' }"
                                 />
                             </a-form-item>
+                            <a-form-item label="钱包名称 (可选)">
+                                <a-input v-model="newWallet.name" />
+                            </a-form-item>
+                             <!-- <a-form-item label="地址">
+                                <a-input v-model="newWallet.address" disabled placeholder="自动生成并保存" />
+                            </a-form-item> -->
+                            
+                        </div>
+
+                        <div class="add-wallet-col">
+                             <a-form-item label="导入方式">
+                                <a-radio-group v-model="importKeyMode" type="button">
+                                    <a-radio value="private_key">私钥</a-radio>
+                                    <a-radio value="mnemonic">助记词</a-radio>
+                                </a-radio-group>
+                            </a-form-item>
+                            
+                           
                             <a-form-item label="新增子分组 (可选)">
                                 <div style="display: flex; gap: 8px; width: 100%;">
                                     <a-input v-model="newWallet.new_group_name" placeholder="将创建在当前所选节点下" />
                                     <a-button type="outline" @click="handleCreateGroupInAddWallet">新增</a-button>
                                 </div>
                             </a-form-item>
-                            <a-form-item label="钱包名称 (可选)">
-                                <a-input v-model="newWallet.name" />
-                            </a-form-item>
-                        </div>
-
-                        <div class="add-wallet-col">
-                            <a-form-item label="导入方式">
-                                <a-radio-group v-model="importKeyMode" type="button">
-                                    <a-radio value="mnemonic">助记词</a-radio>
-                                    <a-radio value="private_key">私钥</a-radio>
-                                </a-radio-group>
-                            </a-form-item>
-
                             <template v-if="importKeyMode === 'mnemonic'">
                                 <div class="add-wallet-subgrid">
                                     <a-form-item label="钱包数量">
-                                        <a-input-number v-model="mnemonicWalletCount" :min="1" :max="100" style="width: 100%;" />
+                                        <a-input-number v-model="mnemonicWalletCount" :min="1" :max="100000" style="width: 100%;" />
                                     </a-form-item>
                                     <a-form-item label="起始序号">
                                         <a-input-number v-model="mnemonicStartIndex" :min="0" :max="1000000" style="width: 100%;" />
                                     </a-form-item>
                                 </div>
                             </template>
-
-                            <a-form-item label="地址">
-                                <a-input v-model="newWallet.address" disabled placeholder="自动生成并保存" />
-                            </a-form-item>
-                            <a-form-item label="备注 (可选)">
+                            <a-form-item  v-if="importKeyMode === 'private_key'" label="备注 (可选)">
                                 <a-input v-model="newWallet.remark" placeholder="请输入备注信息" />
                             </a-form-item>
                         </div>
@@ -1222,9 +1834,13 @@ const downloadTemplate = async () => {
                             <a-input-password v-model="newWallet.private_key" placeholder="将加密存储" />
                         </a-form-item>
                     </template>
+                    <template  v-if="importKeyMode === 'mnemonic'">
+                         <a-form-item label="备注 (可选)">
+                                <a-input v-model="newWallet.remark" placeholder="请输入备注信息" />
+                            </a-form-item>
+                    </template>
                 </a-form>
             </a-tab-pane>
-
             <a-tab-pane key="bulk" title="批量生成">
                 <a-form layout="vertical" :model="newWallet">
                     <div class="add-wallet-two-col">
@@ -1250,12 +1866,17 @@ const downloadTemplate = async () => {
                                     :style="{ width: '100%' }"
                                 />
                             </a-form-item>
-                            <a-form-item label="新增子分组 (可选)">
-                                <div style="display: flex; gap: 8px; width: 100%;">
-                                    <a-input v-model="newWallet.new_group_name" placeholder="将创建在当前所选节点下" />
-                                    <a-button type="outline" @click="handleCreateGroupInAddWallet">新增</a-button>
-                                </div>
-                            </a-form-item>
+                            <div class="add-wallet-subgrid">
+                                <a-form-item label="词数">
+                                    <a-select v-model="bulkWordCount">
+                                        <a-option :value="12">12</a-option>
+                                        <a-option :value="24">24</a-option>
+                                    </a-select>
+                                </a-form-item>
+                                <a-form-item label="钱包数量">
+                                    <a-input-number v-model="bulkWalletCount" :min="1" :max="100000" style="width: 100%;" />
+                                </a-form-item>
+                            </div>
                             <a-form-item label="名称前缀 (可选)">
                                 <a-input v-model="newWallet.name" />
                             </a-form-item>
@@ -1268,17 +1889,13 @@ const downloadTemplate = async () => {
                                     <a-radio value="different_mnemonic">不同助记词</a-radio>
                                 </a-radio-group>
                             </a-form-item>
-                            <div class="add-wallet-subgrid">
-                                <a-form-item label="词数">
-                                    <a-select v-model="bulkWordCount">
-                                        <a-option :value="12">12</a-option>
-                                        <a-option :value="24">24</a-option>
-                                    </a-select>
-                                </a-form-item>
-                                <a-form-item label="钱包数量">
-                                    <a-input-number v-model="bulkWalletCount" :min="1" :max="100" style="width: 100%;" />
-                                </a-form-item>
-                            </div>
+                            <a-form-item label="新增子分组 (可选)">
+                                <div style="display: flex; gap: 8px; width: 100%;">
+                                    <a-input v-model="newWallet.new_group_name" placeholder="将创建在当前所选节点下" />
+                                    <a-button type="outline" @click="handleCreateGroupInAddWallet">新增</a-button>
+                                </div>
+                            </a-form-item>
+                            
                             <a-form-item v-if="bulkMode === 'same_mnemonic'" label="起始序号">
                                 <a-input-number v-model="bulkStartIndex" :min="0" :max="1000000" style="width: 100%;" />
                             </a-form-item>
@@ -1291,6 +1908,13 @@ const downloadTemplate = async () => {
                     <a-alert v-if="bulkGenerating" type="info" title="正在生成并保存，请稍候..." show-icon />
 
                     <div v-if="bulkResults.length > 0" style="margin-top: 12px;">
+                        <div v-if="bulkSealedMnemonic" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <span>本次助记词：{{ bulkMnemonicMasked || '******' }}</span>
+                            <a-button type="outline" size="mini" @click="copySealedSecret(bulkSealedMnemonic)">复制</a-button>
+                        </div>
+                        <div style="margin-bottom: 8px; font-size: 12px; color: #666;">
+                            已创建 {{ bulkTotalCount }} 个，仅预览前 {{ bulkResults.length }} 个
+                        </div>
                         <a-table :data="bulkResults" :pagination="false" size="small">
                             <a-table-column title="地址" data-index="address" :width="260" ellipsis tooltip />
                             <a-table-column title="序号" data-index="mnemonic_index" :width="70" />
@@ -1313,8 +1937,43 @@ const downloadTemplate = async () => {
         </a-tabs>
     </a-modal>
 
+    <!-- Edit Wallet Modal -->
+    <a-modal v-model:visible="showEditWalletModal" title="编辑钱包" :footer="false" width="500px">
+        <a-form layout="vertical">
+            <a-form-item label="钱包名称">
+                <a-input v-model="editingWallet.name" placeholder="请输入钱包名称" />
+            </a-form-item>
+            <a-form-item label="备注信息">
+                <a-input v-model="editingWallet.remark" placeholder="请输入备注信息" />
+            </a-form-item>
+            <div style="text-align: right; margin-top: 20px;">
+                <a-button @click="showEditWalletModal = false">取消</a-button>
+                <a-button type="primary" style="margin-left: 8px;" @click="handleSaveWallet">保存</a-button>
+            </div>
+        </a-form>
+    </a-modal>
+
+    <!-- Secret Reveal Modal -->
+    <SecretRevealModal
+      :visible="showSecretRevealModal"
+      :sealedPrivateKey="currentSealedPrivateKey"
+      :password="sessionPassword"
+      :transportToken="transportToken"
+      :transportAesKey="transportAesKey"
+      :title="'安全复制 - ' + currentWalletName"
+      @update:visible="showSecretRevealModal = $event"
+    />
+
     <!-- Batch Import Modal -->
-    <a-modal v-model:visible="showBatchImportModal" title="批量导入钱包" :footer="false" width="800px">
+    <a-modal
+      v-model:visible="showBatchImportModal"
+      title="批量导入钱包"
+      :footer="false"
+      width="800px"
+      :closable="!isImporting"
+      :mask-closable="false"
+      :esc-to-close="false"
+    >
         <div v-if="!isImporting">
             <a-upload
                 v-model:file-list="fileList"
@@ -1436,14 +2095,14 @@ const downloadTemplate = async () => {
 }
 .content {
     flex: 1;
-    padding: 20px;
+    padding: 10px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
 }
 .toolbar {
     flex-shrink: 0;
-    margin-bottom: 20px;
+    margin-bottom: 10px;
 }
 .wallet-table {
     flex: 1;
@@ -1484,4 +2143,154 @@ const downloadTemplate = async () => {
     font-weight: 600;
     background-color: var(--color-fill-2);
 }
+
+/* 美化密码输入框样式 */
+.styled-password-input {
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.styled-password-input:hover {
+    border-color: rgb(var(--primary-5));
+    box-shadow: 0 0 0 2px rgba(var(--primary-6), 0.1);
+}
+
+.styled-password-input:focus-within {
+    border-color: rgb(var(--primary-6));
+    box-shadow: 0 0 0 3px rgba(var(--primary-6), 0.15);
+}
+
+:deep(.arco-input-password) {
+    border-radius: 8px;
+    padding-left: 8px;
+}
+
+:deep(.arco-input-password-wrapper) {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* 分组操作按钮样式 */
+.group-action-btn {
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.group-action-btn:hover {
+    background-color: var(--color-fill-2) !important;
+}
+
+.delete-btn {
+    color: #ff4d4f;
+}
+
+.delete-btn:hover {
+    color: #ff7875 !important;
+    background-color: rgba(255, 77, 79, 0.1) !important;
+}
+
+.add-btn {
+    color: #52c41a;
+}
+
+.add-btn:hover {
+    color: #73d13d !important;
+    background-color: rgba(82, 196, 26, 0.1) !important;
+}
+
+.group-action-btn:disabled {
+    color: var(--color-text-3) !important;
+    background-color: transparent !important;
+}
+
+/* 关键操作遮罩层样式 */
+.critical-operation-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+}
+
+.critical-operation-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 40px 60px;
+    background: var(--color-bg-2);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--color-border);
+}
+
+.critical-operation-text {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--color-text-1);
+    margin: 0;
+}
+
+.critical-operation-hint {
+    font-size: 14px;
+    color: var(--color-text-3);
+    margin: 0;
+}
+
+/* 钱包管理加载遮罩 */
+.wallet-loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--color-bg-1);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+/* 全局加载遮罩 - 覆盖模态框 */
+.wallet-global-loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: var(--color-bg-1);
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    font-size: 16px;
+    color: var(--color-text-2);
+}
+
+.wallet-global-loading-overlay .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--color-fill-3);
+    border-top-color: rgb(var(--primary-6));
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.wallet-global-loading-overlay p {
+    margin-top: 16px;
+    margin: 16px 0 0 0;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 </style>

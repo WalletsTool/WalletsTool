@@ -1,11 +1,155 @@
 # WalletsTool Development Guide
 
-**Generated:** 2026-01-27
+**Generated:** 2026-01-30
 **Commit:** d1f52e9 (dev branch)
 
 ## OVERVIEW
 
 Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch import/transfer/balance, RPC/token config, Excel I/O, SQLite local storage. **Security-first architecture**: Private keys are memory-only, never persisted.
+
+## BUILD COMMANDS
+
+```bash
+# Frontend-only
+yarn dev                  # Vite dev server (port 1422)
+yarn build                # Vite production build
+
+# Full stack
+yarn tauri-dev            # Full dev stack (recommended)
+yarn tauri-build          # Production build (.msi/.dmg/.deb)
+
+# Backend (Rust)
+cargo test                # Run all tests
+cargo test -- --nocapture # Run tests with output
+cargo test <test_name>    # Run single test by name
+
+# Setup
+yarn start                # Install deps + dev server (first-time setup)
+yarn setup                # Install dependencies only
+yarn version:update       # Update version in package.json
+```
+
+## CODE STYLE GUIDELINES
+
+### General Principles
+
+- **Self-documenting code**: Avoid comments unless explaining complex algorithms
+- **Consistency**: Match existing patterns in the file/module
+- **Security-first**: Never log or persist sensitive data (keys, mnemonics)
+
+### Imports and Dependencies
+
+**Frontend (JavaScript):**
+```javascript
+// Absolute imports for @ alias (src directory)
+import { useTransfer } from '@/features/ethereum/transfer/composables/useTransfer'
+
+// Relative imports for local modules
+import { formatAddress } from '@/utils/format'
+
+// Vue imports
+import { ref, computed, onMounted } from 'vue'
+
+// Component imports (named exports)
+import { Button, Modal, Table } from '@arco-design/web-vue'
+```
+
+**Backend (Rust):**
+```rust
+// Standard module imports
+use tauri::{Manager, Runtime};
+
+// Internal imports
+use crate::wallets_tool::security::SecureMemory;
+```
+
+### Naming Conventions
+
+| Type | Convention | Example |
+|------|------------|---------|
+| Vue composables | `camelCase` prefixed with `use` | `useTransfer`, `useWallet` |
+| Vue components | `PascalCase` | `WalletList.vue`, `TransferModal.vue` |
+| Variables | `camelCase` | `walletAddress`, `gasPrice` |
+| Constants | `UPPER_SNAKE_CASE` | `MAX_RETRIES`, `DEFAULT_RPC` |
+| Database tables | `snake_case` | `wallet_groups`, `chain_configs` |
+| Rust functions | `snake_case` | `get_chain_list`, `transfer_tokens` |
+| Rust structs/enums | `PascalCase` | `ChainConfig`, `TransferStatus` |
+| Chain types | lowercase string | `'evm'`, `'solana'` |
+
+### Component Structure (Vue SFC)
+
+```vue
+<template>
+  <!-- Template here -->
+</template>
+
+<script setup>
+// Imports - alphabetical order by package then name
+import { ref, computed, onMounted } from 'vue'
+import { useWalletStore } from '@/stores/wallet'
+
+// Props with defaults
+const props = defineProps({
+  modelValue: { type: String, default: '' },
+  disabled: { type: Boolean, default: false }
+})
+
+// Emits
+const emit = defineEmits(['update:modelValue', 'confirm'])
+
+// Composables (use stores first)
+const walletStore = useWalletStore()
+
+// Refs and computed
+const loading = ref(false)
+const items = computed(() => walletStore.items)
+
+// Methods (grouped logically, alphabetical within groups)
+
+// Lifecycle
+onMounted(() => {
+  loadData()
+})
+</script>
+
+<style scoped>
+/* Local styles only */
+</style>
+```
+
+### Error Handling
+
+**Frontend:**
+```javascript
+try {
+  await transferFunds(wallet)
+} catch (error) {
+  console.error('Transfer failed:', error.message)
+  notify.error(`Transfer failed: ${error.message}`)
+}
+```
+
+**Backend (Rust):**
+```rust
+// All Tauri commands return Result<T, String>
+#[tauri::command]
+async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Result<TransferResult, String> {
+    // Use ? operator or map_err for conversion
+    let provider = get_provider(&request.chain_id).await.map_err(|e| e.to_string())?;
+    
+    // Explicit error handling for complex cases
+    match execute_transfer(&provider, &request).await {
+        Ok(tx) => Ok(tx),
+        Err(e) => Err(format!("Transfer failed: {}", e)),
+    }
+}
+```
+
+### Type Handling
+
+- **Frontend**: No TypeScript (`.js` files only). Use JSDoc for complex types if needed.
+- **Backend**: Full Rust type safety required. No `unwrap()` on `Result` or `Option` in production code.
+- Never suppress type errors: no `as any`, `@ts-ignore`, `.unwrap()` without context.
 
 ## STRUCTURE
 
@@ -16,12 +160,19 @@ Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch
 │   │   ├── ethereum/         # EVM logic
 │   │   ├── solana/           # SVM logic
 │   │   └── airdrop/          # Browser Automation & Scripting
+│   ├── pages/                # Route targets
+│   ├── components/           # Global UI components
+│   ├── composables/          # Global composables
+│   ├── stores/               # Pinia stores
+│   ├── utils/                # Utility functions
 │   ├── main.js               # Entry (Plugins + Config)
 │   └── App.vue               # Root + Global Events
 ├── src-tauri/                # Tauri backend (Library-style)
 │   ├── src/wallets_tool/     # Core Business Logic
 │   │   ├── ecosystems/       # Chain implementations
-│   │   └── security/         # AES-256 Memory Guard
+│   │   ├── security/         # AES-256 Memory Guard
+│   │   ├── transfer/         # Transfer logic
+│   │   └── wallet_manager/   # Wallet CRUD + encryption
 │   ├── src/database/         # SQLite Service Layer
 │   └── data/                 # DB file + init.sql
 ├── vcpkg/                    # C++ Dependencies
@@ -30,80 +181,55 @@ Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch
 
 ## WHERE TO LOOK
 
-| Task | Location | Notes |
-|------|----------|-------|
-| **Frontend Entry** | `src/main.js` | PrimeVue + Arco + Router setup |
-| **Backend Entry** | `src-tauri/src/main.rs` | Security init + Command registry |
-| **Transfer Logic** | `src/features/{chain}/transfer/` | Feature-scoped pages/composables |
-| **Balance Logic** | `src/features/{chain}/balance/` | Feature-scoped pages |
-| **Chain Backend** | `src-tauri/src/wallets_tool/ecosystems/` | Modularized by chain (eth/sol) |
-| **Security Core** | `src-tauri/src/wallets_tool/security/` | `SecureMemory` implementation |
-| **Database Ops** | `src-tauri/src/database/` | `ChainService`, `RpcService` |
-| **Build Config** | `vite.config.js` | Manual chunks + Polyfills |
-
-## CODE MAP
-
-| Symbol | Type | Location | Role |
-|--------|------|----------|------|
-| `useTransfer` | composable | `*/transfer/composables/` | Core batch logic (Frontend) |
-| `ChainService` | struct | `database/chain_service.rs` | Chain CRUD (Backend) |
-| `SecureMemory` | struct | `security/mod.rs` | RAM-only key storage |
-| `iterTransfer` | func | `useTransfer.ts` | Batch loop executor |
-| `fury_mode` | logic | `*/transfer.rs` | High-concurrency executor |
+| Task | Location |
+|------|----------|
+| **Frontend Entry** | `src/main.js` |
+| **Backend Entry** | `src-tauri/src/main.rs` |
+| **Transfer Logic** | `src/features/{chain}/transfer/` |
+| **Balance Logic** | `src/features/{chain}/balance/` |
+| **Chain Backend** | `src-tauri/src/wallets_tool/ecosystems/` |
+| **Security Core** | `src-tauri/src/wallets_tool/security/` |
+| **Database Ops** | `src-tauri/src/database/` |
+| **Wallet Manager** | `src-tauri/src/wallets_tool/wallet_manager/` |
 
 ## CONVENTIONS
 
-- **Feature-First**: Frontend code lives in `src/features/{chain}/{domain}/`.
-- **Dual UI**: **PrimeVue** (Data/Lists) + **Arco Design** (Interactions/Modals).
-- **JS over TS**: Frontend is strictly `.js` (legacy decision).
-- **No Comments**: Code must be self-documenting. Comments only for complex algos.
-- **Async Backend**: All Tauri commands return `Result<T, String>`.
-- **Chain Filtering**: Frontend components must filter `get_chain_list` results by `ecosystem` ('evm' or 'solana').
-- **Wallet Manager Groups**: `create_group` request requires `chain_type` and returns group id (`i64`).
-- **Wallet Manager Wallets**: 地址由后端根据私钥/助记词自动派生并落库；批量创建统一走 `create_wallets`，助记词派生钱包会记录 `mnemonic_index`；私钥/助记词入参使用 `sealed_*` 加密传输。
-- **Wallet Manager get_wallets**: `get_wallets(group_id, chain_type, password)` 支持按生态（chain_type）过滤；系统生态分组查询应传 `group_id=null` 且带 `chain_type`；不会返回明文私钥/助记词，仅返回 `has_private_key/has_mnemonic` 用于状态展示。
+- **Feature-First**: Frontend code lives in `src/features/{chain}/{domain}/`
+- **Dual UI**: PrimeVue (Data/Lists) + Arco Design (Interactions/Modals)
+- **JS over TS**: Frontend is strictly `.js`
+- **Async Backend**: All Tauri commands return `Result<T, String>`
+- **Chain Filtering**: Filter `get_chain_list` results by `ecosystem` ('evm' | 'solana')
+- **Encrypted Secrets**: 私钥/助记词传输使用加密封装（`p1:` 或 `t1:`），不走明文
 
-## ANTI-PATTERNS (THIS PROJECT)
+## ANTI-PATTERNS
 
-- **Security**: 
-  - **General**: NEVER persist private keys to disk or DB in plain text.
-  - **Wallet Manager**: Encrypted persistence is allowed using Master Data Key (AES-256-CBC) derived from user password (PBKDF2). Keys are only decrypted in memory when unlocked.
-- **Logging**: NEVER log sensitive data (keys, mnemonics).
-- **State**: NEVER mix Pinia state with local feature state unnecessarily.
-- **Concurrency**: NEVER block the main thread; use `tokio` for heavy lifting.
-- **Config**: NEVER remove `custom-protocol` from `tauri.conf.json`.
+- **NEVER** persist private keys to disk or DB in plain text
+- **NEVER** log sensitive data (keys, mnemonics)
+- **NEVER** mix Pinia state with local feature state unnecessarily
+- **NEVER** block the main thread; use `tokio` for heavy lifting
+- **NEVER** remove `custom-protocol` from `tauri.conf.json`
+- **NEVER** use `as any`, `@ts-ignore`, or `.unwrap()` to suppress errors
 
-## UNIQUE STYLES
+## SECURITY RULES
 
-**Frontend Feature Structure**:
-```
-features/{chain}/{domain}/
-├── pages/          # Route targets
-├── components/     # Local UI
-├── composables/    # Business logic
-└── styles/         # Local CSS
-```
+1. **Memory-Only Keys**: Private keys never persisted, only in RAM
+2. **Dynamic Encryption**: AES-256-CBC encryption in memory
+3. **Zeroize**: Immediate memory wipe after signing
+4. **Encrypted Persistence**: If needed, use Master Data Key (PBKDF2 derived from user password)
+5. **IPC 传输加密**: 密码可用 RSA-OAEP 加密传输；批量导入/预览 secrets 使用 AES-256-GCM(`t1:`) 传输
 
-**Backend Ecosystem Structure**:
-```
-ecosystems/{chain}/
-├── mod.rs          # Exports
-├── transfer.rs     # Native logic
-├── token_transfer.rs # Token logic
-└── provider.rs     # Connection mgmt
-```
+## TOOLS AVAILABLE
 
-## COMMANDS
+| Tool | Purpose |
+|------|---------|
+| ESLint (via LSP) | JavaScript linting |
+| cargo | Rust compilation and testing |
+| vite | Frontend build |
+| tauri | Desktop app packaging |
 
-```bash
-yarn start          # Install deps + Dev server
-yarn tauri-dev      # Full dev stack
-yarn tauri-build    # Production build
-cargo test          # Backend unit tests
-```
+## VERIFICATION
 
-## NOTES
-
-- **Fury Mode**: >90 threads for mass transfers.
-- **Database**: `package.json` config triggers `init.sql` checks.
-- **Alloy**: ETH backend migrated to Alloy framework (Jan 2026).
+Before submitting:
+1. Run `lsp_diagnostics` on changed files
+2. Run `cargo test` for Rust changes
+3. Build succeeds with `yarn tauri-build`

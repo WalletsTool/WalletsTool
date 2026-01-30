@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use tauri::command;
+use tauri::{command, Manager};
 use crate::database::chain_service::ChainService;
 use base64::{Engine as _, engine::general_purpose};
 use tauri::State;
@@ -78,14 +78,30 @@ pub async fn get_chain_icon(
 }
 
 #[command]
-pub async fn read_resource_file(relative_path: String) -> Result<Vec<u8>, String> {
-    let resource_path = PathBuf::from("..")
+pub async fn read_resource_file<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    relative_path: String
+) -> Result<Vec<u8>, String> {
+    // 尝试从 Tauri 资源目录读取（打包后的应用）
+    let resource_path = app.path()
+        .resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {e}"))?
+        .join("template")
+        .join(&relative_path);
+
+    if resource_path.exists() {
+        return std::fs::read(&resource_path)
+            .map_err(|e| format!("读取资源文件失败: {e}"));
+    }
+
+    // 开发环境回退：从 public 目录读取
+    let dev_path = PathBuf::from("..")
         .join("public")
         .join("template")
         .join(&relative_path);
 
-    std::fs::read(&resource_path)
-        .map_err(|e| format!("读取资源文件失败: {e}"))
+    std::fs::read(&dev_path)
+        .map_err(|e| format!("读取资源文件失败: {e} (尝试路径: {:?}, {:?})", resource_path, dev_path))
 }
 
 #[command]

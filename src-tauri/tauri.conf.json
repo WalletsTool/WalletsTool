@@ -78,7 +78,8 @@
       }
     },
     "resources": [
-      "data/*"
+      "data/*",
+      "../public/template/*"
     ],
     "shortDescription": "多链钱包管理工具 - 安全便捷的数字资产管理解决方案",
     "targets": "nsis",

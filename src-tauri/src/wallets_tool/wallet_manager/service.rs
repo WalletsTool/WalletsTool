@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use sqlx::{SqlitePool, Row};
 use chrono::Utc;
 use std::sync::Mutex;
@@ -16,6 +16,12 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer as _;
 use sha2::Sha512;
 use super::models::*;
+use crate::wallets_tool::security::SecureMemory;
+use openssl::pkey::Private;
+use openssl::rand::rand_bytes;
+use openssl::rsa::{Padding, Rsa};
+use openssl::symm::{Cipher, Crypter, Mode};
+use std::collections::HashMap;
 
 type Aes256CbcEnc = Encryptor<Aes256>;
 type Aes256CbcDec = Decryptor<Aes256>;
@@ -23,16 +29,121 @@ type HmacSha512 = Hmac<Sha512>;
 
 pub struct WalletManagerService {
     pool: SqlitePool,
-    // Cached Master Data Key (decrypted)
-    mdk: Mutex<Option<[u8; 32]>>,
+    // Master Data Key stored in SecureMemory for protection
+    mdk: Mutex<Option<SecureMemory>>,
+    transport_rsa: Mutex<Rsa<Private>>,
+    transport_keys: Mutex<HashMap<String, [u8; 32]>>,
 }
 
 impl WalletManagerService {
     pub fn new(pool: SqlitePool) -> Self {
+        let rsa = Rsa::generate(2048).expect("generate rsa key");
         Self {
             pool,
             mdk: Mutex::new(None),
+            transport_rsa: Mutex::new(rsa),
+            transport_keys: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn get_transport_public_key_pem(&self) -> Result<String> {
+        let rsa = self.transport_rsa.lock().unwrap();
+        let pem = rsa.public_key_to_pem()?;
+        Ok(String::from_utf8(pem)?)
+    }
+
+    pub fn register_transport_key(&self, encrypted_key_b64: &str) -> Result<String> {
+        let encrypted_key = BASE64.decode(encrypted_key_b64.trim())?;
+        let rsa = self.transport_rsa.lock().unwrap();
+        let mut out = vec![0u8; rsa.size() as usize];
+        let len = rsa.private_decrypt(&encrypted_key, &mut out, Padding::PKCS1_OAEP)?;
+        out.truncate(len);
+        if out.len() != 32 {
+            return Err(anyhow!("Invalid transport key length"));
+        }
+        let key: [u8; 32] = out.as_slice().try_into().map_err(|_| anyhow!("Invalid transport key length"))?;
+
+        let mut token_bytes = [0u8; 16];
+        rand_bytes(&mut token_bytes)?;
+        let token = hex::encode(token_bytes);
+        self.transport_keys.lock().unwrap().insert(token.clone(), key);
+        Ok(token)
+    }
+
+    pub fn open_rsa_oaep_b64(&self, encrypted_b64: &str) -> Result<String> {
+        let encrypted = BASE64.decode(encrypted_b64.trim())?;
+        let rsa = self.transport_rsa.lock().unwrap();
+        let mut out = vec![0u8; rsa.size() as usize];
+        let len = rsa.private_decrypt(&encrypted, &mut out, Padding::PKCS1_OAEP)?;
+        out.truncate(len);
+        Ok(String::from_utf8(out)?)
+    }
+
+    fn seal_secret_for_transport_token(&self, plaintext: &str, token: &str) -> Result<String> {
+        let key = *self
+            .transport_keys
+            .lock()
+            .unwrap()
+            .get(token)
+            .ok_or_else(|| anyhow!("Invalid transport token"))?;
+
+        let mut iv = [0u8; 12];
+        rand_bytes(&mut iv)?;
+
+        let cipher = Cipher::aes_256_gcm();
+        let mut crypter = Crypter::new(cipher, Mode::Encrypt, &key, Some(&iv))?;
+        crypter.pad(false);
+
+        let mut out = vec![0u8; plaintext.as_bytes().len() + cipher.block_size()];
+        let mut count = crypter.update(plaintext.as_bytes(), &mut out)?;
+        count += crypter.finalize(&mut out[count..])?;
+        out.truncate(count);
+
+        let mut tag = [0u8; 16];
+        crypter.get_tag(&mut tag)?;
+        out.extend_from_slice(&tag);
+
+        Ok(format!("t1:{}:{}:{}", token, hex::encode(iv), BASE64.encode(out)))
+    }
+
+    fn open_transport_secret(&self, sealed: &str) -> Result<String> {
+        let s = sealed.trim();
+        if !s.starts_with("t1:") {
+            return Err(anyhow!("Invalid transport sealed format"));
+        }
+        let parts: Vec<&str> = s[3..].split(':').collect();
+        if parts.len() != 3 {
+            return Err(anyhow!("Invalid transport sealed format"));
+        }
+        let token = parts[0];
+        let iv = hex::decode(parts[1])?;
+        if iv.len() != 12 {
+            return Err(anyhow!("Invalid transport iv"));
+        }
+        let data = BASE64.decode(parts[2])?;
+        if data.len() < 16 {
+            return Err(anyhow!("Invalid transport cipher"));
+        }
+        let (ciphertext, tag) = data.split_at(data.len() - 16);
+
+        let key = *self
+            .transport_keys
+            .lock()
+            .unwrap()
+            .get(token)
+            .ok_or_else(|| anyhow!("Invalid transport token"))?;
+
+        let cipher = Cipher::aes_256_gcm();
+        let mut crypter = Crypter::new(cipher, Mode::Decrypt, &key, Some(&iv))?;
+        crypter.pad(false);
+        crypter.set_tag(tag)?;
+
+        let mut out = vec![0u8; ciphertext.len() + cipher.block_size()];
+        let mut count = crypter.update(ciphertext, &mut out)?;
+        count += crypter.finalize(&mut out[count..])?;
+        out.truncate(count);
+
+        Ok(String::from_utf8(out)?)
     }
 
     /// Initialize tables if they don't exist
@@ -82,6 +193,11 @@ impl WalletManagerService {
                 FOREIGN KEY (group_id) REFERENCES wallet_groups(id) ON DELETE SET NULL
             )
             "#
+        ).execute(&self.pool).await?;
+
+        // 创建唯一索引防止重复地址（数据完整性保护）
+        sqlx::query(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_chain_address ON wallets(chain_type, address)"
         ).execute(&self.pool).await?;
 
         // Add remark column if not exists (migration)
@@ -156,8 +272,9 @@ impl WalletManagerService {
         let mdk_str = format!("{}:{}:{}", hex::encode(kek_salt), hex::encode(iv), encrypted_mdk);
         self.set_config("master_key", &mdk_str).await?;
 
-        // Cache MDK
-        *self.mdk.lock().unwrap() = Some(mdk);
+        // Cache MDK in SecureMemory for protection
+        let mdk_hex = hex::encode(mdk);
+        *self.mdk.lock().unwrap() = Some(SecureMemory::new(mdk_hex));
 
         Ok(())
     }
@@ -194,46 +311,107 @@ impl WalletManagerService {
         let iv = hex::decode(parts[1])?;
         let encrypted_mdk = parts[2]; // base64
 
-        let mdk_bytes = self.decrypt_data(encrypted_mdk, &kek, &iv)?;
-        if mdk_bytes.len() != 32 {
+        let mdk_bytes_vec = self.decrypt_data(encrypted_mdk, &kek, &iv)?;
+        if mdk_bytes_vec.len() != 32 {
             return Err(anyhow::anyhow!("Invalid MDK length"));
         }
 
-        let mut mdk_arr = [0u8; 32];
-        mdk_arr.copy_from_slice(&mdk_bytes);
-
-        *self.mdk.lock().unwrap() = Some(mdk_arr);
-        self.migrate_plaintext_wallet_secrets(&mdk_arr).await?;
+        let mdk_bytes: [u8; 32] = mdk_bytes_vec
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid MDK length"))?;
+        let mdk_hex = hex::encode(mdk_bytes);
+        *self.mdk.lock().unwrap() = Some(SecureMemory::new(mdk_hex));
+        self.migrate_plaintext_wallet_secrets(&mdk_bytes).await?;
 
         Ok(true)
     }
 
-    /// Change master password (re-encrypt MDK)
+    /// Change master password (re-encrypt MDK and all wallet data)
     pub async fn change_password(&self, old_password: &str, new_password: &str) -> Result<()> {
         if !self.unlock(old_password).await? {
             return Err(anyhow::anyhow!("旧密码错误"));
         }
 
-        let mdk = {
+        // Extract MDK bytes from SecureMemory for encryption
+        let mdk_bytes: [u8; 32] = {
             let mdk_guard = self.mdk.lock().unwrap();
-            mdk_guard.clone().ok_or_else(|| anyhow::anyhow!("MDK not unlocked"))?
+            let secure_mdk = mdk_guard.as_ref().ok_or_else(|| anyhow::anyhow!("MDK not unlocked"))?;
+            let mdk_hex = secure_mdk.use_secret(|s| s.to_string()).map_err(|e| anyhow!(e))?;
+            let mdk_vec = hex::decode(mdk_hex)?;
+            let bytes: [u8; 32] = mdk_vec
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid MDK length"))?;
+            bytes
         };
 
-        // 1. New Verifier
+        // 1. Re-encrypt all wallet secrets in database
+        self.reencrypt_wallet_secrets(old_password, new_password).await?;
+
+        // 2. New Verifier
         let mut verifier_salt = [0u8; 16];
         rand::thread_rng().fill(&mut verifier_salt);
         let verifier_hash = self.derive_key(new_password, &verifier_salt);
         let verifier_str = format!("{}:{}", hex::encode(verifier_salt), hex::encode(verifier_hash));
         self.set_config("master_verifier", &verifier_str).await?;
 
-        // 2. Re-encrypt MDK
+        // 3. Re-encrypt MDK and update SecureMemory
         let mut kek_salt = [0u8; 16];
         rand::thread_rng().fill(&mut kek_salt);
         let kek = self.derive_key(new_password, &kek_salt);
-        let (encrypted_mdk, iv) = self.encrypt_data(&mdk, &kek)?;
+        let (encrypted_mdk, iv) = self.encrypt_data(&mdk_bytes, &kek)?;
         let mdk_str = format!("{}:{}:{}", hex::encode(kek_salt), hex::encode(iv), encrypted_mdk);
         self.set_config("master_key", &mdk_str).await?;
 
+        *self.mdk.lock().unwrap() = Some(SecureMemory::new(hex::encode(mdk_bytes)));
+
+        Ok(())
+    }
+
+    /// Re-encrypt all wallet secrets with new password
+    async fn reencrypt_wallet_secrets(&self, old_password: &str, new_password: &str) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let rows = sqlx::query("SELECT id, encrypted_private_key, encrypted_mnemonic FROM wallets")
+            .fetch_all(&mut *tx)
+            .await?;
+
+        for row in rows {
+            let id: i64 = row.get("id");
+            let pk: Option<String> = row.get("encrypted_private_key");
+            let mn: Option<String> = row.get("encrypted_mnemonic");
+
+            // Decrypt with old password and re-encrypt with new password
+            if let Some(sealed_pk) = pk.as_ref().filter(|s| !s.trim().is_empty()) {
+                if sealed_pk.starts_with("p1:") {
+                    // Use old password to decrypt
+                    let decrypted_pk = self.open_sealed_secret(sealed_pk, old_password)?;
+                    // Use new password to re-encrypt
+                    let new_sealed_pk = self.seal_secret_for_transport(&decrypted_pk, new_password)?;
+                    sqlx::query("UPDATE wallets SET encrypted_private_key = ? WHERE id = ?")
+                        .bind(new_sealed_pk)
+                        .bind(id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+            }
+
+            if let Some(sealed_mn) = mn.as_ref().filter(|s| !s.trim().is_empty()) {
+                if sealed_mn.starts_with("p1:") {
+                    // Use old password to decrypt
+                    let decrypted_mn = self.open_sealed_secret(sealed_mn, old_password)?;
+                    // Use new password to re-encrypt
+                    let new_sealed_mn = self.seal_secret_for_transport(&decrypted_mn, new_password)?;
+                    sqlx::query("UPDATE wallets SET encrypted_mnemonic = ? WHERE id = ?")
+                        .bind(new_sealed_mn)
+                        .bind(id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+            }
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 
@@ -299,8 +477,16 @@ impl WalletManagerService {
     /// Create Wallet
     pub async fn create_wallet(&self, request: CreateWalletRequest) -> Result<i64> {
         let mode = match (
-            request.sealed_mnemonic.as_ref().map(|v| !v.trim().is_empty()).unwrap_or(false),
-            request.sealed_private_key.as_ref().map(|v| !v.trim().is_empty()).unwrap_or(false),
+            request
+                .sealed_mnemonic
+                .as_ref()
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false),
+            request
+                .sealed_private_key
+                .as_ref()
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false),
         ) {
             (true, false) => CreateWalletsMode::MnemonicImport,
             (false, true) => CreateWalletsMode::PrivateKeyImport,
@@ -320,43 +506,62 @@ impl WalletManagerService {
             word_count: None,
             remark: request.remark,
             password: request.password,
+            preview_limit: Some(1),
+            include_secrets: Some(false),
+            transport_token: request.transport_token,
         }, request.address).await?;
 
-        created.first().map(|w| w.id).ok_or_else(|| anyhow::anyhow!("创建失败"))
+        created.preview.first().map(|w| w.id).ok_or_else(|| anyhow::anyhow!("创建失败"))
     }
 
-    pub async fn create_wallets(&self, request: CreateWalletsRequest, address_override: Option<String>) -> Result<Vec<WalletInfo>> {
-        if !self.unlock(&request.password).await? {
-            return Err(anyhow::anyhow!("密码错误"));
+    pub async fn create_wallets(&self, request: CreateWalletsRequest, address_override: Option<String>) -> Result<CreateWalletsResult> {
+        let password_opt = request.password.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty());
+        if let Some(pwd) = password_opt {
+            if !self.unlock(pwd).await? {
+                return Err(anyhow::anyhow!("密码错误"));
+            }
+        } else if self.mdk.lock().unwrap().is_none() {
+            return Err(anyhow::anyhow!("未解锁"));
         }
 
         if request.count == 0 {
             return Err(anyhow::anyhow!("钱包数量必须大于0"));
         }
 
-        if request.count > 100 {
-            return Err(anyhow::anyhow!("单次最多创建100个钱包"));
-        }
+        let include_secrets = request.include_secrets.unwrap_or(true);
+        let requested_preview_limit = request.preview_limit.unwrap_or(request.count) as usize;
+        let preview_count = requested_preview_limit.min(request.count as usize);
+        let transport_token = request.transport_token.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
 
-        let mdk = {
+        let mdk_bytes: [u8; 32] = {
             let mdk_guard = self.mdk.lock().unwrap();
-            mdk_guard.clone().ok_or_else(|| anyhow::anyhow!("未解锁"))?
+            let secure_mdk = mdk_guard.as_ref().ok_or_else(|| anyhow::anyhow!("未解锁"))?;
+            let mdk_hex = secure_mdk.use_secret(|s| s.to_string()).map_err(|e| anyhow!(e))?;
+            let mdk_vec = hex::decode(mdk_hex)?;
+            mdk_vec
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid MDK length"))?
         };
 
-        let mut tx = self.pool.begin().await?;
-        let mut created = Vec::new();
+        let now = Utc::now();
 
         match request.mode {
             CreateWalletsMode::PrivateKeyImport => {
                 let sealed_private_key = request.sealed_private_key.clone().unwrap_or_default().trim().to_string();
-                if sealed_private_key.is_empty() {
-                    return Err(anyhow::anyhow!("私钥不能为空"));
-                }
                 if request.sealed_mnemonic.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
                     return Err(anyhow::anyhow!("助记词与私钥只能二选一"));
                 }
 
-                let private_key = self.open_sealed_secret(&sealed_private_key, &request.password)?;
+                if sealed_private_key.is_empty() {
+                    return Err(anyhow::anyhow!("私钥不能为空"));
+                }
+                let private_key = if sealed_private_key.starts_with("t1:") {
+                    self.open_transport_secret(&sealed_private_key)?
+                } else {
+                    let pwd = password_opt.ok_or_else(|| anyhow::anyhow!("缺少密码"))?;
+                    self.open_sealed_secret(&sealed_private_key, pwd)?
+                };
                 let (address, normalized_private_key) = self.derive_address_from_private_key(&request.chain_type, &private_key)?;
                 if let Some(addr) = address_override.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
                     if addr != address {
@@ -364,116 +569,351 @@ impl WalletManagerService {
                     }
                 }
 
-                let name = request.name.clone();
+                let name = request.name.as_ref().filter(|s| !s.trim().is_empty()).map(|s| s.clone())
+                    .or(Some(Self::auto_generate_name(&address)));
                 let remark = request.remark.clone();
-                let id = self.insert_wallet_row(&mut tx, &mdk, request.group_id, name.clone(), &address, &request.chain_type, Some(&normalized_private_key), None, None, remark.clone()).await?;
-                let sealed_private_key_out = self.seal_secret_for_transport(&normalized_private_key, &request.password)?;
-                created.push(WalletInfo {
-                    id,
-                    group_id: request.group_id,
-                    name,
-                    address,
-                    chain_type: request.chain_type,
-                    has_private_key: true,
-                    has_mnemonic: false,
-                    sealed_private_key: Some(sealed_private_key_out),
+                let sealed_private_key_out = if include_secrets && preview_count > 0 {
+                    if let Some(token) = transport_token {
+                        Some(self.seal_secret_for_transport_token(&normalized_private_key, token)?)
+                    } else if let Some(pwd) = password_opt {
+                        Some(self.seal_secret_for_transport(&normalized_private_key, pwd)?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let (cipher, iv) = self.encrypt_data(normalized_private_key.as_bytes(), &mdk_bytes)?;
+                let encrypted_pk = format!("{}:{}", hex::encode(iv), cipher);
+
+                let id = sqlx::query_scalar::<_, i64>(
+                    "INSERT INTO wallets (group_id, name, address, chain_type, encrypted_private_key, mnemonic_index, remark, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
+                )
+                .bind(request.group_id)
+                .bind(name.clone())
+                .bind(&address)
+                .bind(&request.chain_type)
+                .bind(encrypted_pk)
+                .bind(None::<i64>)
+                .bind(remark.clone())
+                .bind(now)
+                .bind(now)
+                .fetch_one(&self.pool)
+                .await?;
+
+                let preview = if preview_count > 0 {
+                    vec![WalletInfo {
+                        id,
+                        group_id: request.group_id,
+                        name,
+                        address,
+                        chain_type: request.chain_type,
+                        has_private_key: true,
+                        has_mnemonic: false,
+                        sealed_private_key: sealed_private_key_out,
+                        sealed_mnemonic: None,
+                        mnemonic_index: None,
+                        remark,
+                    }]
+                } else {
+                    Vec::new()
+                };
+
+                Ok(CreateWalletsResult {
+                    total: 1,
+                    preview,
                     sealed_mnemonic: None,
-                    mnemonic_index: None,
-                    remark,
-                });
+                })
             }
-            CreateWalletsMode::MnemonicImport => {
-                let sealed_mnemonic = request.sealed_mnemonic.clone().unwrap_or_default().trim().to_string();
-                if sealed_mnemonic.is_empty() {
-                    return Err(anyhow::anyhow!("助记词不能为空"));
-                }
-                if request.sealed_private_key.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
-                    return Err(anyhow::anyhow!("助记词与私钥只能二选一"));
+            CreateWalletsMode::MnemonicImport | CreateWalletsMode::GenerateSameMnemonic => {
+                // 批量生成模式优化
+                let (mnemonic, _) = match request.mode {
+                    CreateWalletsMode::MnemonicImport => {
+                        let sealed_mnemonic = request.sealed_mnemonic.clone().unwrap_or_default().trim().to_string();
+                        if request.sealed_private_key.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+                            return Err(anyhow::anyhow!("助记词与私钥只能二选一"));
+                        }
+                        if sealed_mnemonic.is_empty() {
+                            return Err(anyhow::anyhow!("助记词不能为空"));
+                        }
+                        let mnemonic = if sealed_mnemonic.starts_with("t1:") {
+                            self.open_transport_secret(&sealed_mnemonic)?
+                        } else {
+                            let pwd = password_opt.ok_or_else(|| anyhow::anyhow!("缺少密码"))?;
+                            self.open_sealed_secret(&sealed_mnemonic, pwd)?
+                        };
+                        if mnemonic.is_empty() {
+                            return Err(anyhow::anyhow!("助记词不能为空"));
+                        }
+                        (mnemonic, None)
+                    }
+                    CreateWalletsMode::GenerateSameMnemonic => {
+                        let (mnemonic, _) = self.generate_mnemonic(request.word_count.unwrap_or(12))?;
+                        (mnemonic, Some(()))
+                    }
+                    _ => unreachable!(),
+                };
+
+                let sealed_mnemonic_out = if include_secrets && preview_count > 0 {
+                    if let Some(token) = transport_token {
+                        Some(self.seal_secret_for_transport_token(&mnemonic, token)?)
+                    } else if let Some(pwd) = password_opt {
+                        Some(self.seal_secret_for_transport(&mnemonic, pwd)?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let start_index = request.start_index.unwrap_or(0);
+                let count = request.count as usize;
+
+                struct PreviewRow {
+                    index: usize,
+                    name: Option<String>,
+                    address: String,
+                    chain_type: String,
+                    has_private_key: bool,
+                    has_mnemonic: bool,
+                    sealed_private_key: Option<String>,
+                    mnemonic_index: Option<i64>,
+                    remark: Option<String>,
                 }
 
-                let mnemonic = self.open_sealed_secret(&sealed_mnemonic, &request.password)?;
-                let sealed_mnemonic_out = self.seal_secret_for_transport(&mnemonic, &request.password)?;
-                let start_index = request.start_index.unwrap_or(0);
-                for i in 0..request.count {
-                    let index = start_index + i;
+                let mut preview_rows: Vec<PreviewRow> = Vec::with_capacity(preview_count);
+
+                let mut tx = self.pool.begin().await?;
+
+                let mut first_id: Option<i64> = None;
+
+                const BATCH_SIZE: usize = 80;
+                let mut batch_rows: Vec<(
+                    Option<i64>,
+                    Option<String>,
+                    String,
+                    String,
+                    String,
+                    Option<i64>,
+                    Option<String>,
+                )> = Vec::with_capacity(BATCH_SIZE);
+
+                for i in 0..count {
+                    let index = start_index + i as u32;
                     let (address, private_key) = self.derive_from_mnemonic(&request.chain_type, &mnemonic, index)?;
+
                     if let Some(addr) = address_override.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
-                        if request.count == 1 && addr != address {
+                        if count == 1 && addr != address {
                             return Err(anyhow::anyhow!("地址与助记词计算结果不一致"));
                         }
                     }
 
-                    let name = self.resolve_wallet_name(request.name.as_ref(), request.count, index);
-                    let id = self.insert_wallet_row(&mut tx, &mdk, request.group_id, name.clone(), &address, &request.chain_type, Some(&private_key), Some(&mnemonic), Some(index as i64), request.remark.clone()).await?;
-                    let sealed_private_key_out = self.seal_secret_for_transport(&private_key, &request.password)?;
-                    created.push(WalletInfo {
-                        id,
-                        group_id: request.group_id,
+                    let name = self.resolve_wallet_name(request.name.as_ref(), request.count, index, &address);
+
+                    let (cipher_b64, iv) = self.encrypt_data(private_key.as_bytes(), &mdk_bytes)?;
+                    let encrypted_pk = format!("{}:{}", hex::encode(iv), cipher_b64);
+                    let mnemonic_index = Some((start_index + i as u32) as i64);
+
+                    if i < preview_count {
+                        let sealed_private_key = if include_secrets {
+                            if let Some(token) = transport_token {
+                                Some(self.seal_secret_for_transport_token(&private_key, token)?)
+                            } else if let Some(pwd) = password_opt {
+                                Some(self.seal_secret_for_transport(&private_key, pwd)?)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        preview_rows.push(PreviewRow {
+                            index: i,
+                            name: name.clone(),
+                            address: address.clone(),
+                            chain_type: request.chain_type.clone(),
+                            has_private_key: true,
+                            has_mnemonic: true,
+                            sealed_private_key,
+                            mnemonic_index,
+                            remark: request.remark.clone(),
+                        });
+                    }
+
+                    batch_rows.push((
+                        request.group_id,
                         name,
                         address,
-                        chain_type: request.chain_type.clone(),
-                        has_private_key: true,
-                        has_mnemonic: true,
-                        sealed_private_key: Some(sealed_private_key_out),
-                        sealed_mnemonic: Some(sealed_mnemonic_out.clone()),
-                        mnemonic_index: Some(index as i64),
-                        remark: request.remark.clone(),
-                    });
+                        request.chain_type.clone(),
+                        encrypted_pk,
+                        mnemonic_index,
+                        request.remark.clone(),
+                    ));
+
+                    if batch_rows.len() >= BATCH_SIZE || i + 1 == count {
+                        let mut qb = sqlx::QueryBuilder::new(
+                            "INSERT INTO wallets (group_id, name, address, chain_type, encrypted_private_key, encrypted_mnemonic, mnemonic_index, remark, created_at, updated_at) ",
+                        );
+                        qb.push_values(batch_rows.iter(), |mut b, row| {
+                            b.push_bind(row.0)
+                                .push_bind(row.1.clone())
+                                .push_bind(row.2.as_str())
+                                .push_bind(row.3.as_str())
+                                .push_bind(row.4.as_str())
+                                .push_bind::<Option<String>>(None)
+                                .push_bind(row.5)
+                                .push_bind(row.6.clone())
+                                .push_bind(now)
+                                .push_bind(now);
+                        });
+
+                        qb.build().execute(&mut *tx).await?;
+                        let last_id = sqlx::query_scalar::<_, i64>("SELECT last_insert_rowid()")
+                            .fetch_one(&mut *tx)
+                            .await?;
+                        if first_id.is_none() {
+                            let batch_len = batch_rows.len() as i64;
+                            first_id = Some(last_id - batch_len + 1);
+                        }
+                        batch_rows.clear();
+                    }
                 }
-            }
-            CreateWalletsMode::GenerateSameMnemonic => {
-                let (mnemonic, _) = self.generate_mnemonic(request.word_count.unwrap_or(12))?;
-                let sealed_mnemonic_out = self.seal_secret_for_transport(&mnemonic, &request.password)?;
-                let start_index = request.start_index.unwrap_or(0);
-                for i in 0..request.count {
-                    let index = start_index + i;
-                    let (address, private_key) = self.derive_from_mnemonic(&request.chain_type, &mnemonic, index)?;
-                    let name = self.resolve_wallet_name(request.name.as_ref(), request.count, index);
-                    let id = self.insert_wallet_row(&mut tx, &mdk, request.group_id, name.clone(), &address, &request.chain_type, Some(&private_key), Some(&mnemonic), Some(index as i64), request.remark.clone()).await?;
-                    let sealed_private_key_out = self.seal_secret_for_transport(&private_key, &request.password)?;
-                    created.push(WalletInfo {
-                        id,
+
+                let start_id = first_id.unwrap_or(0);
+                tx.commit().await?;
+
+                let preview = preview_rows
+                    .into_iter()
+                    .map(|r| WalletInfo {
+                        id: start_id + r.index as i64,
                         group_id: request.group_id,
-                        name,
-                        address,
-                        chain_type: request.chain_type.clone(),
-                        has_private_key: true,
-                        has_mnemonic: true,
-                        sealed_private_key: Some(sealed_private_key_out),
-                        sealed_mnemonic: Some(sealed_mnemonic_out.clone()),
-                        mnemonic_index: Some(index as i64),
-                        remark: request.remark.clone(),
-                    });
-                }
+                        name: r.name,
+                        address: r.address,
+                        chain_type: r.chain_type,
+                        has_private_key: r.has_private_key,
+                        has_mnemonic: r.has_mnemonic,
+                        sealed_private_key: r.sealed_private_key,
+                        sealed_mnemonic: None,
+                        mnemonic_index: r.mnemonic_index,
+                        remark: r.remark,
+                    })
+                    .collect::<Vec<_>>();
+
+                Ok(CreateWalletsResult {
+                    total: request.count,
+                    preview,
+                    sealed_mnemonic: sealed_mnemonic_out,
+                })
             }
             CreateWalletsMode::GenerateDifferentMnemonic => {
-                for i in 0..request.count {
+                // 每个钱包独立助记词
+                let count = request.count as usize;
+                let now = Utc::now();
+
+                // 批量生成数据
+                let mut addresses = Vec::with_capacity(count);
+                let mut private_keys = Vec::with_capacity(count);
+                let mut names = Vec::with_capacity(count);
+                let mut sealed_mnemonics = Vec::with_capacity(count);
+
+                for i in 0..count {
                     let (mnemonic, _) = self.generate_mnemonic(request.word_count.unwrap_or(12))?;
                     let index = 0u32;
                     let (address, private_key) = self.derive_from_mnemonic(&request.chain_type, &mnemonic, index)?;
-                    let name = self.resolve_wallet_name(request.name.as_ref(), request.count, i);
-                    let id = self.insert_wallet_row(&mut tx, &mdk, request.group_id, name.clone(), &address, &request.chain_type, Some(&private_key), Some(&mnemonic), Some(index as i64), request.remark.clone()).await?;
-                    let sealed_private_key_out = self.seal_secret_for_transport(&private_key, &request.password)?;
-                    let sealed_mnemonic_out = self.seal_secret_for_transport(&mnemonic, &request.password)?;
-                    created.push(WalletInfo {
-                        id,
+                    let name = self.resolve_wallet_name(request.name.as_ref(), request.count, i as u32, &address);
+
+                    let sealed_mnemonic_out = if include_secrets && i < preview_count {
+                        if let Some(token) = transport_token {
+                            Some(self.seal_secret_for_transport_token(&mnemonic, token)?)
+                        } else if let Some(pwd) = password_opt {
+                            Some(self.seal_secret_for_transport(&mnemonic, pwd)?)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    addresses.push(address);
+                    private_keys.push(private_key);
+                    names.push(name);
+                    sealed_mnemonics.push(sealed_mnemonic_out);
+                }
+
+                // 批量加密私钥
+                let encrypted_data: Vec<(String, String)> = private_keys.iter()
+                    .map(|pk| {
+                        let (cipher, iv) = self.encrypt_data(pk.as_bytes(), &mdk_bytes)?;
+                        Ok((format!("{}:{}", hex::encode(iv), cipher), pk.clone()))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                // 批量插入
+                let mut tx = self.pool.begin().await?;
+                let mut id_start: Option<i64> = None;
+
+                for i in 0..count {
+                    let (cipher, _) = &encrypted_data[i];
+
+                    sqlx::query(
+                        "INSERT INTO wallets (group_id, name, address, chain_type, encrypted_private_key, encrypted_mnemonic, mnemonic_index, remark, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    )
+                    .bind(request.group_id)
+                    .bind(names[i].clone())
+                    .bind(&addresses[i])
+                    .bind(&request.chain_type)
+                    .bind(cipher)
+                    .bind::<Option<String>>(None)
+                    .bind(Some(0i64))
+                    .bind(request.remark.clone())
+                    .bind(now)
+                    .bind(now)
+                    .execute(&mut *tx)
+                    .await?;
+
+                    if id_start.is_none() {
+                        id_start = Some(sqlx::query_scalar::<_, i64>("SELECT last_insert_rowid()").fetch_one(&mut *tx).await?);
+                    }
+                }
+
+                let start_id = id_start.unwrap_or(0);
+                let ids: Vec<i64> = (0..count).map(|i| start_id + i as i64).collect();
+                tx.commit().await?;
+
+                // 组装返回结果
+                let mut preview = Vec::with_capacity(preview_count);
+                for i in 0..preview_count {
+                    let sealed_pk = if include_secrets {
+                        if let Some(token) = transport_token {
+                            Some(self.seal_secret_for_transport_token(&encrypted_data[i].1, token)?)
+                        } else if let Some(pwd) = password_opt {
+                            Some(self.seal_secret_for_transport(&encrypted_data[i].1, pwd)?)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    preview.push(WalletInfo {
+                        id: ids[i],
                         group_id: request.group_id,
-                        name,
-                        address,
+                        name: names[i].clone(),
+                        address: addresses[i].clone(),
                         chain_type: request.chain_type.clone(),
                         has_private_key: true,
                         has_mnemonic: true,
-                        sealed_private_key: Some(sealed_private_key_out),
-                        sealed_mnemonic: Some(sealed_mnemonic_out),
-                        mnemonic_index: Some(index as i64),
+                        sealed_private_key: sealed_pk,
+                        sealed_mnemonic: sealed_mnemonics[i].clone(),
+                        mnemonic_index: Some(0),
                         remark: request.remark.clone(),
                     });
                 }
+                Ok(CreateWalletsResult {
+                    total: request.count,
+                    preview,
+                    sealed_mnemonic: None,
+                })
             }
         }
-
-        tx.commit().await?;
-        Ok(created)
     }
 
     pub async fn get_wallets(&self, group_id: Option<i64>, chain_type: Option<String>, _password: Option<String>) -> Result<Vec<WalletInfo>> {
@@ -565,12 +1005,159 @@ impl WalletManagerService {
         Ok(())
     }
 
+    pub async fn get_wallet_secrets(&self, id: i64, password: Option<&str>, transport_token: Option<&str>) -> Result<WalletSecrets> {
+        let wallet = sqlx::query_as::<_, Wallet>(
+            "SELECT * FROM wallets WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| anyhow!("钱包不存在"))?;
+
+        let mdk_bytes: [u8; 32] = {
+            let mdk_guard = self.mdk.lock().unwrap();
+            let secure_mdk = mdk_guard.as_ref().ok_or_else(|| anyhow!("钱包管理器未解锁，请先输入主密码"))?;
+            let mdk_hex = secure_mdk.use_secret(|s| s.to_string()).map_err(|e| anyhow!(e))?;
+            let mdk_vec = hex::decode(mdk_hex)?;
+            mdk_vec
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow!("Invalid MDK length"))?
+        };
+
+        // Decrypt then re-seal for transport
+        let sealed_private_key = if let Some(encrypted) = &wallet.encrypted_private_key {
+            let parts: Vec<&str> = encrypted.split(':').collect();
+            if parts.len() != 2 {
+                Some(encrypted.clone())
+            } else {
+                let iv = hex::decode(parts[0])?;
+                let cipher_b64 = parts[1];
+                let plaintext = self.decrypt_data(cipher_b64, &mdk_bytes, &iv)?;
+                let private_key_str = String::from_utf8(plaintext)?;
+                if let Some(token) = transport_token.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    Some(self.seal_secret_for_transport_token(&private_key_str, token)?)
+                } else if let Some(pwd) = password.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    Some(self.seal_secret_for_transport(&private_key_str, pwd)?)
+                } else {
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let sealed_mnemonic = if let Some(encrypted) = &wallet.encrypted_mnemonic {
+            let parts: Vec<&str> = encrypted.split(':').collect();
+            if parts.len() != 2 {
+                Some(encrypted.clone())
+            } else {
+                let iv = hex::decode(parts[0])?;
+                let cipher_b64 = parts[1];
+                let plaintext = self.decrypt_data(cipher_b64, &mdk_bytes, &iv)?;
+                let mnemonic_str = String::from_utf8(plaintext)?;
+                if let Some(token) = transport_token.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    Some(self.seal_secret_for_transport_token(&mnemonic_str, token)?)
+                } else if let Some(pwd) = password.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    Some(self.seal_secret_for_transport(&mnemonic_str, pwd)?)
+                } else {
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        Ok(WalletSecrets {
+            id: wallet.id,
+            name: wallet.name,
+            address: wallet.address,
+            sealed_private_key,
+            sealed_mnemonic,
+        })
+    }
+
+    pub async fn export_wallets(&self, ids: &[i64], _password: &str) -> Result<Vec<WalletExportData>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mdk_bytes: [u8; 32] = {
+            let mdk_guard = self.mdk.lock().unwrap();
+            let secure_mdk = mdk_guard.as_ref().ok_or_else(|| anyhow!("钱包管理器未解锁，请先输入主密码"))?;
+            let mdk_hex = secure_mdk.use_secret(|s| s.to_string()).map_err(|e| anyhow!(e))?;
+            let mdk_vec = hex::decode(mdk_hex)?;
+            mdk_vec
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow!("Invalid MDK length"))?
+        };
+
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let query = format!("SELECT * FROM wallets WHERE id IN ({})", placeholders);
+        let mut q = sqlx::query_as::<_, Wallet>(&query);
+        for id in ids {
+            q = q.bind(id);
+        }
+        let wallets = q.fetch_all(&self.pool).await?;
+
+        let mut results = Vec::with_capacity(wallets.len());
+        for wallet in wallets {
+            let private_key = if let Some(encrypted) = &wallet.encrypted_private_key {
+                let parts: Vec<&str> = encrypted.split(':').collect();
+                if parts.len() != 2 {
+                    Some(encrypted.clone())
+                } else {
+                    let iv = hex::decode(parts[0])?;
+                    let cipher_b64 = parts[1];
+                    match self.decrypt_data(cipher_b64, &mdk_bytes, &iv) {
+                        Ok(plaintext) => Some(String::from_utf8(plaintext)?),
+                        Err(_) => Some(encrypted.clone()),
+                    }
+                }
+            } else {
+                None
+            };
+
+            let mnemonic = if let Some(encrypted) = &wallet.encrypted_mnemonic {
+                let parts: Vec<&str> = encrypted.split(':').collect();
+                if parts.len() != 2 {
+                    Some(encrypted.clone())
+                } else {
+                    let iv = hex::decode(parts[0])?;
+                    let cipher_b64 = parts[1];
+                    match self.decrypt_data(cipher_b64, &mdk_bytes, &iv) {
+                        Ok(plaintext) => Some(String::from_utf8(plaintext)?),
+                        Err(_) => Some(encrypted.clone()),
+                    }
+                }
+            } else {
+                None
+            };
+
+            results.push(WalletExportData {
+                id: wallet.id,
+                name: wallet.name,
+                address: wallet.address,
+                chain_type: wallet.chain_type,
+                private_key,
+                mnemonic,
+                mnemonic_index: wallet.mnemonic_index,
+                remark: wallet.remark,
+                group_id: wallet.group_id,
+            });
+        }
+
+        Ok(results)
+    }
+
     pub async fn update_wallet(&self, request: UpdateWalletRequest) -> Result<()> {
         sqlx::query(
-            "UPDATE wallets SET group_id = ?, name = ?, updated_at = ? WHERE id = ?"
+            "UPDATE wallets SET group_id = ?, name = ?, remark = ?, updated_at = ? WHERE id = ?"
         )
         .bind(request.group_id)
         .bind(request.name)
+        .bind(request.remark)
         .bind(Utc::now())
         .bind(request.id)
         .execute(&self.pool)
@@ -716,12 +1303,19 @@ impl WalletManagerService {
         Ok(())
     }
 
-    fn resolve_wallet_name(&self, name: Option<&String>, count: u32, index: u32) -> Option<String> {
-        let prefix = name.map(|s| s.trim()).filter(|s| !s.is_empty())?;
-        if count <= 1 {
-            return Some(prefix.to_string());
+    fn resolve_wallet_name(&self, name: Option<&String>, count: u32, index: u32, address: &str) -> Option<String> {
+        let name_input = name.and_then(|s| s.trim().is_empty().then_some(s.trim())).filter(|s| !s.is_empty());
+        match (name_input, count) {
+            (Some(prefix), 1) => Some(prefix.to_string()),
+            (Some(prefix), _) => Some(format!("{}-{}", prefix, index)),
+            (None, 1) => Some(Self::auto_generate_name(address)),
+            (None, _) => Some(format!("{}-{}", Self::auto_generate_name(address), index)),
         }
-        Some(format!("{}-{}", prefix, index))
+    }
+
+    fn auto_generate_name(address: &str) -> String {
+        let address_end = address.chars().rev().take(6).collect::<String>().chars().rev().collect::<String>();
+        address_end.to_uppercase()
     }
 
     fn derive_address_from_private_key(&self, chain_type: &str, private_key: &str) -> Result<(String, String)> {
@@ -807,65 +1401,6 @@ impl WalletManagerService {
         Ok(key)
     }
 
-    async fn insert_wallet_row(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-        mdk: &[u8; 32],
-        group_id: Option<i64>,
-        name: Option<String>,
-        address: &str,
-        chain_type: &str,
-        private_key: Option<&str>,
-        mnemonic: Option<&str>,
-        mnemonic_index: Option<i64>,
-        remark: Option<String>,
-    ) -> Result<i64> {
-        let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM wallets WHERE chain_type = ? AND address = ?")
-            .bind(chain_type)
-            .bind(address)
-            .fetch_one(&mut **tx)
-            .await?;
-        if exists > 0 {
-            return Err(anyhow::anyhow!("该地址已存在"));
-        }
-
-        let encrypted_pk = if let Some(pk) = private_key {
-            let (cipher, iv) = self.encrypt_data(pk.as_bytes(), mdk)?;
-            Some(format!("{}:{}", hex::encode(iv), cipher))
-        } else {
-            None
-        };
-
-        let encrypted_mnemonic = if let Some(mn) = mnemonic {
-            let (cipher, iv) = self.encrypt_data(mn.as_bytes(), mdk)?;
-            Some(format!("{}:{}", hex::encode(iv), cipher))
-        } else {
-            None
-        };
-
-        let id = sqlx::query_scalar::<_, i64>(
-            r#"
-            INSERT INTO wallets (
-                group_id, name, address, chain_type, encrypted_private_key, encrypted_mnemonic, mnemonic_index, remark, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
-            "#
-        )
-        .bind(group_id)
-        .bind(name)
-        .bind(address)
-        .bind(chain_type)
-        .bind(encrypted_pk)
-        .bind(encrypted_mnemonic)
-        .bind(mnemonic_index)
-        .bind(remark)
-        .bind(Utc::now())
-        .bind(Utc::now())
-        .fetch_one(&mut **tx)
-        .await?;
-
-        Ok(id)
-    }
-
     fn encrypt_data(&self, data: &[u8], key: &[u8; 32]) -> Result<(String, Vec<u8>)> {
         let mut iv = [0u8; 16];
         rand::thread_rng().fill(&mut iv);
@@ -891,17 +1426,6 @@ impl WalletManagerService {
             .map_err(|e| anyhow::anyhow!("Decryption failed: {:?}", e))?;
         
         Ok(plaintext.to_vec())
-    }
-
-    fn decrypt_field(&self, field_value: &str, key: &[u8; 32]) -> Result<String> {
-        let parts: Vec<&str> = field_value.split(':').collect();
-        if parts.len() != 2 {
-            return Err(anyhow::anyhow!("Format error"));
-        }
-        let iv = hex::decode(parts[0])?;
-        let ciphertext = parts[1];
-        let bytes = self.decrypt_data(ciphertext, key, &iv)?;
-        Ok(String::from_utf8(bytes)?)
     }
 
     async fn set_config(&self, key: &str, value: &str) -> Result<()> {
@@ -1040,15 +1564,18 @@ mod wallet_manager_secrets_tests {
                     start_index: None,
                     word_count: None,
                     remark: None,
-                    password: "pass".into(),
+                    password: Some("pass".into()),
+                    preview_limit: Some(1),
+                    include_secrets: Some(true),
+                    transport_token: None,
                 },
                 None,
             )
             .await
             .unwrap();
 
-        assert_eq!(created.len(), 1);
-        let w = &created[0];
+        assert_eq!(created.preview.len(), 1);
+        let w = &created.preview[0];
         assert!(w.has_private_key);
         assert!(!w.has_mnemonic);
         let sealed_out = w.sealed_private_key.clone().unwrap();

@@ -183,6 +183,19 @@ function goPage(pageName) {
       ? `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName} [${newCount}]`
       : `WalletsTool - ${moduleIcons[pageName] || ''} ${moduleNames[pageName] || pageName}`
 
+    let isShown = false
+    let fallbackShowTimer = null
+
+    const showWindowOnce = () => {
+      if (isShown) return
+      isShown = true
+      if (fallbackShowTimer) {
+        clearTimeout(fallbackShowTimer)
+        fallbackShowTimer = null
+      }
+      webview.show()
+    }
+
     const webview = new WebviewWindow(windowLabel, {
       url: windowUrl,
       width: 1350,
@@ -192,17 +205,11 @@ function goPage(pageName) {
       center: true,
       decorations: false,
       backgroundColor: document.documentElement.getAttribute('data-theme') === 'light' ? '#FFFFFF' : '#2A2A2B',
+      visible: false,
     })
 
     windowListObj.value[pageName].set(windowLabel, webview)
-
-    webview.once('tauri://created', function () {
-      // Window created successfully
-      // 延迟显示窗口，等待页面加载
-      setTimeout(() => {
-        webview.show()
-      }, 100)
-    })
+    fallbackShowTimer = setTimeout(showWindowOnce, 3000)
 
     webview.once('tauri://close-requested', function (event) {
       // 在 Tauri 2.x 中，需要手动关闭窗口
@@ -210,6 +217,10 @@ function goPage(pageName) {
     })
 
     webview.once('tauri://destroyed', function (event) {
+      if (fallbackShowTimer) {
+        clearTimeout(fallbackShowTimer)
+        fallbackShowTimer = null
+      }
       windowListObj.value[pageName].delete(event.windowLabel)
       if (windowListObj.value[pageName].size === 0) {
         windowCount.value[pageName] = 0
@@ -220,10 +231,7 @@ function goPage(pageName) {
       console.error('Window creation error:', e)
     })
 
-    // 监听页面加载完成事件
-    webview.listen('page-loaded', () => {
-      webview.show()
-    })
+    webview.listen('page-loaded', showWindowOnce)
 
   } catch (error) {
     console.error('Error in goPage:', error)

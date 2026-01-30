@@ -78,7 +78,13 @@
           <rect x="1" y="3" width="6" height="6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
         </svg>
       </button>
-      <button class="title-bar-control close" @click="closeWindow" title="关闭">
+<button
+          class="title-bar-control close"
+          :class="{ 'disabled': disableClose }"
+          @click="closeWindow"
+          :title="disableClose ? '操作进行中，无法关闭' : '关闭'"
+          :style="{ cursor: disableClose ? 'not-allowed' : 'pointer', opacity: disableClose ? 0.5 : 1 }"
+        >
         <svg width="12" height="12" viewBox="0 0 12 12">
           <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
         </svg>
@@ -111,6 +117,10 @@ const props = defineProps({
     default: ''
   },
   customClose: {
+    type: Boolean,
+    default: false
+  },
+  disableClose: {
     type: Boolean,
     default: false
   },
@@ -297,17 +307,21 @@ async function maximizeWindow() {
 }
 
 async function closeWindow() {
+  if (props.disableClose) {
+    return
+  }
+
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
   if (isTauri) {
     try {
       console.log('TitleBar窗口关闭事件触发，正在通知父组件执行清理操作...')
-      
+
       emit('before-close')
-      
+
       if (props.customClose) {
         return
       }
-      
+
       const currentWindow = getCurrentWindow()
       await currentWindow.destroy()
     } catch (error) {

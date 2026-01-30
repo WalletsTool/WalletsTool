@@ -383,6 +383,8 @@ async fn main() {
             wallets_tool::wallet_manager::commands::is_password_set,
             wallets_tool::wallet_manager::commands::init_password,
             wallets_tool::wallet_manager::commands::verify_password,
+            wallets_tool::wallet_manager::commands::get_wallet_transport_public_key,
+            wallets_tool::wallet_manager::commands::register_wallet_transport_key,
             wallets_tool::wallet_manager::commands::change_password,
             wallets_tool::wallet_manager::commands::create_group,
             wallets_tool::wallet_manager::commands::get_groups,
@@ -391,6 +393,8 @@ async fn main() {
             wallets_tool::wallet_manager::commands::create_wallet,
             wallets_tool::wallet_manager::commands::create_wallets,
             wallets_tool::wallet_manager::commands::get_wallets,
+            wallets_tool::wallet_manager::commands::get_wallet_secrets,
+            wallets_tool::wallet_manager::commands::export_wallets,
             wallets_tool::wallet_manager::commands::update_wallet,
             wallets_tool::wallet_manager::commands::delete_wallet,
         ])

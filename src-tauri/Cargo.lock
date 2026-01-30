@@ -25,6 +25,7 @@ dependencies = [
  "dirs 5.0.1",
  "futures",
  "hex",
+ "hmac 0.12.1",
  "lazy_static",
  "openssl",
  "pbkdf2 0.12.2",

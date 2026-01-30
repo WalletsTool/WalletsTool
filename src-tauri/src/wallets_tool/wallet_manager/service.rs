@@ -666,6 +666,9 @@ impl WalletManagerService {
                 } else {
                     None
                 };
+
+                let (mn_cipher_b64, mn_iv) = self.encrypt_data(mnemonic.as_bytes(), &mdk_bytes)?;
+                let encrypted_mnemonic = format!("{}:{}", hex::encode(mn_iv), mn_cipher_b64);
                 let start_index = request.start_index.unwrap_or(0);
                 let count = request.count as usize;
 
@@ -759,7 +762,7 @@ impl WalletManagerService {
                                 .push_bind(row.2.as_str())
                                 .push_bind(row.3.as_str())
                                 .push_bind(row.4.as_str())
-                                .push_bind::<Option<String>>(None)
+                                .push_bind(encrypted_mnemonic.as_str())
                                 .push_bind(row.5)
                                 .push_bind(row.6.clone())
                                 .push_bind(now)
@@ -812,6 +815,7 @@ impl WalletManagerService {
                 // 批量生成数据
                 let mut addresses = Vec::with_capacity(count);
                 let mut private_keys = Vec::with_capacity(count);
+                let mut mnemonics = Vec::with_capacity(count);
                 let mut names = Vec::with_capacity(count);
                 let mut sealed_mnemonics = Vec::with_capacity(count);
 
@@ -835,6 +839,7 @@ impl WalletManagerService {
 
                     addresses.push(address);
                     private_keys.push(private_key);
+                    mnemonics.push(mnemonic);
                     names.push(name);
                     sealed_mnemonics.push(sealed_mnemonic_out);
                 }
@@ -844,6 +849,14 @@ impl WalletManagerService {
                     .map(|pk| {
                         let (cipher, iv) = self.encrypt_data(pk.as_bytes(), &mdk_bytes)?;
                         Ok((format!("{}:{}", hex::encode(iv), cipher), pk.clone()))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                let encrypted_mnemonics: Vec<String> = mnemonics
+                    .iter()
+                    .map(|m| {
+                        let (cipher, iv) = self.encrypt_data(m.as_bytes(), &mdk_bytes)?;
+                        Ok(format!("{}:{}", hex::encode(iv), cipher))
                     })
                     .collect::<Result<Vec<_>>>()?;
 
@@ -862,7 +875,7 @@ impl WalletManagerService {
                     .bind(&addresses[i])
                     .bind(&request.chain_type)
                     .bind(cipher)
-                    .bind::<Option<String>>(None)
+                    .bind(&encrypted_mnemonics[i])
                     .bind(Some(0i64))
                     .bind(request.remark.clone())
                     .bind(now)
@@ -1582,5 +1595,85 @@ mod wallet_manager_secrets_tests {
         assert_ne!(sealed_out, pk.trim_start_matches("0x"));
         let opened = service.open_sealed_secret(&sealed_out, "pass").unwrap();
         assert_eq!(opened, pk.trim_start_matches("0x"));
+    }
+
+    #[tokio::test]
+    async fn create_wallets_persists_encrypted_mnemonic_for_same_mnemonic() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        let service = WalletManagerService::new(pool.clone());
+        service.init_tables().await.unwrap();
+        service.init_password("pass").await.unwrap();
+
+        let count = 10u32;
+        service
+            .create_wallets(
+                CreateWalletsRequest {
+                    group_id: None,
+                    name: Some("w".into()),
+                    chain_type: "evm".into(),
+                    mode: CreateWalletsMode::GenerateSameMnemonic,
+                    sealed_mnemonic: None,
+                    sealed_private_key: None,
+                    count,
+                    start_index: Some(0),
+                    word_count: Some(12),
+                    remark: None,
+                    password: Some("pass".into()),
+                    preview_limit: Some(0),
+                    include_secrets: Some(false),
+                    transport_token: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        let stored: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM wallets WHERE encrypted_mnemonic IS NOT NULL AND length(trim(encrypted_mnemonic)) > 0",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored, count as i64);
+    }
+
+    #[tokio::test]
+    async fn create_wallets_persists_encrypted_mnemonic_for_different_mnemonic() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        let service = WalletManagerService::new(pool.clone());
+        service.init_tables().await.unwrap();
+        service.init_password("pass").await.unwrap();
+
+        let count = 7u32;
+        service
+            .create_wallets(
+                CreateWalletsRequest {
+                    group_id: None,
+                    name: Some("w".into()),
+                    chain_type: "evm".into(),
+                    mode: CreateWalletsMode::GenerateDifferentMnemonic,
+                    sealed_mnemonic: None,
+                    sealed_private_key: None,
+                    count,
+                    start_index: Some(0),
+                    word_count: Some(12),
+                    remark: None,
+                    password: Some("pass".into()),
+                    preview_limit: Some(0),
+                    include_secrets: Some(false),
+                    transport_token: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        let stored: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM wallets WHERE encrypted_mnemonic IS NOT NULL AND length(trim(encrypted_mnemonic)) > 0",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored, count as i64);
     }
 }

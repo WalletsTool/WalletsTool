@@ -5,7 +5,7 @@
 
 ## OVERVIEW
 
-Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch import/transfer/balance, RPC/token config, Excel I/O, SQLite local storage. **Security-first architecture**: Private keys are memory-only, never persisted.
+Web3 multi-chain wallet desktop app (Vue 3 + Tauri/Rust). Ethereum/Solana, batch import/transfer/balance, RPC/token config, Excel I/O, SQLite local storage. **Security-first architecture**: 私钥/助记词仅以加密形式落库，绝不明文持久化。
 
 ## BUILD COMMANDS
 

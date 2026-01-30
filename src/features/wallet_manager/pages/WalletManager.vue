@@ -209,7 +209,6 @@ const bulkGenerating = ref(false);
 const bulkTotalCount = ref(0);
 const bulkSealedMnemonic = ref('');
 const bulkMnemonicMasked = ref('');
-const bulkResults = ref([]);
 
 const maskSecret = (val) => {
   if (!val) return '';
@@ -405,7 +404,6 @@ const resetAddWalletForm = () => {
   bulkWalletCount.value = 10;
   bulkStartIndex.value = 0;
   bulkGenerating.value = false;
-  bulkResults.value = [];
 
   newWallet.name = '';
   newWallet.address = '';
@@ -1133,7 +1131,6 @@ onMounted(async () => {
       }
 
       bulkGenerating.value = true;
-      bulkResults.value = [];
       bulkTotalCount.value = 0;
       bulkSealedMnemonic.value = '';
       bulkMnemonicMasked.value = '';
@@ -1174,15 +1171,9 @@ onMounted(async () => {
         } catch (_) {}
       }
 
-      const list = Array.isArray(created?.preview) ? created.preview : [];
-      bulkResults.value = list.map((w) => {
-        const mnemonicMasked = bulkMnemonicMasked.value || (w?.sealed_mnemonic ? '******' : '');
-        const privateKeyMasked = w?.sealed_private_key ? '******' : '';
-        return { ...w, mnemonic_masked: mnemonicMasked, private_key_masked: privateKeyMasked };
-      });
       bulkGenerating.value = false;
       await loadWallets();
-      Message.success(`已生成并保存 ${bulkTotalCount.value} 个钱包（预览 ${bulkResults.value.length} 个）`);
+      Message.success(`已生成并保存 ${bulkTotalCount.value} 个钱包`);
       return false;
     } catch (e) {
       bulkGenerating.value = false;
@@ -1463,7 +1454,7 @@ const confirmExport = async () => {
     <div class="critical-operation-content">
       <a-spin size="large" />
       <p class="critical-operation-text">
-        {{ isCriticalOperation ? '正在修改密码并重新加密数据...' : (bulkGenerating ? '正在生成并保存钱包...' : '正在批量导入钱包...') }}
+        {{ isCriticalOperation ? '正在修改密码并重新加密数据...' : (bulkGenerating ? '正在生成、加密并保存钱包...' : '正在批量导入钱包...') }}
       </p>
       <p class="critical-operation-hint">请勿关闭程序或刷新页面</p>
     </div>
@@ -1907,31 +1898,6 @@ const confirmExport = async () => {
 
                     <a-alert v-if="bulkGenerating" type="info" title="正在生成并保存，请稍候..." show-icon />
 
-                    <div v-if="bulkResults.length > 0" style="margin-top: 12px;">
-                        <div v-if="bulkSealedMnemonic" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                            <span>本次助记词：{{ bulkMnemonicMasked || '******' }}</span>
-                            <a-button type="outline" size="mini" @click="copySealedSecret(bulkSealedMnemonic)">复制</a-button>
-                        </div>
-                        <div style="margin-bottom: 8px; font-size: 12px; color: #666;">
-                            已创建 {{ bulkTotalCount }} 个，仅预览前 {{ bulkResults.length }} 个
-                        </div>
-                        <a-table :data="bulkResults" :pagination="false" size="small">
-                            <a-table-column title="地址" data-index="address" :width="260" ellipsis tooltip />
-                            <a-table-column title="序号" data-index="mnemonic_index" :width="70" />
-                            <a-table-column title="助记词" :width="220">
-                                <template #cell="{ record }">
-                                    <span>{{ record.mnemonic_masked }}</span>
-                                    <a-button v-if="record.sealed_mnemonic" type="text" size="mini" @click="copySealedSecret(record.sealed_mnemonic)">复制</a-button>
-                                </template>
-                            </a-table-column>
-                            <a-table-column title="私钥" :width="220">
-                                <template #cell="{ record }">
-                                    <span>{{ record.private_key_masked }}</span>
-                                    <a-button v-if="record.sealed_private_key" type="text" size="mini" @click="copySealedSecret(record.sealed_private_key)">复制</a-button>
-                                </template>
-                            </a-table-column>
-                        </a-table>
-                    </div>
                 </a-form>
             </a-tab-pane>
         </a-tabs>

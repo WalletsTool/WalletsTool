@@ -19,6 +19,7 @@ pub struct Wallet {
     pub name: Option<String>,
     pub address: String,
     pub chain_type: String, // 'evm' or 'solana'
+    pub wallet_type: String, // 'full_wallet' or 'address_only'
     #[serde(skip_serializing)]
     pub encrypted_private_key: Option<String>,
     #[serde(skip_serializing)]
@@ -36,6 +37,8 @@ pub struct WalletInfo {
     pub name: Option<String>,
     pub address: String,
     pub chain_type: String,
+    #[serde(default)]
+    pub wallet_type: String,
     #[serde(default)]
     pub has_private_key: bool,
     #[serde(default)]
@@ -179,4 +182,60 @@ pub struct WalletExportData {
 pub struct ExportWalletsRequest {
     pub ids: Vec<i64>,
     pub password: String,
+}
+
+// ==================== Watch Address (Read-only Address) Types ====================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchAddressInfo {
+    pub id: i64,
+    pub group_id: Option<i64>,
+    pub group_name: Option<String>,
+    pub name: Option<String>,
+    pub address: String,
+    pub chain_type: String,
+    pub remark: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateWatchAddressRequest {
+    pub group_id: Option<i64>,
+    pub name: Option<String>,
+    pub address: String,
+    pub chain_type: String,
+    pub remark: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateWatchAddressesRequest {
+    pub group_id: Option<i64>,
+    pub name_prefix: Option<String>,
+    pub chain_type: String,
+    pub addresses: Vec<String>,
+    pub remark: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateWatchAddressRequest {
+    pub id: i64,
+    pub group_id: Option<i64>,
+    pub name: Option<String>,
+    pub remark: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WatchAddressExportData {
+    pub id: i64,
+    pub name: Option<String>,
+    pub address: String,
+    pub chain_type: String,
+    pub remark: Option<String>,
+    pub group_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ExportWatchAddressesRequest {
+    pub ids: Vec<i64>,
 }

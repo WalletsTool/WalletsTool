@@ -1,10 +1,23 @@
 use tauri::State;
 use crate::wallets_tool::wallet_manager::service::WalletManagerService;
+use crate::database::{init_encrypted_database, unlock_encrypted_database};
 use super::models::*;
 
 #[tauri::command]
 pub async fn init_wallet_manager_tables(state: State<'_, WalletManagerService>) -> Result<(), String> {
     state.init_tables().await.map_err(|e| e.to_string())
+}
+
+/// 初始化加密数据库（首次设置密码时调用）
+#[tauri::command]
+pub async fn init_encrypted_db(password: String) -> Result<(), String> {
+    init_encrypted_database(&password).await.map_err(|e| e.to_string())
+}
+
+/// 解锁加密数据库（后续启动时调用）
+#[tauri::command]
+pub async fn unlock_encrypted_db(password: String) -> Result<(), String> {
+    unlock_encrypted_database(&password).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -121,4 +134,52 @@ pub async fn register_wallet_transport_key(
     encrypted_key_b64: String,
 ) -> Result<String, String> {
     state.register_transport_key(&encrypted_key_b64).map_err(|e| e.to_string())
+}
+
+// ==================== Watch Address Commands ====================
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn get_watch_addresses(
+    state: State<'_, WalletManagerService>,
+    group_id: Option<i64>,
+    chain_type: Option<String>,
+) -> Result<Vec<WatchAddressInfo>, String> {
+    state.get_watch_addresses(group_id, chain_type).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn create_watch_address(
+    state: State<'_, WalletManagerService>,
+    request: CreateWatchAddressRequest,
+) -> Result<i64, String> {
+    state.create_watch_address(request).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn create_watch_addresses(
+    state: State<'_, WalletManagerService>,
+    request: CreateWatchAddressesRequest,
+) -> Result<u32, String> {
+    state.create_watch_addresses(request).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn update_watch_address(
+    state: State<'_, WalletManagerService>,
+    request: UpdateWatchAddressRequest,
+) -> Result<(), String> {
+    state.update_watch_address(request).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_watch_address(state: State<'_, WalletManagerService>, id: i64) -> Result<(), String> {
+    state.delete_watch_address(id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn export_watch_addresses(
+    state: State<'_, WalletManagerService>,
+    ids: Vec<i64>,
+) -> Result<Vec<WatchAddressExportData>, String> {
+    state.export_watch_addresses(&ids).await.map_err(|e| e.to_string())
 }

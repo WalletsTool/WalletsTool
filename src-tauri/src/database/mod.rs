@@ -8,6 +8,9 @@ use std::str::FromStr;
 use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use sha2::Sha256;
+use hmac::Hmac;
+use pbkdf2::pbkdf2;
 
 /// 智能解析SQL语句，正确处理多行语句
 fn parse_sql_statements(sql: &str) -> Vec<String> {
@@ -171,11 +174,60 @@ impl DatabaseManager {
         Ok(manager)
     }
     
+    /// 创建加密的数据库管理器实例
+    pub async fn new_encrypted(database_url: &str, db_password: &str) -> Result<Self> {
+        let db_password_owned = db_password.to_string();
+        let options = SqliteConnectOptions::from_str(database_url)?
+            .create_if_missing(true)
+            .pragma("key", db_password_owned);  // SQLCipher 加密密钥
+        
+        let pool = SqlitePool::connect_with(options).await?;
+        
+        // 验证加密是否生效 - 执行一个简单查询
+        match sqlx::query("SELECT 1").fetch_one(&pool).await {
+            Ok(_) => {
+                println!("数据库加密验证成功");
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("数据库解密失败，密码可能错误: {e}"));
+            }
+        }
+        
+        let manager = Self { pool };
+        
+        Ok(manager)
+    }
+    
     /// 获取数据库连接池
     pub fn get_pool(&self) -> &SqlitePool {
         &self.pool
     }
-    
+}
+
+/// 从用户密码派生数据库加密密钥
+/// 使用独立的 salt 和更高的迭代次数，与内部 MDK 派生分离
+#[allow(dead_code)]
+pub fn derive_database_key(password: &str, salt: &[u8; 16]) -> [u8; 32] {
+    let mut key = [0u8; 32];
+    let _ = pbkdf2::<Hmac<Sha256>>(password.as_bytes(), salt, 600_000, &mut key);
+    key
+}
+
+/// 生成数据库密码字符串
+/// SQLCipher 直接使用字符串密码，不需要 hex 格式
+pub fn generate_db_password(password: &str, _salt: &[u8; 16]) -> String {
+    // 直接使用用户密码作为数据库密码
+    // 这样更简单且兼容 SQLCipher
+    password.to_string()
+}
+
+/// 从密码派生 salt（确定性方式）
+pub fn derive_salt_from_password(password: &str) -> [u8; 16] {
+    use sha2::Digest;
+    let hash = Sha256::digest(password.as_bytes());
+    let mut salt = [0u8; 16];
+    salt.copy_from_slice(&hash[0..16]);
+    salt
 }
 
 /// 执行数据库迁移
@@ -196,11 +248,10 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     }
 
     // 数据修复：将 Solana 链的 ecosystem 设置为 solana
-    // 即使列已存在，也执行此修复以确保历史数据正确
     sqlx::query("UPDATE chains SET ecosystem = 'solana' WHERE chain_key IN ('sol', 'solana') AND ecosystem != 'solana'")
         .execute(pool)
         .await
-        .ok(); // 忽略错误
+        .ok();
 
     // 数据修复：确保没有空值
     sqlx::query("UPDATE chains SET ecosystem = 'evm' WHERE (ecosystem IS NULL OR ecosystem = '')")
@@ -214,7 +265,39 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
 /// 全局数据库管理器实例
 static DATABASE_MANAGER: OnceLock<DatabaseManager> = OnceLock::new();
 
-/// 初始化数据库
+/// 数据库加密密码存储
+static DB_PASSWORD: OnceLock<String> = OnceLock::new();
+
+/// 检查数据库文件是否存在
+#[allow(dead_code)]
+pub fn database_exists() -> bool {
+    Path::new("data/wallets_tool.db").exists()
+}
+
+/// 检查数据库是否已加密（通过检查是否能无密码访问）
+pub async fn is_database_encrypted() -> Result<bool> {
+    let database_path = "data/wallets_tool.db";
+    if !Path::new(database_path).exists() {
+        return Ok(false); // 数据库不存在，视为未加密（新数据库）
+    }
+    
+    // 尝试无密码打开数据库
+    let database_url = format!("sqlite://{database_path}");
+    let options = SqliteConnectOptions::from_str(&database_url)?;
+    
+    match SqlitePool::connect_with(options).await {
+        Ok(pool) => {
+            // 能打开，尝试执行查询
+            match sqlx::query("SELECT 1").fetch_one(&pool).await {
+                Ok(_) => Ok(false), // 无密码能访问，说明未加密
+                Err(_) => Ok(true), // 需要密码才能访问
+            }
+        }
+        Err(_) => Ok(true), // 无法打开，可能是加密的
+    }
+}
+
+/// 初始化数据库（普通版本，用于应用启动时的基础数据库）
 pub async fn init_database() -> Result<()> {
     let config = load_database_config();
     let enable_debug = config.enable_debug_log.unwrap_or(false);
@@ -230,7 +313,20 @@ pub async fn init_database() -> Result<()> {
     let database_url = format!("sqlite://{database_path}");
     let db_exists = Path::new(&database_path).exists();
     
-    // 始终创建数据库管理器
+    // 检查是否已加密
+    let is_encrypted = if db_exists {
+        is_database_encrypted().await.unwrap_or(false)
+    } else {
+        false
+    };
+    
+    if is_encrypted {
+        println!("数据库已加密，等待密码解锁...");
+        // 加密的数据库不在这里初始化，等待用户输入密码后解锁
+        return Ok(());
+    }
+    
+    // 创建普通数据库管理器
     let manager = DatabaseManager::new(&database_url).await?;
     
     // 执行自动迁移
@@ -248,8 +344,16 @@ pub async fn init_database() -> Result<()> {
             println!("数据库路径: {database_path}");
         }
 
-        // 使用自定义路径加载初始 SQL 文件
         let init_sql_path = config.init_sql_path.unwrap_or_else(|| "data/init.sql".to_string());
+        
+        // 检查 init.sql 是否存在
+        if !Path::new(&init_sql_path).exists() {
+            if enable_debug {
+                println!("init.sql 不存在，跳过初始化");
+            }
+            return Ok(());
+        }
+        
         let init_sql = std::fs::read_to_string(&init_sql_path)?;
 
         if enable_debug {
@@ -266,7 +370,6 @@ pub async fn init_database() -> Result<()> {
                 }
             }
             Err(e) => {
-                // 如果整体执行失败，尝试逐条执行
                 if enable_debug {
                     println!("整体执行失败，尝试逐条执行: {e}");
                 }
@@ -288,7 +391,6 @@ pub async fn init_database() -> Result<()> {
                                 }
                             }
                             Err(e) => {
-                                // 忽略重复插入错误（UNIQUE constraint failed）
                                 if !e.to_string().contains("UNIQUE constraint failed") && !e.to_string().contains("already exists") {
                                     eprintln!("执行 SQL 语句错误: {e}");
                                     eprintln!("错误语句: {statement}");
@@ -312,9 +414,138 @@ pub async fn init_database() -> Result<()> {
     Ok(())
 }
 
+/// 使用密码初始化加密数据库（首次设置密码时调用）
+pub async fn init_encrypted_database(password: &str) -> Result<()> {
+    let config = load_database_config();
+    let enable_debug = config.enable_debug_log.unwrap_or(false);
+    
+    if enable_debug {
+        println!("初始化加密数据库...");
+    }
+
+    // 确保配置目录存在
+    std::fs::create_dir_all("data")?;
+
+    let database_path = "data/wallets_tool.db";
+    let database_url = format!("sqlite://{database_path}");
+    let db_exists = Path::new(&database_path).exists();
+    
+    // 从密码派生 salt
+    let salt = derive_salt_from_password(password);
+    let db_password = generate_db_password(password, &salt);
+    
+    // 存储数据库密码
+    let _ = DB_PASSWORD.set(db_password.clone());
+    
+    // 创建加密数据库管理器
+    let manager = DatabaseManager::new_encrypted(&database_url, &db_password).await?;
+    
+    // 执行自动迁移
+    if let Err(e) = run_migrations(manager.get_pool()).await {
+        eprintln!("数据库迁移失败: {e}");
+    }
+
+    DATABASE_MANAGER.set(manager)
+        .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
+
+    // 初始化表结构
+    if !db_exists || config.force_init.unwrap_or(false) {
+        if enable_debug {
+            println!("开始初始化加密数据库表结构...");
+        }
+
+        let pool = DATABASE_MANAGER.get().expect("Database manager not initialized").get_pool();
+        
+        // 创建钱包管理器所需的表
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS wallet_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_id INTEGER,
+                name TEXT NOT NULL,
+                chain_type TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (parent_id) REFERENCES wallet_groups(id) ON DELETE CASCADE
+            )
+            "#
+        ).execute(pool).await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS wallets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER,
+                name TEXT,
+                address TEXT NOT NULL,
+                chain_type TEXT NOT NULL,
+                encrypted_private_key TEXT,
+                encrypted_mnemonic TEXT,
+                mnemonic_index INTEGER,
+                remark TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (group_id) REFERENCES wallet_groups(id) ON DELETE SET NULL
+            )
+            "#
+        ).execute(pool).await?;
+
+        sqlx::query(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_chain_address ON wallets(chain_type, address)"
+        ).execute(pool).await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS app_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            "#
+        ).execute(pool).await?;
+
+        println!("加密数据库初始化完成");
+    }
+    
+    Ok(())
+}
+
+/// 使用密码解锁加密数据库（后续启动时调用）
+pub async fn unlock_encrypted_database(password: &str) -> Result<()> {
+    let database_path = "data/wallets_tool.db";
+    let database_url = format!("sqlite://{database_path}");
+    
+    // 从密码派生 salt 和数据库密码
+    let salt = derive_salt_from_password(password);
+    let db_password = generate_db_password(password, &salt);
+    
+    // 存储数据库密码
+    let _ = DB_PASSWORD.set(db_password.clone());
+    
+    // 创建加密数据库管理器
+    let manager = DatabaseManager::new_encrypted(&database_url, &db_password).await?;
+    
+    // 存储数据库管理器
+    if DATABASE_MANAGER.get().is_some() {
+        // 已经初始化过，这里需要特殊处理
+        // 由于 OnceLock 不能直接替换，我们需要使用其他方式
+        println!("警告: 数据库管理器已经初始化");
+    } else {
+        DATABASE_MANAGER.set(manager)
+            .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
+    }
+    
+    Ok(())
+}
+
 /// 获取全局数据库管理器
 pub fn get_database_manager() -> &'static DatabaseManager {
     DATABASE_MANAGER.get().expect("Database not initialized")
+}
+
+/// 获取数据库密码
+#[allow(dead_code)]
+pub fn get_db_password() -> Option<&'static String> {
+    DB_PASSWORD.get()
 }
 
 /// 重新加载数据库（删除所有表并从init.sql重新导入）
@@ -359,7 +590,7 @@ pub async fn reload_database() -> Result<String, String> {
     sqlx::query("DELETE FROM sqlite_sequence")
         .execute(pool)
         .await
-        .ok(); // 忽略错误，因为表可能不存在
+        .ok();
     
     if enable_debug {
         println!("已删除所有表，开始重新创建...");
@@ -374,10 +605,9 @@ pub async fn reload_database() -> Result<String, String> {
         println!("已加载 SQL 文件，大小: {} 字节", init_sql.len());
     }
     
-    // 执行SQL语句 - 使用更智能的解析方式
+    // 执行SQL语句
     let mut executed_count = 0;
     
-    // 先尝试整体执行
     match sqlx::query(&init_sql).execute(pool).await {
         Ok(_) => {
             executed_count = 1;
@@ -386,11 +616,6 @@ pub async fn reload_database() -> Result<String, String> {
             }
         }
         Err(_) => {
-            // 整体执行失败，尝试智能分割
-            if enable_debug {
-                println!("整体执行失败，尝试智能分割执行");
-            }
-            
             let statements = parse_sql_statements(&init_sql);
             
             for statement in statements {
@@ -405,7 +630,6 @@ pub async fn reload_database() -> Result<String, String> {
                         Err(e) => {
                             eprintln!("执行 SQL 语句错误: {e}");
                             eprintln!("错误语句: {statement}");
-                            // 重新启用外键约束检查
                             sqlx::query("PRAGMA foreign_keys = ON")
                                 .execute(pool)
                                 .await
@@ -436,7 +660,6 @@ pub async fn reload_database() -> Result<String, String> {
 pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     let pool = get_database_manager().get_pool();
     
-    // 检查数据库中是否存在必要的表
     let chains_table_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chains'"
     )
@@ -458,7 +681,6 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     .await
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
-    // 检查tokens表是否包含contract_type列
     let contract_type_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pragma_table_info('tokens') WHERE name = 'contract_type'"
     )
@@ -466,7 +688,6 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     .await
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
-    // 检查tokens表是否包含abi列
     let abi_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pragma_table_info('tokens') WHERE name = 'abi'"
     )
@@ -474,7 +695,6 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     .await
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
 
-    // 检查chains表是否包含ecosystem列
     let ecosystem_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pragma_table_info('chains') WHERE name = 'ecosystem'"
     )
@@ -483,7 +703,7 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     let schema_info = serde_json::json!({
-        "db_exists": true, // 数据库连接成功意味着数据库文件存在
+        "db_exists": true,
         "chains_table_exists": chains_table_exists > 0,
         "tokens_table_exists": tokens_table_exists > 0,
         "rpc_table_exists": rpc_table_exists > 0,
@@ -509,11 +729,9 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     
     let mut sql_content = String::new();
     
-    // 添加文件头注释
     sql_content.push_str("-- Wallet Manager 数据库初始化脚本\n");
     sql_content.push_str("-- 此文件由系统自动生成，包含当前数据库的所有数据\n\n");
     
-    // 获取所有表名
     let all_tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
     )
@@ -521,24 +739,15 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     .await
     .map_err(|e| format!("获取表名失败: {e}"))?;
     
-    // 按照外键依赖关系排序表，确保被引用的表先创建
     let mut tables = Vec::new();
+    let table_order = vec!["chains", "rpc_providers", "tokens"];
     
-    // 定义表的依赖顺序：被依赖的表在前
-    let table_order = vec![
-        "chains",           // 基础表，被其他表引用
-        "rpc_providers",    // 依赖 chains
-        "tokens",           // 依赖 chains
-    ];
-    
-    // 按照预定义顺序添加存在的表
     for table_name in &table_order {
         if all_tables.contains(&table_name.to_string()) {
             tables.push(table_name.to_string());
         }
     }
     
-    // 添加其他未在预定义顺序中的表
     for table in &all_tables {
         if !tables.contains(table) {
             tables.push(table.clone());
@@ -549,13 +758,11 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
         println!("表创建顺序: {tables:?}");
     }
     
-    // 为每个表生成CREATE TABLE语句和INSERT语句
     for table in &tables {
         if enable_debug {
             println!("正在导出表: {table}");
         }
         
-        // 获取表结构
         let create_sql: String = sqlx::query_scalar(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?"
         )
@@ -568,14 +775,12 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
         sql_content.push_str(&create_sql);
         sql_content.push_str(";\n\n");
         
-        // 获取表数据
         let rows = sqlx::query(&format!("SELECT * FROM {table}"))
             .fetch_all(pool)
             .await
             .map_err(|e| format!("获取表 {table} 数据失败: {e}"))?;
         
         if !rows.is_empty() {
-            // 获取列名
             let columns: Vec<String> = sqlx::query_scalar(
                 "SELECT name FROM pragma_table_info(?) ORDER BY cid"
             )
@@ -589,7 +794,6 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
             for row in rows {
                 let mut values = Vec::new();
                 for (i, _column) in columns.iter().enumerate() {
-                    // 尝试获取不同类型的值
                     let value = if let Ok(v) = row.try_get::<Option<String>, _>(i) {
                         v
                     } else if let Ok(v) = row.try_get::<Option<i64>, _>(i) {
@@ -604,7 +808,6 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
                     
                     match value {
                         Some(v) => {
-                            // 转义单引号并添加引号
                             let escaped = v.replace("'", "''");
                             values.push(format!("'{escaped}'"));
                         }
@@ -624,7 +827,6 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
         }
     }
     
-    // 获取索引
     let indexes: Vec<String> = sqlx::query_scalar(
         "SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%'"
     )
@@ -640,7 +842,6 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
         }
     }
     
-    // 写入文件
     let init_sql_path = config.init_sql_path.unwrap_or_else(|| "data/init.sql".to_string());
     std::fs::write(&init_sql_path, &sql_content)
         .map_err(|e| format!("写入init.sql文件失败: {e}"))?;

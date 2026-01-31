@@ -3,7 +3,7 @@ import { ref, onMounted, reactive, watch, nextTick, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Message, Notification, Modal } from '@arco-design/web-vue';
-import { IconPlus, IconDelete, IconEdit, IconDownload, IconLock } from '@arco-design/web-vue/es/icon';
+import { IconPlus, IconDelete, IconEdit, IconDownload, IconLock, IconFolder, IconFile } from '@arco-design/web-vue/es/icon';
 import { useRouter } from 'vue-router';
 import * as XLSX from 'xlsx';
 import TitleBar from '@/components/TitleBar.vue';
@@ -130,6 +130,10 @@ const selectedWalletIds = ref([]);
 const selectedGroupKeys = ref([]);
 const expandedKeys = ref([]);
 const walletLoadSeq = ref(0);
+
+// View type: 'full_wallet' or 'address_only'
+const currentViewType = ref('full_wallet');
+
 // Rename Group
 const showRenameGroupModal = ref(false);
 const renameGroupName = ref('');
@@ -209,6 +213,276 @@ const bulkGenerating = ref(false);
 const bulkTotalCount = ref(0);
 const bulkSealedMnemonic = ref('');
 const bulkMnemonicMasked = ref('');
+
+// ==================== Watch Address (Address Only) State ====================
+const watchAddresses = ref([]);
+const selectedWatchAddressIds = ref([]);
+const watchAddressLoadSeq = ref(0);
+
+// Watch address form state
+const newWatchAddress = reactive({
+  name_prefix: '',
+  addresses_text: '',
+  chain_type: 'evm',
+  group_id: null,
+  group_name: '',
+  group_path: [],
+  group_search: '',
+  new_group_name: '',
+  remark: ''
+});
+
+// Watch address table columns
+const watchAddressColumns = [
+  { title: '序号', align: 'center', width: 53, slotName: 'index' },
+  { title: '名称', align: 'center', dataIndex: 'name', width: 120, ellipsis: true, tooltip: true },
+  { title: '地址', align: 'center', dataIndex: 'address', width: 380, ellipsis: true, tooltip: true },
+  { title: '链类型', align: 'center', slotName: 'chain_type', width: 70 },
+  { title: '备注', align: 'center', dataIndex: 'remark', ellipsis: true, tooltip: true },
+  { title: '操作', align: 'center', slotName: 'optional', width: 80, ellipsis: true, tooltip: true },
+];
+
+const watchAddressRowSelection = { type: 'checkbox' };
+
+// Reset watch address form
+const resetWatchAddressForm = () => {
+  newWatchAddress.name_prefix = '';
+  newWatchAddress.addresses_text = '';
+  newWatchAddress.chain_type = 'evm';
+  newWatchAddress.group_id = null;
+  newWatchAddress.group_name = '';
+  newWatchAddress.group_path = [];
+  newWatchAddress.group_search = '';
+  newWatchAddress.new_group_name = '';
+  newWatchAddress.remark = '';
+};
+
+watch(showAddWalletModal, (newVal) => {
+  if (!newVal) {
+    resetAddWalletForm();
+    resetWatchAddressForm();
+  }
+});
+
+// Load watch addresses
+const loadWatchAddresses = async () => {
+  try {
+    selectedWatchAddressIds.value = [];
+    const seq = ++watchAddressLoadSeq.value;
+    const selectedKey = selectedGroupKeys.value[0];
+
+    if (!selectedKey) {
+      watchAddresses.value = [];
+      return;
+    }
+
+    // Handle System Groups
+    if (selectedKey === 'SYSTEM_EVM' || selectedKey === 'SYSTEM_SOLANA') {
+      const chainType = selectedKey === 'SYSTEM_EVM' ? 'evm' : 'solana';
+      const res = await invoke('get_watch_addresses', { group_id: null, chain_type: chainType });
+      if (seq === watchAddressLoadSeq.value) watchAddresses.value = res;
+      return;
+    }
+
+    // Handle user groups
+    const groupId = parseDbId(selectedKey);
+    if (groupId === null) {
+      watchAddresses.value = [];
+      return;
+    }
+    const group = findGroupById(groupId);
+    const chainType = group?.chain_type || undefined;
+    const res = await invoke('get_watch_addresses', { group_id: groupId, chain_type: chainType });
+    if (seq === watchAddressLoadSeq.value) watchAddresses.value = res;
+  } catch (e) {
+    Message.error('加载观察地址失败: ' + e);
+  }
+};
+
+// Handle add watch address
+const handleAddWatchAddresses = async () => {
+  try {
+    if (!newWatchAddress.chain_type || !Array.isArray(newWatchAddress.group_path) || newWatchAddress.group_path.length === 0) {
+      Message.error('请选择链类型与分组');
+      return false;
+    }
+
+    // Parse addresses from text
+    const addresses = newWatchAddress.addresses_text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    if (addresses.length === 0) {
+      Message.error('请输入地址');
+      return false;
+    }
+
+    let groupId = newWatchAddress.group_id;
+    if (newWatchAddress.new_group_name && newWatchAddress.new_group_name.trim()) {
+      groupId = await createGroupUnderCurrentSelection(newWatchAddress.new_group_name);
+    }
+
+    const count = await invoke('create_watch_addresses', {
+      request: {
+        group_id: groupId,
+        name_prefix: newWatchAddress.name_prefix || null,
+        chain_type: newWatchAddress.chain_type,
+        addresses: addresses,
+        remark: newWatchAddress.remark || null
+      }
+    });
+
+    await loadWatchAddresses();
+    Message.success(`已添加 ${count} 个观察地址`);
+    showAddWalletModal.value = false;
+    return true;
+  } catch (e) {
+    Message.error('添加观察地址失败: ' + (e?.message || e));
+    return false;
+  }
+};
+
+// Delete watch address
+const handleDeleteWatchAddress = (address) => {
+  if (!address?.id) {
+    Message.error('缺少地址ID，无法删除');
+    return;
+  }
+
+  const titleText = address.name ? `确认删除观察地址「${address.name}」` : '确认删除观察地址';
+  Modal.warning({
+    title: titleText,
+    content: '删除后无法恢复，确定继续吗？',
+    onOk: async () => {
+      try {
+        await invoke('delete_watch_address', { id: address.id });
+        selectedWatchAddressIds.value = selectedWatchAddressIds.value.filter((k) => k !== address.id);
+        await loadWatchAddresses();
+        Message.success('删除成功');
+      } catch (e) {
+        Message.error('删除失败: ' + e);
+      }
+    }
+  });
+};
+
+// Batch delete watch addresses
+const handleBatchDeleteWatchAddresses = () => {
+  if (selectedWatchAddressIds.value.length === 0) {
+    Message.warning('请先选择要删除的地址');
+    return;
+  }
+
+  Modal.warning({
+    title: '确认批量删除',
+    content: `确定要删除选中的 ${selectedWatchAddressIds.value.length} 个观察地址吗？删除后无法恢复，确定继续吗？`,
+    onOk: async () => {
+      try {
+        for (const id of selectedWatchAddressIds.value) {
+          await invoke('delete_watch_address', { id });
+        }
+        selectedWatchAddressIds.value = [];
+        await loadWatchAddresses();
+        Message.success('批量删除成功');
+      } catch (e) {
+        Message.error('删除失败: ' + e);
+      }
+    }
+  });
+};
+
+// Edit watch address
+const showEditWatchAddressModal = ref(false);
+const editingWatchAddress = ref({ id: null, name: '', remark: '', group_id: null });
+
+const handleEditWatchAddress = (address) => {
+  editingWatchAddress.value = {
+    id: address.id,
+    name: address.name || '',
+    remark: address.remark || '',
+    group_id: address.group_id
+  };
+  showEditWatchAddressModal.value = true;
+};
+
+const handleSaveWatchAddress = async () => {
+  if (!editingWatchAddress.value.id) {
+    Message.error('缺少地址ID');
+    return;
+  }
+  try {
+    await invoke('update_watch_address', {
+      request: {
+        id: editingWatchAddress.value.id,
+        group_id: editingWatchAddress.value.group_id,
+        name: editingWatchAddress.value.name || null,
+        remark: editingWatchAddress.value.remark || null
+      }
+    });
+    await loadWatchAddresses();
+    showEditWatchAddressModal.value = false;
+    Message.success('保存成功');
+  } catch (e) {
+    Message.error('保存失败: ' + e);
+  }
+};
+
+// Export watch addresses
+const handleExportWatchAddresses = async () => {
+  if (selectedWatchAddressIds.value.length === 0) {
+    Message.warning('请先选择要导出的地址');
+    return;
+  }
+  try {
+    const data = await invoke('export_watch_addresses', { ids: selectedWatchAddressIds.value });
+
+    const exportData = data.map(item => ({
+      名称: item.name || '',
+      地址: item.address,
+      类型: item.chain_type === 'evm' ? 'EVM' : 'SOL',
+      备注: item.remark || '',
+      ID: item.id
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '观察地址数据');
+
+    const filePath = await save({
+      defaultPath: '观察地址导出.xlsx',
+      filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+    });
+
+    if (filePath) {
+      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      await invoke('save_file', {
+        filePath,
+        content: new Uint8Array(excelBuffer)
+      });
+
+      openDirectory(filePath);
+      Notification.success({
+        content: `成功导出 ${exportData.length} 个观察地址`,
+        duration: 5000,
+        position: 'topLeft',
+      });
+    }
+  } catch (e) {
+    Message.error('导出失败: ' + (e?.message || e));
+  }
+};
+
+// Handle watch address row click
+const handleWatchAddressRowClick = (record) => {
+  const key = record.id;
+  const index = selectedWatchAddressIds.value.indexOf(key);
+  if (index >= 0) {
+    selectedWatchAddressIds.value.splice(index, 1);
+  } else {
+    selectedWatchAddressIds.value.push(key);
+  }
+};
 
 const maskSecret = (val) => {
   if (!val) return '';
@@ -432,6 +706,15 @@ watch(importKeyMode, (mode) => {
   }
 });
 
+// Watch view type changes and load appropriate data
+watch(currentViewType, (newVal) => {
+  if (newVal === 'full_wallet') {
+    loadWallets();
+  } else {
+    loadWatchAddresses();
+  }
+});
+
 const walletColumns = [
   { title: '序号', align: 'center', width: 53, slotName: 'index' },
   { title: '名称', align: 'center', dataIndex: 'name', width: 100, ellipsis: true, tooltip: true },
@@ -639,7 +922,13 @@ onMounted(async () => {
 
   const handleUnlock = async () => {
     try {
+      // 1. 先解锁加密数据库
+      await invoke('unlock_encrypted_db', { password: passwordInput.value });
+      
+      // 2. 初始化传输加密
       await initTransport();
+      
+      // 3. 验证应用密码
       const encryptedPasswordB64 = await encryptWithWalletManagerRsa(passwordInput.value);
       const success = await invoke('verify_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
       if (success) {
@@ -652,7 +941,7 @@ onMounted(async () => {
         Message.error('密码错误');
       }
     } catch (e) {
-      Message.error('解锁失败: ' + e);
+      Message.error('解锁失败: ' + (e?.toString() || '未知错误'));
     }
   };
 
@@ -666,7 +955,13 @@ onMounted(async () => {
       return;
     }
     try {
+      // 1. 先初始化加密数据库
+      await invoke('init_encrypted_db', { password: initPassword.value });
+      
+      // 2. 初始化传输加密
       await initTransport();
+      
+      // 3. 初始化应用密码
       const encryptedPasswordB64 = await encryptWithWalletManagerRsa(initPassword.value);
       await invoke('init_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
       sessionPassword.value = initPassword.value;
@@ -675,7 +970,7 @@ onMounted(async () => {
       loadGroups();
       loadWallets();
     } catch (e) {
-      Message.error('初始化失败: ' + e);
+      Message.error('初始化失败: ' + (e?.toString() || '未知错误'));
     }
   };
 
@@ -816,6 +1111,7 @@ onMounted(async () => {
         return id === null ? k : id;
       });
       loadWallets();
+      loadWatchAddresses();
     }
   };
 
@@ -835,6 +1131,7 @@ onMounted(async () => {
     // 手动设置选中状态
     selectedGroupKeys.value = [node.id];
     loadWallets();
+    loadWatchAddresses();
   };
 
     const getSelectedGroupName = () => {
@@ -894,13 +1191,13 @@ onMounted(async () => {
     try {
       if (!newGroupName.value) {
         Message.warning('请输入分组名称');
-        return false;
+        return;
       }
       
       const selectedKey = selectedGroupKeys.value[0];
       if (!selectedKey) {
           Message.warning('请选择一个生态分组或现有分组');
-          return false;
+          return;
       }
       
       let parentId = null;
@@ -932,7 +1229,7 @@ onMounted(async () => {
               chainType = node.chain_type;
           } else {
               Message.error('无法确定父分组信息');
-              return false;
+              return;
           }
       }
       
@@ -949,7 +1246,6 @@ onMounted(async () => {
       Message.success('创建分组成功');
     } catch (e) {
       Message.error('创建分组失败: ' + e);
-      return false;
     }
   };
 
@@ -1061,11 +1357,16 @@ onMounted(async () => {
 
   const handleAddWallet = async () => {
     try {
+      // Handle watch address tab
+      if (addWalletActiveTab.value === 'watch') {
+        return handleAddWatchAddresses();
+      }
+
       if (!newWallet.chain_type || !Array.isArray(newWallet.group_path) || newWallet.group_path.length === 0) {
         Message.error('请选择链类型与分组');
         return false;
       }
-      
+
       let groupId = newWallet.group_id;
       if (newWallet.new_group_name && newWallet.new_group_name.trim()) {
         groupId = await createGroupUnderCurrentSelection(newWallet.new_group_name);
@@ -1473,68 +1774,113 @@ const confirmExport = async () => {
                     </a-button>
                 </div>
             </div>
-            <a-tree 
-                :data="groups"
-                :field-names="{ key: 'id', title: 'name', children: 'children' }"
-                block-node
-                v-model:selected-keys="selectedGroupKeys"
-                v-model:expanded-keys="expandedKeys"
-                @select="onGroupSelect"
-                @node-click="onNodeClick"
-            >
-                <template #title="node">
-                    <a-dropdown trigger="contextMenu" alignPoint class="tree-node-dropdown">
-                        <div class="tree-node-content" :class="{ 'is-selected': selectedGroupKeys.includes(node.id) }" @click.stop="onNodeClick(node)">{{ node.name }}</div>
-                        <template #content>
-                            <a-doption @click="() => {
-                                selectedGroupKeys = [node.id];
-                                newGroupName = '';
-                                showAddGroupModal = true;
-                            }">新增子节点</a-doption>
-                            <a-doption @click="() => {
-                                renamingGroupId = node.id;
-                                renameGroupName = node.name;
-                                showRenameGroupModal = true;
-                            }" :disabled="node.isSystem">重命名</a-doption>
-                            <a-doption @click="() => {
-                                selectedGroupKeys = [node.id];
-                                handleDeleteGroup();
-                            }" :disabled="node.isSystem">删除</a-doption>
-                        </template>
-                    </a-dropdown>
-                </template>
-            </a-tree>
+            <div class="sidebar-tree-wrapper">
+                <a-tree
+                    :data="groups"
+                    :field-names="{ key: 'id', title: 'name', children: 'children' }"
+                    block-node
+                    v-model:selected-keys="selectedGroupKeys"
+                    v-model:expanded-keys="expandedKeys"
+                    @select="onGroupSelect"
+                    @node-click="onNodeClick"
+                >
+                    <template #icon="{ node }">
+                        <span class="tree-folder-icon" :class="{ 'is-expanded': expandedKeys.includes(node.id), 'is-system': node.isSystem }">
+                            <icon-folder v-if="node.children && node.children.length > 0" />
+                            <icon-file v-else />
+                        </span>
+                    </template>
+                    <template #title="node">
+                        <a-dropdown trigger="contextMenu" alignPoint class="tree-node-dropdown">
+                            <div class="tree-node-content" :class="{ 'is-selected': selectedGroupKeys.includes(node.id) }" @click.stop="onNodeClick(node)">
+                                <span class="node-label">{{ node.name }}</span>
+                            </div>
+                            <template #content>
+                                <a-doption @click="() => {
+                                    selectedGroupKeys = [node.id];
+                                    newGroupName = '';
+                                    showAddGroupModal = true;
+                                }">新增子节点</a-doption>
+                                <a-doption @click="() => {
+                                    renamingGroupId = node.id;
+                                    renameGroupName = node.name;
+                                    showRenameGroupModal = true;
+                                }" :disabled="node.isSystem">重命名</a-doption>
+                                <a-doption @click="() => {
+                                    selectedGroupKeys = [node.id];
+                                    handleDeleteGroup();
+                                }" :disabled="node.isSystem">删除</a-doption>
+                            </template>
+                        </a-dropdown>
+                    </template>
+                </a-tree>
+            </div>
         </div>
         <div class="content">
             <div class="toolbar">
-                <a-button type="primary" @click="showAddWalletModal = true">添加钱包</a-button>
-                <a-button style="margin-left: 10px;" type="primary" status="success" @click="showBatchImportModal = true">批量导入</a-button>
-                <a-button style="margin-left: 10px;" type="outline" @click="downloadTemplate">下载模板</a-button>
+                <!-- View Type Switcher -->
+                <a-radio-group v-model="currentViewType" type="button" style="margin-right: 16px;">
+                    <a-radio value="full_wallet">完整钱包</a-radio>
+                    <a-radio value="address_only">地址观察</a-radio>
+                </a-radio-group>
+
+                <!-- Full Wallet Actions -->
+                <template v-if="currentViewType === 'full_wallet'">
+                    <a-button type="primary" @click="showAddWalletModal = true">添加钱包</a-button>
+                    <a-button style="margin-left: 10px;" type="primary" status="success" @click="showBatchImportModal = true">批量导入</a-button>
+                    <a-button style="margin-left: 10px;" type="outline" @click="downloadTemplate">下载模板</a-button>
+                    <a-button
+                      style="margin-left: 10px;"
+                      type="outline"
+                      :disabled="selectedWalletIds.length === 0"
+                      @click="handleExportWallets"
+                    >
+                      导出 ({{ selectedWalletIds.length }})
+                    </a-button>
+                    <a-button
+                      style="margin-left: 10px;"
+                      type="primary"
+                      status="danger"
+                      :disabled="selectedWalletIds.length === 0"
+                      @click="handleBatchDeleteWallets"
+                    >
+                      批量删除 ({{ selectedWalletIds.length }})
+                    </a-button>
+                </template>
+
+                <!-- Watch Address Actions -->
+                <template v-else>
+                    <a-button type="primary" @click="showAddWalletModal = true">添加地址</a-button>
+                    <a-button
+                      style="margin-left: 10px;"
+                      type="outline"
+                      :disabled="selectedWatchAddressIds.length === 0"
+                      @click="handleExportWatchAddresses"
+                    >
+                      导出 ({{ selectedWatchAddressIds.length }})
+                    </a-button>
+                    <a-button
+                      style="margin-left: 10px;"
+                      type="primary"
+                      status="danger"
+                      :disabled="selectedWatchAddressIds.length === 0"
+                      @click="handleBatchDeleteWatchAddresses"
+                    >
+                      批量删除 ({{ selectedWatchAddressIds.length }})
+                    </a-button>
+                </template>
+
                 <a-button
-                  style="margin-left: 10px;"
-                  type="outline"
-                  :disabled="selectedWalletIds.length === 0"
-                  @click="handleExportWallets"
-                >
-                  导出 ({{ selectedWalletIds.length }})
-                </a-button>
-                <a-button
-                  style="margin-left: 10px;"
-                  type="primary"
-                  status="danger"
-                  :disabled="selectedWalletIds.length === 0"
-                  @click="handleBatchDeleteWallets"
-                >
-                  批量删除 ({{ selectedWalletIds.length }})
-                </a-button>
-                <a-button
-                  style="float: right;;"
+                  style="float: right;"
                   type="outline"
                   @click="showChangePasswordModal = true"
                 >
                   修改密码
                 </a-button>
             </div>
+
+            <!-- Full Wallet Table -->
+            <template v-if="currentViewType === 'full_wallet'">
             <VirtualScrollerTable
               class="wallet-table"
               :columns="walletColumns"
@@ -1580,6 +1926,94 @@ const confirmExport = async () => {
                 </a-button>
               </template>
             </VirtualScrollerTable>
+            <!-- 数据汇总信息 -->
+            <div class="table-summary">
+                <a-divider direction="vertical" />
+                <template v-if="currentViewType === 'full_wallet'">
+                    <span class="summary-item">
+                        <span class="summary-label">当前分组钱包：</span>
+                        <span class="summary-value">{{ wallets.length }}</span>
+                    </span>
+                    <span class="summary-item">
+                        <span class="summary-label">已选：</span>
+                        <span class="summary-value">{{ selectedWalletIds.length }}</span>
+                    </span>
+                    <span class="summary-item">
+                        <span class="summary-label">EVM：</span>
+                        <span class="summary-value evm">{{ wallets.filter(w => w.chain_type === 'evm').length }}</span>
+                    </span>
+                    <span class="summary-item">
+                        <span class="summary-label">SOL：</span>
+                        <span class="summary-value solana">{{ wallets.filter(w => w.chain_type === 'solana').length }}</span>
+                    </span>
+                    <span class="summary-item">
+                        <span class="summary-label">有私钥：</span>
+                        <span class="summary-value success">{{ wallets.filter(w => w.has_private_key).length }}</span>
+                    </span>
+                </template>
+                <template v-else>
+                    <span class="summary-item">
+                        <span class="summary-label">当前分组地址：</span>
+                        <span class="summary-value">{{ watchAddresses.length }}</span>
+                    </span>
+                    <span class="summary-item">
+                        <span class="summary-label">已选：</span>
+                        <span class="summary-value">{{ selectedWatchAddressIds.length }}</span>
+                    </span>
+                    <span class="summary-item">
+                        <span class="summary-label">EVM：</span>
+                        <span class="summary-value evm">{{ watchAddresses.filter(w => w.chain_type === 'evm').length }}</span>
+                    </span>
+                    <span class="summary-item">
+                        <span class="summary-label">SOL：</span>
+                        <span class="summary-value solana">{{ watchAddresses.filter(w => w.chain_type === 'solana').length }}</span>
+                    </span>
+                </template>
+                <a-divider direction="vertical" />
+            </div>
+            </template>
+
+            <!-- Watch Address Table -->
+            <template v-if="currentViewType === 'address_only'">
+            <VirtualScrollerTable
+              class="wallet-table"
+              :columns="watchAddressColumns"
+              :data="watchAddresses"
+              :row-selection="watchAddressRowSelection"
+              :selected-keys="selectedWatchAddressIds"
+              @update:selected-keys="selectedWatchAddressIds = $event"
+              @row-click="handleWatchAddressRowClick"
+              row-key="id"
+              height="100%"
+              page-type="wallet_manager"
+              :empty-data="watchAddresses.length === 0"
+            >
+              <template #chain_type="{ record }">
+                <a-tag :color="record.chain_type === 'evm' ? 'blue' : 'purple'">
+                  {{ record.chain_type === 'evm' ? 'EVM' : 'SOL' }}
+                </a-tag>
+              </template>
+              <template #optional="{ record }">
+                <a-button
+                  type="secondary"
+                  size="mini"
+                  @click.stop="handleEditWatchAddress(record)"
+                >
+                  <template #icon><icon-edit style="font-size: 16px;" /></template>
+                </a-button>
+                <a-button
+                  type="secondary"
+                  size="mini"
+                  status="danger"
+                  style="margin-left: 10px;"
+                  @click.stop="handleDeleteWatchAddress(record)"
+                >
+                  <template #icon><icon-delete style="font-size: 16px;" /></template>
+                </a-button>
+              </template>
+            </VirtualScrollerTable>
+            <!-- Watch Address Summary is included in the main summary above -->
+            </template>
         </div>
     </div>
 
@@ -1682,14 +2116,18 @@ const confirmExport = async () => {
     </a-modal>
 
     <!-- Add Group Modal -->
-    <a-modal v-model:visible="showAddGroupModal" title="新建分组" @before-ok="handleAddGroup">
+    <a-modal v-model:visible="showAddGroupModal" title="新建分组" :footer="false">
         <a-form layout="vertical">
             <a-form-item label="父分组">
                 <span>{{ getSelectedGroupName() }}</span>
             </a-form-item>
             <a-form-item label="分组名称">
-                <a-input v-model="newGroupName" ref="newGroupNameRef" placeholder="请输入分组名称" />
+                <a-input v-model="newGroupName" ref="newGroupNameRef" placeholder="请输入分组名称" @keyup.enter="handleAddGroup" />
             </a-form-item>
+            <div style="text-align: right; margin-top: 20px;">
+                <a-button @click="showAddGroupModal = false">取消</a-button>
+                <a-button type="primary" style="margin-left: 8px;" @click="handleAddGroup">确认</a-button>
+            </div>
         </a-form>
     </a-modal>
 
@@ -1900,6 +2338,109 @@ const confirmExport = async () => {
 
                 </a-form>
             </a-tab-pane>
+            <a-tab-pane key="watch" title="地址观察">
+                <a-form layout="vertical" :model="newWatchAddress">
+                    <div class="add-wallet-two-col">
+                        <div class="add-wallet-col">
+                            <a-form-item label="链类型">
+                                <a-select v-model="newWatchAddress.chain_type">
+                                    <a-option value="evm">EVM</a-option>
+                                    <a-option value="solana">Solana</a-option>
+                                </a-select>
+                            </a-form-item>
+                            <a-form-item label="组名称" required>
+                                <a-cascader
+                                    v-model="newWatchAddress.group_path"
+                                    v-model:input-value="newWatchAddress.group_search"
+                                    :options="groupOptions"
+                                    :field-names="cascaderFieldNames"
+                                    placeholder="请选择组名称"
+                                    @change="(value, selectedOptions) => {
+                                        if (!value) {
+                                            newWatchAddress.group_id = null;
+                                            newWatchAddress.group_name = '';
+                                            return;
+                                        }
+                                        const path = Array.isArray(value) ? value : [value];
+                                        const lastValue = path[path.length - 1];
+                                        newWatchAddress.group_id = parseDbId(lastValue);
+                                        const firstValue = path[0];
+                                        if (firstValue === 'SYSTEM_EVM') newWatchAddress.chain_type = 'evm';
+                                        if (firstValue === 'SYSTEM_SOLANA') newWatchAddress.chain_type = 'solana';
+                                        if (selectedOptions && selectedOptions.length > 0 && parseDbId(lastValue) !== null) {
+                                            const lastOption = selectedOptions[selectedOptions.length - 1];
+                                            newWatchAddress.group_name = lastOption.label;
+                                        } else {
+                                            newWatchAddress.group_name = '';
+                                        }
+                                    }"
+                                    allow-clear
+                                    allow-search
+                                    path-mode
+                                    check-strictly
+                                    :style="{ width: '100%' }"
+                                />
+                            </a-form-item>
+                            <a-form-item label="新增子分组 (可选)">
+                                <div style="display: flex; gap: 8px; width: 100%;">
+                                    <a-input v-model="newWatchAddress.new_group_name" placeholder="将创建在当前所选节点下" />
+                                    <a-button type="outline" @click="async () => {
+                                        try {
+                                            if (!newWatchAddress.group_path || newWatchAddress.group_path.length === 0) {
+                                                Message.warning('请先选择一个父节点');
+                                                return;
+                                            }
+                                            const name = newWatchAddress.new_group_name?.trim();
+                                            if (!name) {
+                                                Message.warning('分组名称不能为空');
+                                                return;
+                                            }
+                                            const path = Array.isArray(newWatchAddress.group_path) ? newWatchAddress.group_path : [];
+                                            const firstValue = path[0];
+                                            const chainType = firstValue === 'SYSTEM_EVM' ? 'evm' : (firstValue === 'SYSTEM_SOLANA' ? 'solana' : newWatchAddress.chain_type);
+                                            const lastValue = path[path.length - 1];
+                                            const parentId = parseDbId(lastValue);
+                                            const newGroupId = await invoke('create_group', { request: { parent_id: parentId, name, chain_type: chainType } });
+                                            await loadGroups();
+                                            await buildGroupOptions();
+                                            newWatchAddress.group_path = [...path, newGroupId];
+                                            newWatchAddress.group_id = newGroupId;
+                                            newWatchAddress.group_name = name;
+                                            newWatchAddress.new_group_name = '';
+                                            Message.success('创建分组成功');
+                                        } catch (e) {
+                                            Message.error('创建分组失败: ' + (e?.message || e));
+                                        }
+                                    }">新增</a-button>
+                                </div>
+                            </a-form-item>
+                            <a-form-item label="名称前缀 (可选)">
+                                <a-input v-model="newWatchAddress.name_prefix" placeholder="批量添加时自动命名，如：观察地址 #1" />
+                            </a-form-item>
+                            <a-form-item label="备注 (可选)">
+                                <a-input v-model="newWatchAddress.remark" placeholder="请输入备注信息" />
+                            </a-form-item>
+                        </div>
+
+                        <div class="add-wallet-col">
+                            <a-form-item label="地址列表" required>
+                                <a-textarea
+                                    v-model="newWatchAddress.addresses_text"
+                                    :auto-size="{ minRows: 12, maxRows: 12 }"
+                                    placeholder="每行一个地址，支持批量粘贴&#10;示例：&#10;0x1234...&#10;0x5678...&#10;0xabcd..."
+                                />
+                            </a-form-item>
+                            <a-form-item label="地址数量">
+                                <a-tag color="blue">{{ (newWatchAddress.addresses_text || '').split('\n').filter(l => l.trim().length > 0).length }}</a-tag>
+                                <span style="margin-left: 8px; color: var(--color-text-3); font-size: 12px;">每行一个地址</span>
+                            </a-form-item>
+                            
+                        </div>
+                    </div>
+
+                    <a-alert type="info" title="提示：地址观察仅保存地址，可用于批量查询余额和转账（需手动导入私钥），不支持导出私钥" show-icon />
+                </a-form>
+            </a-tab-pane>
         </a-tabs>
     </a-modal>
 
@@ -1915,6 +2456,22 @@ const confirmExport = async () => {
             <div style="text-align: right; margin-top: 20px;">
                 <a-button @click="showEditWalletModal = false">取消</a-button>
                 <a-button type="primary" style="margin-left: 8px;" @click="handleSaveWallet">保存</a-button>
+            </div>
+        </a-form>
+    </a-modal>
+
+    <!-- Edit Watch Address Modal -->
+    <a-modal v-model:visible="showEditWatchAddressModal" title="编辑观察地址" :footer="false" width="500px">
+        <a-form layout="vertical">
+            <a-form-item label="名称">
+                <a-input v-model="editingWatchAddress.name" placeholder="请输入名称" />
+            </a-form-item>
+            <a-form-item label="备注信息">
+                <a-input v-model="editingWatchAddress.remark" placeholder="请输入备注信息" />
+            </a-form-item>
+            <div style="text-align: right; margin-top: 20px;">
+                <a-button @click="showEditWatchAddressModal = false">取消</a-button>
+                <a-button type="primary" style="margin-left: 8px;" @click="handleSaveWatchAddress">保存</a-button>
             </div>
         </a-form>
     </a-modal>
@@ -2025,6 +2582,19 @@ const confirmExport = async () => {
     display: flex;
     flex-direction: column;
     background: var(--color-bg-2);
+    overflow: hidden;
+}
+
+.sidebar-tree-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.sidebar-tree-wrapper::-webkit-scrollbar {
+    display: none;
 }
 .sidebar-header {
     display: flex;
@@ -2065,6 +2635,7 @@ const confirmExport = async () => {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    position: relative;
 }
 .toolbar {
     flex-shrink: 0;
@@ -2073,6 +2644,7 @@ const confirmExport = async () => {
 .wallet-table {
     flex: 1;
     overflow: hidden;
+    min-height: 0;
 }
 
 /* 确保树节点标题区域填满整行 */
@@ -2257,6 +2829,132 @@ const confirmExport = async () => {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* 树形结构文件夹图标美化 */
+.tree-folder-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-right: 6px;
+    font-size: 18px;
+    color: var(--color-text-3);
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.tree-folder-icon.is-system {
+    color: rgb(var(--primary-5));
+}
+
+.tree-folder-icon.is-expanded {
+    color: rgb(var(--primary-6));
+    transform: scale(1.1);
+}
+
+/* 树节点容器优化 */
+:deep(.arco-tree-node) {
+    padding: 2px 0;
+    border-radius: 6px;
+    margin-bottom: 2px;
+}
+
+:deep(.arco-tree-node:hover) {
+    background-color: var(--color-fill-2);
+}
+
+:deep(.arco-tree-node-selected) {
+    background-color: rgba(var(--primary-6), 0.1) !important;
+}
+
+/* 树节点标题区域 */
+:deep(.arco-tree-node-title) {
+    width: 100%;
+    flex: 1;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
+/* 节点标签样式 */
+.node-label {
+    font-size: 14px;
+    color: var(--color-text-1);
+    transition: color 0.2s ease;
+}
+
+.tree-node-content.is-selected .node-label {
+    color: rgb(var(--primary-6));
+    font-weight: 500;
+}
+
+/* 树节点图标和内容对齐 */
+:deep(.arco-tree-node-icon) {
+    margin-right: 0;
+}
+
+/* 展开/折叠指示器样式 */
+:deep(.arco-tree-switcher) {
+    width: 20px;
+    height: 20px;
+}
+
+:deep(.arco-tree-switcher-icon) {
+    color: var(--color-text-3);
+}
+
+:deep(.arco-tree-switcher:hover .arco-tree-switcher-icon) {
+    color: rgb(var(--primary-6));
+}
+
+/* 表格汇总信息样式 */
+.table-summary {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: var(--color-text-2);
+    gap: 8px;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.summary-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0px 10px;
+    background: rgba(var(--color-fill-2), 0.85);
+    border-radius: 4px;
+    backdrop-filter: blur(4px);
+}
+
+.summary-label {
+    color: var(--color-text-3);
+}
+
+.summary-value {
+    font-weight: 600;
+    color: var(--color-text-1);
+    min-width: 24px;
+    text-align: center;
+}
+
+.summary-value.evm {
+    color: rgb(var(--primary-6));
+}
+
+.summary-value.solana {
+    color: #722ed1;
+}
+
+.summary-value.success {
+    color: #52c41a;
 }
 
 </style>

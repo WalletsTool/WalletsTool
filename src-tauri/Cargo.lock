@@ -27,6 +27,8 @@ dependencies = [
  "hex",
  "hmac 0.12.1",
  "lazy_static",
+ "libsqlite3-sys",
+ "log",
  "openssl",
  "pbkdf2 0.12.2",
  "rand 0.8.5",

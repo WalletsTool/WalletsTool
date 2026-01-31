@@ -219,6 +219,20 @@ impl WalletManagerService {
                 .await;
         }
 
+        // Migration: Add wallet_type column if not exists
+        let check_col = sqlx::query("SELECT wallet_type FROM wallets LIMIT 1")
+            .fetch_optional(&self.pool)
+            .await;
+        if check_col.is_err() {
+            let _ = sqlx::query("ALTER TABLE wallets ADD COLUMN wallet_type TEXT DEFAULT 'full_wallet' NOT NULL")
+                .execute(&self.pool)
+                .await;
+            // Update existing wallets to have wallet_type = 'full_wallet'
+            let _ = sqlx::query("UPDATE wallets SET wallet_type = 'full_wallet' WHERE wallet_type IS NULL OR wallet_type = ''")
+                .execute(&self.pool)
+                .await;
+        }
+
         // App Config (for password hash/salt and encrypted MDK)
         sqlx::query(
             r#"
@@ -609,6 +623,7 @@ impl WalletManagerService {
                         name,
                         address,
                         chain_type: request.chain_type,
+                        wallet_type: "private_key".to_string(),
                         has_private_key: true,
                         has_mnemonic: false,
                         sealed_private_key: sealed_private_key_out,
@@ -792,6 +807,7 @@ impl WalletManagerService {
                         name: r.name,
                         address: r.address,
                         chain_type: r.chain_type,
+                        wallet_type: if r.has_mnemonic { "mnemonic".to_string() } else { "private_key".to_string() },
                         has_private_key: r.has_private_key,
                         has_mnemonic: r.has_mnemonic,
                         sealed_private_key: r.sealed_private_key,
@@ -912,6 +928,7 @@ impl WalletManagerService {
                         name: names[i].clone(),
                         address: addresses[i].clone(),
                         chain_type: request.chain_type.clone(),
+                        wallet_type: "mnemonic".to_string(),
                         has_private_key: true,
                         has_mnemonic: true,
                         sealed_private_key: sealed_pk,
@@ -1000,6 +1017,7 @@ impl WalletManagerService {
                 name: w.name,
                 address: w.address,
                 chain_type: w.chain_type,
+                wallet_type: w.wallet_type,
                 has_private_key: w.encrypted_private_key.is_some(),
                 has_mnemonic: w.encrypted_mnemonic.is_some(),
                 sealed_private_key: None,
@@ -1008,6 +1026,312 @@ impl WalletManagerService {
                 remark: w.remark,
             })
             .collect())
+    }
+
+    // ==================== Watch Address Functions (Read-only Addresses) ====================
+
+    pub async fn get_watch_addresses(&self, group_id: Option<i64>, chain_type: Option<String>) -> Result<Vec<WatchAddressInfo>> {
+        let req_chain_type = chain_type
+            .clone()
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty());
+
+        let wallets = if let Some(gid) = group_id {
+            let group = sqlx::query_as::<_, WalletGroup>("SELECT * FROM wallet_groups WHERE id = ?")
+                .bind(gid)
+                .fetch_optional(&self.pool)
+                .await?;
+
+            let group = match group {
+                Some(g) => g,
+                None => return Ok(Vec::new()),
+            };
+
+            let group_chain_type = group
+                .chain_type
+                .clone()
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty());
+
+            // If request has chain_type, validate it matches group's chain_type
+            if let Some(req_ct) = req_chain_type {
+                if let Some(group_ct) = group_chain_type {
+                    if group_ct != req_ct {
+                        return Ok(Vec::new());
+                    }
+                }
+                // Query by group_id, chain_type and wallet_type
+                sqlx::query_as::<_, Wallet>(
+                    "SELECT * FROM wallets WHERE group_id = ? AND lower(trim(chain_type)) = ? AND wallet_type = 'address_only'"
+                )
+                    .bind(gid)
+                    .bind(&req_ct)
+                    .fetch_all(&self.pool)
+                    .await?
+            } else if group_chain_type.is_some() {
+                sqlx::query_as::<_, Wallet>(
+                    "SELECT * FROM wallets WHERE group_id = ? AND lower(trim(chain_type)) = ? AND wallet_type = 'address_only'"
+                )
+                    .bind(gid)
+                    .bind(group_chain_type.unwrap())
+                    .fetch_all(&self.pool)
+                    .await?
+            } else {
+                sqlx::query_as::<_, Wallet>(
+                    "SELECT * FROM wallets WHERE group_id = ? AND wallet_type = 'address_only'"
+                )
+                    .bind(gid)
+                    .fetch_all(&self.pool)
+                    .await?
+            }
+        } else if let Some(ct) = req_chain_type {
+            sqlx::query_as::<_, Wallet>(
+                "SELECT * FROM wallets WHERE lower(trim(chain_type)) = ? AND wallet_type = 'address_only'"
+            )
+                .bind(ct)
+                .fetch_all(&self.pool)
+                .await?
+        } else {
+            sqlx::query_as::<_, Wallet>(
+                "SELECT * FROM wallets WHERE wallet_type = 'address_only'"
+            )
+                .fetch_all(&self.pool)
+                .await?
+        };
+
+        // 收集所有 group_id
+        let group_ids: Vec<i64> = wallets.iter().filter_map(|w| w.group_id).collect();
+        
+        // 批量查询分组名称
+        let mut group_names = std::collections::HashMap::new();
+        if !group_ids.is_empty() {
+            let placeholders = group_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let query = format!("SELECT id, name FROM wallet_groups WHERE id IN ({})", placeholders);
+            let mut query_builder = sqlx::query_as::<_, (i64, String)>(&query);
+            for gid in &group_ids {
+                query_builder = query_builder.bind(gid);
+            }
+            let groups = query_builder.fetch_all(&self.pool).await?;
+            for (id, name) in groups {
+                group_names.insert(id, name);
+            }
+        }
+
+        Ok(wallets
+            .into_iter()
+            .map(|w| {
+                let group_name = w.group_id
+                    .and_then(|gid| group_names.get(&gid).cloned());
+
+                WatchAddressInfo {
+                    id: w.id,
+                    group_id: w.group_id,
+                    group_name,
+                    name: w.name,
+                    address: w.address,
+                    chain_type: w.chain_type,
+                    remark: w.remark,
+                    created_at: w.created_at,
+                }
+            })
+            .collect())
+    }
+
+    pub async fn create_watch_address(&self, request: CreateWatchAddressRequest) -> Result<i64> {
+        let chain_type = request.chain_type.trim().to_lowercase();
+
+        // Validate chain_type
+        if chain_type != "evm" && chain_type != "solana" {
+            return Err(anyhow!("无效的链类型，应为 evm 或 solana"));
+        }
+
+        // Validate address format
+        self.validate_address(&request.address, &chain_type)?;
+
+        // Check for duplicate address
+        let exists = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM wallets WHERE chain_type = ? AND address = ? AND wallet_type = 'address_only'"
+        )
+            .bind(&chain_type)
+            .bind(&request.address)
+            .fetch_one(&self.pool)
+            .await?;
+
+        if exists > 0 {
+            return Err(anyhow!("地址已存在"));
+        }
+
+        let result = sqlx::query(
+            "INSERT INTO wallets (group_id, name, address, chain_type, wallet_type, remark, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'address_only', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+            .bind(request.group_id)
+            .bind(request.name)
+            .bind(&request.address)
+            .bind(&chain_type)
+            .bind(request.remark)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.last_insert_rowid())
+    }
+
+    pub async fn create_watch_addresses(&self, request: CreateWatchAddressesRequest) -> Result<u32> {
+        let chain_type = request.chain_type.trim().to_lowercase();
+
+        // Validate chain_type
+        if chain_type != "evm" && chain_type != "solana" {
+            return Err(anyhow!("无效的链类型，应为 evm 或 solana"));
+        }
+
+        let mut count = 0;
+        let _now = Utc::now().naive_utc();
+        let remark = request.remark.clone();
+
+        for (index, addr) in request.addresses.iter().enumerate() {
+            let address = addr.trim();
+            if address.is_empty() {
+                continue;
+            }
+
+            // Validate address format
+            if let Err(e) = self.validate_address(address, &chain_type) {
+                log::warn!("地址格式无效，跳过: {} - {}", address, e);
+                continue;
+            }
+
+            // Check for duplicate address
+            let exists = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM wallets WHERE chain_type = ? AND address = ? AND wallet_type = 'address_only'"
+            )
+                .bind(&chain_type)
+                .bind(address)
+                .fetch_one(&self.pool)
+                .await?;
+
+            if exists > 0 {
+                log::warn!("地址已存在，跳过: {}", address);
+                continue;
+            }
+
+            let name = request.name_prefix.as_ref().map(|prefix| {
+                format!("{} #{}", prefix, index + 1)
+            });
+
+            let _ = sqlx::query(
+                "INSERT INTO wallets (group_id, name, address, chain_type, wallet_type, remark, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, 'address_only', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+                .bind(request.group_id)
+                .bind(name)
+                .bind(address)
+                .bind(&chain_type)
+                .bind(&remark)
+                .execute(&self.pool)
+                .await?;
+
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
+    pub async fn update_watch_address(&self, request: UpdateWatchAddressRequest) -> Result<()> {
+        let _wallet = sqlx::query_as::<_, Wallet>(
+            "SELECT * FROM wallets WHERE id = ? AND wallet_type = 'address_only'"
+        )
+            .bind(request.id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| anyhow!("地址不存在"))?;
+
+        sqlx::query(
+            "UPDATE wallets SET group_id = ?, name = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        )
+            .bind(request.group_id)
+            .bind(request.name)
+            .bind(request.remark)
+            .bind(request.id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_watch_address(&self, id: i64) -> Result<()> {
+        let result = sqlx::query("DELETE FROM wallets WHERE id = ? AND wallet_type = 'address_only'")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(anyhow!("地址不存在"));
+        }
+
+        Ok(())
+    }
+
+    pub async fn export_watch_addresses(&self, ids: &[i64]) -> Result<Vec<WatchAddressExportData>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let query = format!(
+            "SELECT * FROM wallets WHERE id IN ({}) AND wallet_type = 'address_only'",
+            placeholders
+        );
+
+        let mut q = sqlx::query_as::<_, Wallet>(&query);
+        for id in ids {
+            q = q.bind(id);
+        }
+        let wallets = q.fetch_all(&self.pool).await?;
+
+        let results: Vec<WatchAddressExportData> = wallets
+            .into_iter()
+            .map(|w| WatchAddressExportData {
+                id: w.id,
+                name: w.name,
+                address: w.address,
+                chain_type: w.chain_type,
+                remark: w.remark,
+                group_id: w.group_id,
+            })
+            .collect();
+
+        Ok(results)
+    }
+
+    fn validate_address(&self, address: &str, chain_type: &str) -> Result<()> {
+        let addr = address.trim();
+
+        if chain_type == "evm" {
+            // EVM address: starts with 0x, 42 characters (20 bytes hex)
+            if !addr.starts_with("0x") {
+                return Err(anyhow!("EVM 地址必须以 0x 开头"));
+            }
+            if addr.len() != 42 {
+                return Err(anyhow!("EVM 地址长度应为 42 个字符，实际 {}", addr.len()));
+            }
+            // Check if remaining characters are valid hex
+            let hex_part = &addr[2..];
+            if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(anyhow!("EVM 地址包含无效的十六进制字符"));
+            }
+        } else if chain_type == "solana" {
+            // Solana address: base58 encoded, typically 32-44 characters
+            if addr.len() < 32 || addr.len() > 44 {
+                return Err(anyhow!("Solana 地址长度应在 32-44 个字符之间，实际 {}", addr.len()));
+            }
+            // Basic validation - base58 chars are alphanumeric except 0, O, I, l
+            let valid_chars: std::collections::HashSet<char> = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".chars().collect();
+            if !addr.chars().all(|c| valid_chars.contains(&c)) {
+                return Err(anyhow!("Solana 地址包含无效的 base58 字符"));
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn delete_wallet(&self, id: i64) -> Result<()> {

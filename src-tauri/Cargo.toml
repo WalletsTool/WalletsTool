@@ -32,8 +32,10 @@ url = "2.0"
 dirs = "5.0"
 # 懒加载静态变量
 lazy_static = "1.4"
-# 数据库
+# 数据库 - 使用 SQLCipher 加密
 sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "sqlite", "chrono", "macros"], default-features = false }
+# SQLCipher 支持 - 启用 bundled-sqlcipher 特性
+libsqlite3-sys = { version = "0.27", features = ["bundled-sqlcipher"] }
 chrono = { version = "0.4.41", features = ["serde"] }
 # 以太坊相关
 alloy = { version = "1.4.0", default-features = false, features = [
@@ -78,6 +80,7 @@ block-padding = "0.3"
 pbkdf2 = "0.12"
 hmac = "0.12"
 openssl = { version = "0.10", features = ["vendored"] }
+log = "0.4"
 
 # Release模式优化配置
 [profile.release]

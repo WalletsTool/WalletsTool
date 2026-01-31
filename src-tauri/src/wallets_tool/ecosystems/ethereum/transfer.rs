@@ -1892,7 +1892,7 @@ pub struct RecentTransferResult {
 #[tauri::command]
 pub async fn check_wallet_recent_transfers(
     chain: String,
-    private_key: String,
+    private_key: SecureMemory,
     target_address: String,
     start_timestamp: u64,
     coin_type: String,
@@ -1916,7 +1916,7 @@ pub async fn check_wallet_recent_transfers(
 // 内部检查钱包最近转账记录实现
 async fn check_wallet_recent_transfers_internal(
     chain: String,
-    private_key: String,
+    private_key: SecureMemory,
     target_address: String,
     start_timestamp: u64,
     coin_type: String,
@@ -1925,18 +1925,17 @@ async fn check_wallet_recent_transfers_internal(
 ) -> Result<RecentTransferResult, Box<dyn std::error::Error>> {
     // 创建Provider
     let provider = create_provider(&chain, None).await?;
-    
-    // 处理私钥格式
-    let private_key = if private_key.starts_with("0x") || private_key.starts_with("0X") {
-        private_key[2..].to_string()
-    } else {
-        private_key.clone()
-    };
-    
-    // 创建钱包
-    let wallet = private_key.parse::<PrivateKeySigner>().map_err(|e| {
-        format!("私钥格式错误: {e}")
-    })?;
+
+    // 使用 SecureMemory 安全获取私钥并创建钱包
+    let wallet = private_key.use_secret(|key_str| {
+        // 处理私钥格式
+        let private_key = if key_str.starts_with("0x") || key_str.starts_with("0X") {
+            &key_str[2..]
+        } else {
+            key_str
+        };
+        private_key.parse::<PrivateKeySigner>()
+    }).map_err(|e| format!("解密私钥失败: {e}"))??;
     let wallet_address = wallet.address();
     
     // 解析目标地址

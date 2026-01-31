@@ -116,21 +116,22 @@ Register in `main.rs` invoke_handler via `#[tauri::generate_handler!]` macro and
 ## Technology Stack
 
 ### Frontend Dependencies
-- Vue 3.5.17 with Composition API
-- PrimeVue 4.3.7 + Arco Design 2.57.0 for UI components
-- Vue Router 4.5.1 with hash-based routing
-- Pinia 3.0.3 for state management
-- ethers.js 5.7.0 for Ethereum interactions
+- Vue 3.5.26 with Composition API
+- PrimeVue 4.5.4 + Arco Design 2.57.0 for UI components
+- Vue Router 4.6.5 with hash-based routing
+- Pinia 3.0.4 for state management
+- ethers.js 6.13.4 for Ethereum interactions
 - xlsx 0.18.5 for Excel file handling
 - party-js 2.2.0 for animations
 - qrcode for QR code generation
+- @solana/web3.js 1.91.0 + @solana/spl-token 0.4.0 for Solana support
 
 ### Backend Dependencies
-- Tauri 2.1 with custom protocol support
+- Tauri 2.9 with custom protocol support
 - SQLx 0.7 for database operations with SQLite
 - tokio 1.0 for async runtime
 - reqwest 0.11 for HTTP client functionality
-- ethers 1.0 (Rust) for blockchain operations
+- ethers 2.0 (Rust) for blockchain operations
 - chrono for datetime handling
 - serde for serialization/deserialization
 

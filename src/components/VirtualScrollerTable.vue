@@ -1,7 +1,7 @@
 <template>
   <div ref="tableContainerRef" class="virtual-scroller-table" :style="{ height: height, width: '100%' }">
     <!-- 表头 -->
-    <div class="table-header">
+    <div ref="headerRef" class="table-header">
       <div class="header-row" :style="{ paddingRight: scrollbarPadding }">
         <!-- 选择列 -->
         <div v-if="rowSelection" class="header-cell checkbox-cell">
@@ -153,6 +153,7 @@
         :items="data"
         :itemSize="35"
         class="virtual-scroller"
+        @scroll="handleScroll"
       >
         <template #item="{ item, options }">
           <div
@@ -400,12 +401,20 @@ const showEmptyData = computed(() => {
 // 滚动条相关状态
 const scrollerRef = ref(null);
 const tableContainerRef = ref(null);
+const headerRef = ref(null);
 const scrollbarWidth = ref(0);
 const hasScrollbar = ref(false);
 const scrollbarPadding = computed(() => {
   return hasScrollbar.value ? scrollbarWidth.value + 'px' : '0';
 });
 let resizeObserver = null;
+
+// 处理横向滚动，同步表头位置
+const handleScroll = (event) => {
+  if (headerRef.value && event.target) {
+    headerRef.value.scrollLeft = event.target.scrollLeft;
+  }
+};
 
 const checkScrollbar = () => {
   if (scrollerRef.value && scrollerRef.value.$el) {
@@ -781,15 +790,22 @@ const handleWheel = () => {
   flex-shrink: 0;
   width: 100%;
   max-width: 100%;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.table-header::-webkit-scrollbar {
+  display: none;
 }
 
 .header-row {
   display: flex;
   height: 40px;
   align-items: center;
-  width: 100%;
-  max-width: 100%;
+  width: fit-content;
+  min-width: 100%;
   box-sizing: border-box;
 }
 
@@ -837,7 +853,8 @@ const handleWheel = () => {
   border-bottom: 1px solid var(--table-border-color, #f2f3f5);
   transition: background-color 0.2s;
   background: var(--table-bg, #ffffff);
-  width: 100%;
+  width: fit-content;
+  min-width: 100%;
 }
 
 .table-row.zebra-stripe {

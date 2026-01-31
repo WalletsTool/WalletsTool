@@ -1,17 +1,23 @@
 <script setup>
-import { ref, shallowRef, onMounted, nextTick } from 'vue';
+import { ref, shallowRef, onMounted, nextTick, defineAsyncComponent } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import WalletManager from '../components/WalletManager.vue';
-import BrowserFarm from '../components/BrowserFarm.vue';
-import ScriptEditor from '../components/ScriptEditor.vue';
-import ExecutionPanel from '../components/ExecutionPanel.vue';
-import { 
-  IconSafe, 
-  IconComputer, 
-  IconCode, 
-  IconPlayCircle, 
-  IconPoweroff 
+import {
+  IconSafe,
+  IconComputer,
+  IconCode,
+  IconPlayCircle,
+  IconPoweroff,
+  IconFolder,
+  IconSchedule
 } from '@arco-design/web-vue/es/icon';
+
+// 异步加载非首屏组件，加快窗口打开速度
+const BrowserFarm = defineAsyncComponent(() => import('../components/BrowserFarm.vue'));
+const ScriptEditor = defineAsyncComponent(() => import('../components/ScriptEditor.vue'));
+const ExecutionPanel = defineAsyncComponent(() => import('../components/ExecutionPanel.vue'));
+const TaskManager = defineAsyncComponent(() => import('../components/TaskManager.vue'));
+const TaskMonitor = defineAsyncComponent(() => import('../components/TaskMonitor.vue'));
 
 const appWindow = getCurrentWindow();
 
@@ -20,19 +26,26 @@ const menuItems = [
   { id: 'wallets', label: '钱包管理', icon: IconSafe, component: WalletManager },
   { id: 'envs', label: '环境配置', icon: IconComputer, component: BrowserFarm },
   { id: 'scripts', label: '脚本编辑', icon: IconCode, component: ScriptEditor },
-  { id: 'execution', label: '任务执行', icon: IconPlayCircle, component: ExecutionPanel },
+  { id: 'tasks', label: '任务管理', icon: IconFolder, component: TaskManager },
+  { id: 'monitor', label: '任务监控', icon: IconSchedule, component: TaskMonitor },
+  { id: 'execution', label: '执行面板', icon: IconPlayCircle, component: ExecutionPanel },
 ];
 
 const activeTab = ref('wallets');
 const currentComponent = shallowRef(WalletManager);
 
-onMounted(async () => {
-  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-  if (!isTauri) return;
-  await nextTick();
-  setTimeout(() => {
+// 立即发送 page-loaded 事件，不需要等待 onMounted
+// 因为窗口只需要显示基础布局，不需要等待所有数据加载
+const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+if (isTauri) {
+  // 使用微任务确保在组件初始化后立即发送事件
+  Promise.resolve().then(() => {
     appWindow.emit('page-loaded');
-  }, 0);
+  });
+}
+
+onMounted(async () => {
+  // 组件挂载后的其他初始化逻辑
 });
 
 const handleNavClick = (item) => {

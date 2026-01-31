@@ -1,14 +1,18 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick, watch } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
-import { 
-  IconPlus, 
-  IconFile, 
-  IconPlayArrow, 
-  IconSave, 
-  IconCode, 
-  IconDelete 
+import {
+  IconPlus,
+  IconFile,
+  IconPlayArrow,
+  IconSave,
+  IconCode,
+  IconDelete,
+  IconBook,
+  IconFullscreen,
+  IconFullscreenExit
 } from '@arco-design/web-vue/es/icon';
+import ApiHelper from './ApiHelper.vue';
 
 const STORAGE_KEY = 'browser_scripts';
 
@@ -22,8 +26,77 @@ const loadScripts = () => {
     console.error('Failed to load scripts:', e);
   }
   return [
-    { id: 1, name: 'OKX Daily Claim', content: '// Playwright script for OKX Daily Claim\nasync function run(page, wallet) {\n  await page.goto("https://www.okx.com");\n  // ...\n}' },
-    { id: 2, name: 'Uniswap Swap', content: '// Swap ETH for USDC\nasync function run(page, wallet) {\n  await page.goto("https://app.uniswap.org");\n  // ...\n}' },
+    {
+      id: 1,
+      name: 'OKX Daily Claim',
+      content: `// OKX Daily Claim Script
+// 依赖API: connectOKXWallet, clickElement, waitForSelector, randomDelay, log
+
+async function run(page, wallet, api) {
+    log('info', '开始执行 OKX Daily Claim');
+
+    // 1. 打开OKX官网
+    await page.goto('https://www.okx.com');
+    await api.waitForSelector('body');
+    await api.randomDelay(2000, 4000);
+
+    // 2. 连接钱包
+    log('info', '连接 OKX Wallet...');
+    await api.connectOKXWallet({ chainId: '0x1' });
+    await api.randomDelay(1000, 2000);
+
+    // 3. 导航到签到页面
+    log('info', '导航到 Rewards 页面...');
+    await page.goto('https://www.okx.com/rewards');
+    await api.waitForSelector('button.claim-button', 10000);
+    await api.randomDelay(1000, 2000);
+
+    // 4. 点击签到
+    log('info', '执行签到操作...');
+    const claimButton = await page.$('button.claim-button');
+    if (claimButton) {
+        await claimButton.click();
+        await api.randomDelay(3000, 5000);
+        log('success', '签到完成');
+    } else {
+        log('warn', '未找到签到按钮，可能今日已签到');
+    }
+
+    return { success: true };
+}`
+    },
+    {
+      id: 2,
+      name: 'Uniswap Swap',
+      content: `// Uniswap V3 Swap Script
+// 依赖API: connectMetaMask, switchNetwork, waitForSelector, log
+
+async function run(page, wallet, api) {
+    const ETH_AMOUNT = '0.1';
+
+    log('info', '开始执行 Uniswap Swap');
+
+    // 1. 连接钱包
+    await api.connectMetaMask({ expectedChainId: '0x1' });
+    await api.switchNetwork('0x1');
+
+    // 2. 打开Uniswap
+    await page.goto('https://app.uniswap.org');
+    await api.waitForSelector('body');
+    await api.randomDelay(2000, 3000);
+
+    // 3. 确认交易
+    log('info', '确认交易...');
+    await api.clickElement('button[data-testid="swap-button"]');
+    await api.randomDelay(1000, 2000);
+
+    // 4. 等待MetaMask确认
+    log('info', '等待钱包签名...');
+    await api.waitForSelector('div.swap-review', 30000);
+
+    return { success: true };
+}`
+    },
   ];
 };
 
@@ -42,6 +115,8 @@ const activeScript = ref(null);
 const scriptContent = ref('');
 const isNewModalVisible = ref(false);
 const newScriptName = ref('');
+const showApiHelper = ref(true);
+const isFullscreen = ref(false);
 
 const editingScriptId = ref(null);
 const editNameInput = ref(null);
@@ -105,7 +180,6 @@ const handleSave = () => {
 const handleRun = () => {
   if (!activeScript.value) return;
   Message.success('脚本已添加到执行队列');
-  // TODO: Emit event to start execution
 };
 
 const handleNewScript = () => {
@@ -118,13 +192,22 @@ const confirmNewScript = () => {
     Message.error('请输入脚本名称');
     return;
   }
-  
+
   const newScript = {
     id: Date.now(),
     name: newScriptName.value,
-    content: '// New Playwright Script\nasync function run(page, wallet) {\n  \n}'
+    content: `// ${newScriptName.value}
+// 依赖API: waitForSelector, clickElement, randomDelay, log
+
+async function run(page, wallet, api) {
+    log('info', '开始执行脚本');
+
+    // 在此编写你的脚本逻辑
+
+    return { success: true };
+}`
   };
-  
+
   scripts.value.push(newScript);
   saveScripts();
   handleSelectScript(newScript);
@@ -148,21 +231,43 @@ const handleDeleteScript = (e, scriptId) => {
     }
   });
 };
+
+const handleInsertCode = (code) => {
+  if (activeScript.value) {
+    scriptContent.value += '\n' + code;
+    Message.success('代码已插入');
+  }
+};
+
+const toggleApiHelper = () => {
+  showApiHelper.value = !showApiHelper.value;
+};
+
+const toggleFullscreen = () => {
+  isFullscreen.value = !isFullscreen.value;
+};
+
+// 监听内容变化自动保存
+watch(scriptContent, (newVal) => {
+  if (activeScript.value) {
+    activeScript.value.content = newVal;
+  }
+});
 </script>
 
 <template>
-  <div class="script-editor">
-    <div class="script-list">
+  <div class="script-editor" :class="{ fullscreen: isFullscreen }">
+    <div class="script-list" v-if="!isFullscreen">
       <div class="list-header">
         <h3>脚本列表</h3>
         <a-button type="primary" size="small" @click="handleNewScript">
           <template #icon><icon-plus /></template>
         </a-button>
       </div>
-      
+
       <div class="list-content">
-        <div 
-          v-for="script in scripts" 
+        <div
+          v-for="script in scripts"
           :key="script.id"
           class="script-item"
           :class="{ active: activeScript && activeScript.id === script.id }"
@@ -193,35 +298,57 @@ const handleDeleteScript = (e, scriptId) => {
       </div>
     </div>
 
-    <div class="editor-area" v-if="activeScript">
-      <div class="editor-toolbar">
-        <div class="file-info">
-          <icon-file />
-          <span>{{ activeScript.name }}</span>
+    <div class="editor-main" v-if="activeScript" :style="{ width: isFullscreen ? '100%' : (showApiHelper ? 'calc(50% - 10px)' : 'calc(100% - 20px)') }">
+      <div class="editor-area">
+        <div class="editor-toolbar">
+          <div class="file-info">
+            <icon-file />
+            <span>{{ activeScript.name }}</span>
+          </div>
+          <div class="actions">
+            <a-tooltip content="API 参考文档">
+              <a-button type="text" size="small" @click="toggleApiHelper" :type="showApiHelper ? 'primary' : 'secondary'">
+                <template #icon><icon-book /></template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="全屏编辑">
+              <a-button type="text" size="small" @click="toggleFullscreen">
+                <template #icon><icon-fullscreen v-if="!isFullscreen" /><icon-fullscreen-exit v-else /></template>
+              </a-button>
+            </a-tooltip>
+            <a-button type="secondary" size="small" @click="handleRun">
+              <template #icon><icon-play-arrow /></template>
+              测试运行
+            </a-button>
+            <a-button type="primary" size="small" @click="handleSave">
+              <template #icon><icon-save /></template>
+              保存
+            </a-button>
+          </div>
         </div>
-        <div class="actions">
-          <a-button type="secondary" size="small" @click="handleRun">
-            <template #icon><icon-play-arrow /></template>
-            测试运行
-          </a-button>
-          <a-button type="primary" size="small" @click="handleSave">
-            <template #icon><icon-save /></template>
-            保存
-          </a-button>
+
+        <div class="code-container">
+          <textarea
+            v-model="scriptContent"
+            class="code-input"
+            spellcheck="false"
+            placeholder="在此编写 Playwright 脚本..."
+          ></textarea>
         </div>
-      </div>
-      
-      <div class="code-container">
-        <textarea 
-          v-model="scriptContent" 
-          class="code-input" 
-          spellcheck="false"
-          placeholder="在此编写 Playwright 脚本..."
-        ></textarea>
+
+        <div class="editor-footer">
+          <div class="script-tips">
+            <span>提示: 使用 api. 调用自定义方法，如 api.connectMetaMask()</span>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="empty-state" v-else>
+    <div class="api-helper-panel" v-if="showApiHelper && !isFullscreen && activeScript">
+      <ApiHelper @insert-code="handleInsertCode" />
+    </div>
+
+    <div class="empty-state" v-if="!activeScript">
       <icon-code style="font-size: 48px; color: var(--color-text-4)" />
       <p>请选择左侧脚本进行编辑，或创建新脚本</p>
       <a-button type="primary" @click="handleNewScript">创建新脚本</a-button>
@@ -241,6 +368,17 @@ const handleDeleteScript = (e, scriptId) => {
   height: 100%;
   display: flex;
   gap: 20px;
+}
+
+.script-editor.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: var(--color-bg-1);
+  padding: 20px;
 }
 
 .script-list {
@@ -354,11 +492,17 @@ const handleDeleteScript = (e, scriptId) => {
   color: rgb(var(--primary-6));
 }
 
+.editor-main {
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+}
+
 .editor-area {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-2); /* Changed to theme bg */
+  background: var(--color-bg-2);
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -383,26 +527,47 @@ const handleDeleteScript = (e, scriptId) => {
 
 .actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .code-container {
   flex: 1;
   position: relative;
+  overflow: hidden;
 }
 
 .code-input {
   width: 100%;
   height: 100%;
-  background: var(--color-bg-1); /* Theme bg */
+  background: var(--color-bg-1);
   color: var(--color-text-1);
   border: none;
   padding: 15px;
   font-family: 'Fira Code', 'Consolas', monospace;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
   resize: none;
   outline: none;
+  tab-size: 2;
+}
+
+.editor-footer {
+  padding: 8px 15px;
+  background: var(--color-bg-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.script-tips {
+  font-size: 12px;
+  color: var(--color-text-4);
+}
+
+.api-helper-panel {
+  width: 400px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
 }
 
 .empty-state {

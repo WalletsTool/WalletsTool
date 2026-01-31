@@ -18,9 +18,10 @@ onMounted(async () => {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
   if (!isTauri) return
   await nextTick()
-  setTimeout(() => {
+  // 使用 requestAnimationFrame 确保页面已经渲染完成
+  requestAnimationFrame(() => {
     appWindow.emit('page-loaded')
-  }, 0)
+  })
 })
 
 // 页面映射配置

@@ -1,7 +1,8 @@
 # WalletsTool Development Guide
 
-**Generated:** 2026-01-30
-**Commit:** d1f52e9 (dev branch)
+**Generated:** 2026-01-31
+**Version:** 0.4.5
+**Branch:** dev
 
 ## OVERVIEW
 
@@ -157,26 +158,74 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 ./
 ├── src/                      # Vue 3 frontend (Feature-based)
 │   ├── features/             # Business domains (Deep nesting)
-│   │   ├── ethereum/         # EVM logic
-│   │   ├── solana/           # SVM logic
-│   │   └── airdrop/          # Browser Automation & Scripting
-│   ├── pages/                # Route targets
+│   │   ├── ethereum/         # EVM logic (transfer/balance/monitor)
+│   │   ├── solana/           # SVM logic (transfer/balance)
+│   │   ├── airdrop/          # Browser Automation & Scripting
+│   │   ├── wallet_manager/   # Wallet management UI
+│   │   └── home/             # Home page
+│   ├── pages/                # Route targets (deprecated, use features/)
 │   ├── components/           # Global UI components
+│   │   ├── ChainIcon.vue
+│   │   ├── ChainManagement.vue
+│   │   ├── RpcManagement.vue
+│   │   ├── TokenManagement.vue
+│   │   ├── ProxyConfigModal.vue
+│   │   ├── WalletImportModal.vue
+│   │   ├── WalletSystemImportModal.vue
+│   │   ├── SecretRevealModal.vue
+│   │   ├── VirtualScrollerTable.vue
+│   │   ├── TableSkeleton.vue
+│   │   ├── TitleBar.vue
+│   │   └── transfer/         # Transfer-related components
 │   ├── composables/          # Global composables
 │   ├── stores/               # Pinia stores
+│   │   ├── index.js          # Global state (confetti, theme)
+│   │   └── ecosystem.js      # Ecosystem switching
+│   ├── router/               # Vue Router config
 │   ├── utils/                # Utility functions
 │   ├── main.js               # Entry (Plugins + Config)
 │   └── App.vue               # Root + Global Events
 ├── src-tauri/                # Tauri backend (Library-style)
-│   ├── src/wallets_tool/     # Core Business Logic
-│   │   ├── ecosystems/       # Chain implementations
-│   │   ├── security/         # AES-256 Memory Guard
-│   │   ├── transfer/         # Transfer logic
-│   │   └── wallet_manager/   # Wallet CRUD + encryption
-│   ├── src/database/         # SQLite Service Layer
+│   ├── src/
+│   │   ├── main.rs           # Application entry
+│   │   ├── utils.rs          # Common utilities
+│   │   ├── database/         # SQLite Service Layer
+│   │   │   ├── mod.rs        # DB manager, connection pool
+│   │   │   ├── models.rs     # Data models
+│   │   │   ├── chain_service.rs
+│   │   │   └── rpc_service.rs
+│   │   ├── plugins/          # Tauri plugin extensions
+│   │   └── wallets_tool/     # Core Business Logic
+│   │       ├── airdrop/      # Airdrop automation
+│   │       ├── ecosystems/   # Chain implementations
+│   │       │   ├── ethereum/ # EVM chain support
+│   │       │   │   ├── chain_config.rs
+│   │       │   │   ├── provider.rs
+│   │       │   │   ├── rpc_management.rs
+│   │       │   │   ├── proxy_manager.rs
+│   │       │   │   ├── proxy_commands.rs
+│   │       │   │   ├── transfer.rs
+│   │       │   │   ├── token_transfer.rs
+│   │       │   │   ├── simple_balance_query.rs
+│   │       │   │   └── alloy_utils.rs
+│   │       │   └── solana/   # Solana chain support
+│   │       │       ├── provider.rs
+│   │       │       └── transfer.rs
+│   │       ├── playwright/   # Browser automation
+│   │       ├── security/     # AES-256 Memory Guard
+│   │       │   ├── mod.rs
+│   │       │   ├── memory.rs
+│   │       │   ├── protection.rs
+│   │       │   └── session.rs
+│   │       └── wallet_manager/  # Wallet CRUD + encryption
+│   │           ├── mod.rs
+│   │           ├── models.rs
+│   │           ├── service.rs
+│   │           └── commands.rs
 │   └── data/                 # DB file + init.sql
-├── vcpkg/                    # C++ Dependencies
-└── scripts/                  # Build/Version utilities
+├── docs/                     # Documentation
+├── scripts/                  # Build/Version utilities
+└── vcpkg/                    # C++ Dependencies
 ```
 
 ## WHERE TO LOOK
@@ -185,21 +234,31 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 |------|----------|
 | **Frontend Entry** | `src/main.js` |
 | **Backend Entry** | `src-tauri/src/main.rs` |
-| **Transfer Logic** | `src/features/{chain}/transfer/` |
-| **Balance Logic** | `src/features/{chain}/balance/` |
+| **Transfer Logic (Frontend)** | `src/features/{chain}/transfer/composables/useTransfer.ts` |
+| **Transfer Logic (Backend)** | `src-tauri/src/wallets_tool/ecosystems/{chain}/transfer.rs` |
+| **Balance Logic (Frontend)** | `src/features/{chain}/balance/` |
+| **Balance Logic (Backend)** | `src-tauri/src/wallets_tool/ecosystems/ethereum/simple_balance_query.rs` |
 | **Chain Backend** | `src-tauri/src/wallets_tool/ecosystems/` |
 | **Security Core** | `src-tauri/src/wallets_tool/security/` |
 | **Database Ops** | `src-tauri/src/database/` |
 | **Wallet Manager** | `src-tauri/src/wallets_tool/wallet_manager/` |
+| **Airdrop/Automation** | `src/features/airdrop/`, `src-tauri/src/wallets_tool/airdrop/` |
+| **Browser Automation** | `src-tauri/src/wallets_tool/playwright/` |
+| **Chain Config** | `src/components/ChainManagement.vue` |
+| **RPC Management** | `src/components/RpcManagement.vue` |
+| **Token Management** | `src/components/TokenManagement.vue` |
+| **Proxy Config** | `src/components/ProxyConfigModal.vue` |
 
 ## CONVENTIONS
 
 - **Feature-First**: Frontend code lives in `src/features/{chain}/{domain}/`
 - **Dual UI**: PrimeVue (Data/Lists) + Arco Design (Interactions/Modals)
-- **JS over TS**: Frontend is strictly `.js`
+- **JS over TS**: Frontend is strictly `.js` (composables may use `.ts`)
 - **Async Backend**: All Tauri commands return `Result<T, String>`
 - **Chain Filtering**: Filter `get_chain_list` results by `ecosystem` ('evm' | 'solana')
 - **Encrypted Secrets**: 私钥/助记词传输使用加密封装（`p1:` 或 `t1:`），不走明文
+- **Fury Mode**: 90+ concurrent threads for batch transfers
+- **Virtual Scrolling**: Use `VirtualScrollerTable` for large datasets
 
 ## ANTI-PATTERNS
 
@@ -209,6 +268,8 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 - **NEVER** block the main thread; use `tokio` for heavy lifting
 - **NEVER** remove `custom-protocol` from `tauri.conf.json`
 - **NEVER** use `as any`, `@ts-ignore`, or `.unwrap()` to suppress errors
+- **NEVER** hardcode RPC URLs; use chain config from database
+- **NEVER** skip error handling in async functions
 
 ## SECURITY RULES
 
@@ -217,6 +278,8 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 3. **Zeroize**: Immediate memory wipe after signing
 4. **Encrypted Persistence**: If needed, use Master Data Key (PBKDF2 derived from user password)
 5. **IPC 传输加密**: 密码可用 RSA-OAEP 加密传输；批量导入/预览 secrets 使用 AES-256-GCM(`t1:`) 传输
+6. **SQLCipher**: Database encrypted with PBKDF2 (600,000 iterations)
+7. **Anti-Debug**: Runtime protection against memory scanning (Windows)
 
 ## TOOLS AVAILABLE
 
@@ -226,6 +289,7 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 | cargo | Rust compilation and testing |
 | vite | Frontend build |
 | tauri | Desktop app packaging |
+| playwright | Browser automation testing |
 
 ## VERIFICATION
 
@@ -233,3 +297,36 @@ Before submitting:
 1. Run `lsp_diagnostics` on changed files
 2. Run `cargo test` for Rust changes
 3. Build succeeds with `yarn tauri-build`
+4. Test on both EVM and Solana chains if applicable
+
+## ROUTES
+
+| Path | Component | Description |
+|------|-----------|-------------|
+| `/` | Home.vue | Dashboard with feature cards |
+| `/entry` | EcosystemEntry.vue | Chain selection entry |
+| `/eth/transfer` | Transfer.vue | ETH batch transfer |
+| `/eth/balance` | Balance.vue | ETH balance query |
+| `/eth/monitor` | Monitor.vue | ETH chain monitoring |
+| `/sol/transfer` | Transfer.vue | SOL batch transfer |
+| `/sol/balance` | Balance.vue | SOL balance query |
+| `/airdrop` | Airdrop.vue | Airdrop management |
+| `/airdrop/browser` | BrowserAutomation.vue | Browser automation |
+| `/wallet-manager` | WalletManager.vue | Wallet management |
+
+## DEPENDENCIES
+
+### Frontend
+- **Core**: Vue 3.5, Vue Router 4.6, Pinia 3.0, Vite 7
+- **UI**: Arco Design Vue 2.57, PrimeVue 4.5, PrimeIcons 7.0
+- **Blockchain**: Ethers 6.13, @solana/web3.js 1.91, @solana/spl-token 0.4
+- **Tauri**: @tauri-apps/api 2.9, @tauri-apps/plugin-dialog 2.0, @tauri-apps/plugin-shell 2.3
+- **Utils**: XLSX 0.18, QRCode 1.5, @tanstack/vue-virtual 3.13
+
+### Backend
+- **Core**: Tauri 2.9, Tokio 1.47
+- **Database**: SQLx 0.7, libsqlite3-sys (SQLCipher)
+- **Ethereum**: Alloy 1.4 (alloy-provider, alloy-primitives, alloy-signer-local)
+- **Solana**: solana-sdk 2.2, spl-token 7.0, spl-associated-token-account 7.0
+- **Security**: AES 0.8, CBC 0.1, Zeroize 1.8, PBKDF2, SHA2, HMAC
+- **Network**: Reqwest 0.12, Futures 0.3

@@ -16,7 +16,8 @@
       "Bash(cd:*)",
       "Bash(node:*)",
       "Bash(git:*)",
-      "mcp__acp__Bash"
+      "mcp__acp__Bash",
+      "Bash(yarn build)"
     ],
     "deny": [],
     "ask": []

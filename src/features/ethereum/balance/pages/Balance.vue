@@ -22,6 +22,7 @@ const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagem
 const TokenManagement = defineAsyncComponent(() => import('@/components/TokenManagement.vue'))
 const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vue'))
 const ProxyConfigModal = defineAsyncComponent(() => import('@/components/ProxyConfigModal.vue'))
+const WalletSystemImportModal = defineAsyncComponent(() => import('@/components/WalletSystemImportModal.vue'))
 
 // 组件配置参数（props）：是否查询最后交易时间，默认 false
 const props = defineProps({})
@@ -158,6 +159,7 @@ const form = reactive({
 // 录入 钱包地址 弹窗
 let visible = ref(false)
 let importText = ref('')
+const systemImportVisible = ref(false)
 // 导入loading状态
 let importLoading = ref(false)
 // 地址验证相关
@@ -711,6 +713,83 @@ function clearData() {
 // 导入事件触发
 function handleManualImport() {
   visible.value = true
+}
+
+function openSystemImport() {
+  systemImportVisible.value = true
+}
+
+function importAddressesToTable(addressList) {
+  const raw = (addressList || []).map((a) => String(a || '').trim()).filter(Boolean)
+  const originalCount = raw.length
+  if (!originalCount) return { originalCount: 0, successCount: 0, internalDupCount: 0, existingDupCount: 0, invalidCount: 0 }
+
+  const invalidList = raw.filter((a) => !validateAddress(a))
+  const invalidCount = invalidList.length
+
+  let importList = raw.filter((a) => validateAddress(a))
+  const uniqueAddresses = new Set()
+  importList = importList.filter((item) => {
+    if (uniqueAddresses.has(item)) return false
+    uniqueAddresses.add(item)
+    return true
+  })
+  const internalDupCount = (raw.length - invalidCount) - importList.length
+
+  const existingAddresses = new Set(data.value.map((item) => item.address))
+  const beforeFilterCount = importList.length
+  importList = importList.filter((item) => !existingAddresses.has(item))
+  const existingDupCount = beforeFilterCount - importList.length
+
+  const newItems = importList.map((item) => ({
+    address: item,
+    nonce: '',
+    plat_balance: '',
+    coin_balance: '',
+    exec_status: '0',
+    error_msg: ''
+  }))
+
+  if (newItems.length) {
+    data.value.push(...newItems)
+  }
+
+  return {
+    originalCount,
+    successCount: importList.length,
+    internalDupCount,
+    existingDupCount,
+    invalidCount,
+  }
+}
+
+function handleSystemImportConfirm(wallets) {
+  const addresses = (wallets || []).map((w) => w?.address).filter(Boolean)
+  const stats = importAddressesToTable(addresses)
+  const filteredCount = stats.internalDupCount + stats.existingDupCount + stats.invalidCount
+
+  if (stats.originalCount === 0) {
+    Notification.warning({ content: '未选择任何地址', position: 'topLeft' })
+    return
+  }
+
+  if (filteredCount > 0) {
+    const details = []
+    if (stats.invalidCount > 0) details.push(`无效${stats.invalidCount}条`)
+    if (stats.internalDupCount > 0) details.push(`内部重复${stats.internalDupCount}条`)
+    if (stats.existingDupCount > 0) details.push(`与现有数据重复${stats.existingDupCount}条`)
+    Notification.warning({
+      title: '导入完成！',
+      content: `原始地址${stats.originalCount}条，成功导入${stats.successCount}条，已过滤：${details.join('、')}`,
+      position: 'topLeft',
+    })
+  } else {
+    Notification.success({
+      title: '导入成功！',
+      content: `成功导入${stats.successCount}条地址`,
+      position: 'topLeft',
+    })
+  }
 }
 
 // 验证地址格式
@@ -1556,6 +1635,7 @@ async function handleBeforeClose() {
             @update:selected-keys="selectedKeys = $event"
             @open-manual-import="handleManualImport"
             @open-file-upload="handleFileUpload"
+            @open-system-import="openSystemImport"
             row-key="address"
             height="100%"
             page-type="balance"
@@ -1653,6 +1733,7 @@ async function handleBeforeClose() {
           <div class="side-actions-content-fixed">
             <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="从系统导入" position="left"><a-button type="primary" size="mini" status="warning" @click="openSystemImport"><template #icon><Icon icon="mdi:database-import" style="color: #ff7d00; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导出数据" position="left">
               <a-dropdown>
@@ -1836,6 +1917,8 @@ async function handleBeforeClose() {
       </a-alert>
     </div>
   </a-modal>
+
+  <WalletSystemImportModal v-model:visible="systemImportVisible" ecosystem="evm" import-mode="address_only" :title="'从系统导入查询地址'" @confirm="handleSystemImportConfirm" @cancel="systemImportVisible = false" />
   
   <!-- 添加代币弹窗 -->
   <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel"

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useEcosystemStore } from '@/stores/ecosystem'
 import { useThemeStore } from '@/stores'
@@ -13,6 +13,15 @@ const themeStore = useThemeStore()
 const appWindow = getCurrentWindow()
 
 const target = ref(route.query.target || 'transfer')
+
+onMounted(async () => {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+  if (!isTauri) return
+  await nextTick()
+  setTimeout(() => {
+    appWindow.emit('page-loaded')
+  }, 0)
+})
 
 // 页面映射配置
 const pageMap = {

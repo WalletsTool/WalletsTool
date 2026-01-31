@@ -81,83 +81,70 @@ src/components/WalletSystemImportModal.vue
 
 #### 3.1.2 Props 定义
 
-```typescript
-interface Props {
-  /** 是否显示模态框 */
-  visible: boolean;
-  
-  /** 生态系统类型 */
-  ecosystem: 'evm' | 'solana';
-  
-  /** 导入模式 */
-  importMode: 'full' | 'address_only';
-  
-  /** 窗口标题 */
-  title?: string;
-  
-  /** 是否多选 */
-  multiple?: boolean;
-  
-  /** 最大选择数量 */
-  maxSelection?: number;
-}
+> 说明：本项目前端以 `.js` 为主（非 TypeScript）。此处用「Vue props + JSDoc」表达约束，落地实现不引入 `.ts`。
 
-// 默认值
-const defaultProps = {
-  title: '从系统钱包导入',
-  multiple: true,
-  maxSelection: undefined // 无限制
-};
+```js
+const props = defineProps({
+  visible: { type: Boolean, default: false },
+
+  ecosystem: { type: String, default: 'evm' },
+
+  importMode: { type: String, default: 'address_only' },
+
+  title: { type: String, default: '从系统钱包导入' },
+
+  multiple: { type: Boolean, default: true },
+
+  maxSelection: { type: Number, default: undefined },
+})
 ```
 
 #### 3.1.3 Events 定义
 
-```typescript
-interface Emits {
-  /** 确认导入 */
-  (e: 'confirm', wallets: ImportedWallet[]): void;
-  
-  /** 取消导入 */
-  (e: 'cancel'): void;
-  
-  /** 关闭模态框 */
-  (e: 'update:visible', visible: boolean): void;
-}
+```js
+const emit = defineEmits(['confirm', 'cancel', 'update:visible'])
 
-/** 导入的钱包数据结构 */
-interface ImportedWallet {
-  id: number;
-  name?: string;
-  address: string;
-  private_key?: string;      // importMode='full' 时有值
-  chain_type: string;
-  wallet_type: string;
-  group_id?: number;
-  group_name?: string;
-  remark?: string;
-}
+/**
+ * @typedef {Object} ImportedWallet
+ * @property {number} id
+ * @property {string=} name
+ * @property {string} address
+ * @property {string=} private_key       importMode='full' 时才会回填（仅内存）
+ * @property {string=} mnemonic
+ * @property {'evm'|'solana'} chain_type
+ * @property {'full_wallet'|'address_only'} wallet_type
+ * @property {number=} group_id
+ * @property {string=} group_name
+ * @property {string=} remark
+ * @property {'wallet'|'watch_address'} source_type  数据来源：完整钱包 / 观察地址
+ */
 ```
 
 #### 3.1.4 内部状态
 
-```typescript
+```js
 // 加载状态
 const loading = ref(false);
 const groupsLoading = ref(false);
 const walletsLoading = ref(false);
 
 // 分组数据
-const groups = ref<WalletGroup[]>([]);
-const selectedGroupId = ref<number | 'all'>('all');
+const groups = ref([]);
+const selectedGroupId = ref('all');
 
-// 钱包数据
-const wallets = ref<WalletInfo[]>([]);
-const selectedWalletIds = ref<number[]>([]);
+// 钱包数据（系统钱包 + 观察地址）
+const wallets = ref([]);
+const watchAddresses = ref([]);
+
+// 列表统一后的可选项
+const items = ref([]);
+const selectedItemIds = ref([]);
 
 // 筛选条件
 const filterForm = reactive({
-  chainType: 'all' as 'all' | 'evm' | 'solana',
-  walletType: 'all' as 'all' | 'full_wallet' | 'address_only',
+  chainType: 'all',
+  walletType: 'all',
+  sourceType: 'all',
   searchKeyword: ''
 });
 
@@ -171,36 +158,39 @@ const pagination = reactive({
 
 #### 3.1.5 方法定义
 
-```typescript
+```js
 // 加载分组列表
-async function loadGroups(): Promise<void>;
+async function loadGroups();
 
-// 加载钱包列表
-async function loadWallets(): Promise<void>;
+// 加载系统钱包列表（完整钱包）
+async function loadWallets();
+
+// 加载观察地址列表（仅地址）
+async function loadWatchAddresses();
 
 // 处理分组选择
-function handleGroupSelect(groupId: number | 'all'): void;
+function handleGroupSelect(groupId);
 
 // 处理钱包选择
-function handleWalletSelect(walletId: number, selected: boolean): void;
+function handleItemSelect(itemId, selected);
 
 // 处理全选
-function handleSelectAll(selected: boolean): void;
+function handleSelectAll(selected);
 
 // 处理搜索
-function handleSearch(keyword: string): void;
+function handleSearch(keyword);
 
 // 处理筛选条件变化
-function handleFilterChange(): void;
+function handleFilterChange();
 
 // 确认导入
-async function handleConfirm(): Promise<void>;
+async function handleConfirm();
 
 // 取消/关闭
-function handleCancel(): void;
+function handleCancel();
 
-// 获取选中钱包的完整数据（包括私钥）
-async function getSelectedWalletsWithSecrets(): Promise<ImportedWallet[]>;
+// 获取选中项的最终输出（Transfer 模式会按需取密钥）
+async function buildConfirmPayload();
 ```
 
 #### 3.1.6 UI 布局
@@ -451,8 +441,10 @@ async function handleSystemSync(wallets: ImportedWallet[]) {
 |------|------|------|
 | `get_wallets` | 获取钱包列表 | ✅ 可用 |
 | `get_groups` | 获取分组列表 | ✅ 可用 |
-| `export_wallets` | 导出钱包（含私钥解密） | ✅ 可用 |
+| `get_watch_addresses` | 获取观察地址列表（仅地址） | ✅ 可用 |
 | `get_wallet_secrets` | 获取单个钱包密钥 | ✅ 可用 |
+| `export_wallets` | 导出钱包（含明文私钥/助记词） | ✅ 可用（但不建议作为系统导入取密钥通道） |
+| `get_wallet_transport_public_key` / `register_wallet_transport_key` | 传输密钥注册 | ✅ 可用 |
 
 ### 5.2 API 使用方案
 
@@ -466,35 +458,42 @@ const wallets = await invoke('get_wallets', {
 });
 ```
 
-#### 5.2.2 获取钱包私钥（Transfer 页面需要）
+#### 5.2.2 获取观察地址列表（仅地址）
 
 ```typescript
-// 方案1：使用现有的 export_wallets（推荐）
-const exportData = await invoke('export_wallets', {
-  ids: selectedWalletIds,
-  password: await getSessionPassword(), // 需要用户输入密码
+const watchAddresses = await invoke('get_watch_addresses', {
+  group_id: selectedGroupId === 'all' ? null : selectedGroupId,
+  chain_type: filterForm.chainType === 'all' ? null : filterForm.chainType,
 });
+```
 
-// 方案2：使用 get_wallet_secrets 逐个获取（备选）
+#### 5.2.3 获取钱包私钥（Transfer 页面需要）
+
+```typescript
+// 推荐：使用 get_wallet_secrets（支持 transport_token 或 password 重新封装）
 const secrets = await Promise.all(
-  selectedWalletIds.map(id => 
-    invoke('get_wallet_secrets', { id, password })
+  selectedWalletIds.map(id =>
+    invoke('get_wallet_secrets', { id, password: null, transport_token })
   )
 );
+
+// 不推荐：export_wallets 返回明文私钥/助记词，且当前不支持 transport_token
+// 仅用于“导出到文件”的明确交互，不用于系统导入弹窗的密钥获取。
 ```
 
 ### 5.3 可能需要新增的 API
 
 #### 5.3.1 batch_get_wallet_secrets
 
-**用途**：批量获取多个钱包的密钥信息，提升 Transfer 页面导入性能
+**用途**：批量获取多个钱包的密钥信息，提升 Transfer 页面导入性能（避免 N 次 invoke）
 
 **参数**：
 ```rust
 #[derive(Debug, Deserialize)]
 pub struct BatchGetWalletSecretsRequest {
     pub ids: Vec<i64>,
-    pub password: String,
+    pub password: Option<String>,
+    pub transport_token: Option<String>,
 }
 ```
 
@@ -504,8 +503,8 @@ pub struct BatchGetWalletSecretsRequest {
 pub struct BatchWalletSecrets {
     pub id: i64,
     pub address: String,
-    pub private_key: Option<String>,
-    pub mnemonic: Option<String>,
+    pub sealed_private_key: Option<String>,
+    pub sealed_mnemonic: Option<String>,
 }
 ```
 
@@ -515,42 +514,72 @@ pub struct BatchWalletSecrets {
 
 ### 6.1 前端数据模型
 
-```typescript
-// 钱包分组
-interface WalletGroup {
-  id: number;
-  parent_id?: number;
-  name: string;
-  chain_type?: string;
-  children?: WalletGroup[];
-}
+```js
+/**
+ * @typedef {Object} WalletGroup
+ * @property {number} id
+ * @property {number=} parent_id
+ * @property {string} name
+ * @property {('evm'|'solana')=} chain_type
+ * @property {WalletGroup[]=} children
+ */
 
-// 钱包信息（来自后端）
-interface WalletInfo {
-  id: number;
-  group_id?: number;
-  name?: string;
-  address: string;
-  chain_type: string;
-  wallet_type: string;
-  has_private_key: boolean;
-  has_mnemonic: boolean;
-  remark?: string;
-}
+/**
+ * @typedef {Object} WalletInfo
+ * @property {number} id
+ * @property {number=} group_id
+ * @property {string=} name
+ * @property {string} address
+ * @property {'evm'|'solana'} chain_type
+ * @property {'full_wallet'|'address_only'} wallet_type
+ * @property {boolean} has_private_key
+ * @property {boolean} has_mnemonic
+ * @property {number=} mnemonic_index
+ * @property {string=} remark
+ */
 
-// 导入的钱包（组件输出）
-interface ImportedWallet {
-  id: number;
-  name?: string;
-  address: string;
-  private_key?: string;
-  mnemonic?: string;
-  chain_type: string;
-  wallet_type: string;
-  group_id?: number;
-  group_name?: string;
-  remark?: string;
-}
+/**
+ * @typedef {Object} WatchAddressInfo
+ * @property {number} id
+ * @property {number=} group_id
+ * @property {string=} group_name
+ * @property {string=} name
+ * @property {string} address
+ * @property {'evm'|'solana'} chain_type
+ * @property {string=} remark
+ */
+
+/**
+ * 系统导入弹窗统一展示的列表项（来自 wallet / watch_address）
+ * @typedef {Object} SystemImportItem
+ * @property {number} id
+ * @property {'wallet'|'watch_address'} source_type
+ * @property {string=} name
+ * @property {string} address
+ * @property {'evm'|'solana'} chain_type
+ * @property {'full_wallet'|'address_only'} wallet_type
+ * @property {number=} group_id
+ * @property {string=} group_name
+ * @property {boolean=} has_private_key
+ * @property {boolean=} has_mnemonic
+ * @property {string=} remark
+ */
+
+/**
+ * 导入输出（给 Transfer / Balance / 浏览器自动化页面）
+ * @typedef {Object} ImportedWallet
+ * @property {number} id
+ * @property {'wallet'|'watch_address'} source_type
+ * @property {string=} name
+ * @property {string} address
+ * @property {string=} private_key
+ * @property {string=} mnemonic
+ * @property {'evm'|'solana'} chain_type
+ * @property {'full_wallet'|'address_only'} wallet_type
+ * @property {number=} group_id
+ * @property {string=} group_name
+ * @property {string=} remark
+ */
 ```
 
 ### 6.2 后端数据模型
@@ -590,9 +619,10 @@ pub struct WalletInfo {
 
 ### 7.1 私钥安全传输
 
-1. **密码验证**：导出私钥时必须验证用户密码
-2. **Transport Token**：使用现有的安全传输机制
-3. **内存安全**：私钥仅在内存中短暂存在，使用后立即清除
+1. **最小暴露面**：列表加载阶段仅取钱包元信息，绝不返回明文密钥
+2. **按需取密钥**：仅在用户点击“确认导入”且 importMode='full' 时获取密钥
+3. **传输封装优先**：优先走 transport_token 封装（t1），无 token 时走 password 封装（p1）
+4. **内存安全**：私钥/助记词仅在内存中短暂存在，使用后立即清空临时变量
 
 ### 7.2 密封密钥处理
 
@@ -607,13 +637,13 @@ async function decryptPrivateKey(sealedKey: string, password: string): Promise<s
 
 ### 7.3 会话管理
 
-```typescript
-// 获取会话密码（已登录状态下）
-async function getSessionPassword(): Promise<string> {
-  // 从安全存储中获取或使用 transport token
-  return await invoke('get_session_password');
-}
-```
+> 说明：目前代码中不存在 `get_session_password` 命令。系统导入弹窗的“解密上下文”建议采用以下最优策略：
+>
+> - **优先复用已解锁态的 transport_token**：若外部页面（如钱包管理）已初始化 transport token/aesKey，则通过 props 注入或全局 store 复用。
+> - **兜底密码输入**：若无 token，则在确认导入时弹出密码输入（仅用于向后端请求 sealed secret 或解封装），不落盘、不缓存为“会话密码”。
+
+建议新增通用工具模块（避免复制粘贴安全逻辑）：
+- `src/utils/transportSecret.js`：封装 t1 生成/解封装逻辑（当前实现散落在 WalletManager 与 SecretRevealModal）
 
 ---
 
@@ -642,16 +672,9 @@ async function getSessionPassword(): Promise<string> {
 ### 8.3 缓存策略
 
 ```typescript
-// 使用 Pinia Store 缓存钱包列表
-const walletCache = useWalletCacheStore();
-
-// 加载时先检查缓存
-if (walletCache.isValid(selectedGroupId)) {
-  wallets.value = walletCache.get(selectedGroupId);
-} else {
-  await loadWallets();
-  walletCache.set(selectedGroupId, wallets.value);
-}
+// 可选：若后续引入缓存（Pinia 或组件内 Map），建议按 (group_id + chain_type + source_type) 作为 key
+// - 列表数据可短 TTL 缓存
+// - secrets 永不缓存，仅确认导入时现取现用
 ```
 
 ---
@@ -725,43 +748,28 @@ async function loadWallets() {
 
 ### 11.1 阶段划分
 
-#### 阶段一：核心组件开发（2-3 天）
-- [ ] 创建 WalletSystemImportModal.vue 组件
-- [ ] 实现分组树形选择
-- [ ] 实现钱包列表（虚拟滚动）
-- [ ] 实现筛选和搜索功能
-- [ ] 实现选中状态管理
+#### 阶段一：前端核心闭环（Balance 优先）（2-3 天）
+- [ ] 新增 WalletSystemImportModal.vue（分组树/筛选/搜索/虚拟列表/多选）
+- [ ] 对接 get_groups + get_wallets + get_watch_addresses（统一 items 列表）
+- [ ] Balance(EVM/Solana) 集成系统导入（复用既有校验与去重策略）
 
-#### 阶段二：后端 API 对接（1 天）
-- [ ] 对接 get_wallets 命令
-- [ ] 对接 get_groups 命令
-- [ ] 对接 export_wallets 命令
-- [ ] 测试 API 调用
+#### 阶段二：Transfer 安全闭环（1-2 天）
+- [ ] Transfer(EVM/Solana) 集成系统导入
+- [ ] 确认导入时按需获取密钥：优先 transport_token，兜底 password
+- [ ] 明文密钥仅进入 Transfer 内存数据源，不做任何持久化
 
-#### 阶段三：Transfer 页面集成（1-2 天）
-- [ ] EVM Transfer 页面集成
-- [ ] Solana Transfer 页面集成
-- [ ] 测试导入功能
+#### 阶段三：性能与复用增强（1-2 天）
+- [ ] 后端新增 batch_get_wallet_secrets，前端改为一次 invoke 批量取 sealed secrets
+- [ ] 抽离 transportSecret 工具到 src/utils/transportSecret.js（复用 WalletManager/SecretRevealModal/系统导入）
+- [ ] 浏览器自动化 WalletManager 增加“从系统同步”，按 address 去重，保留本地字段（如 proxy）
 
-#### 阶段四：Balance 页面集成（1 天）
-- [ ] EVM Balance 页面集成
-- [ ] Solana Balance 页面集成
-- [ ] 测试导入功能
-
-#### 阶段五：浏览器自动化集成（1 天）
-- [ ] WalletManager 组件增强
-- [ ] 系统同步功能实现
-- [ ] 测试同步功能
-
-#### 阶段六：测试优化（2 天）
-- [ ] 功能测试
-- [ ] 性能测试
-- [ ] Bug 修复
-- [ ] 用户体验优化
+#### 阶段四：测试与体验打磨（1-2 天）
+- [ ] 覆盖大数据量虚拟滚动、筛选、全选/清空、错误提示
+- [ ] 覆盖密码错误、token 缺失、无私钥钱包导入 Transfer 的提示策略
 
 ### 11.2 总计时间
 
-预计 **8-10 天** 完成全部开发和测试工作。
+预计 **5-9 天** 完成全部开发和测试工作（若先仅交付 Balance/Transfer，可更快）。
 
 ---
 
@@ -778,6 +786,7 @@ async function loadWallets() {
 | `src/features/ethereum/balance/pages/Balance.vue` | EVM 余额页面 |
 | `src/features/solana/balance/pages/Balance.vue` | Solana 余额页面 |
 | `src/features/airdrop/components/WalletManager.vue` | 浏览器自动化钱包管理 |
+| `src/utils/transportSecret.js` | 建议新增：t1 传输封装工具（供系统导入复用） |
 | `src-tauri/src/wallets_tool/wallet_manager/commands.rs` | 后端命令 |
 | `src-tauri/src/wallets_tool/wallet_manager/models.rs` | 后端模型 |
 
@@ -802,6 +811,7 @@ async function loadWallets() {
 | 版本 | 日期 | 变更内容 | 作者 |
 |------|------|---------|------|
 | 1.0 | 2026-01-31 | 初始版本 | Claude |
+| 1.1 | 2026-01-31 | 融合最优解：支持观察地址、调整密钥获取策略、优化批量 secrets API、修正文档为 JS 约定 | GPT-5.2 |
 
 ---
 

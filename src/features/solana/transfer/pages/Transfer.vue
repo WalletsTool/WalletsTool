@@ -30,6 +30,7 @@ const ChainManagement = defineAsyncComponent(() => import('@/components/ChainMan
 const RpcManagement = defineAsyncComponent(() => import('@/components/RpcManagement.vue'));
 const TokenManagement = defineAsyncComponent(() => import('@/components/TokenManagement.vue'));
 const WalletImportModal = defineAsyncComponent(() => import('@/components/WalletImportModal.vue'));
+const WalletSystemImportModal = defineAsyncComponent(() => import('@/components/WalletSystemImportModal.vue'));
 const ProxyConfigModal = defineAsyncComponent(() => import('@/components/ProxyConfigModal.vue'));
 
 const router = useRouter();
@@ -76,6 +77,8 @@ let pageLoading = ref(false);
 const data = ref([]);
 const selectedKeys = ref([]);
 const rowSelection = reactive({ type: 'checkbox', showCheckedAll: true, onlyCurrent: false });
+
+const systemImportVisible = ref(false)
 
 function rowClick(record, event) {
   const index = selectedKeys.value.indexOf(record.key);
@@ -819,6 +822,64 @@ function handleWalletImportConfirm(importData) {
 
 function handleWalletImportCancel() { console.log('钱包导入已取消'); }
 
+function openSystemImport() {
+  systemImportVisible.value = true
+}
+
+function handleSystemImportConfirm(wallets) {
+  if (!wallets || wallets.length === 0) {
+    Notification.warning({ content: '未选择任何钱包', position: 'topLeft' })
+    return
+  }
+
+  const newData = []
+  let successCount = 0
+  let failCount = 0
+
+  for (let i = 0; i < wallets.length; i++) {
+    const w = wallets[i]
+    const privateKey = w?.private_key ? String(w.private_key).trim() : ''
+    if (!privateKey) {
+      failCount++
+      continue
+    }
+    try {
+      const secretKey = bs58.decode(privateKey)
+      const keypair = Keypair.fromSecretKey(secretKey)
+      const fromAddress = keypair.publicKey.toBase58()
+      newData.push({
+        key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        private_key: privateKey,
+        address: fromAddress,
+        to_addr: '',
+        amount: '',
+        plat_balance: '',
+        coin_balance: '',
+        exec_status: '0',
+        error_msg: '',
+      })
+      successCount++
+    } catch (e) {
+      failCount++
+    }
+  }
+
+  if (newData.length > 0) {
+    data.value = [...data.value, ...newData]
+    clearValidationCache()
+  }
+
+  if (failCount > 0) {
+    Notification.warning({
+      title: '导入完成！',
+      content: `成功导入${successCount}条，失败${failCount}条`,
+      position: 'topLeft',
+    })
+  } else if (successCount > 0) {
+    Notification.success({ title: '导入成功！', content: `成功导入${successCount}条`, position: 'topLeft' })
+  }
+}
+
 function handleFileUpload() { upload(); }
 
 async function downloadTemplateAction() { downloadTemplateFn(); }
@@ -1497,7 +1558,7 @@ function handleClickOutside(event) {
       <div class="left-panel" style="flex: 1; display: flex; flex-direction: column; overflow: visible;">
         <div class="table-section" id="table-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative">
           <TableSkeleton v-if="(tableLoading || balanceLoading) && data.length === 0" :rows="8" />
-            <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick" @update:selected-keys="selectedKeys = $event" @open-manual-import="handleManualImport" @open-file-upload="handleFileUpload" @download-template="downloadTemplateAction" row-key="key" height="100%" :empty-data="data.length === 0" class="table-with-side-actions" :class="{ 'expanded': !isSidePanelExpanded }" :hover-keys="Object.keys(rowHoverStates).filter((key) => rowHoverStates[key])">
+            <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick" @update:selected-keys="selectedKeys = $event" @open-manual-import="handleManualImport" @open-file-upload="handleFileUpload" @open-system-import="openSystemImport" @download-template="downloadTemplateAction" row-key="key" height="100%" :empty-data="data.length === 0" class="table-with-side-actions" :class="{ 'expanded': !isSidePanelExpanded }" :hover-keys="Object.keys(rowHoverStates).filter((key) => rowHoverStates[key])">
             <template #exec_status="{ record }">
               <div class="exec-status-wrapper" @mouseenter="rowHoverStates[record.key] = true" @mouseleave="rowHoverStates[record.key] = false">
                 <a-tooltip content="" trigger="hover" :mouseEnterDelay="300" :mouseLeaveDelay="100" :popup-style="{ padding: 0, pointerEvents: 'auto' }">
@@ -1676,6 +1737,7 @@ function handleClickOutside(event) {
           <div class="side-actions-content-fixed" style="height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 20px 0; min-width: 60px;">
             <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip content="从系统导入" position="left"><a-button type="primary" size="mini" status="warning" @click="openSystemImport"><template #icon><Icon icon="mdi:database-import" style="color: #ff7d00; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
 <a-tooltip content="下载模板" position="left"><a-button size="mini" @click="downloadTemplateAction"><template #icon><Icon icon="mdi:file-download" style="color: #4e5969; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导出私钥地址" position="left">
@@ -1708,6 +1770,7 @@ function handleClickOutside(event) {
       </div>
     </div>
     <WalletImportModal ref="walletImportRef" ecosystem="solana" @confirm="handleWalletImportConfirm" @cancel="handleWalletImportCancel" />
+    <WalletSystemImportModal v-model:visible="systemImportVisible" ecosystem="solana" import-mode="full" :title="'从系统导入转账钱包'" @confirm="handleSystemImportConfirm" @cancel="systemImportVisible = false" />
     <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel" :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
       <a-input v-model="coinAddress" placeholder="请输入代币合约地址" allow-clear />
     </a-modal>

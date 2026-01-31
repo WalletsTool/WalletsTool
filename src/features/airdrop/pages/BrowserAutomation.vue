@@ -1,5 +1,5 @@
 <script setup>
-import { ref, shallowRef } from 'vue';
+import { ref, shallowRef, onMounted, nextTick } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import WalletManager from '../components/WalletManager.vue';
 import BrowserFarm from '../components/BrowserFarm.vue';
@@ -25,6 +25,15 @@ const menuItems = [
 
 const activeTab = ref('wallets');
 const currentComponent = shallowRef(WalletManager);
+
+onMounted(async () => {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+  if (!isTauri) return;
+  await nextTick();
+  setTimeout(() => {
+    appWindow.emit('page-loaded');
+  }, 0);
+});
 
 const handleNavClick = (item) => {
   activeTab.value = item.id;

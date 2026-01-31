@@ -47,6 +47,24 @@
               <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
               手动录入钱包
             </a-button>
+            <a-button
+              type="primary"
+              style="margin-top: 12px;margin-left: 20px"
+              status="success"
+              @click="$emit('open-file-upload')"
+            >
+              <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
+              上传文件导入
+            </a-button>
+            <a-button
+              type="primary"
+              style="margin-top: 12px;margin-left: 20px"
+              status="warning"
+              @click="$emit('open-system-import')"
+            >
+              <icon icon="mdi:database-import" :size="16" style="margin-right: 4px" />
+              从系统导入
+            </a-button>
           </div>
         </template>
         <template v-else-if="pageType === 'monitor'">
@@ -61,6 +79,13 @@
           </div>
           <div class="empty-text">还没有钱包数据</div>
           <div class="empty-text-second">请先添加钱包或批量导入</div>
+        </template>
+        <template v-else-if="pageType === 'system_import'">
+          <div class="empty-icon">
+            <Icon icon="icon-park-outline:wallet" style="width: 64px; height: 64px;"/>
+          </div>
+          <div class="empty-text">暂无可导入的钱包</div>
+          <div class="empty-text-second">请切换分组或调整筛选条件</div>
         </template>
         <template v-else-if="pageType === 'transfer'">
           <div class="empty-icon">
@@ -85,6 +110,15 @@
             >
               <icon icon="mdi:upload" :size="16" style="margin-right: 4px" />
               上传文件导入（推荐）
+            </a-button>
+            <a-button
+              type="primary"
+              style="margin-top: 12px;margin-left: 20px"
+              status="warning"
+              @click="$emit('open-system-import')"
+            >
+              <icon icon="mdi:database-import" :size="16" style="margin-right: 4px" />
+              从系统导入
             </a-button>
           </div>
           <div style="margin-top: 15px; display: flex; align-items: center; justify-content: center;">
@@ -272,7 +306,7 @@ const props = defineProps({
 });
 
 // Emits
-const emit = defineEmits(["row-click", "update:selectedKeys", "open-manual-import", "open-file-upload", "download-template"]);
+const emit = defineEmits(["row-click", "update:selectedKeys", "open-manual-import", "open-file-upload", "open-system-import", "download-template"]);
 
 // 私钥脱敏工具函数
 const maskPrivateKey = (value) => {

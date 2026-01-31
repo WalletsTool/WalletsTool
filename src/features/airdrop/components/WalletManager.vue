@@ -1,12 +1,15 @@
 <script setup>
-import { ref, reactive } from 'vue';
+import { defineAsyncComponent, ref, reactive } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import { 
   IconPlus, 
   IconImport, 
   IconDownload, 
-  IconDelete 
+  IconDelete,
+  IconSync
 } from '@arco-design/web-vue/es/icon';
+
+const WalletSystemImportModal = defineAsyncComponent(() => import('@/components/WalletSystemImportModal.vue'))
 
 // Mock data
 const wallets = ref([
@@ -25,6 +28,7 @@ const columns = [
 ];
 
 const isAddModalVisible = ref(false);
+const systemImportVisible = ref(false)
 const form = reactive({
   address: '',
   label: '',
@@ -39,6 +43,49 @@ const handleAdd = () => {
 const handleImport = () => {
   Message.info('导入功能开发中...');
 };
+
+const openSystemSync = () => {
+  systemImportVisible.value = true
+}
+
+const handleSystemSync = (imported) => {
+  const existing = new Set(wallets.value.map((w) => String(w.address || '').toLowerCase()))
+  const list = (imported || [])
+    .map((w) => ({
+      address: String(w?.address || '').trim(),
+      label: (w?.name || '').trim(),
+      group: (w?.group_name || '').trim(),
+      chain_type: w?.chain_type,
+    }))
+    .filter((w) => w.address)
+
+  const newOnes = []
+  for (const w of list) {
+    const key = w.address.toLowerCase()
+    if (existing.has(key)) continue
+    existing.add(key)
+    newOnes.push(w)
+  }
+
+  if (!newOnes.length) {
+    Message.info('没有新钱包需要同步')
+    return
+  }
+
+  const startId = wallets.value.reduce((max, w) => Math.max(max, Number(w.id) || 0), 0)
+  newOnes.forEach((w, idx) => {
+    wallets.value.push({
+      id: startId + idx + 1,
+      address: w.address,
+      label: w.label || `Wallet ${startId + idx + 1}`,
+      group: w.group || 'Default',
+      proxy: 'Direct',
+      chain_type: w.chain_type,
+    })
+  })
+
+  Message.success(`同步成功，新增 ${newOnes.length} 个钱包`)
+}
 
 const handleExport = () => {
   Message.info('导出功能开发中...');
@@ -82,6 +129,10 @@ const handleSubmitAdd = () => {
         <a-button type="primary" @click="handleAdd">
           <template #icon><icon-plus /></template>
           添加钱包
+        </a-button>
+        <a-button type="primary" status="warning" @click="openSystemSync">
+          <template #icon><icon-sync /></template>
+          从系统同步
         </a-button>
         <a-button type="outline" status="success" @click="handleImport">
           <template #icon><icon-import /></template>
@@ -138,6 +189,15 @@ const handleSubmitAdd = () => {
         </a-row>
       </a-form>
     </a-modal>
+
+    <WalletSystemImportModal
+      v-model:visible="systemImportVisible"
+      ecosystem="all"
+      import-mode="address_only"
+      :title="'从系统同步钱包'"
+      @confirm="handleSystemSync"
+      @cancel="systemImportVisible = false"
+    />
   </div>
 </template>
 

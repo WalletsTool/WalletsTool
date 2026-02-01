@@ -68,6 +68,7 @@
               上传文件导入
             </a-button>
             <a-button
+              v-if="showSystemImport"
               type="primary"
               style="margin-top: 12px;margin-left: 20px"
               status="warning"
@@ -123,6 +124,7 @@
               上传文件导入（推荐）
             </a-button>
             <a-button
+              v-if="showSystemImport"
               type="primary"
               style="margin-top: 12px;margin-left: 20px"
               status="warning"
@@ -322,6 +324,10 @@ const props = defineProps({
   emptyData: {
     type: Boolean,
     default: null, // null 表示自动根据 data.length 判断
+  },
+  showSystemImport: {
+    type: Boolean,
+    default: true, // 是否显示"从系统导入"按钮
   },
 });
 

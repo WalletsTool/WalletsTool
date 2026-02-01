@@ -17,6 +17,7 @@ use solana_sdk::signer::Signer as _;
 use sha2::Sha512;
 use super::models::*;
 use crate::wallets_tool::security::SecureMemory;
+use crate::database::get_database_pool;
 use openssl::pkey::Private;
 use openssl::rand::rand_bytes;
 use openssl::rsa::{Padding, Rsa};
@@ -28,7 +29,6 @@ type Aes256CbcDec = Decryptor<Aes256>;
 type HmacSha512 = Hmac<Sha512>;
 
 pub struct WalletManagerService {
-    pool: SqlitePool,
     // Master Data Key stored in SecureMemory for protection
     mdk: Mutex<Option<SecureMemory>>,
     transport_rsa: Mutex<Rsa<Private>>,
@@ -36,14 +36,20 @@ pub struct WalletManagerService {
 }
 
 impl WalletManagerService {
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(_pool: SqlitePool) -> Self {
+        // pool 参数保留是为了兼容旧 API，但不再存储
+        // 所有数据库操作都从全局 get_database_pool() 获取最新的 pool
         let rsa = Rsa::generate(2048).expect("generate rsa key");
         Self {
-            pool,
             mdk: Mutex::new(None),
             transport_rsa: Mutex::new(rsa),
             transport_keys: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// 获取当前数据库连接池（动态获取，支持运行时更新）
+    fn pool(&self) -> SqlitePool {
+        get_database_pool()
     }
 
     pub fn get_transport_public_key_pem(&self) -> Result<String> {
@@ -161,18 +167,18 @@ impl WalletManagerService {
                 FOREIGN KEY (parent_id) REFERENCES wallet_groups(id) ON DELETE CASCADE
             )
             "#
-        ).execute(&self.pool).await?;
+        ).execute(&self.pool()).await?;
 
         // Migration: Check if chain_type column exists, if not add it
         // This is a simple migration check. For production, better use sqlx migrations.
         // But for this project scale, this is fine.
         let check_col = sqlx::query("SELECT chain_type FROM wallet_groups LIMIT 1")
-            .fetch_optional(&self.pool)
+            .fetch_optional(&self.pool())
             .await;
         
         if check_col.is_err() {
             // Column likely doesn't exist
-            let _ = sqlx::query("ALTER TABLE wallet_groups ADD COLUMN chain_type TEXT").execute(&self.pool).await;
+            let _ = sqlx::query("ALTER TABLE wallet_groups ADD COLUMN chain_type TEXT").execute(&self.pool()).await;
         }
 
         // Wallets
@@ -193,43 +199,43 @@ impl WalletManagerService {
                 FOREIGN KEY (group_id) REFERENCES wallet_groups(id) ON DELETE SET NULL
             )
             "#
-        ).execute(&self.pool).await?;
+        ).execute(&self.pool()).await?;
 
         // 创建唯一索引防止重复地址（数据完整性保护）
         sqlx::query(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_chain_address ON wallets(chain_type, address)"
-        ).execute(&self.pool).await?;
+        ).execute(&self.pool()).await?;
 
         // Add remark column if not exists (migration)
         let check_col = sqlx::query("SELECT remark FROM wallets LIMIT 1")
-            .fetch_optional(&self.pool)
+            .fetch_optional(&self.pool())
             .await;
         if check_col.is_err() {
             let _ = sqlx::query("ALTER TABLE wallets ADD COLUMN remark TEXT")
-                .execute(&self.pool)
+                .execute(&self.pool())
                 .await;
         }
 
         let check_col = sqlx::query("SELECT mnemonic_index FROM wallets LIMIT 1")
-            .fetch_optional(&self.pool)
+            .fetch_optional(&self.pool())
             .await;
         if check_col.is_err() {
             let _ = sqlx::query("ALTER TABLE wallets ADD COLUMN mnemonic_index INTEGER")
-                .execute(&self.pool)
+                .execute(&self.pool())
                 .await;
         }
 
         // Migration: Add wallet_type column if not exists
         let check_col = sqlx::query("SELECT wallet_type FROM wallets LIMIT 1")
-            .fetch_optional(&self.pool)
+            .fetch_optional(&self.pool())
             .await;
         if check_col.is_err() {
             let _ = sqlx::query("ALTER TABLE wallets ADD COLUMN wallet_type TEXT DEFAULT 'full_wallet' NOT NULL")
-                .execute(&self.pool)
+                .execute(&self.pool())
                 .await;
             // Update existing wallets to have wallet_type = 'full_wallet'
             let _ = sqlx::query("UPDATE wallets SET wallet_type = 'full_wallet' WHERE wallet_type IS NULL OR wallet_type = ''")
-                .execute(&self.pool)
+                .execute(&self.pool())
                 .await;
         }
 
@@ -241,7 +247,7 @@ impl WalletManagerService {
                 value TEXT NOT NULL
             )
             "#
-        ).execute(&self.pool).await?;
+        ).execute(&self.pool()).await?;
 
         Ok(())
     }
@@ -251,7 +257,7 @@ impl WalletManagerService {
         let count = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM app_config WHERE key = 'master_verifier'"
         )
-        .fetch_one(&self.pool)
+        .fetch_one(&self.pool())
         .await?;
         Ok(count > 0)
     }
@@ -385,7 +391,7 @@ impl WalletManagerService {
 
     /// Re-encrypt all wallet secrets with new password
     async fn reencrypt_wallet_secrets(&self, old_password: &str, new_password: &str) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool().begin().await?;
         let rows = sqlx::query("SELECT id, encrypted_private_key, encrypted_mnemonic FROM wallets")
             .fetch_all(&mut *tx)
             .await?;
@@ -458,7 +464,7 @@ impl WalletManagerService {
         )
         .bind(&request.name)
         .bind(&request.chain_type)
-        .fetch_one(&self.pool)
+        .fetch_one(&self.pool())
         .await?;
 
         if count > 0 {
@@ -473,7 +479,7 @@ impl WalletManagerService {
         .bind(request.chain_type)
         .bind(Utc::now())
         .bind(Utc::now())
-        .fetch_one(&self.pool)
+        .fetch_one(&self.pool())
         .await?;
         Ok(id)
     }
@@ -483,7 +489,7 @@ impl WalletManagerService {
         let groups = sqlx::query_as::<_, WalletGroup>(
             "SELECT * FROM wallet_groups ORDER BY created_at"
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&self.pool())
         .await?;
         Ok(groups)
     }
@@ -613,7 +619,7 @@ impl WalletManagerService {
                 .bind(remark.clone())
                 .bind(now)
                 .bind(now)
-                .fetch_one(&self.pool)
+                .fetch_one(&self.pool())
                 .await?;
 
                 let preview = if preview_count > 0 {
@@ -701,7 +707,7 @@ impl WalletManagerService {
 
                 let mut preview_rows: Vec<PreviewRow> = Vec::with_capacity(preview_count);
 
-                let mut tx = self.pool.begin().await?;
+                let mut tx = self.pool().begin().await?;
 
                 let mut first_id: Option<i64> = None;
 
@@ -877,7 +883,7 @@ impl WalletManagerService {
                     .collect::<Result<Vec<_>>>()?;
 
                 // 批量插入
-                let mut tx = self.pool.begin().await?;
+                let mut tx = self.pool().begin().await?;
                 let mut id_start: Option<i64> = None;
 
                 for i in 0..count {
@@ -955,7 +961,7 @@ impl WalletManagerService {
         let wallets = if let Some(gid) = group_id {
             let group = sqlx::query_as::<_, WalletGroup>("SELECT * FROM wallet_groups WHERE id = ?")
                 .bind(gid)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&self.pool())
                 .await?;
 
             let group = match group {
@@ -980,32 +986,32 @@ impl WalletManagerService {
                 sqlx::query_as::<_, Wallet>("SELECT * FROM wallets WHERE group_id = ? AND lower(trim(chain_type)) = ?")
                     .bind(gid)
                     .bind(&req_ct)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&self.pool())
                     .await?
             } else if group_chain_type.is_some() {
                 // Group has chain_type but request doesn't, use group's chain_type
                 sqlx::query_as::<_, Wallet>("SELECT * FROM wallets WHERE group_id = ? AND lower(trim(chain_type)) = ?")
                     .bind(gid)
                     .bind(group_chain_type.unwrap())
-                    .fetch_all(&self.pool)
+                    .fetch_all(&self.pool())
                     .await?
             } else {
                 // Group doesn't have chain_type, query all wallets in this group
                 sqlx::query_as::<_, Wallet>("SELECT * FROM wallets WHERE group_id = ?")
                     .bind(gid)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&self.pool())
                     .await?
             }
         } else if let Some(ct) = req_chain_type {
             // Query by chain_type only (system groups)
             sqlx::query_as::<_, Wallet>("SELECT * FROM wallets WHERE lower(trim(chain_type)) = ?")
                 .bind(ct)
-                .fetch_all(&self.pool)
+                .fetch_all(&self.pool())
                 .await?
         } else {
             // No filter, return all wallets
             sqlx::query_as::<_, Wallet>("SELECT * FROM wallets")
-                .fetch_all(&self.pool)
+                .fetch_all(&self.pool())
                 .await?
         };
 
@@ -1039,7 +1045,7 @@ impl WalletManagerService {
         let wallets = if let Some(gid) = group_id {
             let group = sqlx::query_as::<_, WalletGroup>("SELECT * FROM wallet_groups WHERE id = ?")
                 .bind(gid)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&self.pool())
                 .await?;
 
             let group = match group {
@@ -1066,7 +1072,7 @@ impl WalletManagerService {
                 )
                     .bind(gid)
                     .bind(&req_ct)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&self.pool())
                     .await?
             } else if group_chain_type.is_some() {
                 sqlx::query_as::<_, Wallet>(
@@ -1074,14 +1080,14 @@ impl WalletManagerService {
                 )
                     .bind(gid)
                     .bind(group_chain_type.unwrap())
-                    .fetch_all(&self.pool)
+                    .fetch_all(&self.pool())
                     .await?
             } else {
                 sqlx::query_as::<_, Wallet>(
                     "SELECT * FROM wallets WHERE group_id = ? AND wallet_type = 'address_only'"
                 )
                     .bind(gid)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&self.pool())
                     .await?
             }
         } else if let Some(ct) = req_chain_type {
@@ -1089,13 +1095,13 @@ impl WalletManagerService {
                 "SELECT * FROM wallets WHERE lower(trim(chain_type)) = ? AND wallet_type = 'address_only'"
             )
                 .bind(ct)
-                .fetch_all(&self.pool)
+                .fetch_all(&self.pool())
                 .await?
         } else {
             sqlx::query_as::<_, Wallet>(
                 "SELECT * FROM wallets WHERE wallet_type = 'address_only'"
             )
-                .fetch_all(&self.pool)
+                .fetch_all(&self.pool())
                 .await?
         };
 
@@ -1111,7 +1117,7 @@ impl WalletManagerService {
             for gid in &group_ids {
                 query_builder = query_builder.bind(gid);
             }
-            let groups = query_builder.fetch_all(&self.pool).await?;
+            let groups = query_builder.fetch_all(&self.pool()).await?;
             for (id, name) in groups {
                 group_names.insert(id, name);
             }
@@ -1154,7 +1160,7 @@ impl WalletManagerService {
         )
             .bind(&chain_type)
             .bind(&request.address)
-            .fetch_one(&self.pool)
+            .fetch_one(&self.pool())
             .await?;
 
         if exists > 0 {
@@ -1170,7 +1176,7 @@ impl WalletManagerService {
             .bind(&request.address)
             .bind(&chain_type)
             .bind(request.remark)
-            .execute(&self.pool)
+            .execute(&self.pool())
             .await?;
 
         Ok(result.last_insert_rowid())
@@ -1206,7 +1212,7 @@ impl WalletManagerService {
             )
                 .bind(&chain_type)
                 .bind(address)
-                .fetch_one(&self.pool)
+                .fetch_one(&self.pool())
                 .await?;
 
             if exists > 0 {
@@ -1227,7 +1233,7 @@ impl WalletManagerService {
                 .bind(address)
                 .bind(&chain_type)
                 .bind(&remark)
-                .execute(&self.pool)
+                .execute(&self.pool())
                 .await?;
 
             count += 1;
@@ -1241,7 +1247,7 @@ impl WalletManagerService {
             "SELECT * FROM wallets WHERE id = ? AND wallet_type = 'address_only'"
         )
             .bind(request.id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&self.pool())
             .await?
             .ok_or_else(|| anyhow!("地址不存在"))?;
 
@@ -1252,7 +1258,7 @@ impl WalletManagerService {
             .bind(request.name)
             .bind(request.remark)
             .bind(request.id)
-            .execute(&self.pool)
+            .execute(&self.pool())
             .await?;
 
         Ok(())
@@ -1261,7 +1267,7 @@ impl WalletManagerService {
     pub async fn delete_watch_address(&self, id: i64) -> Result<()> {
         let result = sqlx::query("DELETE FROM wallets WHERE id = ? AND wallet_type = 'address_only'")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.pool())
             .await?;
 
         if result.rows_affected() == 0 {
@@ -1286,7 +1292,7 @@ impl WalletManagerService {
         for id in ids {
             q = q.bind(id);
         }
-        let wallets = q.fetch_all(&self.pool).await?;
+        let wallets = q.fetch_all(&self.pool()).await?;
 
         let results: Vec<WatchAddressExportData> = wallets
             .into_iter()
@@ -1337,7 +1343,7 @@ impl WalletManagerService {
     pub async fn delete_wallet(&self, id: i64) -> Result<()> {
         sqlx::query("DELETE FROM wallets WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.pool())
             .await?;
         Ok(())
     }
@@ -1347,7 +1353,7 @@ impl WalletManagerService {
             "SELECT * FROM wallets WHERE id = ?"
         )
         .bind(id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&self.pool())
         .await?
         .ok_or_else(|| anyhow!("钱包不存在"))?;
 
@@ -1436,7 +1442,7 @@ impl WalletManagerService {
         for id in ids {
             q = q.bind(id);
         }
-        let wallets = q.fetch_all(&self.pool).await?;
+        let wallets = q.fetch_all(&self.pool()).await?;
 
         let mut results = Vec::with_capacity(wallets.len());
         for wallet in wallets {
@@ -1497,7 +1503,7 @@ impl WalletManagerService {
         .bind(request.remark)
         .bind(Utc::now())
         .bind(request.id)
-        .execute(&self.pool)
+        .execute(&self.pool())
         .await?;
         Ok(())
     }
@@ -1507,7 +1513,7 @@ impl WalletManagerService {
             .bind(request.name)
             .bind(Utc::now())
             .bind(request.id)
-            .execute(&self.pool)
+            .execute(&self.pool())
             .await?;
         Ok(())
     }
@@ -1524,7 +1530,7 @@ impl WalletManagerService {
             )
             SELECT id FROM descendants
             "#
-        ).bind(id).fetch_all(&self.pool).await?;
+        ).bind(id).fetch_all(&self.pool()).await?;
 
         // Delete all wallets in these groups first
         if !descendant_ids.is_empty() {
@@ -1534,13 +1540,13 @@ impl WalletManagerService {
             for id in &descendant_ids {
                 q = q.bind(id);
             }
-            q.execute(&self.pool).await?;
+            q.execute(&self.pool()).await?;
         }
 
         // Delete the groups (child groups will be deleted by CASCADE)
         sqlx::query("DELETE FROM wallet_groups WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.pool())
             .await?;
 
         Ok(())
@@ -1597,7 +1603,7 @@ impl WalletManagerService {
     }
 
     async fn migrate_plaintext_wallet_secrets(&self, mdk: &[u8; 32]) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool().begin().await?;
         let rows = sqlx::query("SELECT id, encrypted_private_key, encrypted_mnemonic FROM wallets")
             .fetch_all(&mut *tx)
             .await?;
@@ -1772,7 +1778,7 @@ impl WalletManagerService {
         .bind(key)
         .bind(value)
         .bind(value)
-        .execute(&self.pool)
+        .execute(&self.pool())
         .await?;
         Ok(())
     }
@@ -1780,7 +1786,7 @@ impl WalletManagerService {
     async fn get_config(&self, key: &str) -> Result<Option<String>> {
         let row = sqlx::query("SELECT value FROM app_config WHERE key = ?")
             .bind(key)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&self.pool())
             .await?;
         
         if let Some(r) = row {
@@ -1795,10 +1801,12 @@ impl WalletManagerService {
 mod wallet_manager_get_wallets_tests {
     use super::*;
     use sqlx::SqlitePool;
+    use crate::database::init_test_pool;
 
     #[tokio::test]
     async fn get_wallets_filters_by_chain_type() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
+        init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());
         service.init_tables().await.unwrap();
 
@@ -1840,10 +1848,12 @@ mod wallet_manager_get_wallets_tests {
 mod wallet_manager_secrets_tests {
     use super::*;
     use sqlx::SqlitePool;
+    use crate::database::init_test_pool;
 
     #[tokio::test]
     async fn seal_and_open_roundtrip() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
+        init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool);
         let sealed = service.seal_secret_for_transport("hello", "pass").unwrap();
         assert!(sealed.starts_with("p1:"));
@@ -1855,6 +1865,7 @@ mod wallet_manager_secrets_tests {
     #[tokio::test]
     async fn migrate_plaintext_wallet_secrets_encrypts() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
+        init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());
         service.init_tables().await.unwrap();
         service.init_password("pass").await.unwrap();
@@ -1881,6 +1892,7 @@ mod wallet_manager_secrets_tests {
     #[tokio::test]
     async fn create_wallets_returns_sealed_secrets() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
+        init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());
         service.init_tables().await.unwrap();
         service.init_password("pass").await.unwrap();
@@ -1924,6 +1936,7 @@ mod wallet_manager_secrets_tests {
     #[tokio::test]
     async fn create_wallets_persists_encrypted_mnemonic_for_same_mnemonic() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
+        init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());
         service.init_tables().await.unwrap();
         service.init_password("pass").await.unwrap();
@@ -1964,6 +1977,7 @@ mod wallet_manager_secrets_tests {
     #[tokio::test]
     async fn create_wallets_persists_encrypted_mnemonic_for_different_mnemonic() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
+        init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());
         service.init_tables().await.unwrap();
         service.init_password("pass").await.unwrap();

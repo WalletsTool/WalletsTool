@@ -4,25 +4,25 @@ use crate::database::models::*;
 use chrono::Utc;
 
 /// 链服务
-pub struct ChainService<'a> {
-    pool: &'a SqlitePool,
+pub struct ChainService {
+    pool: SqlitePool,
 }
 
-impl<'a> ChainService<'a> {
-    pub fn new(pool: &'a SqlitePool) -> Self {
-        Self { pool }
+impl ChainService {
+    pub fn new(pool: &SqlitePool) -> Self {
+        Self { pool: pool.clone() }
     }
 
     /// 获取数据库连接池的引用
     pub fn get_pool(&self) -> &SqlitePool {
-        self.pool
+        &self.pool
     }
 
     /// 获取所有活跃链的配置信息
     pub async fn get_all_chains(&self) -> Result<Vec<ChainInfo>> {
         let chains = sqlx::query_as::<_, Chain>(
             "SELECT * FROM chains WHERE is_active = TRUE ORDER BY chain_name"
-        ).fetch_all(self.pool).await?;
+        ).fetch_all(&self.pool).await?;
 
         let mut chain_infos = Vec::new();
         for chain in chains {
@@ -53,7 +53,7 @@ impl<'a> ChainService<'a> {
             "SELECT * FROM chains WHERE chain_key = ? AND is_active = TRUE"
         )
         .bind(chain_key)
-        .fetch_optional(self.pool)
+        .fetch_optional(&self.pool)
         .await?;
 
         Ok(chain)
@@ -65,7 +65,7 @@ impl<'a> ChainService<'a> {
             "SELECT rpc_url FROM rpc_providers WHERE chain_id = ? AND is_active = TRUE ORDER BY priority ASC"
         )
         .bind(chain_id)
-        .fetch_all(self.pool)
+        .fetch_all(&self.pool)
         .await?;
 
         let rpc_urls: Vec<String> = rows.into_iter().map(|row| {
@@ -86,7 +86,7 @@ impl<'a> ChainService<'a> {
             "SELECT COUNT(*) FROM chains WHERE chain_key = ?"
         )
         .bind(&request.chain_key)
-        .fetch_one(self.pool)
+        .fetch_one(&self.pool)
         .await?;
         
         if exists > 0 {
@@ -118,7 +118,7 @@ impl<'a> ChainService<'a> {
         .bind(&request.check_verify_api)
         .bind(now)
         .bind(now)
-        .fetch_one(self.pool)
+        .fetch_one(&self.pool)
         .await?;
 
         // 添加基础代币
@@ -136,7 +136,7 @@ impl<'a> ChainService<'a> {
         .bind(request.native_currency_decimals)
         .bind(now)
         .bind(now)
-        .execute(self.pool)
+        .execute(&self.pool)
         .await?;
 
         // 添加RPC URLs
@@ -155,7 +155,7 @@ impl<'a> ChainService<'a> {
                     .bind(100)
                     .bind(now)
                     .bind(now)
-                    .execute(self.pool)
+                    .execute(&self.pool)
                     .await?;
                 }
             }
@@ -195,7 +195,7 @@ impl<'a> ChainService<'a> {
         .bind(&request.check_verify_api)
         .bind(now)
         .bind(chain.id)
-        .execute(self.pool)
+        .execute(&self.pool)
         .await?;
         
         // 更新基础代币信息
@@ -211,7 +211,7 @@ impl<'a> ChainService<'a> {
         .bind(request.native_currency_decimals)
         .bind(now)
         .bind(chain.id)
-        .execute(self.pool)
+        .execute(&self.pool)
         .await?;
         
         // 如果提供了新的RPC URLs，先删除旧的，再添加新的
@@ -222,7 +222,7 @@ impl<'a> ChainService<'a> {
             )
             .bind(now)
             .bind(chain.id)
-            .execute(self.pool)
+            .execute(&self.pool)
             .await?;
             
             // 添加新的RPC提供商
@@ -239,7 +239,7 @@ impl<'a> ChainService<'a> {
                 .bind(100)
                 .bind(now)
                 .bind(now)
-                .execute(self.pool)
+                .execute(&self.pool)
                 .await?;
             }
         }
@@ -307,7 +307,7 @@ impl<'a> ChainService<'a> {
         .bind(&request.abi)
         .bind(now)
         .bind(now)
-        .fetch_one(self.pool)
+        .fetch_one(&self.pool)
         .await?;
 
         Ok(token_id)
@@ -326,7 +326,7 @@ impl<'a> ChainService<'a> {
         )
         .bind(chain_key)
         .bind(token_key)
-        .execute(self.pool)
+        .execute(&self.pool)
         .await?;
 
         Ok(())
@@ -344,7 +344,7 @@ impl<'a> ChainService<'a> {
         )
         .bind(chain_key)
         .bind(token_key)
-        .fetch_optional(self.pool)
+        .fetch_optional(&self.pool)
         .await?;
 
         Ok(token)
@@ -361,7 +361,7 @@ impl<'a> ChainService<'a> {
         )
         .bind(chain_key)
         .bind(contract_address)
-        .fetch_optional(self.pool)
+        .fetch_optional(&self.pool)
         .await?;
 
         Ok(decimals)
@@ -379,7 +379,7 @@ impl<'a> ChainService<'a> {
         )
         .bind(chain_key)
         .bind(token_key)
-        .fetch_optional(self.pool)
+        .fetch_optional(&self.pool)
         .await?;
 
         Ok(decimals)
@@ -401,7 +401,7 @@ impl<'a> ChainService<'a> {
         .bind(Utc::now())
         .bind(chain.id)
         .bind(token_key)
-        .execute(self.pool)
+        .execute(&self.pool)
         .await?
         .rows_affected();
         
@@ -437,7 +437,7 @@ impl<'a> ChainService<'a> {
         .bind(now)
         .bind(chain.id)
         .bind(token_key)
-        .execute(self.pool)
+        .execute(&self.pool)
         .await?
         .rows_affected();
         
@@ -453,7 +453,7 @@ impl<'a> ChainService<'a> {
     pub async fn get_all_rpc_providers(&self) -> Result<Vec<RpcProvider>> {
         let providers = sqlx::query_as::<_, RpcProvider>(
             "SELECT * FROM rpc_providers ORDER BY chain_id, priority ASC"
-        ).fetch_all(self.pool).await?;
+        ).fetch_all(&self.pool).await?;
         
         Ok(providers)
     }
@@ -469,7 +469,7 @@ impl<'a> ChainService<'a> {
             "#
         )
         .bind(chain_key)
-        .fetch_all(self.pool)
+        .fetch_all(&self.pool)
         .await?;
         
         Ok(providers)
@@ -491,14 +491,14 @@ impl<'a> ChainService<'a> {
         .bind(request.priority)
         .bind(now)
         .bind(now)
-        .fetch_one(self.pool)
+        .fetch_one(&self.pool)
         .await?;
 
         let provider = sqlx::query_as::<_, RpcProvider>(
             "SELECT * FROM rpc_providers WHERE id = ?"
         )
         .bind(provider_id)
-        .fetch_one(self.pool)
+        .fetch_one(&self.pool)
         .await?;
 
         Ok(provider)
@@ -529,14 +529,14 @@ impl<'a> ChainService<'a> {
         .bind(priority)
         .bind(now)
         .bind(id)
-        .execute(self.pool)
+        .execute(&self.pool)
         .await?;
 
         let provider = sqlx::query_as::<_, RpcProvider>(
             "SELECT * FROM rpc_providers WHERE id = ?"
         )
         .bind(id)
-        .fetch_one(self.pool)
+        .fetch_one(&self.pool)
         .await?;
 
         Ok(provider)
@@ -546,7 +546,7 @@ impl<'a> ChainService<'a> {
     pub async fn delete_rpc_provider(&self, id: i64) -> Result<()> {
         sqlx::query("DELETE FROM rpc_providers WHERE id = ?")
             .bind(id)
-            .execute(self.pool)
+            .execute(&self.pool)
             .await?;
         
         Ok(())

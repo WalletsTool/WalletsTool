@@ -1,6 +1,7 @@
 <script setup>
 import { defineAsyncComponent, ref, reactive, onMounted, computed } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
+import { invoke } from '@tauri-apps/api/core';
 import { 
   IconPlus, 
   IconImport, 
@@ -48,6 +49,7 @@ const columns = [
 const isAddModalVisible = ref(false);
 const isEditModalVisible = ref(false);
 const systemImportVisible = ref(false);
+const walletDbReady = ref(false);
 const editingWallet = ref(null);
 const showPrivateKey = ref(false);
 
@@ -418,6 +420,12 @@ onMounted(async () => {
   } catch (e) {
     console.log('Tables may already exist:', e);
   }
+  // 检查钱包数据库是否已初始化
+  try {
+    walletDbReady.value = await invoke('is_wallet_db_ready');
+  } catch (e) {
+    walletDbReady.value = false;
+  }
   // 加载钱包数据
   await loadWallets();
 });
@@ -432,7 +440,7 @@ onMounted(async () => {
           <template #icon><icon-plus /></template>
           添加钱包
         </a-button>
-        <a-button type="primary" status="warning" @click="openSystemSync">
+        <a-button type="primary" status="warning" @click="openSystemSync" v-if="walletDbReady">
           <template #icon><icon-sync /></template>
           从系统同步
         </a-button>

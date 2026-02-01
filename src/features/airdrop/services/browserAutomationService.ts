@@ -239,7 +239,8 @@ export const walletService = {
   },
 
   async importWallets(wallets: CreateWalletRequest[]): Promise<{ wallets: AirdropWallet[]; errors: string[] }> {
-    return await invoke('import_airdrop_wallets', { request: { wallets } });
+    const result = await invoke<[AirdropWallet[], string[]]>('import_airdrop_wallets', { request: { wallets } });
+    return { wallets: result[0], errors: result[1] };
   },
 
   async getPrivateKey(id: number): Promise<string> {

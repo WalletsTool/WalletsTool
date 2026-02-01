@@ -162,6 +162,7 @@ const form = reactive({
 let visible = ref(false)
 let importText = ref('')
 const systemImportVisible = ref(false)
+const walletDbReady = ref(false) // 钱包数据库是否已初始化
 // 导入loading状态
 let importLoading = ref(false)
 // 地址验证相关
@@ -446,6 +447,9 @@ onMounted(async () => {
       // 获取当前窗口ID
       currentWindowId.value = currentWindow.label;
       
+      // 检查钱包数据库是否已初始化
+      try { walletDbReady.value = await invoke('is_wallet_db_ready'); } catch (e) { walletDbReady.value = false; }
+
       // 添加Tauri窗口关闭事件监听器
       await currentWindow.onCloseRequested(async (event) => {
         if (balanceLoading.value) {
@@ -1297,6 +1301,7 @@ async function handleBeforeClose() {
             height="100%"
             page-type="balance"
             :empty-data="filteredData.length === 0"
+            :show-system-import="walletDbReady"
             class="table-with-side-actions"
           >
 
@@ -1391,7 +1396,7 @@ async function handleBeforeClose() {
           <div class="side-actions-content-fixed">
             <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
-            <a-tooltip content="从系统导入" position="left"><a-button type="primary" size="mini" status="warning" @click="openSystemImport"><template #icon><Icon icon="mdi:database-import" style="color: #ff7d00; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip v-if="walletDbReady" content="从系统导入" position="left"><a-button type="primary" size="mini" status="warning" @click="openSystemImport"><template #icon><Icon icon="mdi:database-import" style="color: #ff7d00; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导出数据" position="left">
               <a-dropdown>

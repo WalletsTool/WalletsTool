@@ -2,15 +2,56 @@ pub mod models;
 pub mod chain_service;
 pub mod rpc_service;
 
+/// 编译时嵌入 init.sql 内容，确保打包后也能正常恢复出厂设置
+static INIT_SQL_CONTENT: &str = include_str!("../../data/init.sql");
+
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions, Row};
 use anyhow::Result;
+use std::env;
+use std::fs;
 use std::str::FromStr;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use sha2::Sha256;
 use hmac::Hmac;
 use pbkdf2::pbkdf2;
+
+fn database_url_to_path(database_url: &str) -> Option<String> {
+    database_url
+        .strip_prefix("sqlite://")
+        .map(|s| s.trim_start_matches('/').to_string())
+}
+
+fn describe_db_file(database_path: &str) -> String {
+    let cwd = env::current_dir()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "<unknown>".to_string());
+
+    let absolute = Path::new(database_path)
+        .canonicalize()
+        .ok()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| database_path.to_string());
+
+    let meta = fs::metadata(database_path).ok();
+    let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+
+    let header_hex = fs::read(database_path)
+        .ok()
+        .and_then(|bytes| bytes.get(0..16).map(|h| h.to_vec()))
+        .map(|h| hex::encode(h))
+        .unwrap_or_else(|| "<unreadable>".to_string());
+
+    format!("cwd={cwd}, db_path={absolute}, size={size}, header16={header_hex}")
+}
+
+fn is_fatal_db_error(error: &anyhow::Error) -> bool {
+    let msg = error.to_string();
+    msg.contains("file is not a database") || msg.contains("code: 26")
+}
 
 /// 智能解析SQL语句，正确处理多行语句
 fn parse_sql_statements(sql: &str) -> Vec<String> {
@@ -176,22 +217,44 @@ impl DatabaseManager {
     
     /// 创建加密的数据库管理器实例
     pub async fn new_encrypted(database_url: &str, db_password: &str) -> Result<Self> {
-        let db_password_owned = db_password.to_string();
+        let db_password_for_hook = db_password.to_string();
+        
+        // 不使用 pragma 选项，完全依赖 after_connect 钩子来设置密钥
         let options = SqliteConnectOptions::from_str(database_url)?
-            .create_if_missing(true)
-            .pragma("key", db_password_owned);  // SQLCipher 加密密钥
+            .create_if_missing(true);
         
-        let pool = SqlitePool::connect_with(options).await?;
+        // 使用 PoolOptions 并配置 after_connect 钩子
+        let pool = sqlx::pool::PoolOptions::<sqlx::Sqlite>::new()
+            .max_connections(1)  // 限制为单连接，避免多连接密钥问题
+            .min_connections(1)
+            .after_connect(move |conn, _meta| {
+                let password = db_password_for_hook.clone();
+                Box::pin(async move {
+                    // SQLCipher: PRAGMA key 必须是第一条命令
+                    sqlx::query(&format!("PRAGMA key = '{}'", password.replace("'", "''")))
+                        .execute(&mut *conn)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect_with(options)
+            .await?;
         
-        // 验证加密是否生效 - 执行一个简单查询
-        match sqlx::query("SELECT 1").fetch_one(&pool).await {
-            Ok(_) => {
-                println!("数据库加密验证成功");
-            }
-            Err(e) => {
-                return Err(anyhow::anyhow!("数据库解密失败，密码可能错误: {e}"));
-            }
+        // 验证数据库是否可以正常访问（执行实际查询）
+        let schema_check: Result<i64, _> = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master"
+        )
+        .fetch_one(&pool)
+        .await;
+
+        if let Err(e) = schema_check {
+            let diag = database_url_to_path(database_url)
+                .map(|p| describe_db_file(&p))
+                .unwrap_or_else(|| format!("cwd={}", env::current_dir().map(|p| p.display().to_string()).unwrap_or_else(|_| "<unknown>".to_string())));
+            return Err(anyhow::anyhow!("数据库解密失败，密码可能错误或数据库文件异常: {e}; {diag}"));
         }
+
+        println!("数据库加密验证成功");
         
         let manager = Self { pool };
         
@@ -232,6 +295,20 @@ pub fn derive_salt_from_password(password: &str) -> [u8; 16] {
 
 /// 执行数据库迁移
 async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+    // 首先检查 chains 表是否存在
+    let chains_table_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chains'"
+    )
+    .fetch_one(pool)
+    .await?;
+
+    // 如果 chains 表不存在，说明是新建数据库，跳过迁移
+    // init.sql 会负责创建包含 ecosystem 列的新表结构
+    if chains_table_exists == 0 {
+        println!("数据库是新建的，跳过迁移，init.sql 将负责创建表结构");
+        return Ok(());
+    }
+
     // 检查chains表是否包含ecosystem列
     let ecosystem_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pragma_table_info('chains') WHERE name = 'ecosystem'"
@@ -262,11 +339,45 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// 全局数据库管理器实例
-static DATABASE_MANAGER: OnceLock<DatabaseManager> = OnceLock::new();
+/// 全局数据库连接池（使用 RwLock 支持运行时更新）
+static DATABASE_POOL: OnceLock<RwLock<SqlitePool>> = OnceLock::new();
 
 /// 数据库加密密码存储
 static DB_PASSWORD: OnceLock<String> = OnceLock::new();
+
+/// 初始化全局数据库连接池
+fn init_global_pool(pool: SqlitePool) {
+    if DATABASE_POOL.get().is_none() {
+        let _ = DATABASE_POOL.set(RwLock::new(pool));
+    }
+}
+
+/// 更新全局数据库连接池
+fn update_global_pool(pool: SqlitePool) {
+    if let Some(lock) = DATABASE_POOL.get() {
+        let mut guard = lock.write().unwrap();
+        *guard = pool;
+    } else {
+        let _ = DATABASE_POOL.set(RwLock::new(pool));
+    }
+}
+
+/// 获取全局数据库连接池的克隆
+pub fn get_database_pool() -> SqlitePool {
+    DATABASE_POOL
+        .get()
+        .expect("Database pool not initialized")
+        .read()
+        .unwrap()
+        .clone()
+}
+
+/// 初始化测试用的全局数据库连接池（仅用于测试）
+#[cfg(test)]
+pub fn init_test_pool(pool: SqlitePool) {
+    // 使用 update_global_pool 以支持多个测试
+    update_global_pool(pool);
+}
 
 /// 检查数据库文件是否存在
 #[allow(dead_code)]
@@ -275,26 +386,33 @@ pub fn database_exists() -> bool {
 }
 
 /// 检查数据库是否已加密（通过检查是否能无密码访问）
+/// 注意：需要区分普通SQLite文件（头部为"SQLite format 3"）和SQLCipher加密文件
 pub async fn is_database_encrypted() -> Result<bool> {
+    use tokio::fs::read as async_read;
+    
     let database_path = "data/wallets_tool.db";
     if !Path::new(database_path).exists() {
         return Ok(false); // 数据库不存在，视为未加密（新数据库）
     }
     
-    // 尝试无密码打开数据库
-    let database_url = format!("sqlite://{database_path}");
-    let options = SqliteConnectOptions::from_str(&database_url)?;
+    // 首先检查文件头，区分普通SQLite和SQLCipher
+    // SQLCipher加密文件的文件头与普通SQLite不同（没有"SQLite format 3"）
+    let file_header = async_read(database_path).await
+        .ok()
+        .and_then(|bytes| bytes.get(0..16).map(|h| h.to_vec()))
+        .unwrap_or_default();
     
-    match SqlitePool::connect_with(options).await {
-        Ok(pool) => {
-            // 能打开，尝试执行查询
-            match sqlx::query("SELECT 1").fetch_one(&pool).await {
-                Ok(_) => Ok(false), // 无密码能访问，说明未加密
-                Err(_) => Ok(true), // 需要密码才能访问
-            }
-        }
-        Err(_) => Ok(true), // 无法打开，可能是加密的
+    let header_str = String::from_utf8_lossy(&file_header);
+    let is_plain_sqlite = header_str.starts_with("SQLite format 3");
+    
+    if is_plain_sqlite {
+        // 文件头显示是普通SQLite文件，不是SQLCipher加密的
+        return Ok(false);
     }
+    
+    // 如果不是标准SQLite头部，说明是SQLCipher加密的
+    // 无需尝试连接，直接返回 true
+    Ok(true)
 }
 
 /// 初始化数据库（普通版本，用于应用启动时的基础数据库）
@@ -310,7 +428,6 @@ pub async fn init_database() -> Result<()> {
     std::fs::create_dir_all("data")?;
 
     let database_path = "data/wallets_tool.db";
-    let database_url = format!("sqlite://{database_path}");
     let db_exists = Path::new(&database_path).exists();
     
     // 检查是否已加密
@@ -320,95 +437,95 @@ pub async fn init_database() -> Result<()> {
         false
     };
     
+    // 如果存在普通 SQLite 数据库（非加密），在创建连接前删除它
+    // 这样可以避免文件锁定问题，用户设置密码后会创建新的加密数据库
+    if db_exists && !is_encrypted {
+        println!("检测到旧版本非加密数据库，正在删除以便创建加密版本...");
+        if let Err(e) = std::fs::remove_file(database_path) {
+            // 如果删除失败，尝试重命名为备份
+            let backup_path = format!("{}.backup.{}", database_path, chrono::Utc::now().timestamp());
+            if let Err(e2) = std::fs::rename(database_path, &backup_path) {
+                return Err(anyhow::anyhow!(
+                    "无法删除旧数据库文件: {}\n删除错误: {}\n重命名错误: {}",
+                    database_path, e, e2
+                ));
+            }
+            println!("已将旧数据库备份到: {backup_path}");
+        } else {
+            println!("已删除旧数据库文件");
+        }
+    }
+    
     if is_encrypted {
         println!("数据库已加密，等待密码解锁...");
-        // 加密的数据库不在这里初始化，等待用户输入密码后解锁
+        // 加密数据库需要密码才能打开，创建内存数据库作为占位符
+        // 同时加载基础配置数据，确保转账/余额查询等功能可用
+        let memory_url = "sqlite::memory:";
+        let manager = DatabaseManager::new(memory_url).await?;
+        init_global_pool(manager.get_pool().clone());
+        
+        // 在内存数据库中加载基础配置数据
+        load_init_sql_to_pool(enable_debug).await?;
+        
         return Ok(());
     }
     
-    // 创建普通数据库管理器
-    let manager = DatabaseManager::new(&database_url).await?;
+    // 数据库不存在或已删除，创建内存数据库并加载基础配置数据
+    // 这样即使用户未初始化钱包管理，转账/余额查询等功能也能正常使用
+    let memory_url = "sqlite::memory:";
+    let manager = DatabaseManager::new(memory_url).await?;
+    init_global_pool(manager.get_pool().clone());
     
-    // 执行自动迁移
-    if let Err(e) = run_migrations(manager.get_pool()).await {
-        eprintln!("数据库迁移失败: {e}");
-    }
+    // 加载 init.sql 中的基础配置数据（区块链、RPC、代币等）
+    load_init_sql_to_pool(enable_debug).await?;
 
-    DATABASE_MANAGER.set(manager)
-        .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
+    println!("数据库初始化完成（基础配置已加载，等待用户设置密码创建加密数据库）");
+    
+    Ok(())
+}
 
-    // 如果需要初始化数据库
-    if config.force_init.unwrap_or(false) || !db_exists {
-        if enable_debug {
-            println!("开始初始化数据库...");
-            println!("数据库路径: {database_path}");
-        }
-
-        let init_sql_path = config.init_sql_path.unwrap_or_else(|| "data/init.sql".to_string());
-        
-        // 检查 init.sql 是否存在
-        if !Path::new(&init_sql_path).exists() {
+/// 将 init.sql 内容加载到当前数据库连接池
+async fn load_init_sql_to_pool(enable_debug: bool) -> Result<()> {
+    let pool = get_database_pool();
+    let init_sql = INIT_SQL_CONTENT;
+    
+    // 尝试整体执行
+    match sqlx::query(init_sql).execute(&pool).await {
+        Ok(_) => {
             if enable_debug {
-                println!("init.sql 不存在，跳过初始化");
+                println!("init.sql 整体执行成功");
             }
-            return Ok(());
         }
-        
-        let init_sql = std::fs::read_to_string(&init_sql_path)?;
-
-        if enable_debug {
-            println!("已加载 SQL 文件，大小: {} 字节", init_sql.len());
-        }
-
-        let pool = DATABASE_MANAGER.get().expect("Database manager not initialized").get_pool();
-
-        // 直接执行整个SQL文件
-        match sqlx::query(&init_sql).execute(pool).await {
-            Ok(_) => {
-                if enable_debug {
-                    println!("数据库初始化SQL执行成功");
-                }
-            }
-            Err(e) => {
-                if enable_debug {
-                    println!("整体执行失败，尝试逐条执行: {e}");
-                }
-                
-                let mut executed_count = 0;
-                let statements: Vec<&str> = init_sql
-                    .split(';')
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty() && !s.starts_with("--"))
-                    .collect();
-                
-                for statement in statements {
-                    if !statement.is_empty() {
-                        match sqlx::query(statement).execute(pool).await {
-                            Ok(_) => {
-                                executed_count += 1;
-                                if enable_debug {
-                                    println!("执行 SQL 语句成功: {executed_count} 个");
-                                }
+        Err(_) => {
+            // 整体执行失败，逐条执行
+            let statements = parse_sql_statements(init_sql);
+            let mut executed_count = 0;
+            
+            for statement in statements {
+                let stmt_trimmed = statement.trim();
+                if !stmt_trimmed.is_empty() && !stmt_trimmed.starts_with("--") {
+                    match sqlx::query(&statement).execute(&pool).await {
+                        Ok(_) => {
+                            executed_count += 1;
+                        }
+                        Err(e) => {
+                            // 忽略"表/索引已存在"错误
+                            let error_msg = e.to_string();
+                            if error_msg.contains("already exists") {
+                                continue;
                             }
-                            Err(e) => {
-                                if !e.to_string().contains("UNIQUE constraint failed") && !e.to_string().contains("already exists") {
-                                    eprintln!("执行 SQL 语句错误: {e}");
-                                    eprintln!("错误语句: {statement}");
-                                    return Err(e.into());
-                                } else if enable_debug {
-                                    println!("忽略重复创建/插入错误");
-                                }
+                            if enable_debug {
+                                eprintln!("执行 SQL 语句警告: {e}");
                             }
                         }
                     }
                 }
-                if enable_debug {
-                    println!("逐条执行完成，共执行 {executed_count} 个 SQL 语句");
-                }
+            }
+            
+            if enable_debug {
+                println!("init.sql 逐条执行完成，共 {executed_count} 条语句");
             }
         }
-
-        println!("数据库初始化完成");
     }
     
     Ok(())
@@ -437,78 +554,94 @@ pub async fn init_encrypted_database(password: &str) -> Result<()> {
     // 存储数据库密码
     let _ = DB_PASSWORD.set(db_password.clone());
     
-    // 创建加密数据库管理器
-    let manager = DatabaseManager::new_encrypted(&database_url, &db_password).await?;
+    // 检查数据库是否已经是加密的
+    let is_encrypted = if db_exists {
+        is_database_encrypted().await.unwrap_or(false)
+    } else {
+        false
+    };
+    
+    let manager = if is_encrypted {
+        // 数据库已经是加密的，用密码打开
+        if enable_debug {
+            println!("检测到已加密数据库，正在解锁...");
+        }
+        DatabaseManager::new_encrypted(&database_url, &db_password).await?
+    } else {
+        // 创建新的加密数据库
+        if enable_debug {
+            println!("创建新的加密数据库...");
+        }
+        DatabaseManager::new_encrypted(&database_url, &db_password).await?
+    };
     
     // 执行自动迁移
     if let Err(e) = run_migrations(manager.get_pool()).await {
+        if is_fatal_db_error(&e) {
+            let diag = describe_db_file(database_path);
+            return Err(anyhow::anyhow!("数据库迁移失败，数据库文件异常: {e}; {diag}"));
+        }
         eprintln!("数据库迁移失败: {e}");
     }
 
-    // 存储数据库管理器（仅在未初始化时）
-    if DATABASE_MANAGER.get().is_none() {
-        DATABASE_MANAGER.set(manager)
-            .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
-    } else if enable_debug {
-        println!("数据库管理器已初始化，跳过设置");
+    // 更新全局数据库连接池（替换内存数据库占位符）
+    update_global_pool(manager.get_pool().clone());
+    if enable_debug {
+        println!("已更新全局数据库连接池");
     }
 
-    // 初始化表结构
+    // 初始化表结构和基础数据
     if !db_exists || config.force_init.unwrap_or(false) {
         if enable_debug {
-            println!("开始初始化加密数据库表结构...");
+            println!("开始初始化加密数据库（执行 init.sql）...");
         }
 
-        let pool = DATABASE_MANAGER.get().expect("Database manager not initialized").get_pool();
+        let pool = get_database_pool();
         
-        // 创建钱包管理器所需的表
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS wallet_groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                parent_id INTEGER,
-                name TEXT NOT NULL,
-                chain_type TEXT,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (parent_id) REFERENCES wallet_groups(id) ON DELETE CASCADE
-            )
-            "#
-        ).execute(pool).await?;
+        // 使用编译时嵌入的 init.sql 内容初始化数据库
+        // 包含所有表结构和基础数据（区块链配置、RPC、代币等）
+        let init_sql = INIT_SQL_CONTENT;
+        
+        // 尝试整体执行
+        match sqlx::query(init_sql).execute(&pool).await {
+            Ok(_) => {
+                if enable_debug {
+                    println!("init.sql 整体执行成功");
+                }
+            }
+            Err(_) => {
+                // 整体执行失败，逐条执行
+                let statements = parse_sql_statements(init_sql);
+                let mut executed_count = 0;
+                
+                for statement in statements {
+                    let stmt_trimmed = statement.trim();
+                    if !stmt_trimmed.is_empty() && !stmt_trimmed.starts_with("--") {
+                        match sqlx::query(&statement).execute(&pool).await {
+                            Ok(_) => {
+                                executed_count += 1;
+                            }
+                            Err(e) => {
+                                // 忽略"表/索引已存在"错误
+                                let error_msg = e.to_string();
+                                if error_msg.contains("already exists") {
+                                    continue;
+                                }
+                                eprintln!("执行 SQL 语句错误: {e}");
+                                eprintln!("错误语句: {statement}");
+                                return Err(anyhow::anyhow!("初始化数据库失败: {e}"));
+                            }
+                        }
+                    }
+                }
+                
+                if enable_debug {
+                    println!("init.sql 逐条执行完成，共 {executed_count} 条语句");
+                }
+            }
+        }
 
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS wallets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                group_id INTEGER,
-                name TEXT,
-                address TEXT NOT NULL,
-                chain_type TEXT NOT NULL,
-                encrypted_private_key TEXT,
-                encrypted_mnemonic TEXT,
-                mnemonic_index INTEGER,
-                remark TEXT,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (group_id) REFERENCES wallet_groups(id) ON DELETE SET NULL
-            )
-            "#
-        ).execute(pool).await?;
-
-        sqlx::query(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_chain_address ON wallets(chain_type, address)"
-        ).execute(pool).await?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS app_config (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-            "#
-        ).execute(pool).await?;
-
-        println!("加密数据库初始化完成");
+        println!("加密数据库初始化完成（包含基础配置数据）");
     }
     
     Ok(())
@@ -519,28 +652,44 @@ pub async fn unlock_encrypted_database(password: &str) -> Result<()> {
     let database_path = "data/wallets_tool.db";
     let database_url = format!("sqlite://{database_path}");
     
-    // 从密码派生 salt 和数据库密码
-    let salt = derive_salt_from_password(password);
-    let db_password = generate_db_password(password, &salt);
+    // 检查数据库是否真的是加密的
+    let is_encrypted = is_database_encrypted().await?;
     
-    // 存储数据库密码
-    let _ = DB_PASSWORD.set(db_password.clone());
+    let manager = if is_encrypted {
+        // 数据库是加密的，尝试用密码解锁
+        println!("检测到加密数据库，正在解锁...");
+        let salt = derive_salt_from_password(password);
+        let db_password = generate_db_password(password, &salt);
+        
+        // 存储数据库密码
+        let _ = DB_PASSWORD.set(db_password.clone());
+        
+        DatabaseManager::new_encrypted(&database_url, &db_password).await?
+    } else {
+        // 数据库是普通的，无需加密
+        println!("数据库未加密，创建普通连接...");
+        
+        // 存储空密码或原密码用于迁移
+        let salt = derive_salt_from_password(password);
+        let db_password = generate_db_password(password, &salt);
+        let _ = DB_PASSWORD.set(db_password.clone());
+        
+        DatabaseManager::new(&database_url).await?
+    };
     
-    // 创建加密数据库管理器
-    let manager = DatabaseManager::new_encrypted(&database_url, &db_password).await?;
-
-    // 存储数据库管理器（仅在未初始化时）
-    if DATABASE_MANAGER.get().is_none() {
-        DATABASE_MANAGER.set(manager)
-            .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
+    // 执行自动迁移
+    if let Err(e) = run_migrations(manager.get_pool()).await {
+        if is_fatal_db_error(&e) {
+            let diag = describe_db_file(database_path);
+            return Err(anyhow::anyhow!("数据库迁移失败，数据库文件异常: {e}; {diag}"));
+        }
+        eprintln!("数据库迁移失败: {e}");
     }
 
-    Ok(())
-}
+    // 更新全局数据库连接池（替换内存数据库占位符）
+    update_global_pool(manager.get_pool().clone());
 
-/// 获取全局数据库管理器
-pub fn get_database_manager() -> &'static DatabaseManager {
-    DATABASE_MANAGER.get().expect("Database not initialized")
+    Ok(())
 }
 
 /// 获取数据库密码
@@ -549,20 +698,40 @@ pub fn get_db_password() -> Option<&'static String> {
     DB_PASSWORD.get()
 }
 
-/// 重新加载数据库（删除所有表并从init.sql重新导入）
+/// 动态数据库管理器引用（每次调用 get_pool 时从全局获取最新的 pool）
+pub struct DatabaseManagerRef;
+
+impl DatabaseManagerRef {
+    pub fn get_pool(&self) -> SqlitePool {
+        get_database_pool()
+    }
+}
+
+/// 全局数据库管理器引用（兼容旧 API）
+static DATABASE_MANAGER_REF: DatabaseManagerRef = DatabaseManagerRef;
+
+/// 获取全局数据库管理器（兼容旧 API，返回动态引用）
+pub fn get_database_manager() -> &'static DatabaseManagerRef {
+    &DATABASE_MANAGER_REF
+}
+
+/// 恢复出厂设置（删除所有数据并重新初始化数据库）
+/// 这是一个彻底的数据库重置操作，会删除所有数据
 #[tauri::command]
 pub async fn reload_database() -> Result<String, String> {
     let config = load_database_config();
     let enable_debug = config.enable_debug_log.unwrap_or(false);
-    let pool = get_database_manager().get_pool();
     
     if enable_debug {
-        println!("开始重新加载数据库...");
+        println!("开始恢复出厂设置...");
     }
     
-    // 禁用外键约束检查
+    // 获取当前连接池
+    let pool = get_database_pool();
+    
+    // 禁用外键约束
     sqlx::query("PRAGMA foreign_keys = OFF")
-        .execute(pool)
+        .execute(&pool)
         .await
         .map_err(|e| format!("禁用外键约束失败: {e}"))?;
     
@@ -570,46 +739,54 @@ pub async fn reload_database() -> Result<String, String> {
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
     )
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await
     .map_err(|e| format!("获取表名失败: {e}"))?;
     
-    // 删除所有表（包括表结构）
+    // 删除所有表
     for table in &tables {
-        let drop_sql = format!("DROP TABLE IF EXISTS {table}");
-        sqlx::query(&drop_sql)
-            .execute(pool)
-            .await
-            .map_err(|e| format!("删除表 {table} 失败: {e}"))?;
-        
-        if enable_debug {
-            println!("已删除表: {table}");
+        let drop_sql = format!("DROP TABLE IF EXISTS {}", table);
+        if let Err(e) = sqlx::query(&drop_sql).execute(&pool).await {
+            if enable_debug {
+                println!("警告：删除表 {} 失败: {}", table, e);
+            }
+        } else if enable_debug {
+            println!("已删除表: {}", table);
         }
     }
     
-    // 清理sqlite_sequence表
-    sqlx::query("DELETE FROM sqlite_sequence")
-        .execute(pool)
-        .await
-        .ok();
+    // 删除所有索引
+    let indexes: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'"
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("获取索引名失败: {e}"))?;
     
-    if enable_debug {
-        println!("已删除所有表，开始重新创建...");
+    for index in &indexes {
+        let drop_sql = format!("DROP INDEX IF EXISTS {}", index);
+        if let Err(e) = sqlx::query(&drop_sql).execute(&pool).await {
+            if enable_debug {
+                println!("警告：删除索引 {} 失败: {}", index, e);
+            }
+        }
     }
     
-    // 从init.sql重新导入数据
-    let init_sql_path = config.init_sql_path.unwrap_or_else(|| "data/init.sql".to_string());
-    let init_sql = std::fs::read_to_string(&init_sql_path)
-        .map_err(|e| format!("读取init.sql文件失败: {e}"))?;
+    if enable_debug {
+        println!("已删除所有表和索引");
+    }
+    
+    // 使用编译时嵌入的 init.sql 内容（确保打包后也能正常工作）
+    let init_sql = INIT_SQL_CONTENT;
     
     if enable_debug {
-        println!("已加载 SQL 文件，大小: {} 字节", init_sql.len());
+        println!("已加载 SQL 内容，大小: {} 字节", init_sql.len());
     }
     
     // 执行SQL语句
     let mut executed_count = 0;
     
-    match sqlx::query(&init_sql).execute(pool).await {
+    match sqlx::query(init_sql).execute(&pool).await {
         Ok(_) => {
             executed_count = 1;
             if enable_debug {
@@ -620,8 +797,9 @@ pub async fn reload_database() -> Result<String, String> {
             let statements = parse_sql_statements(&init_sql);
             
             for statement in statements {
-                if !statement.trim().is_empty() && !statement.trim().starts_with("--") {
-                    match sqlx::query(&statement).execute(pool).await {
+                let stmt_trimmed = statement.trim();
+                if !stmt_trimmed.is_empty() && !stmt_trimmed.starts_with("--") {
+                    match sqlx::query(&statement).execute(&pool).await {
                         Ok(_) => {
                             executed_count += 1;
                             if enable_debug {
@@ -629,12 +807,16 @@ pub async fn reload_database() -> Result<String, String> {
                             }
                         }
                         Err(e) => {
+                            // 忽略"表/索引已存在"错误
+                            let error_msg = e.to_string();
+                            if error_msg.contains("already exists") {
+                                if enable_debug {
+                                    println!("跳过已存在的对象: {statement}");
+                                }
+                                continue;
+                            }
                             eprintln!("执行 SQL 语句错误: {e}");
                             eprintln!("错误语句: {statement}");
-                            sqlx::query("PRAGMA foreign_keys = ON")
-                                .execute(pool)
-                                .await
-                                .ok();
                             return Err(format!("执行SQL语句失败: {e}"));
                         }
                     }
@@ -643,63 +825,63 @@ pub async fn reload_database() -> Result<String, String> {
         }
     }
     
-    // 重新启用外键约束检查
+    // 重新启用外键约束
     sqlx::query("PRAGMA foreign_keys = ON")
-        .execute(pool)
+        .execute(&pool)
         .await
         .map_err(|e| format!("启用外键约束失败: {e}"))?;
     
     if enable_debug {
-        println!("数据库重新加载完成，共执行 {executed_count} 个 SQL 语句");
+        println!("恢复出厂设置完成，共执行 {executed_count} 个 SQL 语句");
     }
     
-    Ok(format!("数据库重新加载成功，共执行 {executed_count} 个 SQL 语句"))
+    Ok(format!("恢复出厂设置成功，共执行 {executed_count} 个 SQL 语句"))
 }
 
 /// 检查数据库结构是否需要更新
 #[tauri::command]
 pub async fn check_database_schema() -> Result<serde_json::Value, String> {
-    let pool = get_database_manager().get_pool();
+    let pool = get_database_pool();
     
     let chains_table_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chains'"
     )
-    .fetch_one(pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     let tokens_table_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tokens'"
     )
-    .fetch_one(pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     let rpc_table_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='rpc_providers'"
     )
-    .fetch_one(pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     let contract_type_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pragma_table_info('tokens') WHERE name = 'contract_type'"
     )
-    .fetch_one(pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
     let abi_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pragma_table_info('tokens') WHERE name = 'abi'"
     )
-    .fetch_one(pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
 
     let ecosystem_exists: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pragma_table_info('chains') WHERE name = 'ecosystem'"
     )
-    .fetch_one(pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("检查数据库结构失败: {e}"))?;
     
@@ -722,7 +904,7 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
 pub async fn export_database_to_init_sql() -> Result<String, String> {
     let config = load_database_config();
     let enable_debug = config.enable_debug_log.unwrap_or(false);
-    let pool = get_database_manager().get_pool();
+    let pool = get_database_pool();
     
     if enable_debug {
         println!("开始导出数据库数据到init.sql...");
@@ -736,7 +918,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     let all_tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
     )
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await
     .map_err(|e| format!("获取表名失败: {e}"))?;
     
@@ -768,7 +950,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
             "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?"
         )
         .bind(table)
-        .fetch_one(pool)
+        .fetch_one(&pool)
         .await
         .map_err(|e| format!("获取表 {table} 结构失败: {e}"))?;
         
@@ -777,7 +959,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
         sql_content.push_str(";\n\n");
         
         let rows = sqlx::query(&format!("SELECT * FROM {table}"))
-            .fetch_all(pool)
+            .fetch_all(&pool)
             .await
             .map_err(|e| format!("获取表 {table} 数据失败: {e}"))?;
         
@@ -786,7 +968,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
                 "SELECT name FROM pragma_table_info(?) ORDER BY cid"
             )
             .bind(table)
-            .fetch_all(pool)
+            .fetch_all(&pool)
             .await
             .map_err(|e| format!("获取表 {table} 列名失败: {e}"))?;
             
@@ -831,7 +1013,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     let indexes: Vec<String> = sqlx::query_scalar(
         "SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%'"
     )
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await
     .map_err(|e| format!("获取索引失败: {e}"))?;
     
@@ -853,4 +1035,70 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
     
     Ok(format!("数据库数据已成功导出到 {}，共 {} 个表，文件大小: {} 字节", 
         init_sql_path, tables.len(), sql_content.len()))
+}
+
+/// 检查钱包数据库是否已就绪（加密数据库已初始化，即用户已设置密码）
+#[tauri::command]
+pub async fn is_wallet_db_ready() -> Result<bool, String> {
+    // 检查加密数据库文件是否存在
+    let database_path = "data/wallets_tool.db";
+    if !Path::new(database_path).exists() {
+        return Ok(false);
+    }
+    
+    // 检查数据库是否是加密的（用户已设置密码）
+    let is_encrypted = is_database_encrypted().await.unwrap_or(false);
+    if !is_encrypted {
+        return Ok(false);
+    }
+    
+    // 检查数据库密码是否已设置（数据库已解锁）
+    if DB_PASSWORD.get().is_none() {
+        return Ok(false);
+    }
+    
+    // 检查数据库池是否已初始化
+    if DATABASE_POOL.get().is_none() {
+        return Ok(false);
+    }
+    
+    let pool = get_database_pool();
+    
+    // 检查 wallets 表是否存在
+    let wallets_table_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wallets'"
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| format!("检查数据库状态失败: {e}"))?;
+    
+    Ok(wallets_table_exists > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqliteConnectOptions;
+    use std::str::FromStr;
+
+    #[tokio::test]
+    async fn new_encrypted_failure_contains_diag() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("walletstool_plain_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
+        let database_url = format!("sqlite://{}", path.display());
+
+        let options = SqliteConnectOptions::from_str(&database_url)
+            .unwrap()
+            .create_if_missing(true);
+        let pool = SqlitePool::connect_with(options).await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS chains (id INTEGER PRIMARY KEY)").execute(&pool).await.unwrap();
+        pool.close().await;
+
+        let result = DatabaseManager::new_encrypted(&database_url, "passphrase").await;
+        if let Err(e) = result {
+            assert!(e.to_string().contains("cwd="));
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
 }

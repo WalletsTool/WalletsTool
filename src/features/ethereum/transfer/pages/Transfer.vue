@@ -78,6 +78,7 @@ const selectedKeys = ref([]);
 const rowSelection = reactive({ type: 'checkbox', showCheckedAll: true, onlyCurrent: false });
 
 const systemImportVisible = ref(false)
+const walletDbReady = ref(false) // 钱包数据库是否已初始化
 
 function rowClick(record, event) {
   const index = selectedKeys.value.indexOf(record.key);
@@ -1325,6 +1326,8 @@ onMounted(async () => {
       windowTitle.value = (await currentWindow.title()) || '批量转账';
       currentWindowId.value = currentWindow.label;
       await initProxyStatus();
+      // 检查钱包数据库是否已初始化
+      try { walletDbReady.value = await invoke('is_wallet_db_ready'); } catch (e) { walletDbReady.value = false; }
     } catch (error) { console.error('获取窗口信息失败:', error); }
   } else { windowTitle.value = '批量转账'; currentWindowId.value = 'browser_transfer_window'; }
   document.addEventListener('click', handleClickOutside);
@@ -1521,7 +1524,7 @@ function handleSystemImportConfirm(payload) {
       <div class="left-panel" style="flex: 1; display: flex; flex-direction: column; overflow: visible;">
         <div class="table-section" id="table-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative">
           <TableSkeleton v-if="(tableLoading || balanceLoading) && data.length === 0" :rows="8" />
-            <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick" @update:selected-keys="selectedKeys = $event" @open-manual-import="handleManualImport" @open-file-upload="handleFileUpload" @open-system-import="openSystemImport" @download-template="downloadTemplateAction" row-key="key" height="100%" :empty-data="data.length === 0" class="table-with-side-actions" :hover-keys="Object.keys(rowHoverStates).filter((key) => rowHoverStates[key])">
+            <VirtualScrollerTable :columns="columns" :data="data" :row-selection="rowSelection" :loading="tableLoading" :selected-keys="selectedKeys" @row-click="rowClick" @update:selected-keys="selectedKeys = $event" @open-manual-import="handleManualImport" @open-file-upload="handleFileUpload" @open-system-import="openSystemImport" @download-template="downloadTemplateAction" row-key="key" height="100%" :empty-data="data.length === 0" :show-system-import="walletDbReady" class="table-with-side-actions" :hover-keys="Object.keys(rowHoverStates).filter((key) => rowHoverStates[key])">
             <template #exec_status="{ record }">
               <div class="exec-status-wrapper" @mouseenter="rowHoverStates[record.key] = true" @mouseleave="rowHoverStates[record.key] = false">
                 <a-tooltip content="" trigger="hover" :mouseEnterDelay="300" :mouseLeaveDelay="100" :popup-style="{ padding: 0, pointerEvents: 'auto' }">
@@ -1715,7 +1718,7 @@ function handleSystemImportConfirm(payload) {
           <div class="side-actions-content-fixed" style="height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 20px 0; min-width: 60px;">
             <a-tooltip content="钱包录入" position="left"><a-button type="primary" size="mini" @click="handleManualImport"><template #icon><Icon icon="mdi:wallet" style="color: #165dff; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导入文件" position="left"><a-button type="primary" size="mini" @click="handleFileUpload"><template #icon><Icon icon="mdi:upload" style="color: #00b42a; font-size: 20px" /></template></a-button></a-tooltip>
-            <a-tooltip content="从系统导入" position="left"><a-button type="primary" size="mini" status="warning" @click="openSystemImport"><template #icon><Icon icon="mdi:database-import" style="color: #ff7d00; font-size: 20px" /></template></a-button></a-tooltip>
+            <a-tooltip v-if="walletDbReady" content="从系统导入" position="left"><a-button type="primary" size="mini" status="warning" @click="openSystemImport"><template #icon><Icon icon="mdi:database-import" style="color: #ff7d00; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="清空表格" position="left"><a-button type="primary" status="danger" size="mini" @click="debouncedClearData"><template #icon><Icon icon="mdi:delete-sweep" style="color: #f53f3f; font-size: 20px" /></template></a-button></a-tooltip>
 <a-tooltip content="下载模板" position="left"><a-button size="mini" @click="downloadTemplateAction"><template #icon><Icon icon="mdi:file-download" style="color: #4e5969; font-size: 20px" /></template></a-button></a-tooltip>
             <a-tooltip content="导出私钥地址" position="left">

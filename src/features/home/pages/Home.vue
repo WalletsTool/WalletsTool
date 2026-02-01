@@ -351,7 +351,7 @@ async function checkDatabaseStatus() {
   }
 }
 
-// 重载数据库
+// 恢复出厂设置
 async function reloadDatabase() {
   try {
     databaseLoading.value = true
@@ -361,14 +361,14 @@ async function reloadDatabase() {
       result = await invoke('reload_database')
     } else {
       // 浏览器环境下模拟成功
-      result = '数据库重载成功'
+      result = '恢复出厂设置成功'
     }
 
     // 确保result是字符串格式
     const resultText = typeof result === 'string' ? result : JSON.stringify(result)
 
     Notification.success({ 
-      title: '数据库重载完成',
+      title: '恢复出厂设置完成',
       content: resultText
     , position: 'topLeft' })
 
@@ -378,10 +378,10 @@ async function reloadDatabase() {
     }, 500)
 
   } catch (error) {
-    console.error('重载数据库失败:', error)
+    console.error('恢复出厂设置失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
     Notification.error({ 
-      title: '重载数据库失败',
+      title: '恢复出厂设置失败',
       content: errorText
     , position: 'topLeft' })
   } finally {
@@ -503,7 +503,7 @@ async function checkForUpdate() {
         ]),
         okText: '下载并安装',
         cancelText: '稍后提醒',
-        width: 450,
+        width: Math.min(420, Math.max(320, Math.floor(window.innerWidth * 0.92))),
         onOk: async () => {
           await downloadAndInstallUpdate()
         }
@@ -1007,16 +1007,18 @@ async function handleMainWindowCloseRequest() {
               class="action-btn">
               检查状态
             </a-button>
-            <a-button size="small" type="outline" @click="reloadDatabase" :loading="databaseLoading" class="action-btn">
-              重载数据库
+            <a-button size="small" type="outline" status="danger" @click="reloadDatabase" :loading="databaseLoading" class="action-btn">
+              恢复出厂设置
             </a-button>
             <a-button size="small" type="outline" @click="refreshPageData" class="action-btn">
               刷新页面
             </a-button>
+            <!-- 导出数据库功能暂时隐藏
             <a-button size="small" type="outline" @click="exportDatabaseToInitSql" :loading="databaseLoading"
               class="action-btn">
               导出数据库
             </a-button>
+            -->
           </div>
         </div>
       </div>

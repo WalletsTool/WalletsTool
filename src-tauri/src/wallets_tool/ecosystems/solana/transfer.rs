@@ -50,7 +50,7 @@ pub async fn sol_transfer(
     _index: usize,
     item: TransferItem,
     config: TransferConfig,
-    chain_service: tauri::State<'_, ChainService<'_>>,
+    chain_service: tauri::State<'_, ChainService>,
 ) -> Result<TransferResult, String> {
     let chain = config.chain.as_deref().unwrap_or("sol");
     let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {
@@ -130,7 +130,7 @@ pub async fn sol_token_transfer(
     _index: usize,
     item: TransferItem,
     config: TransferConfig,
-    chain_service: tauri::State<'_, ChainService<'_>>,
+    chain_service: tauri::State<'_, ChainService>,
 ) -> Result<TransferResult, String> {
     let chain = config.chain.as_deref().unwrap_or("sol");
     let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {
@@ -251,7 +251,7 @@ pub async fn sol_check_recent_transfers(
     _coin_type: String,
     _contract_address: Option<String>,
     _amount: Option<String>,
-    chain_service: tauri::State<'_, ChainService<'_>>,
+    chain_service: tauri::State<'_, ChainService>,
 ) -> Result<CheckResult, String> {
     let client = match get_rpc_client(&chain, Some(chain_service.get_pool())).await {
         Ok(c) => c,
@@ -293,7 +293,7 @@ pub async fn sol_check_recent_transfers(
 pub async fn sol_check_transactions_status_batch(
     chain: String,
     tx_hashes: Vec<String>,
-    chain_service: tauri::State<'_, ChainService<'_>>,
+    chain_service: tauri::State<'_, ChainService>,
 ) -> Result<Vec<serde_json::Value>, String> {
     if tx_hashes.is_empty() {
         return Ok(vec![]);
@@ -349,7 +349,7 @@ pub async fn sol_transfer_fast(
     index: usize,
     item: TransferItem,
     config: TransferConfig,
-    chain_service: tauri::State<'_, ChainService<'_>>,
+    chain_service: tauri::State<'_, ChainService>,
 ) -> Result<TransferResult, String> {
     sol_transfer(index, item, config, chain_service).await
 }
@@ -359,7 +359,7 @@ pub async fn sol_token_transfer_fast(
     index: usize,
     item: TransferItem,
     config: TransferConfig,
-    chain_service: tauri::State<'_, ChainService<'_>>,
+    chain_service: tauri::State<'_, ChainService>,
 ) -> Result<TransferResult, String> {
     sol_token_transfer(index, item, config, chain_service).await
 }
@@ -396,7 +396,7 @@ pub struct BalanceItem {
 pub async fn sol_query_balances_with_updates(
     params: BalanceQueryParams,
     window: tauri::Window,
-    chain_service: tauri::State<'_, ChainService<'_>>,
+    chain_service: tauri::State<'_, ChainService>,
 ) -> Result<serde_json::Value, String> {
     let chain = params.chain.as_deref().unwrap_or("sol");
     let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {

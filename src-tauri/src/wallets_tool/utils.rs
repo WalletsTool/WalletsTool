@@ -31,7 +31,7 @@ pub async fn save_chain_icon(
     chain_key: String,
     file_name: String, 
     file_data: Vec<u8>,
-    chain_service: State<'_, ChainService<'_>>
+    chain_service: State<'_, ChainService>
 ) -> Result<String, String> {
     // 将文件数据转换为Base64编码
     let base64_data = general_purpose::STANDARD.encode(&file_data);
@@ -66,7 +66,7 @@ pub async fn save_chain_icon(
 #[command]
 pub async fn get_chain_icon(
     chain_key: String,
-    chain_service: State<'_, ChainService<'_>>
+    chain_service: State<'_, ChainService>
 ) -> Result<Option<String>, String> {
     let chain = chain_service.get_chain_by_key(&chain_key).await
         .map_err(|e| format!("获取链信息失败: {e}"))?;

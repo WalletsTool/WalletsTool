@@ -11,7 +11,7 @@ use alloy_signer::Signer;
 use url::Url;
 use std::sync::Arc;
 use rand::Rng;
-use crate::database::get_database_manager;
+use crate::database::get_database_pool;
 use crate::wallets_tool::ecosystems::ethereum::provider::{ProviderUtils, create_provider_with_client, create_http_client_with_proxy, AlloyProvider};
 use crate::wallets_tool::security::SecureMemory;
 use sqlx::Row;
@@ -169,7 +169,7 @@ impl RpcConfig {
 pub async fn get_rpc_config(chain: &str) -> Option<RpcConfig> {
     println!("[DEBUG] get_rpc_config - 开始获取链 '{chain}' 的RPC配置");
     
-    let pool = get_database_manager().get_pool();
+    let pool = get_database_pool();
     
     // 首先获取链信息
     println!("[DEBUG] get_rpc_config - 查询链信息...");
@@ -179,7 +179,7 @@ pub async fn get_rpc_config(chain: &str) -> Option<RpcConfig> {
         "#
     )
     .bind(chain)
-    .fetch_optional(pool)
+    .fetch_optional(&pool)
     .await
     {
         Ok(Some(row)) => {
@@ -212,7 +212,7 @@ pub async fn get_rpc_config(chain: &str) -> Option<RpcConfig> {
         "#
     )
     .bind(db_chain_id)
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await
     {
         Ok(providers) => {

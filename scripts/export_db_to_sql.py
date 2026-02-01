@@ -107,9 +107,19 @@ def export_database_to_sql(db_path, output_path):
     sql_content.append("-- 敏感表（wallets, wallet_groups）只包含结构，不包含数据")
     sql_content.append("")
     
-    # 第一步：创建所有表结构
+    # 第一步：删除已存在的表（清理旧数据）
     sql_content.append("-- ============================================")
-    sql_content.append("-- 第一步：创建所有表结构")
+    sql_content.append("-- 第一步：删除已存在的表（清理旧数据）")
+    sql_content.append("-- ============================================")
+    # 按依赖关系的逆序删除表（先删除有外键依赖的表）
+    drop_order = list(reversed(ordered_tables))
+    for table_name in drop_order:
+        sql_content.append(f"DROP TABLE IF EXISTS {table_name};")
+    sql_content.append("")
+    
+    # 第二步：创建所有表结构
+    sql_content.append("-- ============================================")
+    sql_content.append("-- 第二步：创建所有表结构")
     sql_content.append("-- ============================================")
     sql_content.append("")
     
@@ -123,10 +133,10 @@ def export_database_to_sql(db_path, output_path):
             sql_content.append(f"{schema};")
             sql_content.append("")
     
-    # 第二步：插入非敏感表数据
+    # 第三步：插入非敏感表数据
     sql_content.append("")
     sql_content.append("-- ============================================")
-    sql_content.append("-- 第二步：插入非敏感表数据")
+    sql_content.append("-- 第三步：插入非敏感表数据")
     sql_content.append("-- ============================================")
     sql_content.append("")
     
@@ -146,18 +156,23 @@ def export_database_to_sql(db_path, output_path):
             sql_content.extend(inserts)
             sql_content.append("")
     
-    # 第三步：创建索引
+    # 第四步：创建索引
     sql_content.append("")
     sql_content.append("-- ============================================")
-    sql_content.append("-- 第三步：创建索引")
+    sql_content.append("-- 第四步：创建索引")
     sql_content.append("-- ============================================")
     sql_content.append("")
     
-    cursor.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%'")
-    indexes = [row[0] for row in cursor.fetchall()]
+    cursor.execute("SELECT name, sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%'")
+    indexes = cursor.fetchall()
     
     if indexes:
-        for index_sql in indexes:
+        # 先删除所有索引
+        for index_name, _ in indexes:
+            sql_content.append(f"DROP INDEX IF EXISTS {index_name};")
+        sql_content.append("")
+        # 再创建所有索引
+        for _, index_sql in indexes:
             sql_content.append(f"{index_sql};")
     
     conn.close()

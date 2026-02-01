@@ -33,6 +33,7 @@ const menuItems = [
 
 const activeTab = ref('wallets');
 const currentComponent = shallowRef(WalletManager);
+const isExpanded = ref(false);
 
 // 立即发送 page-loaded 事件，不需要等待 onMounted
 // 因为窗口只需要显示基础布局，不需要等待所有数据加载
@@ -54,7 +55,7 @@ const handleNavClick = (item) => {
 };
 
 const closeWindow = async () => {
-    await appWindow.close();
+    await appWindow.destroy();
 };
 
 </script>
@@ -62,27 +63,47 @@ const closeWindow = async () => {
 <template>
   <div class="browser-automation-layout">
     <div class="layout-body">
-      <!-- Sidebar -->
-      <div class="sidebar">
-        <!-- Logo Area is removed as it's now in TitleBar -->
-        <div class="nav-menu">
+      <!-- Collapsed Sidebar -->
+      <div class="sidebar-collapsed" @mouseenter="isExpanded = true">
+        <div class="nav-menu-collapsed">
           <div 
             v-for="item in menuItems" 
             :key="item.id" 
-            class="nav-item"
+            class="nav-item-collapsed"
             :class="{ active: activeTab === item.id }"
             @click="handleNavClick(item)"
             :title="item.label"
           >
-            <component :is="item.icon" class="nav-icon" />
-            <span class="nav-label">{{ item.label }}</span>
+            <component :is="item.icon" class="nav-icon-collapsed" />
           </div>
         </div>
 
-        <div class="sidebar-footer">
-          <div class="nav-item close-btn" @click="closeWindow" title="关闭窗口">
-            <IconPoweroff class="nav-icon" />
-            <span class="nav-label">退出</span>
+        <div class="sidebar-footer-collapsed">
+          <div class="nav-item-collapsed close-btn" @click="closeWindow" title="关闭窗口">
+            <IconPoweroff class="nav-icon-collapsed" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Expanded Sidebar -->
+      <div class="sidebar-expanded" :class="{ show: isExpanded }" @mouseleave="isExpanded = false">
+        <div class="nav-menu-expanded">
+          <div 
+            v-for="item in menuItems" 
+            :key="item.id" 
+            class="nav-item-expanded"
+            :class="{ active: activeTab === item.id }"
+            @click="handleNavClick(item)"
+          >
+            <component :is="item.icon" class="nav-icon-expanded" />
+            <span class="nav-label-expanded">{{ item.label }}</span>
+          </div>
+        </div>
+
+        <div class="sidebar-footer-expanded">
+          <div class="nav-item-expanded close-btn" @click="closeWindow">
+            <IconPoweroff class="nav-icon-expanded" />
+            <span class="nav-label-expanded">退出</span>
           </div>
         </div>
       </div>
@@ -119,8 +140,8 @@ const closeWindow = async () => {
   overflow: hidden;
 }
 
-/* Sidebar */
-.sidebar {
+/* Collapsed Sidebar */
+.sidebar-collapsed {
   width: 60px;
   background: var(--color-bg-2);
   border-right: 1px solid var(--color-border);
@@ -129,71 +150,128 @@ const closeWindow = async () => {
   align-items: center;
   padding: 20px 0;
   z-index: 10;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
 }
 
-.sidebar:hover {
+.nav-menu-collapsed {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-item-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--color-text-3);
+  box-sizing: border-box;
+}
+
+.nav-icon-collapsed {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+}
+
+.nav-item-collapsed:hover {
+  background: var(--color-fill-2);
+  color: var(--color-text-1);
+}
+
+.nav-item-collapsed.active {
+  background: rgba(var(--primary-6), 0.1);
+  color: rgb(var(--primary-6));
+}
+
+.sidebar-footer-collapsed {
+  padding-bottom: 10px;
+}
+
+/* Expanded Sidebar */
+.sidebar-expanded {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   width: 180px;
+  background: var(--color-bg-2);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+  z-index: 20;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-20px);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
 }
 
-.nav-menu {
+.sidebar-expanded.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.nav-menu-expanded {
   flex: 1;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 0 10px;
+  box-sizing: border-box;
 }
 
-.nav-item {
+.nav-item-expanded {
   display: flex;
   align-items: center;
   height: 44px;
-  width: 90%;
-  margin: 0 auto;
+  padding: 0 12px;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
   color: var(--color-text-3);
-  padding: 0 12px;
   white-space: nowrap;
-  overflow: hidden;
   box-sizing: border-box;
 }
 
-.nav-icon {
+.nav-icon-expanded {
   font-size: 20px;
-  min-width: 20px;
-  /* Ensure icon stays centered if text is hidden */
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
-.nav-label {
+.nav-label-expanded {
   margin-left: 12px;
   font-size: 14px;
-  opacity: 0;
-  transition: opacity 0.2s;
   font-weight: 500;
 }
 
-.sidebar:hover .nav-label {
-  opacity: 1;
-}
-
-.nav-item:hover {
+.nav-item-expanded:hover {
   background: var(--color-fill-2);
   color: var(--color-text-1);
 }
 
-.nav-item.active {
+.nav-item-expanded.active {
   background: rgba(var(--primary-6), 0.1);
   color: rgb(var(--primary-6));
 }
 
-.sidebar-footer {
+.sidebar-footer-expanded {
   width: 100%;
-  padding-bottom: 10px;
+  padding: 0 10px 10px;
+  box-sizing: border-box;
 }
 
 .close-btn:hover {

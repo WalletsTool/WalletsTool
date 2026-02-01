@@ -149,12 +149,12 @@ async fn main() {
     // 创建数据库服务
     // Force rebuild: ecosystem field added
     let db_manager = database::get_database_manager();
-    let sqlite_pool = db_manager.get_pool().clone();
+    let sqlite_pool = db_manager.get_pool();
     println!("Initializing WalletManagerService...");
     let wallet_manager_service =
         wallets_tool::wallet_manager::service::WalletManagerService::new(sqlite_pool.clone());
     
-    let chain_service = database::chain_service::ChainService::new(db_manager.get_pool());
+    let chain_service = database::chain_service::ChainService::new(&sqlite_pool);
 
     let updater_pubkey = option_env!("WALLETSTOOL_UPDATER_PUBKEY").unwrap_or("").trim();
     let updater_plugin = if updater_pubkey.is_empty() {
@@ -352,6 +352,7 @@ async fn main() {
             database::reload_database,
             database::check_database_schema,
             database::export_database_to_init_sql,
+            database::is_wallet_db_ready,
             // transfer functions
             wallets_tool::transfer::base_coin_transfer,
             wallets_tool::transfer::base_coin_transfer_fast,

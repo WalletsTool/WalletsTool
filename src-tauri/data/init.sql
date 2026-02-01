@@ -8,99 +8,177 @@
 -- ============================================
 
 -- 创建chains表
-CREATE TABLE chains (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chain_key TEXT NOT NULL UNIQUE,
-    chain_name TEXT NOT NULL,
-    chain_id INTEGER NOT NULL,
-    native_currency_symbol TEXT NOT NULL,
-    native_currency_name TEXT NOT NULL,
-    native_currency_decimals INTEGER NOT NULL DEFAULT 18,
-    pic_data TEXT,
-    scan_url TEXT,
-    scan_api TEXT,
-    verify_api TEXT,
-    check_verify_api TEXT,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE chains (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    chain_key TEXT NOT NULL UNIQUE,
+
+    chain_name TEXT NOT NULL,
+
+    chain_id INTEGER NOT NULL,
+
+    native_currency_symbol TEXT NOT NULL,
+
+    native_currency_name TEXT NOT NULL,
+
+    native_currency_decimals INTEGER NOT NULL DEFAULT 18,
+
+    pic_data TEXT,
+
+    scan_url TEXT,
+
+    scan_api TEXT,
+
+    verify_api TEXT,
+
+    check_verify_api TEXT,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+
 , ecosystem TEXT NOT NULL DEFAULT 'evm');
 
 -- 创建rpc_providers表
-CREATE TABLE rpc_providers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chain_id INTEGER NOT NULL,
-    rpc_url TEXT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    priority INTEGER NOT NULL DEFAULT 100,
-    last_success_at DATETIME,
-    failure_count INTEGER NOT NULL DEFAULT 0,
-    avg_response_time_ms INTEGER,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (chain_id) REFERENCES chains(id) ON DELETE CASCADE
+CREATE TABLE rpc_providers (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    chain_id INTEGER NOT NULL,
+
+    rpc_url TEXT NOT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    priority INTEGER NOT NULL DEFAULT 100,
+
+    last_success_at DATETIME,
+
+    failure_count INTEGER NOT NULL DEFAULT 0,
+
+    avg_response_time_ms INTEGER,
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (chain_id) REFERENCES chains(id) ON DELETE CASCADE
+
 );
 
 -- 创建tokens表
-CREATE TABLE tokens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chain_id INTEGER NOT NULL,
-    token_key TEXT NOT NULL,
-    token_name TEXT NOT NULL,
-    symbol TEXT NOT NULL,
-    contract_address TEXT,
-    decimals INTEGER NOT NULL DEFAULT 18,
-    token_type TEXT NOT NULL CHECK(token_type IN ('base', 'token')),
-    contract_type TEXT,
-    abi TEXT,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (chain_id) REFERENCES chains(id) ON DELETE CASCADE,
-    UNIQUE(chain_id, token_key)
+CREATE TABLE tokens (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    chain_id INTEGER NOT NULL,
+
+    token_key TEXT NOT NULL,
+
+    token_name TEXT NOT NULL,
+
+    symbol TEXT NOT NULL,
+
+    contract_address TEXT,
+
+    decimals INTEGER NOT NULL DEFAULT 18,
+
+    token_type TEXT NOT NULL CHECK(token_type IN ('base', 'token')),
+
+    contract_type TEXT,
+
+    abi TEXT,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (chain_id) REFERENCES chains(id) ON DELETE CASCADE,
+
+    UNIQUE(chain_id, token_key)
+
 );
 
 -- 创建notification_configs表
-CREATE TABLE notification_configs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    config_type TEXT NOT NULL UNIQUE CHECK(config_type IN ('telegram', 'ntfy', 'dingtalk', 'email', 'desktop')),
-    enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    config_data TEXT NOT NULL, -- JSON格式的配置数据
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE notification_configs (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    config_type TEXT NOT NULL UNIQUE CHECK(config_type IN ('telegram', 'ntfy', 'dingtalk', 'email', 'desktop')),
+
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+
+    config_data TEXT NOT NULL, -- JSON格式的配置数据
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+
 );
 
 -- 创建monitor_configs表
-CREATE TABLE monitor_configs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    wallet_address TEXT NOT NULL UNIQUE,
-    selected_chains TEXT NOT NULL, -- JSON数组格式，存储选中的链
-    monitor_items TEXT NOT NULL,   -- JSON对象格式，存储监控项目配置
-    notification_methods TEXT NOT NULL, -- JSON数组格式，存储通知方式
-    thresholds TEXT NOT NULL,      -- JSON对象格式，存储阈值配置
-    is_enabled BOOLEAN NOT NULL DEFAULT TRUE, -- 是否开启监控
-    status TEXT NOT NULL DEFAULT 'inactive' CHECK(status IN ('inactive', 'configured', 'monitoring', 'stopped')),
-    last_update DATETIME,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE monitor_configs (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    wallet_address TEXT NOT NULL UNIQUE,
+
+    selected_chains TEXT NOT NULL, -- JSON数组格式，存储选中的链
+
+    monitor_items TEXT NOT NULL,   -- JSON对象格式，存储监控项目配置
+
+    notification_methods TEXT NOT NULL, -- JSON数组格式，存储通知方式
+
+    thresholds TEXT NOT NULL,      -- JSON对象格式，存储阈值配置
+
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE, -- 是否开启监控
+
+    status TEXT NOT NULL DEFAULT 'inactive' CHECK(status IN ('inactive', 'configured', 'monitoring', 'stopped')),
+
+    last_update DATETIME,
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+
 );
 
 -- 创建monitor_history表
-CREATE TABLE monitor_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    monitor_config_id INTEGER NOT NULL,
-    wallet_address TEXT NOT NULL,
-    chain_key TEXT NOT NULL,
-    monitor_type TEXT NOT NULL CHECK(monitor_type IN ('balance', 'nonce', 'transaction')),
-    old_value TEXT,
-    new_value TEXT NOT NULL,
-    change_amount TEXT,
-    transaction_hash TEXT,
-    block_number INTEGER,
-    notification_sent BOOLEAN NOT NULL DEFAULT FALSE,
-    notification_methods TEXT NOT NULL, -- JSON数组格式
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (monitor_config_id) REFERENCES monitor_configs(id) ON DELETE CASCADE
+CREATE TABLE monitor_history (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    monitor_config_id INTEGER NOT NULL,
+
+    wallet_address TEXT NOT NULL,
+
+    chain_key TEXT NOT NULL,
+
+    monitor_type TEXT NOT NULL CHECK(monitor_type IN ('balance', 'nonce', 'transaction')),
+
+    old_value TEXT,
+
+    new_value TEXT NOT NULL,
+
+    change_amount TEXT,
+
+    transaction_hash TEXT,
+
+    block_number INTEGER,
+
+    notification_sent BOOLEAN NOT NULL DEFAULT FALSE,
+
+    notification_methods TEXT NOT NULL, -- JSON数组格式
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (monitor_config_id) REFERENCES monitor_configs(id) ON DELETE CASCADE
+
 );
 
 -- 创建app_config表

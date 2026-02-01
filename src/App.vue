@@ -1,6 +1,7 @@
 <script setup name="app">
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getVersion } from '@tauri-apps/api/app'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check } from '@tauri-apps/plugin-updater'
@@ -10,13 +11,22 @@ const STORAGE_KEYS = {
   lastCheckAt: 'walletstool:update:lastCheckAt',
   ignoreVersion: 'walletstool:update:ignoreVersion',
   lastAttemptVersion: 'walletstool:update:lastAttemptVersion',
-  lastAttemptAt: 'walletstool:update:lastAttemptAt'
+  lastAttemptAt: 'walletstool:update:lastAttemptAt',
+  forceUpdatePopup: 'walletstool:update:forcePopup'
 }
 
 const updateVisible = ref(false)
 const updateInfo = ref(null)
 const pendingTauriUpdate = ref(null)
 const updateLoading = ref(false)
+const updateError = ref('')
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 720)
+let resizeHandler = null
+
+const updateModalWidth = computed(() => {
+  const width = Math.floor(windowWidth.value * 0.92)
+  return Math.min(520, Math.max(320, width))
+})
 
 const normalizeVersion = (value) => String(value || '').trim().replace(/^v/i, '')
 
@@ -32,6 +42,11 @@ const setLastCheckNow = () => {
 }
 
 const getIgnoredVersion = () => localStorage.getItem(STORAGE_KEYS.ignoreVersion) || ''
+const shouldForceUpdatePopup = () => {
+  if (!import.meta.env.DEV) return false
+  if (import.meta.env.VITE_FORCE_UPDATE_POPUP === '1') return true
+  return localStorage.getItem(STORAGE_KEYS.forceUpdatePopup) === '1'
+}
 
 const remindLater = () => {
   setLastCheckNow()
@@ -95,22 +110,34 @@ const showUpdateModal = (info, tauriUpdate = null) => {
 
   pendingTauriUpdate.value = tauriUpdate
   updateInfo.value = info
+  updateError.value = ''
   updateVisible.value = true
 }
 
 const startInAppUpdate = async () => {
   if (updateLoading.value) return
-  const update = pendingTauriUpdate.value
-  if (!update) {
-    await openReleasePage()
-    return
-  }
+  updateError.value = ''
 
   try {
     updateLoading.value = true
-    const latestVersion = normalizeVersion(update.version)
-    localStorage.setItem(STORAGE_KEYS.lastAttemptVersion, latestVersion)
-    localStorage.setItem(STORAGE_KEYS.lastAttemptAt, String(Date.now()))
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (!isTauri) {
+      throw new Error('当前环境不支持应用内更新')
+    }
+
+    const update = pendingTauriUpdate.value
+    const latestVersion = normalizeVersion(update?.version || updateInfo.value?.latest_version || '')
+    if (latestVersion) {
+      localStorage.setItem(STORAGE_KEYS.lastAttemptVersion, latestVersion)
+      localStorage.setItem(STORAGE_KEYS.lastAttemptAt, String(Date.now()))
+    }
+
+    if (!update) {
+      await invoke('download_and_install_update')
+      await relaunch()
+      return
+    }
+
     await update.downloadAndInstall()
     await relaunch()
   } catch (e) {
@@ -119,13 +146,38 @@ const startInAppUpdate = async () => {
     if (updateInfo.value?.latest_version) {
       updateInfo.value = { ...updateInfo.value, html_url: buildReleasePageUrl(updateInfo.value.latest_version) }
     }
+    updateError.value = typeof e === 'string' ? e : e?.message || '应用内更新失败'
   } finally {
     updateLoading.value = false
   }
 }
 
 const checkUpdateOnLaunch = async (force = false) => {
+  // 只在 main 窗口显示更新弹窗
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+  if (isTauri) {
+    try {
+      const currentWindow = getCurrentWindow()
+      const windowLabel = await currentWindow.label
+      if (windowLabel !== 'main') return
+    } catch {
+      return
+    }
+  }
+
+  if (shouldForceUpdatePopup()) {
+    showUpdateModal({
+      current_version: '0.0.0-dev',
+      latest_version: '9.9.9',
+      html_url: buildReleasePageUrl('9.9.9'),
+      name: '本地测试更新弹窗',
+      body: '用于本地预览"发现新版本"弹窗样式。\n关闭该开关后恢复正常检查流程。',
+      published_at: new Date().toISOString(),
+      prerelease: false
+    })
+    return
+  }
+
   if (!isTauri) return
 
   if (!force && !shouldCheckUpdate()) return
@@ -165,6 +217,18 @@ const checkUpdateOnLaunch = async (force = false) => {
 
 onMounted(() => {
   checkUpdateOnLaunch(false)
+  if (typeof window === 'undefined') return
+  resizeHandler = () => {
+    windowWidth.value = window.innerWidth
+  }
+  window.addEventListener('resize', resizeHandler, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  if (typeof window === 'undefined') return
+  if (!resizeHandler) return
+  window.removeEventListener('resize', resizeHandler)
+  resizeHandler = null
 })
 </script>
 
@@ -173,27 +237,149 @@ onMounted(() => {
     <router-view></router-view>
   </Suspense>
 
-  <a-modal v-model:visible="updateVisible" :width="720" :mask-closable="false" title="发现新版本" unmountOnClose>
-    <div v-if="updateInfo" style="display: flex; flex-direction: column; gap: 10px;">
-      <div>
-        <div style="font-weight: 600;">当前版本：{{ updateInfo.current_version }}</div>
-        <div style="font-weight: 600;">最新版本：{{ updateInfo.latest_version }}</div>
+  <a-modal v-model:visible="updateVisible" :width="updateModalWidth" :mask-closable="false" title="发现新版本" unmountOnClose>
+    <div v-if="updateInfo" class="update-modal">
+      <div class="update-modal__versions">
+        <div class="update-modal__version-row">
+          <span class="update-modal__label">当前</span>
+          <span class="update-modal__value">{{ updateInfo.current_version }}</span>
+        </div>
+        <div class="update-modal__version-row update-modal__version-row--latest">
+          <span class="update-modal__label">最新</span>
+          <span class="update-modal__value">{{ updateInfo.latest_version }}</span>
+        </div>
       </div>
-      <div v-if="updateInfo.name" style="opacity: 0.9;">{{ updateInfo.name }}</div>
-      <div v-if="updateInfo.published_at" style="opacity: 0.7;">发布时间：{{ updateInfo.published_at }}</div>
-      <div v-if="updateInfo.body" style="max-height: 320px; overflow: auto; white-space: pre-wrap; background: rgba(0,0,0,0.04); padding: 10px; border-radius: 6px;">
+      <div v-if="updateInfo.name" class="update-modal__name">{{ updateInfo.name }}</div>
+      <div v-if="updateInfo.published_at" class="update-modal__meta">发布时间：{{ updateInfo.published_at }}</div>
+      <div v-if="updateInfo.body" class="update-modal__body">
         {{ updateInfo.body }}
       </div>
+      <div v-if="updateError" class="update-modal__error">{{ updateError }}</div>
+      <a-link v-if="updateInfo.html_url" class="update-modal__link" @click="openReleasePage">查看更新详情</a-link>
     </div>
 
     <template #footer>
-      <a-button :disabled="updateLoading" @click="remindLater">稍后提醒</a-button>
-      <a-button :disabled="updateLoading" @click="ignoreThisVersion">忽略此版本</a-button>
-      <a-button :loading="updateLoading" type="primary" @click="startInAppUpdate">立即更新</a-button>
-      <a-button :disabled="updateLoading" @click="openReleasePage">前往下载</a-button>
+      <div class="update-modal__footer">
+        <div class="update-modal__footer-left">
+          <a-button :disabled="updateLoading" type="secondary" @click="ignoreThisVersion">忽略此版本</a-button>
+        </div>
+        <div class="update-modal__footer-right">
+          <a-button :disabled="updateLoading" @click="remindLater">稍后提醒</a-button>
+          <a-button :loading="updateLoading" type="primary" @click="startInAppUpdate">立即更新</a-button>
+        </div>
+      </div>
     </template>
   </a-modal>
 </template>
 
 <style scoped>
+.update-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.update-modal__versions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.update-modal__version-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.update-modal__version-row--latest .update-modal__label {
+  color: rgb(var(--primary-6));
+}
+
+.update-modal__label {
+  font-weight: 600;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.update-modal__value {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-modal__name {
+  opacity: 0.9;
+  line-height: 1.4;
+}
+
+.update-modal__meta {
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.update-modal__body {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 10px;
+  border-radius: 6px;
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+.update-modal__link {
+  align-self: flex-start;
+}
+
+.update-modal__error {
+  color: rgb(var(--danger-6));
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.update-modal__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.update-modal__footer-left {
+  display: flex;
+  gap: 8px;
+}
+
+.update-modal__footer-right {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .update-modal__footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .update-modal__footer-left,
+  .update-modal__footer-right {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .update-modal__versions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .update-modal__body {
+    max-height: 200px;
+  }
+}
 </style>

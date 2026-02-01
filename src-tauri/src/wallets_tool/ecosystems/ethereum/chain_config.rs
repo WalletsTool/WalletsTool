@@ -1,13 +1,13 @@
 use serde_json::{json, Value};
 use tauri::command;
-use crate::database::{get_database_manager, chain_service::ChainService, models::*};
+use crate::database::{get_database_pool, chain_service::ChainService, models::*};
 use anyhow::Result;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[command]
 pub async fn get_chain_list() -> Vec<Value> {
-    let db_manager = get_database_manager();
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let pool = get_database_pool();
+    let chain_service = ChainService::new(&pool);
     
     match chain_service.get_all_chains().await {
         Ok(chains) => {
@@ -38,10 +38,10 @@ pub async fn get_chain_list() -> Vec<Value> {
 
 #[command]
 pub async fn get_coin_list(chain_key: &str) -> Result<Vec<Value>, String> {
-    let db_manager = get_database_manager();
+    let pool = get_database_pool();
     
     // Check if we need to fetch chain info for fallback
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let chain_service = ChainService::new(&pool);
     
     // 直接查询Token结构体以获取symbol字段
     match sqlx::query_as::<_, crate::database::models::Token>(
@@ -53,7 +53,7 @@ pub async fn get_coin_list(chain_key: &str) -> Result<Vec<Value>, String> {
         "#
     )
     .bind(chain_key)
-    .fetch_all(db_manager.get_pool())
+    .fetch_all(&pool)
     .await {
         Ok(tokens) => {
             let has_base = tokens.iter().any(|t| t.token_type == "base");
@@ -115,8 +115,8 @@ pub async fn add_coin(chain: &str, obj_json: &str) -> Result<(), String> {
         abi: coin_data["abi"].as_str().map(|s| s.to_string()),
     };
     
-    let db_manager = get_database_manager();
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let pool = get_database_pool();
+    let chain_service = ChainService::new(&pool);
     
     chain_service.add_token(request).await
         .map_err(|e| format!("添加代币失败: {e}"))?;
@@ -126,8 +126,8 @@ pub async fn add_coin(chain: &str, obj_json: &str) -> Result<(), String> {
 
 #[command]
 pub async fn remove_coin(chain: &str, key: &str) -> Result<(), String> {
-    let db_manager = get_database_manager();
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let pool = get_database_pool();
+    let chain_service = ChainService::new(&pool);
     
     chain_service.remove_token(chain, key).await
         .map_err(|e| format!("删除代币失败: {e}"))?;
@@ -150,8 +150,8 @@ pub async fn update_coin(chain: &str, key: &str, obj_json: &str) -> Result<(), S
         abi: coin_data["abi"].as_str().map(|s| s.to_string()),
     };
     
-    let db_manager = get_database_manager();
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let pool = get_database_pool();
+    let chain_service = ChainService::new(&pool);
     
     chain_service.update_token(chain, key, request).await
         .map_err(|e| format!("更新代币失败: {e}"))?;
@@ -170,8 +170,8 @@ pub async fn update_chain_pic_urls() -> Result<(), String> {
 
 #[command]
 pub async fn update_token_abi(chain: &str, token_key: &str, abi: Option<String>) -> Result<(), String> {
-    let db_manager = get_database_manager();
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let pool = get_database_pool();
+    let chain_service = ChainService::new(&pool);
     
     chain_service.update_token_abi(chain, token_key, abi).await
         .map_err(|e| format!("更新代币ABI失败: {e}"))?;
@@ -185,8 +185,8 @@ pub async fn add_chain(request_json: &str) -> Result<i64, String> {
     let request: CreateChainRequest = serde_json::from_str(request_json)
         .map_err(|e| format!("解析请求JSON失败: {e}"))?;
     
-    let db_manager = get_database_manager();
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let pool = get_database_pool();
+    let chain_service = ChainService::new(&pool);
     
     chain_service.add_chain(request).await
         .map_err(|e| format!("添加链失败: {e}"))
@@ -195,8 +195,8 @@ pub async fn add_chain(request_json: &str) -> Result<i64, String> {
 /// 删除链
 #[command]
 pub async fn remove_chain(chain_key: &str) -> Result<(), String> {
-    let db_manager = get_database_manager();
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let pool = get_database_pool();
+    let chain_service = ChainService::new(&pool);
     
     chain_service.remove_chain(chain_key).await
         .map_err(|e| format!("删除链失败: {e}"))
@@ -205,8 +205,8 @@ pub async fn remove_chain(chain_key: &str) -> Result<(), String> {
 /// 获取链的详细信息（用于编辑）
 #[command]
 pub async fn get_chain_detail(chain_key: &str) -> Result<Option<Value>, String> {
-    let db_manager = get_database_manager();
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let pool = get_database_pool();
+    let chain_service = ChainService::new(&pool);
     
     match chain_service.get_chain_by_key(chain_key).await {
         Ok(Some(chain)) => {
@@ -240,8 +240,8 @@ pub async fn update_chain(chain_key: &str, request_json: &str) -> Result<(), Str
     let request: UpdateChainRequest = serde_json::from_str(request_json)
         .map_err(|e| format!("解析请求JSON失败: {e}"))?;
     
-    let db_manager = get_database_manager();
-    let chain_service = ChainService::new(db_manager.get_pool());
+    let pool = get_database_pool();
+    let chain_service = ChainService::new(&pool);
     
     chain_service.update_chain(chain_key, request).await
         .map_err(|e| format!("更新链失败: {e}"))

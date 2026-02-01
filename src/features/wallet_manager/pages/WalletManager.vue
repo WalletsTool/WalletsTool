@@ -114,23 +114,7 @@ watch(showChangePasswordModal, (newVal) => {
   }
 });
 
-// 监听弹窗显示，自动聚焦输入框
-watch(showUnlockModal, (newVal) => {
-  if (newVal && passwordInputRef.value) {
-    // 在下一个DOM更新周期聚焦，确保弹窗已渲染
-    nextTick(() => {
-      passwordInputRef.value.focus();
-    });
-  }
-});
 
-watch(showInitModal, (newVal) => {
-  if (newVal && initPasswordRef.value) {
-    nextTick(() => {
-      initPasswordRef.value.focus();
-    });
-  }
-});
 
 // Data
 const groups = ref([]);
@@ -916,6 +900,14 @@ onMounted(async () => {
       pageLoadedEmitted = true;
       getCurrentWindow().emit('page-loaded');
     }
+    // 延迟聚焦输入框，确保在窗口显示完成后再聚焦
+    setTimeout(() => {
+      if (!isSet && initPasswordRef.value) {
+        initPasswordRef.value.focus();
+      } else if (isSet && passwordInputRef.value) {
+        passwordInputRef.value.focus();
+      }
+    }, 300);
   } catch (e) {
     hideLoadingOverlay();
     isLoading.value = false;
@@ -2037,6 +2029,7 @@ const confirmExport = async () => {
       mask-animation-name="none"
       modal-animation-name="none"
       :mask-style="{ background: 'rgba(0, 0, 0, 0.6)' }"
+
     >
         <a-form layout="vertical">
             <a-alert type="warning" style="margin-bottom: 10px;">
@@ -2074,6 +2067,7 @@ const confirmExport = async () => {
       mask-animation-name="none"
       modal-animation-name="none"
       :mask-style="{ background: 'rgba(0, 0, 0, 0.6)' }"
+
     >
         <a-form layout="vertical">
             <a-form-item label="主密码">

@@ -1,4 +1,4 @@
 ### ✨ New Features | 新功能
 
-- 添加GitHub Release更新检查功能
+- **updater:** 集成 Tauri 自动更新功能
 

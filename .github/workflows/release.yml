@@ -127,7 +127,7 @@ jobs:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
           releaseName: 'Wallets Tool ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
-            ## 🎉 新版本发布 v0.4.8
+            ## 🎉 新版本发布 v0.4.9
             
             ### 📦 安装包下载
             - **Windows**: 下载 `.exe` 文件
@@ -135,7 +135,9 @@ jobs:
             ### 🔄 更新说明
             ### ✨ New Features | 新功能
             
-            - 添加GitHub Release更新检查功能
+            - **updater:** 集成 Tauri 自动更新功能
+            
+
             
 
             

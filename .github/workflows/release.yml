@@ -133,15 +133,17 @@ jobs:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
           releaseName: 'Wallets Tool ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
-            ## 🎉 新版本发布 v0.4.12
+            ## 🎉 新版本发布 v0.4.13
             
             ### 📦 安装包下载
             - **Windows**: 下载 `.exe` 文件
             
             ### 🔄 更新说明
-            ### Other | 其他
+            ### 🔧 Chore | 杂项
             
-            - ci: 将 Tauri 签名密钥验证逻辑提取为独立脚本
+            - 更新 Tauri 更新器公钥并改进密钥处理脚本
+            
+
             
 
             

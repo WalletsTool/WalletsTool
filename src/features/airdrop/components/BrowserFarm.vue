@@ -12,7 +12,7 @@ import {
   IconImport,
   IconDownload
 } from '@arco-design/web-vue/es/icon';
-import { profileService } from '../services/browserAutomationService';
+import { profileService, initBrowserAutomationTables } from '../services/browserAutomationService';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { readFile, writeFile } from '@tauri-apps/plugin-fs';
 
@@ -45,10 +45,9 @@ const startEditName = async (profile, event) => {
   editingProfileId.value = profile.id;
   editNameValue.value = profile.name;
   await nextTick();
-  if (editNameInput.value) {
-    editNameInput.value.focus();
-    editNameInput.value.select();
-  }
+  const inputEl = Array.isArray(editNameInput.value) ? editNameInput.value[0] : editNameInput.value;
+  inputEl?.focus?.();
+  inputEl?.select?.();
 };
 
 const saveEditName = async () => {
@@ -285,8 +284,14 @@ const PROXY_TYPES = [
   { label: 'SOCKS5', value: 'socks5' }
 ];
 
-onMounted(() => {
-  loadProfiles();
+onMounted(async () => {
+  // 初始化表结构（包含迁移）
+  try {
+    await initBrowserAutomationTables();
+  } catch (e) {
+    console.log('Tables may already exist:', e);
+  }
+  await loadProfiles();
 });
 </script>
 
@@ -295,10 +300,14 @@ onMounted(() => {
     <div class="profile-list">
       <div class="list-header">
         <h3>环境配置列表</h3>
-        <a-space>
+        <div class="header-actions">
           <a-button type="outline" size="small" @click="showBatchModal = true">
              <template #icon><icon-robot /></template>
              批量生成
+          </a-button>
+           <a-button type="primary" size="small" @click="handleNewProfile">
+            <template #icon><icon-plus /></template>
+            新建
           </a-button>
           <a-button type="outline" size="small" @click="handleImport">
              <template #icon><icon-import /></template>
@@ -308,11 +317,7 @@ onMounted(() => {
              <template #icon><icon-download /></template>
              导出
           </a-button>
-          <a-button type="primary" size="small" @click="handleNewProfile">
-            <template #icon><icon-plus /></template>
-            新建
-          </a-button>
-        </a-space>
+        </div>
       </div>
       
       <div class="list-content" v-loading="loading">
@@ -567,12 +572,26 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .list-header h3 {
   margin: 0;
   font-size: 14px;
   color: var(--color-text-2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.header-actions .arco-btn {
+  flex-shrink: 0;
 }
 
 .list-content {

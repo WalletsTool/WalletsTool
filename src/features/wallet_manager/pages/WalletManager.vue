@@ -78,6 +78,7 @@ const passwordInput = ref('');
 const passwordInputRef = ref(null);
 const initPassword = ref('');
 const initPasswordConfirm = ref('');
+const initPasswordRef = ref(null);
 const sessionPassword = ref('');
 const transportToken = ref('');
 const transportAesKey = ref(null);
@@ -119,6 +120,14 @@ watch(showUnlockModal, (newVal) => {
     // 在下一个DOM更新周期聚焦，确保弹窗已渲染
     nextTick(() => {
       passwordInputRef.value.focus();
+    });
+  }
+});
+
+watch(showInitModal, (newVal) => {
+  if (newVal && initPasswordRef.value) {
+    nextTick(() => {
+      initPasswordRef.value.focus();
     });
   }
 });
@@ -2034,14 +2043,14 @@ const confirmExport = async () => {
                 此密码用于加密存储所有私钥，请务必牢记。丢失密码将无法找回数据！
             </a-alert>
             <a-form-item label="主密码">
-                <a-input-password v-model="initPassword" class="styled-password-input">
+                <a-input-password v-model="initPassword" ref="initPasswordRef" class="styled-password-input">
                     <template #prefix>
                         <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
                     </template>
                 </a-input-password>
             </a-form-item>
             <a-form-item label="确认密码">
-                <a-input-password v-model="initPasswordConfirm" class="styled-password-input">
+                <a-input-password v-model="initPasswordConfirm" @keyup.enter="handleInit" class="styled-password-input">
                     <template #prefix>
                         <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
                     </template>

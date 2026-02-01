@@ -331,7 +331,7 @@ pub async fn create_browser_profile(
     .bind(&request.user_agent)
     .bind(request.viewport_width.unwrap_or(1920))
     .bind(request.viewport_height.unwrap_or(1080))
-    .bind(request.device_scale_factor.unwrap_or(1.0))
+    .bind(request.device_scale_factor.unwrap_or(1))
     .bind(request.locale.unwrap_or_else(|| "en-US".to_string()))
     .bind(request.timezone_id.unwrap_or_else(|| "America/New_York".to_string()))
     .bind(request.proxy_type.unwrap_or_else(|| "direct".to_string()))
@@ -501,16 +501,17 @@ pub async fn batch_generate_profiles(
         let proxy_port = request.proxy_port_start.map(|start| start + i);
 
         let enable_all = request.enable_all_spoofs.unwrap_or(true);
+        let device_scale_factor = 1i32;
 
         let profile = sqlx::query_as::<_, BrowserProfile>(
             r#"
             INSERT INTO browser_profiles (
-                name, user_agent, viewport_width, viewport_height,
+                name, user_agent, viewport_width, viewport_height, device_scale_factor,
                 locale, timezone_id, proxy_type, proxy_host, proxy_port,
                 canvas_spoof, webgl_spoof, audio_spoof, timezone_spoof,
                 geolocation_spoof, font_spoof, webrtc_spoof,
                 navigator_override, webdriver_override
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *
             "#
         )
@@ -518,6 +519,7 @@ pub async fn batch_generate_profiles(
         .bind(&ua)
         .bind(width)
         .bind(height)
+        .bind(device_scale_factor)
         .bind(&locale)
         .bind(&timezone)
         .bind(&proxy_type)
@@ -628,14 +630,14 @@ pub async fn delete_automation_script(
     pool: State<'_, SqlitePool>,
     id: i64,
 ) -> Result<(), String> {
-    let result = sqlx::query("DELETE FROM automation_scripts WHERE id = ? AND is_system = 0")
+    let result = sqlx::query("DELETE FROM automation_scripts WHERE id = ?")
         .bind(id)
         .execute(&*pool)
         .await
         .map_err(|e| format!("删除脚本失败: {}", e))?;
 
     if result.rows_affected() == 0 {
-        return Err("无法删除系统脚本或脚本不存在".to_string());
+        return Err("脚本不存在".to_string());
     }
 
     Ok(())

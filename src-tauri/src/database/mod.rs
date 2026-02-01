@@ -445,8 +445,13 @@ pub async fn init_encrypted_database(password: &str) -> Result<()> {
         eprintln!("数据库迁移失败: {e}");
     }
 
-    DATABASE_MANAGER.set(manager)
-        .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
+    // 存储数据库管理器（仅在未初始化时）
+    if DATABASE_MANAGER.get().is_none() {
+        DATABASE_MANAGER.set(manager)
+            .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
+    } else if enable_debug {
+        println!("数据库管理器已初始化，跳过设置");
+    }
 
     // 初始化表结构
     if !db_exists || config.force_init.unwrap_or(false) {
@@ -523,17 +528,13 @@ pub async fn unlock_encrypted_database(password: &str) -> Result<()> {
     
     // 创建加密数据库管理器
     let manager = DatabaseManager::new_encrypted(&database_url, &db_password).await?;
-    
-    // 存储数据库管理器
-    if DATABASE_MANAGER.get().is_some() {
-        // 已经初始化过，这里需要特殊处理
-        // 由于 OnceLock 不能直接替换，我们需要使用其他方式
-        println!("警告: 数据库管理器已经初始化");
-    } else {
+
+    // 存储数据库管理器（仅在未初始化时）
+    if DATABASE_MANAGER.get().is_none() {
         DATABASE_MANAGER.set(manager)
             .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
     }
-    
+
     Ok(())
 }
 

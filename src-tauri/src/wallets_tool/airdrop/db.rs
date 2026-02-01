@@ -1,8 +1,130 @@
 use sqlx::SqlitePool;
 use anyhow::Result;
 
+/// 检查并修复 device_scale_factor 列类型
+async fn migrate_device_scale_factor(pool: &SqlitePool) -> Result<()> {
+    // 检查 browser_profiles 表是否存在
+    let table_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='browser_profiles'"
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if table_exists == 0 {
+        return Ok(());
+    }
+
+    // 检查 device_scale_factor 列的数据类型
+    let column_info: Vec<(String, String)> = sqlx::query_as(
+        "SELECT name, type FROM pragma_table_info('browser_profiles') WHERE name = 'device_scale_factor'"
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if let Some((_, col_type)) = column_info.first() {
+        if col_type.to_uppercase() == "REAL" {
+            println!("迁移 device_scale_factor 列类型从 REAL 到 INTEGER...");
+            
+            // 禁用外键约束检查
+            sqlx::query("PRAGMA foreign_keys = OFF")
+                .execute(pool)
+                .await?;
+            
+            // SQLite 不支持直接修改列类型，需要重建表
+            sqlx::query(
+                r#"
+                CREATE TABLE browser_profiles_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    user_agent TEXT,
+                    viewport_width INTEGER NOT NULL DEFAULT 1920,
+                    viewport_height INTEGER NOT NULL DEFAULT 1080,
+                    device_scale_factor INTEGER NOT NULL DEFAULT 1,
+                    locale TEXT NOT NULL DEFAULT 'en-US',
+                    timezone_id TEXT NOT NULL DEFAULT 'America/New_York',
+                    proxy_type TEXT NOT NULL DEFAULT 'direct',
+                    proxy_host TEXT,
+                    proxy_port INTEGER,
+                    proxy_username TEXT,
+                    proxy_password TEXT,
+                    canvas_spoof BOOLEAN NOT NULL DEFAULT 1,
+                    webgl_spoof BOOLEAN NOT NULL DEFAULT 1,
+                    audio_spoof BOOLEAN NOT NULL DEFAULT 1,
+                    timezone_spoof BOOLEAN NOT NULL DEFAULT 1,
+                    geolocation_spoof BOOLEAN NOT NULL DEFAULT 1,
+                    font_spoof BOOLEAN NOT NULL DEFAULT 1,
+                    webrtc_spoof BOOLEAN NOT NULL DEFAULT 1,
+                    navigator_override BOOLEAN NOT NULL DEFAULT 1,
+                    webdriver_override BOOLEAN NOT NULL DEFAULT 1,
+                    custom_headers TEXT,
+                    headless BOOLEAN NOT NULL DEFAULT 0,
+                    extensions TEXT,
+                    is_default BOOLEAN NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                "#
+            )
+            .execute(pool)
+            .await?;
+
+            // 复制数据
+            sqlx::query(
+                r#"
+                INSERT INTO browser_profiles_new (
+                    id, name, description, user_agent, viewport_width, viewport_height,
+                    device_scale_factor, locale, timezone_id, proxy_type, proxy_host, proxy_port,
+                    proxy_username, proxy_password, canvas_spoof, webgl_spoof, audio_spoof,
+                    timezone_spoof, geolocation_spoof, font_spoof, webrtc_spoof,
+                    navigator_override, webdriver_override, custom_headers, headless,
+                    extensions, is_default, created_at, updated_at
+                )
+                SELECT 
+                    id, name, description, user_agent, viewport_width, viewport_height,
+                    CAST(device_scale_factor AS INTEGER), locale, timezone_id, proxy_type, proxy_host, proxy_port,
+                    proxy_username, proxy_password, canvas_spoof, webgl_spoof, audio_spoof,
+                    timezone_spoof, geolocation_spoof, font_spoof, webrtc_spoof,
+                    navigator_override, webdriver_override, custom_headers, headless,
+                    extensions, is_default, created_at, updated_at
+                FROM browser_profiles
+                "#
+            )
+            .execute(pool)
+            .await?;
+
+            // 删除旧表
+            sqlx::query("DROP TABLE browser_profiles")
+                .execute(pool)
+                .await?;
+
+            // 重命名新表
+            sqlx::query("ALTER TABLE browser_profiles_new RENAME TO browser_profiles")
+                .execute(pool)
+                .await?;
+
+            // 重建索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_browser_profiles_default ON browser_profiles(is_default)")
+                .execute(pool)
+                .await?;
+            
+            // 重新启用外键约束检查
+            sqlx::query("PRAGMA foreign_keys = ON")
+                .execute(pool)
+                .await?;
+
+            println!("device_scale_factor 列类型迁移完成");
+        }
+    }
+
+    Ok(())
+}
+
 /// 初始化浏览器自动化相关的数据库表
 pub async fn init_airdrop_tables(pool: &SqlitePool) -> Result<()> {
+    // 执行迁移：修复 device_scale_factor 列类型
+    migrate_device_scale_factor(pool).await?;
+
     // 空投钱包表
     sqlx::query(
         r#"
@@ -46,7 +168,7 @@ pub async fn init_airdrop_tables(pool: &SqlitePool) -> Result<()> {
             user_agent TEXT,
             viewport_width INTEGER NOT NULL DEFAULT 1920,
             viewport_height INTEGER NOT NULL DEFAULT 1080,
-            device_scale_factor REAL NOT NULL DEFAULT 1.0,
+            device_scale_factor INTEGER NOT NULL DEFAULT 1,
             locale TEXT NOT NULL DEFAULT 'en-US',
             timezone_id TEXT NOT NULL DEFAULT 'America/New_York',
             proxy_type TEXT NOT NULL DEFAULT 'direct',
@@ -204,84 +326,9 @@ pub async fn init_airdrop_tables(pool: &SqlitePool) -> Result<()> {
 }
 
 /// 插入默认的自动化脚本
-async fn insert_default_scripts(pool: &SqlitePool) -> Result<()> {
-    // 检查是否已有系统脚本
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM automation_scripts WHERE is_system = 1"
-    )
-    .fetch_one(pool)
-    .await?;
-
-    if count > 0 {
-        return Ok(());
-    }
-
-    // 默认OKX Daily Claim脚本
-    let okx_script = r#"// OKX Daily Claim Script
-async function run({ page, wallet, api }) {
-    api.log('info', '开始执行 OKX Daily Claim');
-    
-    // 1. 打开OKX官网
-    await page.goto('https://www.okx.com');
-    await api.waitForSelector('body');
-    await api.randomDelay(2000, 4000);
-    
-    api.log('info', '页面加载完成');
-    
-    // 2. 连接钱包
-    api.log('info', '连接 OKX Wallet...');
-    // await api.connectOKXWallet({ chainId: '0x1' });
-    
-    api.log('success', '脚本执行完成');
-    return { success: true };
-}"#;
-
-    sqlx::query(
-        r#"
-        INSERT INTO automation_scripts (name, description, content, is_system, required_apis, author, tags)
-        VALUES (?, ?, ?, 1, ?, 'System', ?)
-        "#
-    )
-    .bind("OKX Daily Claim")
-    .bind("OKX每日签到脚本")
-    .bind(okx_script)
-    .bind(r#"["connectOKXWallet", "waitForSelector", "randomDelay"]"#)
-    .bind(r#"["okx", "daily", "claim"]"#)
-    .execute(pool)
-    .await?;
-
-    // 默认Uniswap脚本
-    let uniswap_script = r#"// Uniswap V3 Swap Script
-async function run({ page, wallet, api }) {
-    api.log('info', '开始执行 Uniswap Swap');
-    
-    // 1. 连接钱包
-    // await api.connectMetaMask({ expectedChainId: '0x1' });
-    
-    // 2. 打开Uniswap
-    await page.goto('https://app.uniswap.org');
-    await api.waitForSelector('body');
-    await api.randomDelay(2000, 3000);
-    
-    api.log('info', 'Uniswap页面加载完成');
-    
-    api.log('success', '脚本执行完成');
-    return { success: true };
-}"#;
-
-    sqlx::query(
-        r#"
-        INSERT INTO automation_scripts (name, description, content, is_system, required_apis, author, tags)
-        VALUES (?, ?, ?, 1, ?, 'System', ?)
-        "#
-    )
-    .bind("Uniswap Swap")
-    .bind("Uniswap交换脚本")
-    .bind(uniswap_script)
-    .bind(r#"["connectMetaMask", "waitForSelector", "randomDelay"]"#)
-    .bind(r#"["uniswap", "swap", "dex"]"#)
-    .execute(pool)
-    .await?;
-
+/// 注意：此功能已禁用，不再自动创建系统脚本
+async fn insert_default_scripts(_pool: &SqlitePool) -> Result<()> {
+    // 系统脚本自动创建功能已禁用
+    // 用户可以通过界面手动创建需要的脚本
     Ok(())
 }

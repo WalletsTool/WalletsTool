@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import { open, save } from '@tauri-apps/plugin-dialog';
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 
 // ==================== 类型定义 ====================
 
@@ -289,6 +291,83 @@ export const scriptService = {
   async deleteScript(id: number): Promise<void> {
     await invoke('delete_automation_script', { id });
   },
+
+  /**
+   * 导入脚本
+   * 打开文件对话框选择 .js 或 .json 文件导入
+   */
+  async importScript(): Promise<{ name: string; content: string; description?: string } | null> {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        { name: '脚本文件', extensions: ['js', 'json'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    });
+
+    if (!selected || Array.isArray(selected)) {
+      return null;
+    }
+
+    const content = await readTextFile(selected);
+    const fileName = selected.split(/[/\\]/).pop() || 'Imported Script';
+    const name = fileName.replace(/\.[^/.]+$/, ''); // 移除扩展名
+
+    // 尝试解析为 JSON 格式（包含元数据）
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed.name && parsed.content) {
+        return {
+          name: parsed.name,
+          content: parsed.content,
+          description: parsed.description || ''
+        };
+      }
+    } catch {
+      // 不是 JSON 格式，当作纯 JS 脚本处理
+    }
+
+    return {
+      name,
+      content,
+      description: `从 ${fileName} 导入的脚本`
+    };
+  },
+
+  /**
+   * 导出脚本
+   * 将脚本保存为 .json 文件（包含元数据）
+   */
+  async exportScript(script: AutomationScript): Promise<void> {
+    const fileName = `${script.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '_')}.json`;
+    
+    const savePath = await save({
+      defaultPath: fileName,
+      filters: [
+        { name: 'JSON 文件', extensions: ['json'] },
+        { name: 'JavaScript 文件', extensions: ['js'] }
+      ]
+    });
+
+    if (!savePath) {
+      throw new Error('用户取消了保存');
+    }
+
+    // 导出为 JSON 格式，包含完整元数据
+    const exportData = {
+      name: script.name,
+      description: script.description || '',
+      content: script.content,
+      version: script.version,
+      required_apis: script.required_apis,
+      author: script.author,
+      tags: script.tags,
+      exported_at: new Date().toISOString()
+    };
+
+    await writeTextFile(savePath, JSON.stringify(exportData, null, 2));
+  }
 };
 
 /**

@@ -34,13 +34,25 @@ const editingScriptId = ref(null);
 const editNameInput = ref(null);
 const editNameValue = ref('');
 
+const getErrorMessage = (error) => {
+  if (!error) return '未知错误';
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message || '未知错误';
+  if (typeof error === 'object' && typeof error.message === 'string') return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
 // 加载脚本
 const loadScripts = async () => {
   loading.value = true;
   try {
     scripts.value = await scriptService.getScripts();
   } catch (error) {
-    Message.error('加载脚本失败: ' + error.message);
+    Message.error('加载脚本失败: ' + getErrorMessage(error));
   } finally {
     loading.value = false;
   }
@@ -51,10 +63,9 @@ const startEditName = async (script, event) => {
   editingScriptId.value = script.id;
   editNameValue.value = script.name;
   await nextTick();
-  if (editNameInput.value) {
-    editNameInput.value.focus();
-    editNameInput.value.select();
-  }
+  const inputEl = Array.isArray(editNameInput.value) ? editNameInput.value[0] : editNameInput.value;
+  inputEl?.focus?.();
+  inputEl?.select?.();
 };
 
 const saveEditName = async () => {
@@ -66,11 +77,11 @@ const saveEditName = async () => {
   const script = scripts.value.find(s => s.id === editingScriptId.value);
   if (script) {
     try {
-      await scriptService.updateScript(script.id, { name: trimmedName });
+      await scriptService.updateScript({ id: script.id, name: trimmedName });
       script.name = trimmedName;
       Message.success('名称已更新');
     } catch (error) {
-      Message.error('更新失败: ' + error.message);
+      Message.error('更新失败: ' + getErrorMessage(error));
     }
   }
   editingScriptId.value = null;
@@ -102,13 +113,14 @@ const handleSave = async () => {
   }
   
   try {
-    await scriptService.updateScript(activeScript.value.id, {
+    await scriptService.updateScript({
+      id: activeScript.value.id,
       content: scriptContent.value
     });
     activeScript.value.content = scriptContent.value;
     Message.success('脚本已保存');
   } catch (error) {
-    Message.error('保存失败: ' + error.message);
+    Message.error('保存失败: ' + getErrorMessage(error));
   }
 };
 
@@ -129,7 +141,7 @@ const handleRun = async () => {
     
     Message.success('脚本已添加到执行队列，请切换到"执行面板"查看');
   } catch (error) {
-    Message.error('启动执行失败: ' + error.message);
+    Message.error('启动执行失败: ' + getErrorMessage(error));
   }
 };
 
@@ -172,7 +184,7 @@ async function run({ page, wallet, api }) {
     isNewModalVisible.value = false;
     Message.success('创建成功');
   } catch (error) {
-    Message.error('创建失败: ' + error.message);
+    Message.error('创建失败: ' + getErrorMessage(error));
   }
 };
 
@@ -192,7 +204,7 @@ const handleDeleteScript = async (e, scriptId) => {
         }
         Message.success('删除成功');
       } catch (error) {
-        Message.error('删除失败: ' + error.message);
+        Message.error('删除失败: ' + getErrorMessage(error));
       }
     }
   });
@@ -214,7 +226,7 @@ const handleImportScript = async () => {
       Message.success('导入成功');
     }
   } catch (error) {
-    Message.error('导入失败: ' + error.message);
+    Message.error('导入失败: ' + getErrorMessage(error));
   }
 };
 
@@ -228,7 +240,7 @@ const handleExportScript = async () => {
     await scriptService.exportScript(activeScript.value);
     Message.success('导出成功');
   } catch (error) {
-    Message.error('导出失败: ' + error.message);
+    Message.error('导出失败: ' + getErrorMessage(error));
   }
 };
 

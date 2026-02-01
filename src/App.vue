@@ -2,15 +2,21 @@
 import { onMounted, ref } from 'vue'
 import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
+import { relaunch } from '@tauri-apps/plugin-process'
+import { check } from '@tauri-apps/plugin-updater'
 
 const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
 const STORAGE_KEYS = {
   lastCheckAt: 'walletstool:update:lastCheckAt',
-  ignoreVersion: 'walletstool:update:ignoreVersion'
+  ignoreVersion: 'walletstool:update:ignoreVersion',
+  lastAttemptVersion: 'walletstool:update:lastAttemptVersion',
+  lastAttemptAt: 'walletstool:update:lastAttemptAt'
 }
 
 const updateVisible = ref(false)
 const updateInfo = ref(null)
+
+const normalizeVersion = (value) => String(value || '').trim().replace(/^v/i, '')
 
 const shouldCheckUpdate = () => {
   const lastCheckAtRaw = localStorage.getItem(STORAGE_KEYS.lastCheckAt)
@@ -27,7 +33,7 @@ const getIgnoredVersion = () => localStorage.getItem(STORAGE_KEYS.ignoreVersion)
 
 const ignoreThisVersion = () => {
   if (!updateInfo.value?.latest_version) return
-  localStorage.setItem(STORAGE_KEYS.ignoreVersion, updateInfo.value.latest_version)
+  localStorage.setItem(STORAGE_KEYS.ignoreVersion, normalizeVersion(updateInfo.value.latest_version))
   updateVisible.value = false
 }
 
@@ -44,7 +50,7 @@ const openReleasePage = async () => {
   window.open(url, '_blank')
 }
 
-const checkForUpdate = async (force = false) => {
+const checkGithubReleaseUpdate = async (force = false) => {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
   if (!isTauri) return
 
@@ -61,8 +67,8 @@ const checkForUpdate = async (force = false) => {
 
     if (!result) return
 
-    const ignored = getIgnoredVersion()
-    if (ignored && result.latest_version === ignored) return
+    const ignored = normalizeVersion(getIgnoredVersion())
+    if (ignored && normalizeVersion(result.latest_version) === ignored) return
 
     updateInfo.value = result
     updateVisible.value = true
@@ -71,8 +77,40 @@ const checkForUpdate = async (force = false) => {
   }
 }
 
+const silentUpdateIfAvailable = async (force = false) => {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+  if (!isTauri) return
+
+  if (!force && !shouldCheckUpdate()) return
+  setLastCheckNow()
+
+  try {
+    const ignored = normalizeVersion(getIgnoredVersion())
+    const update = await check({ timeout: 8000 })
+    if (!update) return
+
+    const latestVersion = normalizeVersion(update.version)
+    if (ignored && latestVersion === ignored) return
+
+    const lastAttemptVersion = normalizeVersion(localStorage.getItem(STORAGE_KEYS.lastAttemptVersion))
+    const lastAttemptAtRaw = localStorage.getItem(STORAGE_KEYS.lastAttemptAt)
+    const lastAttemptAt = lastAttemptAtRaw ? Number(lastAttemptAtRaw) : 0
+    const shouldRetry = !Number.isFinite(lastAttemptAt) || Date.now() - lastAttemptAt > 60 * 60 * 1000
+    if (lastAttemptVersion === latestVersion && !shouldRetry) return
+
+    localStorage.setItem(STORAGE_KEYS.lastAttemptVersion, latestVersion)
+    localStorage.setItem(STORAGE_KEYS.lastAttemptAt, String(Date.now()))
+
+    await update.downloadAndInstall()
+    await relaunch()
+  } catch (e) {
+    console.error('静默更新失败，回退到手动下载提示:', e)
+    await checkGithubReleaseUpdate(force)
+  }
+}
+
 onMounted(() => {
-  checkForUpdate(false)
+  silentUpdateIfAvailable(false)
 })
 </script>
 

@@ -245,7 +245,7 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 | **Wallet Manager** | `src-tauri/src/wallets_tool/wallet_manager/` |
 | **Airdrop/Automation** | `src/features/airdrop/`, `src-tauri/src/wallets_tool/airdrop/` |
 | **Browser Automation** | `src-tauri/src/wallets_tool/playwright/` |
-| **Update Check** | `src/App.vue`, `src-tauri/src/wallets_tool/update.rs` |
+| **Update Check** | `src/App.vue`, `src-tauri/tauri.conf.json`, `src-tauri/capabilities/default.json` |
 | **Chain Config** | `src/components/ChainManagement.vue` |
 | **RPC Management** | `src/components/RpcManagement.vue` |
 | **Token Management** | `src/components/TokenManagement.vue` |
@@ -261,6 +261,7 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 - **Encrypted Secrets**: 私钥/助记词传输使用加密封装（`p1:` 或 `t1:`），不走明文
 - **Fury Mode**: 90+ concurrent threads for batch transfers
 - **Virtual Scrolling**: Use `VirtualScrollerTable` for large datasets
+- **Auto Updates**: 使用 Tauri updater 插件；Release workflow 需配置签名私钥 secrets，并通过 WALLETSTOOL_UPDATER_PUBKEY 注入公钥
 
 ## ANTI-PATTERNS
 

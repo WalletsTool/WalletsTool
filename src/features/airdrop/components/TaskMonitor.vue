@@ -728,3 +728,6 @@ onUnmounted(() => {
   gap: 15px;
 }
 </style>
+;
+  justify-content: center;
+  color: var(--color-text-4);

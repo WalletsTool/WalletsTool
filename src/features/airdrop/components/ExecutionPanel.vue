@@ -877,3 +877,8 @@ onUnmounted(() => {
   color: var(--color-text-4);
 }
 </style>
+;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-

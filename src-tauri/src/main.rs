@@ -153,10 +153,21 @@ async fn main() {
     let wallet_manager_service = wallets_tool::wallet_manager::service::WalletManagerService::new(db_manager.get_pool().clone());
     
     let chain_service = database::chain_service::ChainService::new(db_manager.get_pool());
+
+    let updater_pubkey = option_env!("WALLETSTOOL_UPDATER_PUBKEY").unwrap_or("").trim();
+    let updater_plugin = if updater_pubkey.is_empty() {
+        tauri_plugin_updater::Builder::new().build()
+    } else {
+        tauri_plugin_updater::Builder::new()
+            .pubkey(updater_pubkey)
+            .build()
+    };
     
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(updater_plugin)
         .manage(wallet_manager_service)
         .manage(chain_service)
         .setup(|app| {

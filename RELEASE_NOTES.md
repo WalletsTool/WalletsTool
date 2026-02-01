@@ -1,4 +1,4 @@
-### ✨ New Features | 新功能
+### Other | 其他
 
-- **updater:** 集成 Tauri 自动更新功能
+- build: 将 @tauri-apps/plugin-updater 依赖版本固定为 ^2.9.0
 

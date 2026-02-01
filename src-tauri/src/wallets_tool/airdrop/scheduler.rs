@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, Mutex};
-use tokio::time::{interval, Duration, Instant};
+use tokio::sync::RwLock;
+use tokio::time::{interval, Duration};
 use sqlx::SqlitePool;
-use chrono::{Utc, DateTime, TimeZone};
+use chrono::{Utc, DateTime};
 use cron::Schedule;
 
 use crate::wallets_tool::airdrop::models::*;
 use crate::wallets_tool::airdrop::executor::TaskExecutor;
 
 /// 任务调度器
+#[allow(dead_code)]
 pub struct TaskScheduler {
     pool: SqlitePool,
     running_tasks: Arc<RwLock<HashMap<i64, tokio::task::JoinHandle<()>>>>,
@@ -17,6 +18,7 @@ pub struct TaskScheduler {
     check_interval: Duration,
 }
 
+#[allow(dead_code)]
 impl TaskScheduler {
     /// 创建新的任务调度器
     pub fn new(pool: SqlitePool) -> Self {
@@ -82,7 +84,7 @@ impl TaskScheduler {
             // 执行任务
             let pool = pool.clone();
             let executor = executor.clone();
-            let running_tasks = running_tasks.clone();
+            let running_tasks_for_task = running_tasks.clone();
 
             let handle = tokio::spawn(async move {
                 println!("[Scheduler] 开始执行任务: {}", task.name);
@@ -117,7 +119,7 @@ impl TaskScheduler {
                 .await;
 
                 // 从运行列表中移除
-                let mut running = running_tasks.write().await;
+                let mut running = running_tasks_for_task.write().await;
                 running.remove(&task_id);
             });
 

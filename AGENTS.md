@@ -1,7 +1,7 @@
 # WalletsTool Development Guide
 
 **Generated:** 2026-01-31
-**Version:** 0.4.5
+**Version:** 0.4.6
 **Branch:** dev
 
 ## OVERVIEW
@@ -217,6 +217,7 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 │   │       │   ├── memory.rs
 │   │       │   ├── protection.rs
 │   │       │   └── session.rs
+│   │       ├── update.rs     # GitHub Release update check
 │   │       └── wallet_manager/  # Wallet CRUD + encryption
 │   │           ├── mod.rs
 │   │           ├── models.rs
@@ -244,6 +245,7 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 | **Wallet Manager** | `src-tauri/src/wallets_tool/wallet_manager/` |
 | **Airdrop/Automation** | `src/features/airdrop/`, `src-tauri/src/wallets_tool/airdrop/` |
 | **Browser Automation** | `src-tauri/src/wallets_tool/playwright/` |
+| **Update Check** | `src/App.vue`, `src-tauri/src/wallets_tool/update.rs` |
 | **Chain Config** | `src/components/ChainManagement.vue` |
 | **RPC Management** | `src/components/RpcManagement.vue` |
 | **Token Management** | `src/components/TokenManagement.vue` |

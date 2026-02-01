@@ -3,15 +3,18 @@ use anyhow::Result;
 use chrono::Utc;
 use rand::seq::SliceRandom;
 use serde_json;
+use std::sync::Arc;
 
 use crate::wallets_tool::airdrop::models::*;
 use crate::wallets_tool::security;
 
 /// 任务执行器
+#[allow(dead_code)]
 pub struct TaskExecutor {
     pool: SqlitePool,
 }
 
+#[allow(dead_code)]
 impl TaskExecutor {
     /// 创建新的任务执行器
     pub fn new(pool: SqlitePool) -> Self {
@@ -54,14 +57,14 @@ impl TaskExecutor {
 
         // 并发执行
         let concurrency = task.concurrency.max(1) as usize;
-        let semaphore = tokio::sync::Semaphore::new(concurrency);
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
 
         let mut handles = vec![];
 
         for (idx, wallet) in wallets.iter().enumerate() {
             let profile = self.assign_profile(&profile_strategy, &profiles, idx, task.specific_profile_id);
 
-            let permit = semaphore.acquire().await?;
+            let permit = semaphore.clone().acquire_owned().await?;
             let pool = self.pool.clone();
             let task = task.clone();
             let wallet = wallet.clone();
@@ -117,10 +120,10 @@ impl TaskExecutor {
         wallet_ids: Vec<i64>,
         profile_ids: Option<Vec<i64>>,
         profile_strategy: ProfileStrategy,
-        config: &ExecutionConfig,
+        _config: &ExecutionConfig,
     ) -> Result<Vec<i64>> {
         // 获取脚本
-        let script: AutomationScript = sqlx::query_as(
+        let _script: AutomationScript = sqlx::query_as(
             "SELECT * FROM automation_scripts WHERE id = ?"
         )
         .bind(script_id)
@@ -339,10 +342,10 @@ impl TaskExecutor {
     async fn execute_script(
         pool: &SqlitePool,
         execution_id: i64,
-        script_content: &str,
+        _script_content: &str,
         wallet: &AirdropWallet,
         profile: &BrowserProfile,
-        timeout_seconds: i32,
+        _timeout_seconds: i32,
     ) -> Result<Option<String>> {
         // 记录日志
         Self::add_execution_log(pool, execution_id, "info", &format!(
@@ -352,7 +355,8 @@ impl TaskExecutor {
 
         // 获取解密的私钥
         let encrypted_key = &wallet.encrypted_private_key;
-        let _private_key = security::memory::decrypt_string(encrypted_key)?;
+        let _private_key = security::memory::decrypt_string(encrypted_key)
+            .map_err(|e| anyhow::anyhow!(e))?;
 
         // TODO: 这里应该调用Playwright执行实际脚本
         // 目前使用模拟执行
@@ -370,7 +374,7 @@ impl TaskExecutor {
         tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
 
         Self::add_execution_log(pool, execution_id, "info", "导航到目标页面...").await?;
-        tokio::time::Duration::from_secs(1);
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
         Self::add_execution_log(pool, execution_id, "info", "执行脚本逻辑...").await?;
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;

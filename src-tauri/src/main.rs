@@ -316,6 +316,7 @@ async fn main() {
             wallets_tool::utils::save_file,
             wallets_tool::utils::get_temp_dir,
             wallets_tool::utils::open_file_directory,
+            wallets_tool::update::check_github_release_update,
             // fs extra functions
             plugins::fs_extra::exists,
             plugins::fs_extra::open_file,

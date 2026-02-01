@@ -277,6 +277,7 @@ pub enum ProfileStrategy {
 }
 
 impl ProfileStrategy {
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             ProfileStrategy::Random => "random",
@@ -307,6 +308,7 @@ pub enum TaskStatus {
 }
 
 impl TaskStatus {
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             TaskStatus::Draft => "draft",
@@ -340,6 +342,7 @@ pub enum ExecutionStatus {
 }
 
 impl ExecutionStatus {
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             ExecutionStatus::Pending => "pending",
@@ -373,6 +376,7 @@ pub enum ScheduleType {
 }
 
 impl ScheduleType {
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             ScheduleType::Once => "once",
@@ -428,6 +432,7 @@ impl Default for ExecutionConfig {
 
 /// 执行任务请求
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ExecuteTaskRequest {
     pub task_id: i64,
     pub wallet_ids: Option<Vec<i64>>,
@@ -436,6 +441,7 @@ pub struct ExecuteTaskRequest {
 
 /// 批量执行任务请求
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct BatchExecuteRequest {
     pub script_id: i64,
     pub wallet_ids: Vec<i64>,

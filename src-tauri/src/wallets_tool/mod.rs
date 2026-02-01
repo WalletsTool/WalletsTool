@@ -1,4 +1,5 @@
 pub mod utils;
+pub mod update;
 pub mod security;
 pub mod wallet_manager;
 pub mod airdrop;

@@ -117,65 +117,69 @@ pub async fn update_airdrop_wallet(
         }
     }
 
-    // 构建更新SQL
-    let mut updates = vec![];
-    let mut params: Vec<Box<dyn sqlx::Encode<'_, sqlx::Sqlite> + Send + Sync>> = vec![];
+    let UpdateAirdropWalletRequest {
+        id,
+        name,
+        address,
+        private_key,
+        label,
+        group_name,
+        proxy,
+        chain_type,
+    } = request;
 
-    if let Some(name) = request.name {
-        updates.push("name = ?");
-        params.push(Box::new(name.trim().to_string()));
+    let encrypted_key = if let Some(pk) = private_key.as_deref() {
+        Some(
+            security::memory::encrypt_string(pk)
+                .map_err(|e| format!("加密私钥失败: {}", e))?,
+        )
+    } else {
+        None
+    };
+
+    let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new("UPDATE airdrop_wallets SET ");
+    let mut separated = qb.separated(", ");
+    let mut has_updates = false;
+
+    if let Some(v) = name.as_deref() {
+        separated.push("name = ").push_bind(v.trim());
+        has_updates = true;
+    }
+    if let Some(v) = address.as_deref() {
+        separated.push("address = ").push_bind(v.trim());
+        has_updates = true;
+    }
+    if let Some(v) = encrypted_key.as_deref() {
+        separated.push("encrypted_private_key = ").push_bind(v);
+        has_updates = true;
+    }
+    if let Some(v) = label.as_deref() {
+        separated.push("label = ").push_bind(v.trim());
+        has_updates = true;
+    }
+    if let Some(v) = group_name.as_deref() {
+        separated.push("group_name = ").push_bind(v.trim());
+        has_updates = true;
+    }
+    if let Some(v) = proxy.as_deref() {
+        separated.push("proxy = ").push_bind(v.trim());
+        has_updates = true;
+    }
+    if let Some(v) = chain_type.as_deref() {
+        separated.push("chain_type = ").push_bind(v.trim());
+        has_updates = true;
     }
 
-    if let Some(address) = request.address {
-        updates.push("address = ?");
-        params.push(Box::new(address.trim().to_string()));
-    }
-
-    if let Some(private_key) = request.private_key {
-        let encrypted_key = security::memory::encrypt_string(&private_key)
-            .map_err(|e| format!("加密私钥失败: {}", e))?;
-        updates.push("encrypted_private_key = ?");
-        params.push(Box::new(encrypted_key));
-    }
-
-    if let Some(label) = request.label {
-        updates.push("label = ?");
-        params.push(Box::new(label.trim().to_string()));
-    }
-
-    if let Some(group_name) = request.group_name {
-        updates.push("group_name = ?");
-        params.push(Box::new(group_name.trim().to_string()));
-    }
-
-    if let Some(proxy) = request.proxy {
-        updates.push("proxy = ?");
-        params.push(Box::new(proxy.trim().to_string()));
-    }
-
-    if let Some(chain_type) = request.chain_type {
-        updates.push("chain_type = ?");
-        params.push(Box::new(chain_type.trim().to_string()));
-    }
-
-    if updates.is_empty() {
+    if !has_updates {
         return Ok(existing);
     }
 
-    updates.push("updated_at = CURRENT_TIMESTAMP");
+    separated.push("updated_at = CURRENT_TIMESTAMP");
 
-    let sql = format!(
-        "UPDATE airdrop_wallets SET {} WHERE id = ? RETURNING *",
-        updates.join(", ")
-    );
+    qb.push(" WHERE id = ").push_bind(id).push(" RETURNING *");
 
-    let mut query = sqlx::query_as::<_, AirdropWallet>(&sql);
-    for param in params {
-        query = query.bind(param);
-    }
-    query = query.bind(request.id);
-
-    let wallet = query
+    let wallet = qb
+        .build_query_as::<AirdropWallet>()
         .fetch_one(&*pool)
         .await
         .map_err(|e| format!("更新钱包失败: {}", e))?;
@@ -451,7 +455,6 @@ pub async fn batch_generate_profiles(
     request: BatchGenerateProfilesRequest,
 ) -> Result<Vec<BrowserProfile>, String> {
     use rand::seq::SliceRandom;
-    use rand::Rng;
 
     let user_agents = vec![
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -480,13 +483,16 @@ pub async fn batch_generate_profiles(
     ];
 
     let mut profiles = vec![];
-    let mut rng = rand::thread_rng();
 
     for i in 0..request.count {
-        let ua = user_agents.choose(&mut rng).unwrap();
-        let (width, height) = viewports.choose(&mut rng).unwrap();
-        let locale = locales.choose(&mut rng).unwrap();
-        let timezone = timezones.choose(&mut rng).unwrap();
+        let (ua, width, height, locale, timezone) = {
+            let mut rng = rand::thread_rng();
+            let ua = user_agents.choose(&mut rng).unwrap().to_string();
+            let (width, height) = *viewports.choose(&mut rng).unwrap();
+            let locale = locales.choose(&mut rng).unwrap().to_string();
+            let timezone = timezones.choose(&mut rng).unwrap().to_string();
+            (ua, width, height, locale, timezone)
+        };
 
         let proxy_type = request.proxy_type.clone().unwrap_or_else(|| "direct".to_string());
         let proxy_host = request.proxy_host_prefix.as_ref().map(|prefix| {
@@ -509,11 +515,11 @@ pub async fn batch_generate_profiles(
             "#
         )
         .bind(format!("Auto-Profile-{}", i + 1))
-        .bind(*ua)
-        .bind(*width)
-        .bind(*height)
-        .bind(*locale)
-        .bind(*timezone)
+        .bind(&ua)
+        .bind(width)
+        .bind(height)
+        .bind(&locale)
+        .bind(&timezone)
         .bind(&proxy_type)
         .bind(&proxy_host)
         .bind(proxy_port)
@@ -798,25 +804,24 @@ pub async fn get_task_executions(
     task_id: Option<i64>,
     limit: Option<i64>,
 ) -> Result<Vec<TaskExecution>, String> {
-    let mut sql = "SELECT * FROM task_executions".to_string();
-    let mut params: Vec<Box<dyn sqlx::Encode<'_, sqlx::Sqlite> + Send + Sync>> = vec![];
-
-    if let Some(tid) = task_id {
-        sql.push_str(" WHERE task_id = ?");
-        params.push(Box::new(tid));
-    }
-
-    sql.push_str(" ORDER BY created_at DESC");
-
-    if let Some(lim) = limit {
-        sql.push_str(" LIMIT ?");
-        params.push(Box::new(lim));
-    }
-
-    let mut query = sqlx::query_as::<_, TaskExecution>(&sql);
-    for param in params {
-        query = query.bind(param);
-    }
+    let query = match (task_id, limit) {
+        (Some(tid), Some(lim)) => sqlx::query_as::<_, TaskExecution>(
+            "SELECT * FROM task_executions WHERE task_id = ? ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(tid)
+        .bind(lim),
+        (Some(tid), None) => sqlx::query_as::<_, TaskExecution>(
+            "SELECT * FROM task_executions WHERE task_id = ? ORDER BY created_at DESC",
+        )
+        .bind(tid),
+        (None, Some(lim)) => sqlx::query_as::<_, TaskExecution>(
+            "SELECT * FROM task_executions ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(lim),
+        (None, None) => sqlx::query_as::<_, TaskExecution>(
+            "SELECT * FROM task_executions ORDER BY created_at DESC",
+        ),
+    };
 
     let executions = query
         .fetch_all(&*pool)

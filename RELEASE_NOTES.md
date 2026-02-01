@@ -1,4 +1,4 @@
-### 🔧 Chore | 杂项
+### Other | 其他
 
-- 更新 Tauri 更新器公钥并改进密钥处理脚本
+- test: 删除过时的Solana RPC测试文件
 

@@ -1,4 +1,4 @@
-### 🐛 Bug Fixes | 修复
+### ♻️ Refactoring | 重构
 
-- **airdrop:** 修复数据库迁移和设备缩放因子类型问题
+- **database:** 重构数据库服务以简化生命周期管理
 

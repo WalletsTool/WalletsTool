@@ -5,12 +5,15 @@ import {Notification, Modal, Message} from "@arco-design/web-vue";
 import { onMounted, onBeforeUnmount, ref, h, computed } from "vue";
 import party from "party-js";
 import { confettiStore, useThemeStore } from '@/stores'
+import { getVersion } from '@tauri-apps/api/app'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { WINDOW_CONFIG } from '@/utils/windowNames'
 import {message} from "@tauri-apps/plugin-dialog";
+import { relaunch } from '@tauri-apps/plugin-process'
+import packageJson from '@/../package.json'
 
 const router = useRouter()
 const ecoStore = useEcosystemStore()
@@ -39,12 +42,27 @@ let debugMode = ref(false)
 let databaseStatus = ref(null)
 let databaseLoading = ref(false)
 
+// 程序版本信息
+const runtimeVersion = ref('')
+const appVersion = computed(() => runtimeVersion.value || packageJson.version || '0.0.0')
+
+// 更新检查相关状态
+let updateChecking = ref(false)
+let updateInfo = ref(null)
+
 // 主题切换相关状态 - 使用computed从themeStore获取
 const isDarkTheme = computed(() => themeStore.currentTheme === 'dark')
 
 onMounted(async () => {
   // 初始化主题状态
   themeStore.initTheme()
+
+  try {
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) runtimeVersion.value = await getVersion()
+  } catch (error) {
+    console.error('Failed to get app version:', error)
+  }
 
   const newFlag = mergedFuncList.filter(item => item.isNew).length > 0
   if (newFlag && store.status) {
@@ -241,11 +259,6 @@ function goPage(pageName) {
 // 切换调试模式
 function toggleDebugMode() {
   debugMode.value = !debugMode.value
-  if (debugMode.value) {
-    Notification.success({ content: '调试模式开启', position: 'topLeft' })
-  } else {
-    Notification.error({ content: '调试模式关闭', position: 'topLeft' })
-  }
 }
 
 // 切换主题
@@ -424,7 +437,7 @@ async function exportDatabaseToInitSql() {
     // 确保result是字符串格式
     const resultText = typeof result === 'string' ? result : JSON.stringify(result)
 
-    Notification.success({ 
+    Notification.success({
       title: '数据库导出完成',
       content: resultText
     , position: 'topLeft' })
@@ -434,12 +447,120 @@ async function exportDatabaseToInitSql() {
   } catch (error) {
     console.error('导出数据库失败:', error)
     const errorText = typeof error === 'string' ? error : error.message || '未知错误'
-    Notification.error({ 
+    Notification.error({
       title: '导出数据库失败',
       content: errorText
     , position: 'topLeft' })
   } finally {
     databaseLoading.value = false
+  }
+}
+
+// 检查更新
+async function checkForUpdate() {
+  try {
+    updateChecking.value = true
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+
+    if (!isTauri) {
+      Notification.warning({
+        title: '检查更新',
+        content: '浏览器环境下无法检查更新',
+        position: 'topLeft'
+      })
+      return
+    }
+
+    const result = await invoke('check_update', {
+      currentVersion: appVersion.value
+    })
+
+    updateInfo.value = result
+
+    if (result.has_update) {
+      // 显示更新对话框
+      Modal.confirm({
+        title: '发现新版本',
+        content: () => h('div', {
+          style: 'max-height: 300px; overflow-y: auto;'
+        }, [
+          h('div', { style: 'margin-bottom: 12px;' }, [
+            h('span', { style: 'color: #666;' }, '当前版本: '),
+            h('span', { style: 'font-weight: 600; color: #586cc7;' }, result.current_version)
+          ]),
+          h('div', { style: 'margin-bottom: 12px;' }, [
+            h('span', { style: 'color: #666;' }, '最新版本: '),
+            h('span', { style: 'font-weight: 600; color: #52c41a;' }, result.latest_version)
+          ]),
+          result.published_at ? h('div', { style: 'margin-bottom: 12px; font-size: 12px; color: #999;' },
+            `发布时间: ${result.published_at}`) : null,
+          h('div', { style: 'margin-top: 16px;' }, [
+            h('div', { style: 'font-weight: 600; margin-bottom: 8px;' }, '更新内容:'),
+            h('div', {
+              style: 'background: rgba(88, 108, 199, 0.05); padding: 12px; border-radius: 8px; font-size: 13px; line-height: 1.6; white-space: pre-wrap;'
+            }, result.release_notes || '暂无更新说明')
+          ])
+        ]),
+        okText: '下载并安装',
+        cancelText: '稍后提醒',
+        width: 450,
+        onOk: async () => {
+          await downloadAndInstallUpdate()
+        }
+      })
+    } else {
+      Notification.success({
+        title: '检查更新完成',
+        content: `当前版本 v${result.current_version} 已是最新版本`,
+        position: 'topLeft'
+      })
+    }
+
+  } catch (error) {
+    console.error('检查更新失败:', error)
+    const errorText = typeof error === 'string' ? error : error.message || '未知错误'
+    Notification.error({
+      title: '检查更新失败',
+      content: errorText,
+      position: 'topLeft'
+    })
+  } finally {
+    updateChecking.value = false
+  }
+}
+
+// 下载并安装更新
+async function downloadAndInstallUpdate() {
+  try {
+    updateChecking.value = true
+
+    Notification.info({
+      title: '正在下载更新',
+      content: '请稍候，下载完成后将自动安装并重启',
+      position: 'topLeft',
+      duration: 0
+    })
+
+    const result = await invoke('download_and_install_update')
+
+    Notification.success({
+      title: '更新完成',
+      content: result,
+      position: 'topLeft'
+    })
+
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+    if (isTauri) await relaunch()
+  } catch (error) {
+    console.error('下载更新失败:', error)
+    const errorText = typeof error === 'string' ? error : error.message || '未知错误'
+    Notification.error({
+      title: '下载更新失败',
+      content: errorText,
+      position: 'topLeft'
+    })
+  } finally {
+    updateChecking.value = false
   }
 }
 
@@ -834,30 +955,69 @@ async function handleMainWindowCloseRequest() {
         <span class="debug-icon">🔧</span>
       </div>
 
-      <!-- 数据库管理面板 -->
+      <!-- 调试面板 -->
       <div v-if="debugMode" class="database-panel">
-        <div class="panel-header">
-          <span class="panel-title">数据库管理</span>
-          <span v-if="databaseStatus" class="status-indicator"
-            :class="{ 'status-ok': databaseStatus.includes('valid') }">
-            {{ databaseStatus.includes('valid') ? '✓' : '⚠' }}
-          </span>
+        <!-- 版本信息模块 -->
+        <div class="version-section">
+          <div class="panel-header">
+            <span class="panel-title">版本信息</span>
+            <span class="version-badge">v{{ appVersion }}</span>
+          </div>
+          <div class="version-info">
+            <div class="version-item">
+              <span class="version-label">当前版本</span>
+              <span class="version-value">{{ appVersion }}</span>
+            </div>
+          </div>
+          <div class="version-actions">
+            <a-button
+              size="small"
+              type="primary"
+              @click="checkForUpdate"
+              :loading="updateChecking"
+              class="update-btn"
+            >
+              <template #icon>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                  <path d="M16 16h5v5"/>
+                </svg>
+              </template>
+              检查更新
+            </a-button>
+          </div>
         </div>
-        <div class="panel-actions">
-          <a-button size="small" type="outline" @click="checkDatabaseStatus" :loading="databaseLoading"
-            class="action-btn">
-            检查状态
-          </a-button>
-          <a-button size="small" type="outline" @click="reloadDatabase" :loading="databaseLoading" class="action-btn">
-            重载数据库
-          </a-button>
-          <a-button size="small" type="outline" @click="refreshPageData" class="action-btn">
-            刷新页面
-          </a-button>
-          <a-button size="small" type="outline" @click="exportDatabaseToInitSql" :loading="databaseLoading"
-            class="action-btn">
-            导出数据库
-          </a-button>
+
+        <!-- 分隔线 -->
+        <div class="panel-divider"></div>
+
+        <!-- 数据库管理模块 -->
+        <div class="database-section">
+          <div class="panel-header">
+            <span class="panel-title">数据库管理</span>
+            <span v-if="databaseStatus" class="status-indicator"
+              :class="{ 'status-ok': databaseStatus.includes('valid') }">
+              {{ databaseStatus.includes('valid') ? '✓' : '⚠' }}
+            </span>
+          </div>
+          <div class="panel-actions">
+            <a-button size="small" type="outline" @click="checkDatabaseStatus" :loading="databaseLoading"
+              class="action-btn">
+              检查状态
+            </a-button>
+            <a-button size="small" type="outline" @click="reloadDatabase" :loading="databaseLoading" class="action-btn">
+              重载数据库
+            </a-button>
+            <a-button size="small" type="outline" @click="refreshPageData" class="action-btn">
+              刷新页面
+            </a-button>
+            <a-button size="small" type="outline" @click="exportDatabaseToInitSql" :loading="databaseLoading"
+              class="action-btn">
+              导出数据库
+            </a-button>
+          </div>
         </div>
       </div>
     </div>
@@ -1472,6 +1632,112 @@ async function handleMainWindowCloseRequest() {
 .action-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* 版本信息模块样式 */
+.version-section {
+  margin-bottom: 8px;
+}
+
+.version-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #586cc7, #764ba2);
+  padding: 2px 10px;
+  border-radius: 12px;
+}
+
+.version-info {
+  padding: 8px 0;
+}
+
+.version-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(88, 108, 199, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(88, 108, 199, 0.15);
+}
+
+.version-label {
+  font-size: 13px;
+  color: #666;
+}
+
+.version-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #586cc7;
+}
+
+.panel-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.1), transparent);
+  margin: 12px 0;
+}
+
+.database-section {
+  margin-top: 8px;
+}
+
+.version-actions {
+  margin-top: 12px;
+}
+
+.update-btn {
+  width: 100%;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #586cc7, #764ba2) !important;
+  border: none !important;
+}
+
+.update-btn:hover {
+  background: linear-gradient(135deg, #4a5eb0, #6a4199) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(88, 108, 199, 0.3);
+}
+
+.update-btn svg {
+  flex-shrink: 0;
+}
+
+/* 明亮主题下的版本信息样式 */
+.light-theme .version-badge {
+  background: linear-gradient(135deg, #586cc7, #764ba2);
+}
+
+.light-theme .version-item {
+  background: rgba(88, 108, 199, 0.05);
+  border-color: rgba(88, 108, 199, 0.1);
+}
+
+.light-theme .version-label {
+  color: #666;
+}
+
+.light-theme .version-value {
+  color: #586cc7;
+}
+
+.light-theme .panel-divider {
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.08), transparent);
+}
+
+.light-theme .update-btn {
+  background: linear-gradient(135deg, #586cc7, #764ba2) !important;
+}
+
+.light-theme .update-btn:hover {
+  background: linear-gradient(135deg, #4a5eb0, #6a4199) !important;
 }
 
 /* 明亮主题样式 */

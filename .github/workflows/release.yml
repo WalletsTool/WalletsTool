@@ -40,12 +40,12 @@ jobs:
       - name: Sync node version and setup cache
         uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*'
+          node-version: '20'
           cache: 'yarn'
           cache-dependency-path: 'yarn.lock'
 
       - name: Install frontend dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --prefer-offline
 
       - name: Verify data files exist
         run: |
@@ -86,32 +86,39 @@ jobs:
           path: |
             vcpkg
             ~/.vcpkg
-          key: vcpkg-openssl-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: vcpkg-openssl-${{ runner.os }}-x64-windows-static-md-v1
           restore-keys: |
             vcpkg-openssl-${{ runner.os }}-
 
       - name: Setup vcpkg (Windows)
         if: runner.os == 'Windows' && steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
-          git clone https://github.com/Microsoft/vcpkg.git
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git
           cd vcpkg
           .\bootstrap-vcpkg.bat
-          .\vcpkg integrate install
         shell: pwsh
 
       - name: Install OpenSSL (Windows)
         if: runner.os == 'Windows'
         run: |
+          $triplet = 'x64-windows-static-md'
+          $opensslLib = Join-Path $env:GITHUB_WORKSPACE "vcpkg\installed\$triplet\lib\libssl.lib"
+          if (Test-Path $opensslLib) {
+            Write-Host "OpenSSL already present at $opensslLib"
+            exit 0
+          }
+
           cd vcpkg
-          .\vcpkg install openssl:x64-windows-static-md --triplet x64-windows-static-md
+          .\vcpkg install "openssl:$triplet" --triplet $triplet
         shell: pwsh
 
       - name: Set VCPKG_ROOT (Windows)
         if: runner.os == 'Windows'
         run: |
+          $triplet = 'x64-windows-static-md'
           echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "OPENSSL_LIB_DIR=${{ github.workspace }}/vcpkg/installed/x64-windows-static-md/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "OPENSSL_INCLUDE_DIR=${{ github.workspace }}/vcpkg/installed/x64-windows-static-md/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "OPENSSL_LIB_DIR=${{ github.workspace }}/vcpkg/installed/$triplet/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "OPENSSL_INCLUDE_DIR=${{ github.workspace }}/vcpkg/installed/$triplet/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         shell: pwsh
 
       - name: Prepare updater signing key

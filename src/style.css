@@ -174,8 +174,8 @@ body.fonts-loaded {
 .arco-notification-list,
 [class*="arco-notification"],
 div[class*="notification"] {
-  top: 50px !important;
-  left: 10px !important;
+  top: 25px !important;
+  left: 20px !important;
   right: auto !important;
   bottom: auto !important;
 }
@@ -221,7 +221,7 @@ div[class*="notification"] {
 
 /* 通知弹出动画容器 */
 .arco-notification-fade {
-  top: 50px !important;
+  top: 10px !important;
   left: 10px !important;
   right: auto !important;
   bottom: auto !important;
@@ -232,12 +232,23 @@ div[class*="notification"] {
 /* 强制覆盖所有可能的通知位置 */
 body > div:last-child > div[class*="notification"],
 body > div[class*="notification"] {
-  top: 50px !important;
+  top: 10px !important;
   left: 10px !important;
   right: auto !important;
   bottom: auto !important;
   animation: none !important;
   transition: none !important;
+}
+
+/* 限制 Notification 宽度 */
+.arco-notification {
+  max-width: 280px !important;
+  width: auto !important;
+  min-width: 200px !important;
+}
+
+.arco-notification-list .arco-notification {
+  max-width: 280px !important;
 }
 
 /* 虚拟滚动容器滚动条样式 */

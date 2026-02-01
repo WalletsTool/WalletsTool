@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use tauri::command;
+use tauri::{command, AppHandle, Runtime};
+use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Debug, Deserialize)]
 struct GitHubRelease {
@@ -21,6 +22,24 @@ pub struct GithubReleaseUpdateInfo {
     pub body: Option<String>,
     pub published_at: Option<String>,
     pub prerelease: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateCheckResult {
+    pub has_update: bool,
+    pub current_version: String,
+    pub latest_version: String,
+    pub release_notes: Option<String>,
+    pub download_url: Option<String>,
+    pub published_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateDownloadProgress {
+    pub status: String,
+    pub progress: Option<u64>,
+    pub total: Option<u64>,
+    pub message: String,
 }
 
 fn parse_semver_triplet(input: &str) -> Result<(u32, u32, u32), String> {
@@ -108,4 +127,107 @@ pub async fn check_github_release_update(
         published_at: release.published_at,
         prerelease: release.prerelease,
     }))
+}
+
+/// 使用 Tauri Updater 检查更新
+#[command]
+pub async fn check_update<R: Runtime>(
+    app: AppHandle<R>,
+    current_version: String,
+) -> Result<UpdateCheckResult, String> {
+    let updater = app
+        .updater()
+        .map_err(|e| format!("获取更新器失败: {e}"))?;
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let latest_version = update.version.clone();
+            let release_notes = update.body.clone();
+            let download_url = update.download_url.to_string();
+            
+            Ok(UpdateCheckResult {
+                has_update: true,
+                current_version,
+                latest_version,
+                release_notes,
+                download_url: Some(download_url),
+                published_at: update.date.map(|d| d.to_string()),
+            })
+        }
+        Ok(None) => Ok(UpdateCheckResult {
+            has_update: false,
+            latest_version: current_version.clone(),
+            current_version,
+            release_notes: None,
+            download_url: None,
+            published_at: None,
+        }),
+        Err(e) => Err(format!("检查更新失败: {e}")),
+    }
+}
+
+/// 下载并安装更新
+#[command]
+pub async fn download_and_install_update<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<String, String> {
+    let updater = app
+        .updater()
+        .map_err(|e| format!("获取更新器失败: {e}"))?;
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            // 下载更新
+            let bytes = update
+                .download(|_chunk_length, _content_length| {
+                    // 可以在这里发送进度事件到前端
+                }, || {
+                    // 下载完成回调
+                })
+                .await
+                .map_err(|e| format!("下载更新失败: {e}"))?;
+
+            // 安装更新
+            update
+                .install(bytes)
+                .map_err(|e| format!("安装更新失败: {e}"))?;
+
+            Ok("更新下载完成，即将重启应用".to_string())
+        }
+        Ok(None) => Err("没有可用的更新".to_string()),
+        Err(e) => Err(format!("检查更新失败: {e}")),
+    }
+}
+
+/// 仅下载更新，不安装
+#[command]
+pub async fn download_update_only<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<String, String> {
+    let updater = app
+        .updater()
+        .map_err(|e| format!("获取更新器失败: {e}"))?;
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            // 下载更新
+            let _bytes = update
+                .download(|chunk_length, content_length| {
+                    let progress = if let Some(total) = content_length {
+                        format!("下载进度: {} / {} bytes", chunk_length, total)
+                    } else {
+                        format!("已下载: {} bytes", chunk_length)
+                    };
+                    println!("{}", progress);
+                }, || {
+                    println!("下载完成");
+                })
+                .await
+                .map_err(|e| format!("下载更新失败: {e}"))?;
+
+            Ok(format!("更新 v{} 下载完成", update.version))
+        }
+        Ok(None) => Err("没有可用的更新".to_string()),
+        Err(e) => Err(format!("检查更新失败: {e}")),
+    }
 }

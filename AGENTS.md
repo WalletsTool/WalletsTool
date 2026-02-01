@@ -37,6 +37,8 @@ yarn version:update       # Update version in package.json
   - `TAURI_SIGNING_PRIVATE_KEY`: updater signing private key used by the bundler (`createUpdaterArtifacts=true`). Value can be the minisign private key content (multi-line) or a file path.
   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: password for the private key (keep empty if the key has no password; avoid leading/trailing whitespace).
   - `TAURI_UPDATER_PUBKEY`: minisign public key (must match the private key). Release workflow passes it to `WALLETSTOOL_UPDATER_PUBKEY` for compile-time injection.
+- **Updater artifacts**: ensure the latest GitHub Release contains `latest.json` (and signatures) as downloadable assets; the app’s updater endpoint points to `releases/latest/download/latest.json`.
+- **Client behavior**: the desktop app checks updates on startup; if a newer version exists, it shows a modal with “立即更新/前往下载”，and falls back to GitHub Release check when the updater endpoint fails.
 - **Common failure**: `failed to decode secret key: incorrect updater private key password` usually means the password doesn’t match the private key, or the password secret contains extra whitespace/newline.
 
 ## CODE STYLE GUIDELINES

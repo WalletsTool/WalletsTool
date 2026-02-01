@@ -15,6 +15,8 @@ const STORAGE_KEYS = {
 
 const updateVisible = ref(false)
 const updateInfo = ref(null)
+const pendingTauriUpdate = ref(null)
+const updateLoading = ref(false)
 
 const normalizeVersion = (value) => String(value || '').trim().replace(/^v/i, '')
 
@@ -31,10 +33,27 @@ const setLastCheckNow = () => {
 
 const getIgnoredVersion = () => localStorage.getItem(STORAGE_KEYS.ignoreVersion) || ''
 
+const remindLater = () => {
+  setLastCheckNow()
+  updateVisible.value = false
+}
+
 const ignoreThisVersion = () => {
   if (!updateInfo.value?.latest_version) return
   localStorage.setItem(STORAGE_KEYS.ignoreVersion, normalizeVersion(updateInfo.value.latest_version))
+  setLastCheckNow()
   updateVisible.value = false
+}
+
+const buildReleasePageUrl = (version) => {
+  const normalized = normalizeVersion(version)
+  if (!normalized) return ''
+  return `https://github.com/WalletsTool/WalletsTool/releases/tag/v${normalized}`
+}
+
+const getUpdatePublishedAt = (update) => {
+  const value = update?.date || update?.pub_date || update?.published_at
+  return value ? String(value) : ''
 }
 
 const openReleasePage = async () => {
@@ -50,12 +69,9 @@ const openReleasePage = async () => {
   window.open(url, '_blank')
 }
 
-const checkGithubReleaseUpdate = async (force = false) => {
+const fetchGithubReleaseUpdate = async () => {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
-  if (!isTauri) return
-
-  if (!force && !shouldCheckUpdate()) return
-  setLastCheckNow()
+  if (!isTauri) return null
 
   try {
     const currentVersion = await getVersion()
@@ -65,52 +81,90 @@ const checkGithubReleaseUpdate = async (force = false) => {
       currentVersion
     })
 
-    if (!result) return
-
-    const ignored = normalizeVersion(getIgnoredVersion())
-    if (ignored && normalizeVersion(result.latest_version) === ignored) return
-
-    updateInfo.value = result
-    updateVisible.value = true
+    if (!result) return null
+    return result
   } catch (e) {
     console.error('检查更新失败:', e)
+    return null
   }
 }
 
-const silentUpdateIfAvailable = async (force = false) => {
+const showUpdateModal = (info, tauriUpdate = null) => {
+  const ignored = normalizeVersion(getIgnoredVersion())
+  if (ignored && normalizeVersion(info?.latest_version) === ignored) return
+
+  pendingTauriUpdate.value = tauriUpdate
+  updateInfo.value = info
+  updateVisible.value = true
+}
+
+const startInAppUpdate = async () => {
+  if (updateLoading.value) return
+  const update = pendingTauriUpdate.value
+  if (!update) {
+    await openReleasePage()
+    return
+  }
+
+  try {
+    updateLoading.value = true
+    const latestVersion = normalizeVersion(update.version)
+    localStorage.setItem(STORAGE_KEYS.lastAttemptVersion, latestVersion)
+    localStorage.setItem(STORAGE_KEYS.lastAttemptAt, String(Date.now()))
+    await update.downloadAndInstall()
+    await relaunch()
+  } catch (e) {
+    console.error('应用内更新失败:', e)
+    pendingTauriUpdate.value = null
+    if (updateInfo.value?.latest_version) {
+      updateInfo.value = { ...updateInfo.value, html_url: buildReleasePageUrl(updateInfo.value.latest_version) }
+    }
+  } finally {
+    updateLoading.value = false
+  }
+}
+
+const checkUpdateOnLaunch = async (force = false) => {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
   if (!isTauri) return
 
   if (!force && !shouldCheckUpdate()) return
-  setLastCheckNow()
+  let didFinishAnyCheck = false
 
   try {
-    const ignored = normalizeVersion(getIgnoredVersion())
+    const currentVersion = await getVersion()
     const update = await check({ timeout: 8000 })
+    didFinishAnyCheck = true
+
     if (!update) return
-
-    const latestVersion = normalizeVersion(update.version)
-    if (ignored && latestVersion === ignored) return
-
-    const lastAttemptVersion = normalizeVersion(localStorage.getItem(STORAGE_KEYS.lastAttemptVersion))
-    const lastAttemptAtRaw = localStorage.getItem(STORAGE_KEYS.lastAttemptAt)
-    const lastAttemptAt = lastAttemptAtRaw ? Number(lastAttemptAtRaw) : 0
-    const shouldRetry = !Number.isFinite(lastAttemptAt) || Date.now() - lastAttemptAt > 60 * 60 * 1000
-    if (lastAttemptVersion === latestVersion && !shouldRetry) return
-
-    localStorage.setItem(STORAGE_KEYS.lastAttemptVersion, latestVersion)
-    localStorage.setItem(STORAGE_KEYS.lastAttemptAt, String(Date.now()))
-
-    await update.downloadAndInstall()
-    await relaunch()
+    showUpdateModal(
+      {
+        current_version: currentVersion,
+        latest_version: normalizeVersion(update.version),
+        html_url: buildReleasePageUrl(update.version),
+        name: update?.title ? String(update.title) : '',
+        body: update?.body ? String(update.body) : '',
+        published_at: getUpdatePublishedAt(update),
+        prerelease: false
+      },
+      update
+    )
+    return
   } catch (e) {
-    console.error('静默更新失败，回退到手动下载提示:', e)
-    await checkGithubReleaseUpdate(force)
+    console.error('Tauri Updater 检查失败，回退到 GitHub Release 检查:', e)
   }
+
+  const release = await fetchGithubReleaseUpdate()
+  didFinishAnyCheck = true
+  if (release) {
+    showUpdateModal(release, null)
+  }
+
+  if (didFinishAnyCheck) setLastCheckNow()
 }
 
 onMounted(() => {
-  silentUpdateIfAvailable(false)
+  checkUpdateOnLaunch(false)
 })
 </script>
 
@@ -133,9 +187,10 @@ onMounted(() => {
     </div>
 
     <template #footer>
-      <a-button @click="updateVisible = false">稍后提醒</a-button>
-      <a-button @click="ignoreThisVersion">忽略此版本</a-button>
-      <a-button type="primary" @click="openReleasePage">前往下载</a-button>
+      <a-button :disabled="updateLoading" @click="remindLater">稍后提醒</a-button>
+      <a-button :disabled="updateLoading" @click="ignoreThisVersion">忽略此版本</a-button>
+      <a-button :loading="updateLoading" type="primary" @click="startInAppUpdate">立即更新</a-button>
+      <a-button :disabled="updateLoading" @click="openReleasePage">前往下载</a-button>
     </template>
   </a-modal>
 </template>

@@ -149,8 +149,10 @@ async fn main() {
     // 创建数据库服务
     // Force rebuild: ecosystem field added
     let db_manager = database::get_database_manager();
+    let sqlite_pool = db_manager.get_pool().clone();
     println!("Initializing WalletManagerService...");
-    let wallet_manager_service = wallets_tool::wallet_manager::service::WalletManagerService::new(db_manager.get_pool().clone());
+    let wallet_manager_service =
+        wallets_tool::wallet_manager::service::WalletManagerService::new(sqlite_pool.clone());
     
     let chain_service = database::chain_service::ChainService::new(db_manager.get_pool());
 
@@ -168,6 +170,7 @@ async fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(updater_plugin)
+        .manage(sqlite_pool)
         .manage(wallet_manager_service)
         .manage(chain_service)
         .setup(|app| {
@@ -328,6 +331,9 @@ async fn main() {
             wallets_tool::utils::get_temp_dir,
             wallets_tool::utils::open_file_directory,
             wallets_tool::update::check_github_release_update,
+            wallets_tool::update::check_update,
+            wallets_tool::update::download_and_install_update,
+            wallets_tool::update::download_update_only,
             // fs extra functions
             plugins::fs_extra::exists,
             plugins::fs_extra::open_file,

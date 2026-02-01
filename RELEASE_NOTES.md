@@ -1,4 +1,4 @@
-### Other | 其他
+### ✨ New Features | 新功能
 
-- build: 将 @tauri-apps/plugin-updater 依赖版本固定为 ^2.9.0
+- 优化表格列宽和固定列功能，增强转账导入体验
 

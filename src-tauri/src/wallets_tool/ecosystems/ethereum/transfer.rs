@@ -847,7 +847,21 @@ format_wei_to_ether(total_needed),
         value: U256,
         is_eth: bool,
     ) -> Result<U256, String> {
-        // 首先获取区块gas limit作为上限检查
+        let tx = TransactionRequest {
+            from: Some(from),
+            to: Some(to.into()),
+            value: Some(value),
+            ..Default::default()
+        };
+        Self::get_gas_limit_for_tx(config, provider, tx, is_eth).await
+    }
+
+    pub async fn get_gas_limit_for_tx(
+        config: &TransferConfig,
+        provider: Arc<AlloyProvider>,
+        tx: TransactionRequest,
+        is_eth: bool,
+    ) -> Result<U256, String> {
         let block_gas_limit = match Self::get_block_gas_limit(provider.clone()).await {
             Ok(limit) => {
                 println!("[DEBUG] 获取到区块gas limit: {limit}");
@@ -855,24 +869,16 @@ format_wei_to_ether(total_needed),
             }
             Err(e) => {
                 println!("[WARN] 获取区块gas limit失败: {e}, 使用默认上限");
-                U256::from(30_000_000) // 使用一个合理的默认上限
+                U256::from(30_000_000)
             }
         };
-        
-        // 计算区块gas limit的80%作为安全上限
+
         let max_safe_gas_limit = block_gas_limit * U256::from(80) / U256::from(100);
         println!("[DEBUG] 区块gas limit安全上限(80%): {max_safe_gas_limit}");
-        
+
         match config.limit_type.as_str() {
             "1" => {
                 // 自动估算Gas Limit
-                let tx = TransactionRequest {
-                    from: Some(from),
-                    to: Some(to.into()),
-                    value: Some(value),
-                    ..Default::default()
-                };
-                
                 let estimated_gas = match provider.estimate_gas(tx).await {
                     Ok(gas) => {
                         let gas = U256::from(gas);

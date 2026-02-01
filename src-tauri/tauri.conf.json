@@ -116,7 +116,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "untrusted comment: minisign public key: FCB91F33BFB44ED6\nRWTWTrS/Mx+5/Px+yHWKNVIEdgfd5/oWPb9ca+G4Hje6mOXiTqpxqSSr",
+      "pubkey": "untrusted comment: minisign public key: E08C4EE39872AFBF\nRWS/r3KY406M4Hkzng9Dd5/TeTYYK9ulhsjLzDP+YFcxu8n0Wd5jYeeM",
       "endpoints": [
         "https://github.com/WalletsTool/WalletsTool/releases/latest/download/latest.json"
       ],

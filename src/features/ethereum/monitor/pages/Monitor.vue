@@ -27,7 +27,7 @@ const columns = [
   { title: '平台币余额', align: 'center', width: 120, dataIndex: 'plat_balance' },
   { title: '变化', align: 'center', width: 120, dataIndex: 'change_desc', ellipsis: true, tooltip: true },
   { title: '上次变化时间', align: 'center', width: 160, dataIndex: 'last_change_at' },
-  { title: '错误信息', align: 'center', dataIndex: 'error_msg', ellipsis: true, tooltip: true },
+  { title: '错误信息', align: 'center', dataIndex: 'error_msg', width: 120, ellipsis: true, tooltip: true },
   { title: '操作', align: 'center', width: 70, slotName: 'optional' },
 ]
 

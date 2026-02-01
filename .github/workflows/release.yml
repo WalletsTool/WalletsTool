@@ -114,6 +114,32 @@ jobs:
           echo "OPENSSL_INCLUDE_DIR=${{ github.workspace }}/vcpkg/installed/x64-windows-static-md/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         shell: pwsh
 
+      - name: Preflight updater signing secrets
+        run: |
+          node -e "
+          const signingKey = process.env.TAURI_SIGNING_PRIVATE_KEY || '';
+          const signingPwd = process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '';
+          const updaterPubkey = process.env.WALLETSTOOL_UPDATER_PUBKEY || '';
+
+          if (!signingKey) {
+            console.error('Missing TAURI_SIGNING_PRIVATE_KEY. Configure GitHub Actions secret: TAURI_SIGNING_PRIVATE_KEY.');
+            process.exit(1);
+          }
+
+          if (signingKey.includes('minisign public key')) {
+            console.error('TAURI_SIGNING_PRIVATE_KEY looks like a minisign public key. It must be the minisign private key.');
+            process.exit(1);
+          }
+
+          if (signingPwd && (signingPwd !== signingPwd.trim())) {
+            console.warn('TAURI_SIGNING_PRIVATE_KEY_PASSWORD has leading/trailing whitespace. Remove whitespace in GitHub Secrets to avoid \"Wrong password for that key\".');
+          }
+
+          if (!updaterPubkey) {
+            console.warn('WALLETSTOOL_UPDATER_PUBKEY is empty. Release build will fall back to tauri.conf.json updater pubkey.');
+          }
+          "
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:

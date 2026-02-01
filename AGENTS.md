@@ -30,6 +30,15 @@ yarn setup                # Install dependencies only
 yarn version:update       # Update version in package.json
 ```
 
+## RELEASE & UPDATER SIGNING
+
+- **Workflow**: `.github/workflows/release.yml` triggers on tag `v*` and runs `tauri-action` to build bundles and updater artifacts.
+- **Required GitHub Actions secrets**:
+  - `TAURI_SIGNING_PRIVATE_KEY`: updater signing private key used by the bundler (`createUpdaterArtifacts=true`). Value can be the minisign private key content (multi-line) or a file path.
+  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: password for the private key (keep empty if the key has no password; avoid leading/trailing whitespace).
+  - `TAURI_UPDATER_PUBKEY`: minisign public key (must match the private key). Release workflow passes it to `WALLETSTOOL_UPDATER_PUBKEY` for compile-time injection.
+- **Common failure**: `failed to decode secret key: incorrect updater private key password` usually means the password doesn’t match the private key, or the password secret contains extra whitespace/newline.
+
 ## CODE STYLE GUIDELINES
 
 ### General Principles

@@ -62,13 +62,13 @@ initWindowTitle()
 const columns = [
   { title: '序号', align: 'center', width: 53, slotName: 'index' },
   { title: '发送方私钥', align: 'center', dataIndex: 'private_key', width: 180, ellipsis: true, tooltip: true },
-  { title: '接收地址', align: 'center', dataIndex: 'to_addr', ellipsis: true, tooltip: true },
+  { title: '接收地址', align: 'center', dataIndex: 'to_addr', width: 180, ellipsis: true, tooltip: true },
   { title: '转账数量', align: 'center', dataIndex: 'amount', width: 85, ellipsis: true, tooltip: true },
   { title: '平台币余额', align: 'center', dataIndex: 'plat_balance', width: 95, ellipsis: true, tooltip: true },
   { title: '代币余额', align: 'center', dataIndex: 'coin_balance', width: 85, ellipsis: true, tooltip: true },
   { title: '状态', align: 'center', slotName: 'exec_status', width: 90, ellipsis: true, tooltip: true },
-  { title: '返回信息', align: 'center', dataIndex: 'error_msg', ellipsis: true, tooltip: true },
-  { title: '操作', align: 'center', slotName: 'optional', width: 55, ellipsis: true, tooltip: true },
+  { title: '返回信息', align: 'center', dataIndex: 'error_msg', width: 120, ellipsis: true, tooltip: true },
+  { title: '操作', align: 'center', slotName: 'optional', width: 60, ellipsis: true, tooltip: true },
 ];
 
 let tableLoading = ref(false);
@@ -1435,18 +1435,33 @@ function openSystemImport() {
   systemImportVisible.value = true
 }
 
-function handleSystemImportConfirm(wallets) {
-  if (!wallets || wallets.length === 0) {
-    Notification.warning({ content: '未选择任何钱包', position: 'topLeft' })
+function handleSystemImportConfirm(payload) {
+  const fromWallets = payload?.from_wallets || []
+  const toAddressesRaw = payload?.to_addresses || []
+
+  if (!fromWallets.length) {
+    Notification.warning({ content: '未选择任何出账钱包', position: 'topLeft' })
     return
   }
+
+  const toAddresses = toAddressesRaw
+    .map((a) => (a ? String(a).trim() : ''))
+    .filter(Boolean)
+    .filter((a) => ethers.isAddress(a))
+    .map((a) => ethers.getAddress(a))
 
   const newData = []
   let successCount = 0
   let failCount = 0
+  let missingToCount = 0
+  let ignoredToCount = 0
 
-  for (let i = 0; i < wallets.length; i++) {
-    const w = wallets[i]
+  if (toAddressesRaw.length > fromWallets.length && toAddressesRaw.length !== 1) {
+    ignoredToCount = toAddressesRaw.length - fromWallets.length
+  }
+
+  for (let i = 0; i < fromWallets.length; i++) {
+    const w = fromWallets[i]
     const privateKey = w?.private_key ? String(w.private_key).trim() : ''
     if (!privateKey) {
       failCount++
@@ -1455,11 +1470,13 @@ function handleSystemImportConfirm(wallets) {
     try {
       const wallet = new ethers.Wallet(privateKey)
       const fromAddress = wallet.address
+      const toAddress = toAddresses.length === 1 ? toAddresses[0] : (toAddresses[i] || '')
+      if (!toAddress && toAddresses.length !== 1) missingToCount++
       newData.push({
         key: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         private_key: privateKey,
         address: fromAddress,
-        to_addr: '',
+        to_addr: toAddress,
         amount: '',
         plat_balance: '',
         coin_balance: '',
@@ -1477,14 +1494,19 @@ function handleSystemImportConfirm(wallets) {
     clearValidationCache()
   }
 
+  const extraInfo = []
+  if (missingToCount > 0) extraInfo.push(`${missingToCount} 条未匹配到收款地址`)
+  if (ignoredToCount > 0) extraInfo.push(`${ignoredToCount} 条收款地址未使用`)
+  const suffix = extraInfo.length ? `（${extraInfo.join('，')}）` : ''
+
   if (failCount > 0) {
     Notification.warning({
       title: '导入完成！',
-      content: `成功导入${successCount}条，失败${failCount}条`,
+      content: `成功导入${successCount}条，失败${failCount}条${suffix}`,
       position: 'topLeft',
     })
   } else if (successCount > 0) {
-    Notification.success({ title: '导入成功！', content: `成功导入${successCount}条`, position: 'topLeft' })
+    Notification.success({ title: '导入成功！', content: `成功导入${successCount}条${suffix}`, position: 'topLeft' })
   }
 }
 </script>
@@ -1726,7 +1748,7 @@ function handleSystemImportConfirm(wallets) {
       </div>
     </div>
     <WalletImportModal ref="walletImportRef" ecosystem="evm" @confirm="handleWalletImportConfirm" @cancel="handleWalletImportCancel" />
-    <WalletSystemImportModal v-model:visible="systemImportVisible" ecosystem="evm" import-mode="full" :title="'从系统导入转账钱包'" @confirm="handleSystemImportConfirm" @cancel="systemImportVisible = false" />
+    <WalletSystemImportModal v-model:visible="systemImportVisible" ecosystem="evm" import-mode="transfer_pair" :title="'从系统导入（私钥 + 收款地址）'" @confirm="handleSystemImportConfirm" @cancel="systemImportVisible = false" />
     <a-modal v-model:visible="addCoinVisible" :width="700" title="添加代币" @cancel="handleAddCoinCancel" :on-before-ok="handleAddCoinBeforeOk" unmountOnClose>
       <a-input v-model="coinAddress" placeholder="请输入代币合约地址" allow-clear />
     </a-modal>

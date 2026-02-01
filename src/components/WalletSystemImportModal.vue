@@ -5,6 +5,7 @@
     :width="1000"
     :mask-closable="false"
     :footer="false"
+    :body-style="{ padding: '15px' }"
     unmountOnClose
     @update:visible="handleVisibleUpdate"
   >
@@ -29,15 +30,10 @@
             <a-option value="evm">EVM</a-option>
             <a-option value="solana">Solana</a-option>
           </a-select>
-          <a-select v-model="filterForm.walletType" style="width: 140px">
-            <a-option value="all">全部类型</a-option>
+          <a-select v-model="filterForm.walletType" style="width: 140px" :disabled="walletTypeLocked">
+            <a-option value="all">全部来源</a-option>
             <a-option value="full_wallet">完整钱包</a-option>
             <a-option value="address_only">仅地址</a-option>
-          </a-select>
-          <a-select v-model="filterForm.sourceType" style="width: 140px">
-            <a-option value="all">全部来源</a-option>
-            <a-option value="wallet">系统钱包</a-option>
-            <a-option value="watch_address">观察地址</a-option>
           </a-select>
           <a-input-search
             v-model="filterForm.searchKeyword"
@@ -48,7 +44,58 @@
         </div>
 
         <div class="list">
+          <a-tabs v-if="isTransferPair" v-model:active-key="transferPairTab" type="rounded" size="medium" class="transfer-pair-tabs">
+            <a-tab-pane key="from" title="出账钱包（私钥）">
+              <VirtualScrollerTable
+                :columns="columns"
+                :data="filteredFromItems"
+                :row-selection="rowSelection"
+                :selected-keys="selectedFromKeys"
+                row-key="key"
+                height="100%"
+                page-type="system_import"
+                :loading="walletsLoading"
+                :empty-data="filteredFromItems.length === 0"
+                @update:selected-keys="(keys) => handleSelectionChange(keys, 'from')"
+              >
+                <template #index="{ rowIndex }">
+                  {{ rowIndex + 1 }}
+                </template>
+                <template #chain_type="{ record }">
+                  <span>{{ record.chain_type === 'evm' ? 'EVM' : 'SOL' }}</span>
+                </template>
+                <template #wallet_type="{ record }">
+                  <span>{{ record.has_private_key ? '完整' : '仅地址' }}</span>
+                </template>
+              </VirtualScrollerTable>
+            </a-tab-pane>
+            <a-tab-pane key="to" title="收款地址">
+              <VirtualScrollerTable
+                :columns="columns"
+                :data="filteredToItems"
+                :row-selection="rowSelection"
+                :selected-keys="selectedToKeys"
+                row-key="key"
+                height="100%"
+                page-type="system_import"
+                :loading="walletsLoading"
+                :empty-data="filteredToItems.length === 0"
+                @update:selected-keys="(keys) => handleSelectionChange(keys, 'to')"
+              >
+                <template #index="{ rowIndex }">
+                  {{ rowIndex + 1 }}
+                </template>
+                <template #chain_type="{ record }">
+                  <span>{{ record.chain_type === 'evm' ? 'EVM' : 'SOL' }}</span>
+                </template>
+                <template #wallet_type="{ record }">
+                  <span>{{ record.has_private_key ? '完整' : '仅地址' }}</span>
+                </template>
+              </VirtualScrollerTable>
+            </a-tab-pane>
+          </a-tabs>
           <VirtualScrollerTable
+            v-else
             :columns="columns"
             :data="filteredItems"
             :row-selection="rowSelection"
@@ -56,7 +103,7 @@
             row-key="key"
             height="100%"
             page-type="system_import"
-            :loading="walletsLoading || watchAddressesLoading"
+            :loading="walletsLoading"
             :empty-data="filteredItems.length === 0"
             @update:selected-keys="handleSelectionChange"
           >
@@ -69,21 +116,27 @@
             <template #wallet_type="{ record }">
               <span>{{ record.has_private_key ? '完整' : '仅地址' }}</span>
             </template>
-            <template #source_type="{ record }">
-              <span>{{ record.source_type === 'wallet' ? '系统钱包' : '观察地址' }}</span>
-            </template>
           </VirtualScrollerTable>
         </div>
 
         <div class="footer-bar">
           <div class="left-info">
-            已选择: {{ selectedItemKeys.length }} 个
-            <span v-if="maxSelection">（最多 {{ maxSelection }} 个）</span>
+            <template v-if="isTransferPair">
+              出账: {{ selectedFromKeys.length }} 个，收款: {{ selectedToKeys.length }} 个
+            </template>
+            <template v-else>
+              已选择: {{ selectedItemKeys.length }} 个
+              <span v-if="maxSelection">（最多 {{ maxSelection }} 个）</span>
+            </template>
           </div>
           <div class="right-actions">
             <a-button @click="handleCancel" :disabled="confirmLoading">取消</a-button>
-            <a-button @click="handleClearSelection" :disabled="selectedItemKeys.length === 0">清空</a-button>
-            <a-button type="primary" @click="handleConfirm" :loading="confirmLoading">确认</a-button>
+            <a-button v-if="isTransferPair && transferPairTab === 'to'" @click="handleTransferPairBack" :disabled="confirmLoading">上一步</a-button>
+            <a-button @click="handleClearSelection" :disabled="isTransferPair ? (transferPairTab === 'from' ? selectedFromKeys.length === 0 : selectedToKeys.length === 0) : selectedItemKeys.length === 0">清空</a-button>
+            <a-button v-if="isTransferPair" type="primary" @click="handleTransferPairPrimary" :loading="confirmLoading">
+              {{ transferPairTab === 'from' ? '下一步' : '确认导入' }}
+            </a-button>
+            <a-button v-else type="primary" @click="handleConfirm" :loading="confirmLoading">确认</a-button>
           </div>
         </div>
       </div>
@@ -102,7 +155,7 @@
   >
     <a-form layout="vertical">
       <a-form-item label="密码">
-        <a-input-password ref="passwordInputRef" v-model="passwordInput" placeholder="仅用于本次解密，不会保存" />
+        <a-input-password ref="passwordInputRef" v-model="passwordInput" placeholder="仅用于本次解密，不会保存" @keyup.enter="() => !passwordVerifying && handlePasswordOk()" />
       </a-form-item>
     </a-form>
   </a-modal>
@@ -128,7 +181,6 @@ const emit = defineEmits(['confirm', 'cancel', 'update:visible'])
 
 const groupsLoading = ref(false)
 const walletsLoading = ref(false)
-const watchAddressesLoading = ref(false)
 const confirmLoading = ref(false)
 
 const groups = ref([])
@@ -136,20 +188,24 @@ const expandedKeys = ref([])
 const selectedGroupKeys = ref(['ALL'])
 
 const wallets = ref([])
-const watchAddresses = ref([])
 
 const rowSelection = { type: 'checkbox' }
 
 const selectedItemKeys = ref([])
+const selectedFromKeys = ref([])
+const selectedToKeys = ref([])
+const transferPairTab = ref('from')
 
 const filterForm = reactive({
   chainType: 'all',
   walletType: 'all',
-  sourceType: 'all',
   searchKeyword: '',
 })
 
 const chainLocked = computed(() => props.ecosystem === 'evm' || props.ecosystem === 'solana')
+const isTransferPair = computed(() => props.importMode === 'transfer_pair')
+const isAddressOnly = computed(() => props.importMode === 'address_only')
+const walletTypeLocked = computed(() => isTransferPair.value && transferPairTab.value === 'from')
 
 watch(
   () => props.ecosystem,
@@ -161,13 +217,37 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => [isTransferPair.value, transferPairTab.value],
+  () => {
+    if (!isTransferPair.value) return
+    if (transferPairTab.value === 'from') {
+      filterForm.walletType = 'full_wallet'
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => filterForm.walletType,
+  () => {
+    if (!props.visible) return
+    if (isTransferPair.value) {
+      if (transferPairTab.value === 'from') selectedFromKeys.value = []
+      else selectedToKeys.value = []
+      return
+    }
+    selectedItemKeys.value = []
+  }
+)
+
+
 const columns = [
-  { title: '序号', align: 'center', width: 55, slotName: 'index' },
-  { title: '名称', align: 'center', dataIndex: 'name', width: 160, ellipsis: true, tooltip: true },
+  { title: '序号', align: 'center', width: 53, slotName: 'index' },
+  { title: '名称', align: 'center', dataIndex: 'name', width: 100, ellipsis: true, tooltip: true },
   { title: '地址', align: 'center', dataIndex: 'address', width: 360, ellipsis: true, tooltip: true },
   { title: '链', align: 'center', width: 70, slotName: 'chain_type' },
   { title: '类型', align: 'center', width: 80, slotName: 'wallet_type' },
-  { title: '来源', align: 'center', width: 90, slotName: 'source_type' },
   { title: '备注', align: 'center', dataIndex: 'remark', ellipsis: true, tooltip: true },
 ]
 
@@ -258,47 +338,10 @@ async function loadWallets() {
   }
 }
 
-async function loadWatchAddresses() {
-  watchAddressesLoading.value = true
-  try {
-    const key = selectedGroupKeys.value?.[0]
-    if (!key) {
-      watchAddresses.value = []
-      return
-    }
-
-    if (key === 'ALL') {
-      const chainType = filterForm.chainType === 'all' ? null : filterForm.chainType
-      watchAddresses.value = await invoke('get_watch_addresses', { group_id: null, chain_type: chainType })
-      return
-    }
-
-    if (key === 'SYSTEM_EVM' || key === 'SYSTEM_SOLANA') {
-      const chainType = key === 'SYSTEM_EVM' ? 'evm' : 'solana'
-      watchAddresses.value = await invoke('get_watch_addresses', { group_id: null, chain_type: chainType })
-      return
-    }
-
-    const gid = parseDbId(key)
-    if (gid === null) {
-      watchAddresses.value = []
-      return
-    }
-    const chainType = filterForm.chainType === 'all' ? null : filterForm.chainType
-    watchAddresses.value = await invoke('get_watch_addresses', { group_id: gid, chain_type: chainType })
-  } catch (e) {
-    Message.error('加载观察地址失败: ' + (e?.message || e))
-    watchAddresses.value = []
-  } finally {
-    watchAddressesLoading.value = false
-  }
-}
-
 const items = computed(() => {
-  const wItems = (wallets.value || []).map((w) => ({
+  return (wallets.value || []).map((w) => ({
     key: `wallet:${w.id}`,
     id: w.id,
-    source_type: 'wallet',
     name: w.name || '',
     address: w.address,
     chain_type: (w.chain_type || '').toLowerCase(),
@@ -309,23 +352,6 @@ const items = computed(() => {
     group_name: w.group_name || '',
     remark: w.remark || '',
   }))
-
-  const aItems = (watchAddresses.value || []).map((a) => ({
-    key: `watch_address:${a.id}`,
-    id: a.id,
-    source_type: 'watch_address',
-    name: a.name || '',
-    address: a.address,
-    chain_type: (a.chain_type || '').toLowerCase(),
-    wallet_type: 'address_only',
-    has_private_key: false,
-    has_mnemonic: false,
-    group_id: a.group_id ?? null,
-    group_name: a.group_name || '',
-    remark: a.remark || '',
-  }))
-
-  return [...wItems, ...aItems]
 })
 
 const filteredItems = computed(() => {
@@ -333,7 +359,6 @@ const filteredItems = computed(() => {
   return items.value
     .filter((it) => {
       if (filterForm.chainType !== 'all' && it.chain_type !== filterForm.chainType) return false
-      if (filterForm.sourceType !== 'all' && it.source_type !== filterForm.sourceType) return false
       if (filterForm.walletType === 'full_wallet' && !it.has_private_key) return false
       if (filterForm.walletType === 'address_only' && it.has_private_key) return false
       if (!keyword) return true
@@ -342,22 +367,60 @@ const filteredItems = computed(() => {
     })
 })
 
-function handleSelectionChange(keys) {
+const filteredFromItems = computed(() => {
+  if (!isTransferPair.value) return []
+  const keyword = (filterForm.searchKeyword || '').trim().toLowerCase()
+  return items.value.filter((it) => {
+    if (filterForm.chainType !== 'all' && it.chain_type !== filterForm.chainType) return false
+    if (!it.has_private_key) return false
+    if (!keyword) return true
+    const hay = `${it.name || ''} ${it.address || ''} ${it.remark || ''}`.toLowerCase()
+    return hay.includes(keyword)
+  })
+})
+
+const filteredToItems = computed(() => {
+  if (!isTransferPair.value) return []
+  const keyword = (filterForm.searchKeyword || '').trim().toLowerCase()
+  return items.value.filter((it) => {
+    if (filterForm.chainType !== 'all' && it.chain_type !== filterForm.chainType) return false
+    if (filterForm.walletType === 'full_wallet' && !it.has_private_key) return false
+    if (filterForm.walletType === 'address_only' && it.has_private_key) return false
+    if (!keyword) return true
+    const hay = `${it.name || ''} ${it.address || ''} ${it.remark || ''}`.toLowerCase()
+    return hay.includes(keyword)
+  })
+})
+
+function handleSelectionChange(keys, target = 'single') {
   if (!props.multiple && keys.length > 1) {
-    selectedItemKeys.value = [keys[keys.length - 1]]
+    const last = [keys[keys.length - 1]]
+    if (target === 'from') selectedFromKeys.value = last
+    else if (target === 'to') selectedToKeys.value = last
+    else selectedItemKeys.value = last
     return
   }
 
   if (props.maxSelection && keys.length > props.maxSelection) {
     Message.warning(`最多只能选择 ${props.maxSelection} 个`)
-    selectedItemKeys.value = keys.slice(0, props.maxSelection)
+    const sliced = keys.slice(0, props.maxSelection)
+    if (target === 'from') selectedFromKeys.value = sliced
+    else if (target === 'to') selectedToKeys.value = sliced
+    else selectedItemKeys.value = sliced
     return
   }
 
-  selectedItemKeys.value = keys
+  if (target === 'from') selectedFromKeys.value = keys
+  else if (target === 'to') selectedToKeys.value = keys
+  else selectedItemKeys.value = keys
 }
 
 function handleClearSelection() {
+  if (isTransferPair.value) {
+    if (transferPairTab.value === 'from') selectedFromKeys.value = []
+    else selectedToKeys.value = []
+    return
+  }
   selectedItemKeys.value = []
 }
 
@@ -385,7 +448,10 @@ function onNodeClick(node) {
 
 async function refreshLists() {
   selectedItemKeys.value = []
-  await Promise.all([loadWallets(), loadWatchAddresses()])
+  selectedFromKeys.value = []
+  selectedToKeys.value = []
+  transferPairTab.value = 'from'
+  await loadWallets()
 }
 
 watch(
@@ -474,7 +540,6 @@ async function buildConfirmPayload(password) {
   if (props.importMode !== 'full') {
     return picked.map((it) => ({
       id: it.id,
-      source_type: it.source_type,
       name: it.name,
       address: it.address,
       chain_type: it.chain_type,
@@ -485,9 +550,8 @@ async function buildConfirmPayload(password) {
     }))
   }
 
-  const walletsOnly = picked.filter((it) => it.source_type === 'wallet')
-  const invalid = walletsOnly.filter((it) => !it.has_private_key)
-  const valid = walletsOnly.filter((it) => it.has_private_key)
+  const invalid = picked.filter((it) => !it.has_private_key)
+  const valid = picked.filter((it) => it.has_private_key)
 
   if (!valid.length) return []
 
@@ -499,7 +563,6 @@ async function buildConfirmPayload(password) {
     const privateKey = await openSealedSecret(sealedPk, password)
     out.push({
       id: it.id,
-      source_type: it.source_type,
       name: it.name,
       address: it.address,
       private_key: privateKey,
@@ -531,12 +594,12 @@ async function handleConfirm() {
   if (props.importMode === 'full') {
     const selected = new Map(items.value.map((it) => [it.key, it]))
     const picked = selectedItemKeys.value.map((k) => selected.get(k)).filter(Boolean)
-    const hasInvalid = picked.some((it) => it.source_type !== 'wallet' || !it.has_private_key)
+    const hasInvalid = picked.some((it) => !it.has_private_key)
     if (hasInvalid) {
       const ok = await new Promise((resolve) => {
         Modal.confirm({
           title: '部分选择无法用于转账',
-          content: '包含观察地址或无私钥钱包，无法用于转账。是否仅导入可用的完整钱包？',
+          content: '包含仅地址或无私钥钱包，无法用于转账。是否仅导入可用的完整钱包？',
           onOk: () => resolve(true),
           onCancel: () => resolve(false),
         })
@@ -567,6 +630,90 @@ async function handleConfirm() {
     password = null
   }
 }
+
+function handleTransferPairBack() {
+  transferPairTab.value = 'from'
+}
+
+async function handleTransferPairPrimary() {
+  if (transferPairTab.value === 'from') {
+    if (!selectedFromKeys.value.length) {
+      Notification.warning({ title: '未选择出账钱包', position: 'topLeft' })
+      return
+    }
+    transferPairTab.value = 'to'
+    return
+  }
+  await handleConfirmTransferPair()
+}
+
+async function buildTransferPairPayload(password) {
+  const selected = new Map(items.value.map((it) => [it.key, it]))
+  const pickedFrom = selectedFromKeys.value.map((k) => selected.get(k)).filter(Boolean)
+  const pickedTo = selectedToKeys.value.map((k) => selected.get(k)).filter(Boolean)
+  const validFrom = pickedFrom.filter((it) => it.has_private_key)
+  const toAddresses = pickedTo.map((it) => String(it.address || '').trim()).filter(Boolean)
+
+  if (!validFrom.length || !toAddresses.length) {
+    return null
+  }
+
+  const fromWallets = []
+  for (const it of validFrom) {
+    const secrets = await invoke('get_wallet_secrets', { id: it.id, password, transport_token: null })
+    const sealedPk = secrets?.sealed_private_key
+    if (!sealedPk) continue
+    const privateKey = await openSealedSecret(sealedPk, password)
+    fromWallets.push({
+      id: it.id,
+      name: it.name,
+      address: it.address,
+      private_key: privateKey,
+      chain_type: it.chain_type,
+      wallet_type: 'full_wallet',
+      group_id: it.group_id ?? undefined,
+      group_name: it.group_name || undefined,
+      remark: it.remark || undefined,
+    })
+  }
+
+  if (!fromWallets.length) return null
+
+  return { from_wallets: fromWallets, to_addresses: toAddresses }
+}
+
+async function handleConfirmTransferPair() {
+  if (!selectedFromKeys.value.length) {
+    Notification.warning({ title: '未选择出账钱包', position: 'topLeft' })
+    transferPairTab.value = 'from'
+    return
+  }
+  if (!selectedToKeys.value.length) {
+    Notification.warning({ title: '未选择收款地址', position: 'topLeft' })
+    transferPairTab.value = 'to'
+    return
+  }
+
+  confirmLoading.value = true
+  let password = null
+  try {
+    password = await requestPassword()
+    if (!password) return
+    const payload = await buildTransferPairPayload(password)
+    if (!payload) {
+      Notification.warning({ title: '无可导入数据', position: 'topLeft' })
+      return
+    }
+    emit('confirm', payload)
+    emit('update:visible', false)
+  } catch (e) {
+    Message.error('导入失败: ' + (e?.message || e))
+  } finally {
+    confirmLoading.value = false
+    passwordInput.value = ''
+    password = null
+  }
+}
 </script>
 
 <style scoped>
@@ -577,7 +724,7 @@ async function handleConfirm() {
 }
 
 .left {
-  width: 260px;
+  width: 200px;
   border-right: 1px solid var(--color-border);
   padding-right: 10px;
   overflow: auto;
@@ -615,5 +762,24 @@ async function handleConfirm() {
 .right-actions {
   display: flex;
   gap: 8px;
+}
+
+.transfer-pair-tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.transfer-pair-tabs :deep(.arco-tabs-content) {
+  flex: 1;
+  min-height: 0;
+}
+
+.transfer-pair-tabs :deep(.arco-tabs-content-list) {
+  height: 100%;
+}
+
+.transfer-pair-tabs :deep(.arco-tabs-pane) {
+  height: 100%;
 }
 </style>

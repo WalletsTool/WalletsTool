@@ -39,6 +39,7 @@ const columns = [
     title: '钱包地址',
     align: 'center',
     dataIndex: 'address',
+    width: 180,
     ellipsis: true,
     tooltip: true
   },
@@ -70,6 +71,7 @@ const columns = [
     title: '错误信息',
     align: 'center',
     dataIndex: 'error_msg',
+    width: 120,
     ellipsis: true,
     tooltip: true,
   },

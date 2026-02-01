@@ -295,7 +295,7 @@ const loadWatchAddresses = async () => {
     const res = await invoke('get_watch_addresses', { group_id: groupId, chain_type: chainType });
     if (seq === watchAddressLoadSeq.value) watchAddresses.value = res;
   } catch (e) {
-    Message.error('加载观察地址失败: ' + e);
+    Message.error('加载仅地址失败: ' + e);
   }
 };
 
@@ -334,11 +334,11 @@ const handleAddWatchAddresses = async () => {
     });
 
     await loadWatchAddresses();
-    Message.success(`已添加 ${count} 个观察地址`);
+    Message.success(`已添加 ${count} 个仅地址`);
     showAddWalletModal.value = false;
     return true;
   } catch (e) {
-    Message.error('添加观察地址失败: ' + (e?.message || e));
+    Message.error('添加仅地址失败: ' + (e?.message || e));
     return false;
   }
 };
@@ -350,7 +350,7 @@ const handleDeleteWatchAddress = (address) => {
     return;
   }
 
-  const titleText = address.name ? `确认删除观察地址「${address.name}」` : '确认删除观察地址';
+  const titleText = address.name ? `确认删除仅地址「${address.name}」` : '确认删除仅地址';
   Modal.warning({
     title: titleText,
     content: '删除后无法恢复，确定继续吗？',
@@ -376,7 +376,7 @@ const handleBatchDeleteWatchAddresses = () => {
 
   Modal.warning({
     title: '确认批量删除',
-    content: `确定要删除选中的 ${selectedWatchAddressIds.value.length} 个观察地址吗？删除后无法恢复，确定继续吗？`,
+    content: `确定要删除选中的 ${selectedWatchAddressIds.value.length} 个仅地址吗？删除后无法恢复，确定继续吗？`,
     onOk: async () => {
       try {
         for (const id of selectedWatchAddressIds.value) {
@@ -447,10 +447,10 @@ const handleExportWatchAddresses = async () => {
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '观察地址数据');
+    XLSX.utils.book_append_sheet(workbook, worksheet, '仅地址数据');
 
     const filePath = await save({
-      defaultPath: '观察地址导出.xlsx',
+      defaultPath: '仅地址导出.xlsx',
       filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
     });
 
@@ -463,7 +463,7 @@ const handleExportWatchAddresses = async () => {
 
       openDirectory(filePath);
       Notification.success({
-        content: `成功导出 ${exportData.length} 个观察地址`,
+        content: `成功导出 ${exportData.length} 个仅地址`,
         duration: 5000,
         position: 'topLeft',
       });
@@ -1821,7 +1821,7 @@ const confirmExport = async () => {
                 <!-- View Type Switcher -->
                 <a-radio-group v-model="currentViewType" type="button" style="margin-right: 16px;">
                     <a-radio value="full_wallet">完整钱包</a-radio>
-                    <a-radio value="address_only">地址观察</a-radio>
+                    <a-radio value="address_only">仅地址</a-radio>
                 </a-radio-group>
 
                 <!-- Full Wallet Actions -->
@@ -2338,7 +2338,7 @@ const confirmExport = async () => {
 
                 </a-form>
             </a-tab-pane>
-            <a-tab-pane key="watch" title="地址观察">
+            <a-tab-pane key="watch" title="仅地址">
                 <a-form layout="vertical" :model="newWatchAddress">
                     <div class="add-wallet-two-col">
                         <div class="add-wallet-col">
@@ -2415,7 +2415,7 @@ const confirmExport = async () => {
                                 </div>
                             </a-form-item>
                             <a-form-item label="名称前缀 (可选)">
-                                <a-input v-model="newWatchAddress.name_prefix" placeholder="批量添加时自动命名，如：观察地址 #1" />
+                                <a-input v-model="newWatchAddress.name_prefix" placeholder="批量添加时自动命名，如：仅地址 #1" />
                             </a-form-item>
                             <a-form-item label="备注 (可选)">
                                 <a-input v-model="newWatchAddress.remark" placeholder="请输入备注信息" />
@@ -2438,7 +2438,7 @@ const confirmExport = async () => {
                         </div>
                     </div>
 
-                    <a-alert type="info" title="提示：地址观察仅保存地址，可用于批量查询余额和转账（需手动导入私钥），不支持导出私钥" show-icon />
+                    <a-alert type="info" title="提示：仅地址仅保存地址，可用于批量查询余额和转账（需手动导入私钥），不支持导出私钥" show-icon />
                 </a-form>
             </a-tab-pane>
         </a-tabs>
@@ -2461,7 +2461,7 @@ const confirmExport = async () => {
     </a-modal>
 
     <!-- Edit Watch Address Modal -->
-    <a-modal v-model:visible="showEditWatchAddressModal" title="编辑观察地址" :footer="false" width="500px">
+    <a-modal v-model:visible="showEditWatchAddressModal" title="编辑仅地址" :footer="false" width="500px">
         <a-form layout="vertical">
             <a-form-item label="名称">
                 <a-input v-model="editingWatchAddress.name" placeholder="请输入名称" />

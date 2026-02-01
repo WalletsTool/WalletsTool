@@ -29,7 +29,6 @@ const privateKeyText = ref('');
 const addressText = ref('');
 const validationErrors = ref([]);
 const errorsExpanded = ref(false);
-const showUsageInstructions = ref(true);
 const privateKeyErrorLines = ref([]);
 const addressErrorLines = ref([]);
 const importLoading = ref(false);
@@ -227,14 +226,14 @@ function handleCancel() {
   errorsExpanded.value = false;
   
   // 提示用户清除剪贴板历史
-  setTimeout(() => {
-    Notification.warning({
-      title: '安全提示',
-      content: '为防止私钥泄露，建议您手动清除 Win+V 剪贴板历史记录',
-      duration: 5000,
-      position: 'topLeft'
-    });
-  }, 300);
+  // setTimeout(() => {
+  //   Notification.warning({
+  //     title: '安全提示',
+  //     content: '为防止私钥泄露，建议您手动清除 Win+V 剪贴板历史记录',
+  //     duration: 5000,
+  //     position: 'topLeft'
+  //   });
+  // }, 300);
 }
 
 // 处理弹窗确认前的验证
@@ -268,14 +267,14 @@ const handleBeforeOk = async () => {
      visible.value = false;
 
      // 提示用户清除剪贴板历史
-     setTimeout(() => {
-       Notification.warning({
-         title: '安全提示',
-         content: '为防止私钥泄露，建议您手动清除 Win+V 剪贴板历史记录',
-         duration: 5000,
-         position: 'topLeft'
-       });
-     }, 300);
+    //  setTimeout(() => {
+    //    Notification.warning({
+    //      title: '安全提示',
+    //      content: '为防止私钥泄露，建议您手动清除 Win+V 剪贴板历史记录',
+    //      duration: 5000,
+    //      position: 'topLeft'
+    //    });
+    //  }, 300);
      
      // 重置数据
     privateKeyText.value = '';
@@ -308,7 +307,6 @@ function show() {
   addressText.value = '';
   validationErrors.value = [];
   errorsExpanded.value = false;
-  showUsageInstructions.value = true;
 
   // 显示弹窗
   visible.value = true;
@@ -338,7 +336,7 @@ defineExpose({
       当前方式存在剪切板泄露私钥数据风险，为了防止电脑中其他恶意程序监听剪切板导致私钥泄露不推荐使用这个方式！！
     </a-alert>
     <div
-      :style="{ display: 'flex', gap: '10px', marginTop: '10px', width: '1200px', height: showUsageInstructions ? '400px' : '500px', position: 'relative' }">
+      :style="{ display: 'flex', gap: '10px', marginTop: '10px', width: '1200px', height: '500px', position: 'relative' }">
       <!-- Loading遮罩层 -->
       <div v-if="importLoading" class="loading-overlay">
         <a-spin size="large">
@@ -393,35 +391,6 @@ defineExpose({
         </div>
       </a-alert>
     </div>
-
-    <!-- 使用说明 -->
-    <div v-if="showUsageInstructions" class="usage-instructions">
-      <div class="usage-title" style="display: flex; justify-content: space-between; align-items: center;">
-        <span>📋 使用说明：</span>
-        <a-button type="text" size="small" @click="showUsageInstructions = false" style="color: #666; padding: 0;">
-          ✕
-        </a-button>
-      </div>
-      <div class="usage-list">
-        <div class="usage-column">
-          <ul>
-            <li>私钥和接收地址必须一一对应，行数保持一致</li>
-            <li>系统会自动验证格式，允许导入重复数据</li>
-          </ul>
-        </div>
-        <div class="usage-column">
-          <ul>
-            <li>{{ props.ecosystem === 'solana' ? '私钥格式：Base58编码字符串' : '私钥格式：64位十六进制字符串（可选0x前缀）' }}</li>
-            <li>重复数据会在导入时给出提示信息</li>
-          </ul>
-        </div>
-        <div class="usage-column">
-          <ul>
-            <li>{{ props.ecosystem === 'solana' ? '地址格式：Base58编码地址' : '地址格式：40位十六进制地址（必须0x前缀）' }}</li>
-          </ul>
-        </div>
-      </div>
-    </div>
   </a-modal>
 </template>
 
@@ -456,43 +425,5 @@ defineExpose({
   font-size: 14px;
   color: var(--text-color, #1d2129);
   font-weight: 500;
-}
-
-.usage-instructions {
-  margin-top: 15px;
-  padding: 12px;
-  background-color: var(--card-bg, #f7f8fa);
-  border-radius: 6px;
-  border: 1px solid var(--border-color, #e5e6eb);
-}
-
-.usage-title {
-  font-weight: 500;
-  color: var(--text-color, #1d2129);
-  margin-bottom: 8px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.usage-list {
-  display: flex;
-  gap: 20px;
-}
-
-.usage-column {
-  flex: 1;
-}
-
-.usage-column ul {
-  margin: 0;
-  padding-left: 16px;
-  color: var(--text-color, #4e5969);
-  font-size: 14px;
-}
-
-.usage-column li {
-  margin-bottom: 4px;
-  line-height: 1.4;
 }
 </style>

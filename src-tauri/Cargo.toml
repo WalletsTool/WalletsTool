@@ -1,6 +1,6 @@
 [package]
 name = "WalletsTool"
-version = "0.4.7"
+version = "0.4.8"
 description = "web3 链上钱包管理工具集，基于 Vue3 Tauri 等技术"
 authors = ["renmk"]
 license = ""
@@ -18,6 +18,8 @@ serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.9.5", features = ["tray-icon", "wry"], default-features = false }
 tauri-plugin-shell = "2.3.4"
 tauri-plugin-dialog = "2.6.0"
+tauri-plugin-process = "2.0.0"
+tauri-plugin-updater = "2.0.0"
 anyhow = "1.0.98"
 tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "fs", "net", "time"] }
 # HTTP 客户端

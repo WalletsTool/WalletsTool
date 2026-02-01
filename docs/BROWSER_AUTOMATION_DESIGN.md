@@ -4,14 +4,77 @@
 
 ### 1.1 功能目标
 完善浏览器自动化页面功能，实现以下核心能力：
-- 指定执行钱包
-- 选择执行脚本
-- 制定执行频率（一次性/周期执行）
-- 监控任务执行情况
-- 脚本自定义API（连接钱包、签名等）
-- 预处理器将自定义方法转换为完整Playwright脚本
+- 钱包管理：导入钱包（名称、私钥、地址、备注），支持编辑和删除
+- 环境配置：批量生成/创建指纹信息，配置抗审查技术选项
+- 脚本编辑：编辑和管理脚本程序
+- 执行面板：单账号或批量测试执行
+- 任务管理：配置定时任务，执行时随机使用所有环境配置
+- 任务监控：查看任务执行情况
 
-### 1.2 整体架构
+### 1.2 使用流程
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        浏览器自动化使用流程                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Step 1: 钱包管理                                                    │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ • 导入钱包（名称、私钥、地址、备注）                        │     │
+│  │ • 支持 Excel 导入                                          │     │
+│  │ • 编辑、删除钱包                                           │     │
+│  │ • 数据保存到独立数据表（SQLite）                           │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                              ↓                                       │
+│  Step 2: 环境配置                                                    │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ • 批量生成指纹配置                                         │     │
+│  │ • 配置抗审查技术选项：                                     │     │
+│  │   - Canvas 指纹混淆                                        │     │
+│  │   - WebGL 渲染伪装                                         │     │
+│  │   - Audio Context 噪音                                     │     │
+│  │   - 时区伪装                                               │     │
+│  │   - 地理位置伪装                                           │     │
+│  │   - 字体伪装                                               │     │
+│  │   - WebRTC 防泄漏                                          │     │
+│  │ • 持久化保存到数据库                                       │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                              ↓                                       │
+│  Step 3: 脚本编辑                                                    │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ • 创建/编辑脚本                                            │     │
+│  │ • 使用自定义 API（连接钱包、签名、交易等）                 │     │
+│  │ • 导入/导出脚本                                            │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                              ↓                                       │
+│  Step 4: 执行面板（可选测试）                                        │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ • 选择脚本、环境、钱包                                     │     │
+│  │ • 单账号测试                                               │     │
+│  │ • 批量账号测试                                             │     │
+│  │ • 验证脚本正确性                                           │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                              ↓                                       │
+│  Step 5: 任务管理                                                    │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ • 配置定时任务（Cron 表达式）                              │     │
+│  │ • 选择要执行的钱包列表                                     │     │
+│  │ • 选择执行的脚本                                           │     │
+│  │ • 环境分配策略：随机使用所有环境配置                       │     │
+│  │ • 启用/禁用任务                                            │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                              ↓                                       │
+│  Step 6: 任务监控                                                    │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ • 查看任务执行状态                                         │     │
+│  │ • 查看执行日志                                             │     │
+│  │ • 统计成功率                                               │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.3 整体架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -19,11 +82,11 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │  Frontend (Vue 3)                                                    │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ 任务创建页面 │  │ 任务监控面板 │  │ 脚本编辑器  │              │
+│  │ 钱包管理     │  │ 环境配置     │  │ 脚本编辑器  │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ 钱包选择器   │  │ 定时调度配置 │  │ 日志查看器  │              │
+│  │ 执行面板     │  │ 任务管理     │  │ 任务监控    │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Backend (Tauri/Rust + Node.js Bridge)                               │
@@ -48,8 +111,8 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │  Database (SQLite)                                                   │
 │  ┌────────────────────────────────────────────────────────────┐     │
-│  │ Tables: automation_tasks, automation_scripts, task_logs,   │     │
-│  │         task_executions, browser_profiles, wallet_groups   │     │
+│  │ Tables: airdrop_wallets, browser_profiles, automation_tasks │     │
+│  │         automation_scripts, task_executions, task_logs     │     │
 │  └────────────────────────────────────────────────────────────┘     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -60,110 +123,27 @@
 
 ### 2.1 表结构
 
-#### 2.1.1 自动化任务表 (`automation_tasks`)
+#### 2.1.1 空投钱包表 (`airdrop_wallets`)
 
 ```sql
-CREATE TABLE automation_tasks (
+CREATE TABLE airdrop_wallets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    wallet_group_id INTEGER,
-    script_id INTEGER NOT NULL,
-    browser_profile_id INTEGER,
-
-    -- 调度配置
-    schedule_type VARCHAR(32) NOT NULL DEFAULT 'once',  -- once, interval, cron
-    schedule_config TEXT NOT NULL,  -- JSON: {"interval": 3600} or {"cron": "0 * * * *"}
-
-    -- 执行配置
-    concurrency INTEGER DEFAULT 1,  -- 并发执行数量
-    timeout_seconds INTEGER DEFAULT 300,
-    retry_times INTEGER DEFAULT 3,
-    retry_interval_seconds INTEGER DEFAULT 60,
-
-    -- 状态
-    status VARCHAR(32) NOT NULL DEFAULT 'draft',  -- draft, enabled, paused, running
-    last_run_time DATETIME,
-    next_run_time DATETIME,
-    total_runs INTEGER DEFAULT 0,
-    success_runs INTEGER DEFAULT 0,
-    failed_runs INTEGER DEFAULT 0,
-
-    -- 通知配置
-    notify_on_success BOOLEAN DEFAULT FALSE,
-    notify_on_failure BOOLEAN DEFAULT TRUE,
-
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-
-    FOREIGN KEY (wallet_group_id) REFERENCES wallet_groups(id),
-    FOREIGN KEY (script_id) REFERENCES automation_scripts(id),
-    FOREIGN KEY (browser_profile_id) REFERENCES browser_profiles(id)
-);
-
-CREATE INDEX idx_tasks_status ON automation_tasks(status);
-CREATE INDEX idx_tasks_next_run ON automation_tasks(next_run_time) WHERE status = 'enabled';
-```
-
-#### 2.1.2 自动化脚本表 (`automation_scripts`)
-
-```sql
-CREATE TABLE automation_scripts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    content TEXT NOT NULL,  -- 原始脚本内容（含自定义API）
-    compiled_content TEXT,  -- 预处理后的完整脚本
-    version INTEGER DEFAULT 1,
-    is_system BOOLEAN DEFAULT FALSE,  -- 系统内置脚本
-
-    -- API依赖
-    required_apis TEXT,  -- JSON: ["connectWallet", "signMessage", "approveToken"]
-
-    -- 元数据
-    author VARCHAR(255),
-    tags TEXT,  -- JSON: ["uniswap", "okx", "airdrop"]
-
+    name VARCHAR(255) NOT NULL,           -- 钱包名称
+    address VARCHAR(255) NOT NULL,        -- 钱包地址
+    private_key VARCHAR(512) NOT NULL,    -- 加密存储的私钥
+    label VARCHAR(255),                   -- 备注
+    group_name VARCHAR(128) DEFAULT 'Default', -- 分组
+    proxy VARCHAR(255) DEFAULT 'Direct',  -- 代理配置
+    chain_type VARCHAR(32) DEFAULT 'evm', -- 链类型 (evm/solana)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_scripts_tags ON automation_scripts(tags);
+CREATE INDEX idx_airdrop_wallets_address ON airdrop_wallets(address);
+CREATE INDEX idx_airdrop_wallets_group ON airdrop_wallets(group_name);
 ```
 
-#### 2.1.3 任务执行记录表 (`task_executions`)
-
-```sql
-CREATE TABLE task_executions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id INTEGER NOT NULL,
-    wallet_address VARCHAR(255) NOT NULL,
-    wallet_group_name VARCHAR(255),
-
-    -- 执行状态
-    status VARCHAR(32) NOT NULL,  -- pending, running, success, failed, stopped
-    start_time DATETIME,
-    end_time DATETIME,
-    duration_ms INTEGER,
-
-    -- 结果
-    error_message TEXT,
-    result_data TEXT,  -- JSON: {"txHash": "...", "data": {...}}
-
-    -- 日志引用
-    log_file_path VARCHAR(512),
-
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-
-    FOREIGN KEY (task_id) REFERENCES automation_tasks(id)
-);
-
-CREATE INDEX idx_executions_task ON task_executions(task_id);
-CREATE INDEX idx_executions_status ON task_executions(status);
-CREATE INDEX idx_executions_time ON task_executions(start_time DESC);
-```
-
-#### 2.1.4 浏览器环境配置表 (`browser_profiles`)
+#### 2.1.2 浏览器环境配置表 (`browser_profiles`)
 
 ```sql
 CREATE TABLE browser_profiles (
@@ -171,7 +151,7 @@ CREATE TABLE browser_profiles (
     name VARCHAR(255) NOT NULL,
     description TEXT,
 
-    -- 浏览器配置
+    -- 浏览器基础配置
     user_agent TEXT,
     viewport_width INTEGER DEFAULT 1920,
     viewport_height INTEGER DEFAULT 1080,
@@ -186,14 +166,19 @@ CREATE TABLE browser_profiles (
     proxy_username VARCHAR(255),
     proxy_password VARCHAR(255),
 
-    -- 指纹保护
-    canvas_fingerprinting_protection BOOLEAN DEFAULT TRUE,
-    webgl_rendering_spoofing BOOLEAN DEFAULT TRUE,
-    audio_context_noise BOOLEAN DEFAULT TRUE,
-    navigator_properties_override BOOLEAN DEFAULT TRUE,
-    webdriver_property_override BOOLEAN DEFAULT TRUE,
+    -- 指纹保护配置 (抗审查技术)
+    canvas_spoof BOOLEAN DEFAULT TRUE,           -- Canvas 指纹混淆
+    webgl_spoof BOOLEAN DEFAULT TRUE,            -- WebGL 渲染伪装
+    audio_spoof BOOLEAN DEFAULT TRUE,            -- Audio Context 噪音
+    timezone_spoof BOOLEAN DEFAULT TRUE,         -- 时区伪装
+    geolocation_spoof BOOLEAN DEFAULT TRUE,      -- 地理位置伪装
+    font_spoof BOOLEAN DEFAULT TRUE,             -- 字体伪装
+    webrtc_spoof BOOLEAN DEFAULT TRUE,           -- WebRTC 防泄漏
+    navigator_override BOOLEAN DEFAULT TRUE,     -- Navigator 属性覆盖
+    webdriver_override BOOLEAN DEFAULT TRUE,     -- WebDriver 属性覆盖
 
-    -- 其他配置
+    -- 高级配置
+    custom_headers TEXT,  -- JSON 格式自定义请求头
     headless BOOLEAN DEFAULT FALSE,
     extensions TEXT,  -- JSON: ["metamask", "okxwallet"]
 
@@ -201,141 +186,361 @@ CREATE TABLE browser_profiles (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_browser_profiles_default ON browser_profiles(is_default);
+```
+
+#### 2.1.3 自动化任务表 (`automation_tasks`)
+
+```sql
+CREATE TABLE automation_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+
+    -- 执行配置
+    script_id INTEGER NOT NULL,              -- 关联的脚本ID
+    wallet_ids TEXT NOT NULL,                -- JSON 数组: [1, 2, 3, ...]
+
+    -- 环境分配策略
+    profile_strategy VARCHAR(32) DEFAULT 'random', -- random, sequential, specific
+    specific_profile_id INTEGER,             -- 当 strategy 为 specific 时使用
+
+    -- 调度配置
+    schedule_type VARCHAR(32) DEFAULT 'once',  -- once, interval, cron
+    schedule_config TEXT NOT NULL,           -- JSON: {"cron": "0 9 * * *"}
+
+    -- 执行参数
+    concurrency INTEGER DEFAULT 1,           -- 并发数
+    timeout_seconds INTEGER DEFAULT 300,     -- 超时时间
+    retry_times INTEGER DEFAULT 3,           -- 重试次数
+    retry_interval_seconds INTEGER DEFAULT 60, -- 重试间隔
+
+    -- 状态
+    status VARCHAR(32) DEFAULT 'draft',      -- draft, enabled, paused, running
+    last_run_time DATETIME,
+    next_run_time DATETIME,
+    total_runs INTEGER DEFAULT 0,
+    success_runs INTEGER DEFAULT 0,
+    failed_runs INTEGER DEFAULT 0,
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (script_id) REFERENCES automation_scripts(id),
+    FOREIGN KEY (specific_profile_id) REFERENCES browser_profiles(id)
+);
+
+CREATE INDEX idx_tasks_status ON automation_tasks(status);
+CREATE INDEX idx_tasks_next_run ON automation_tasks(next_run_time) WHERE status = 'enabled';
+```
+
+#### 2.1.4 自动化脚本表 (`automation_scripts`)
+
+```sql
+CREATE TABLE automation_scripts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    content TEXT NOT NULL,                   -- 原始脚本内容（含自定义API）
+    compiled_content TEXT,                   -- 预处理后的完整脚本
+    version INTEGER DEFAULT 1,
+    is_system BOOLEAN DEFAULT FALSE,         -- 系统内置脚本
+
+    -- API依赖
+    required_apis TEXT,                      -- JSON: ["connectWallet", "signMessage"]
+
+    -- 元数据
+    author VARCHAR(255),
+    tags TEXT,                               -- JSON: ["uniswap", "okx", "airdrop"]
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_scripts_tags ON automation_scripts(tags);
+```
+
+#### 2.1.5 任务执行记录表 (`task_executions`)
+
+```sql
+CREATE TABLE task_executions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    wallet_id INTEGER NOT NULL,              -- 关联的钱包ID
+    profile_id INTEGER,                      -- 使用的环境配置ID
+
+    -- 执行状态
+    status VARCHAR(32) NOT NULL,             -- pending, running, success, failed, stopped
+    start_time DATETIME,
+    end_time DATETIME,
+    duration_ms INTEGER,
+
+    -- 结果
+    error_message TEXT,
+    result_data TEXT,                        -- JSON: {"txHash": "...", "data": {...}}
+    logs TEXT,                               -- 执行日志（JSON数组）
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (task_id) REFERENCES automation_tasks(id),
+    FOREIGN KEY (wallet_id) REFERENCES airdrop_wallets(id),
+    FOREIGN KEY (profile_id) REFERENCES browser_profiles(id)
+);
+
+CREATE INDEX idx_executions_task ON task_executions(task_id);
+CREATE INDEX idx_executions_status ON task_executions(status);
+CREATE INDEX idx_executions_time ON task_executions(start_time DESC);
 ```
 
 ---
 
 ## 3. 前端设计
 
-### 3.1 任务创建页面
+### 3.1 钱包管理页面
 
 #### 3.1.1 布局结构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  任务管理                                                            │
+│  钱包管理                                                            │
 │  ┌────────────────────────────────────────────────────────────┐     │
-│  │ [任务列表]  [+ 新建任务]                                    │     │
+│  │ [添加钱包] [从系统同步] [导入(Excel)] [导出] [清空]         │     │
+│  │ 搜索: [________________________________]                   │     │
 │  └────────────────────────────────────────────────────────────┘     │
 │                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  基本信息                                                    │    │
-│  │  ┌─────────────────────────────────────────────────────┐    │    │
-│  │  │ 任务名称 *    [________________________________]    │    │    │
-│  │  │ 任务描述    [________________________________]       │    │    │
-│  │  └─────────────────────────────────────────────────────┘    │    │
-│  ├─────────────────────────────────────────────────────────────┤    │
-│  │  钱包配置                                                    │    │
-│ ┌─────────────────────────────────────────────────────┐    │  │     │
-│  │  │ 选择方式: (○) 全部钱包  ( ) 指定分组  ( ) 指定钱包  │    │    │
-│  │  │                                                    │    │    │
-│  │  │  分组选择: [Default Group v]                        │    │    │
-│  │  │                                                    │    │    │
-│  │  │  钱包列表:                                          │    │    │
-│  │  │  [✓] 0x742d...f44e (Main Wallet) - Group A        │    │    │
-│  │  │  [✓] 0x123d...abc (Airdrop 1) - Group A           │    │    │
-│  │  │  [ ] 0x456d...def (Airdrop 2) - Group B           │    │    │
-│  │  └─────────────────────────────────────────────────────┘    │    │
-│  ├─────────────────────────────────────────────────────────────┤    │
-│  │  脚本选择                                                    │    │
-│  │  ┌─────────────────────────────────────────────────────┐    │    │
-│  │  │ 脚本库: [Search...                          ] [v]   │    │    │
-│  │  │                                                    │    │    │
-│  │  │  ┌──────────────────────────────────────────────┐  │    │    │
-│  │  │  │ OKX Daily Claim (v1.2)                       │  │    │    │
-│  │  │  │ Uniswap V3 Swap (v2.0)                       │  │    │    │
-│  │  │  │ LayerZero Bridge (v1.0)                      │  │    │    │
-│  │  │  └──────────────────────────────────────────────┘  │    │    │
-│  │  │                                                    │    │    │
-│  │  │  [预览脚本]  [编辑脚本]                            │    │    │
-│  │  └─────────────────────────────────────────────────────┘    │    │
-│  ├─────────────────────────────────────────────────────────────┤    │
-│  │  执行计划                                                    │    │
-│  │  ┌─────────────────────────────────────────────────────┐    │    │
-│  │  │ 执行方式:                                            │    │    │
-│  │  │  (○) 立即执行  ( ) 定时执行  ( ) 循环执行          │    │    │
-│  │  │                                                    │    │    │
-│  │  │  循环配置:                                          │    │    │
-│  │  │  间隔 [____] 秒  最大执行 [____] 次  无限循环 [ ]  │    │    │
-│  │  │                                                    │    │    │
-│  │  │  或者 Cron表达式: [____]                           │    │    │
-│  │  │  示例: 0 0 * * * (每天凌晨)                        │    │    │
-│  │  └─────────────────────────────────────────────────────┘    │    │
-│  ├─────────────────────────────────────────────────────────────┤    │
-│  │  环境配置                                                    │    │
-│  │  ┌─────────────────────────────────────────────────────┐    │    │
-│  │  │ 浏览器配置: [Default Profile v]  [+] 新建配置       │    │    │
-│  │  │                                                    │    │    │
-│  │  │  [✓] 使用代理  [✓] 指纹保护  [✓] 扩展注入          │    │    │
-│  │  │                                                    │    │    │
-│  │  │  注入扩展: [✓] MetaMask  [✓] OKX Wallet           │    │    │
-│  │  └─────────────────────────────────────────────────────┘    │    │
-│  ├─────────────────────────────────────────────────────────────┤    │
-│  │  高级选项                                                    │    │
-│  │  ┌─────────────────────────────────────────────────────┐    │    │
-│  │  │ 超时时间: [____] 秒  重试次数: [____]               │    │    │
-│  │  │ 重试间隔: [____] 秒  并发数: [____]                 │    │    │
-│  │  │                                                    │    │    │
-│  │  │ 通知: [✓] 执行失败时通知                           │    │    │
-│  │  └─────────────────────────────────────────────────────┘    │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-│                                                                      │
 │  ┌────────────────────────────────────────────────────────────┐     │
-│  │  [取消]  [保存为草稿]  [保存并启用]                        │     │
+│  │ ID │ 名称      │ 地址              │ 备注    │ 分组   │ 操作 │     │
+│  ├────────────────────────────────────────────────────────────┤     │
+│  │ 1  │ Main      │ 0x742d...f44e     │ 主钱包  │ Default│ 编辑 │     │
+│  │ 2  │ Airdrop 1 │ 0x123d...abc      │ 空投1   │ Group A│ 删除 │     │
+│  │ 3  │ Airdrop 2 │ 0x456d...def      │ 空投2   │ Group A│      │     │
 │  └────────────────────────────────────────────────────────────┘     │
+│                                                                      │
+│  总计: 3 个钱包                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 任务监控页面
+#### 3.1.2 Excel 导入格式
+
+| 名称 | 私钥 | 地址 | 备注 | 分组 | 代理 |
+|------|------|------|------|------|------|
+| Main | 0x... | 0x742d... | 主钱包 | Default | Direct |
+| Airdrop 1 | 0x... | 0x123d... | 空投1 | Group A | http://proxy:8080 |
+
+### 3.2 环境配置页面
 
 #### 3.2.1 布局结构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
+│  环境配置                                                            │
+│  ┌──────────────────────────────┐  ┌──────────────────────────────┐ │
+│  │ [批量生成] [导入] [导出]      │  │ 编辑配置: Profile-001        │ │
+│  │                              │  │                              │ │
+│  │ 环境列表                      │  │ 配置名称: [____________]     │ │
+│  │ ┌──────────────────────────┐ │  │                              │ │
+│  │ │ Profile-001              │ │  │ User Agent:                  │ │
+│  │ │ 1920x1080 | Direct       │ │  │ [________________________]   │ │
+│  │ │                          │ │  │                              │ │
+│  │ │ Profile-002              │ │  │ 分辨率: [1920x1080    v]     │ │
+│  │ │ 1366x768 | HTTP Proxy    │ │  │ 代理:   [Direct       v]     │ │
+│  │ │                          │ │  │                              │ │
+│  │ │ Profile-003              │ │  │ ┌──────────────────────────┐ │ │
+│  │ │ ...                      │ │  │ │ 指纹保护 (Anti-Detect)   │ │ │
+│  │ └──────────────────────────┘ │  │ ├──────────────────────────┤ │ │
+│  │                              │  │ │ [✓] Canvas 指纹混淆      │ │ │
+│  └──────────────────────────────┘  │ │ [✓] WebGL 渲染伪装       │ │ │
+│                                     │ │ [✓] Audio Context 噪音   │ │ │
+│                                     │ │ [✓] 时区伪装             │ │ │
+│                                     │ │ [✓] 地理位置伪装         │ │ │
+│                                     │ │ [✓] 字体伪装             │ │ │
+│                                     │ │ [✓] WebRTC 防泄漏        │ │ │
+│                                     │ └──────────────────────────┘ │ │
+│                                     │                              │ │
+│                                     │ [删除] [取消] [保存]         │ │
+│                                     └──────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.3 脚本编辑页面
+
+#### 3.3.1 布局结构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  脚本编辑                                                            │
+│  ┌──────────────────┐  ┌──────────────────────────────────────────┐ │
+│  │ [新建] [导入]     │  │ 当前编辑: OKX Daily Claim                │ │
+│  │                  │  │                                          │ │
+│  │ 脚本列表          │  │ ┌──────────────────────────────────────┐ │ │
+│  │ ┌──────────────┐ │  │ │ [API文档] [全屏] [导出] [复制] [测试]│ │ │
+│  │ │ OKX Daily    │ │  │ └──────────────────────────────────────┘ │ │
+│  │ │ Uniswap Swap │ │  │                                          │ │
+│  │ │ LayerZero    │ │  │ ┌──────────────────────────────────────┐ │ │
+│  │ │ ...          │ │  │ │ // OKX Daily Claim Script            │ │ │
+│  │ └──────────────┘ │  │ │ async function run({ page, wallet,   │ │ │
+│  │                  │  │ │   api }) {                             │ │ │
+│  │                  │  │ │   api.log('info', '开始执行');         │ │ │
+│  │                  │  │ │   await page.goto('https://okx.com');  │ │ │
+│  │                  │  │ │   await api.connectOKXWallet();        │ │ │
+│  │                  │  │ │   // ...                               │ │ │
+│  │                  │  │ │ }                                      │ │ │
+│  │                  │  │ └──────────────────────────────────────┘ │ │
+│  │                  │  │                                          │ │
+│  └──────────────────┘  └──────────────────────────────────────────┘ │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │ API 参考文档                                                    │ │
+│  │ [钱包连接] [签名操作] [交易操作] [浏览器操作] [工具函数]        │ │
+│  │                                                                 │ │
+│  │ connectMetaMask(options) - 连接 MetaMask 钱包                  │ │
+│  │ signMessage(message) - 签名消息                                │ │
+│  │ clickElement(selector) - 点击元素                              │ │
+│  │ ...                                                            │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.4 执行面板页面
+
+#### 3.4.1 布局结构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  执行面板                                                            │
+│  ┌──────────────────────────────┐  ┌──────────────────────────────┐ │
+│  │ 配置                          │  │ 执行状态                     │ │
+│  │                              │  │                              │ │
+│  │ 选择脚本:                    │  │ 执行时间: 00:05:32           │ │
+│  │ [OKX Daily Claim      v]     │  │ 总任务: 10                   │ │
+│  │                              │  │ 成功: 8    失败: 0   等待: 2 │ │
+│  │ 浏览器配置:                  │  │                              │ │
+│  │ [Profile-001          v]     │  │ 进度: 80%                    │ │
+│  │                              │  │ ████████████████████░░       │ │
+│  │ 选择钱包:                    │  │                              │ │
+│  │ [✓] 全部 (10)               │  │ [开始执行] [停止] [重置]     │ │
+│  │ [✓] Main (0x742d...)        │  │                              │ │
+│  │ [✓] Airdrop 1 (0x123d...)   │  │                              │ │
+│  │ [✓] Airdrop 2 (0x456d...)   │  │                              │ │
+│  │ ...                         │  │                              │ │
+│  │                              │  │                              │ │
+│  │ 执行配置:                    │  │                              │ │
+│  │ [✓] 无头模式                │  │                              │ │
+│  │ [✓] 使用代理                │  │                              │ │
+│  │ [✓] 指纹保护                │  │                              │ │
+│  │                              │  │                              │ │
+│  └──────────────────────────────┘  └──────────────────────────────┘ │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │ [执行队列] [执行日志]                                           │ │
+│  │                                                                 │ │
+│  │ 钱包              状态      耗时      交易哈希                  │ │
+│  │ Main              [✓]成功   12.5s     0xabc...                  │ │
+│  │ Airdrop 1         [✓]成功   11.8s     0xdef...                  │ │
+│  │ Airdrop 2         [运行中]  --        --                        │ │
+│  │ Airdrop 3         [等待中]  --        --                        │ │
+│  │ ...                                                             │ │
+│  │                                                                 │ │
+│  │ [14:25:32] [INFO] 任务开始执行: OKX Daily Claim                 │ │
+│  │ [14:25:33] [INFO] 初始化浏览器环境...                           │ │
+│  │ [14:25:34] [SUCCESS] Main 执行成功                              │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.5 任务管理页面
+
+#### 3.5.1 布局结构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  任务管理                                                            │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ [新建任务] [导入] [导出] [清空]                            │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ 任务名称        执行时间      状态      执行次数    操作   │     │
+│  ├────────────────────────────────────────────────────────────┤     │
+│  │ OKX Daily       每天 9:00     [运行中]  45/∞       [停止] │     │
+│  │ Uniswap Swap    每周一 10:00  [已暂停]  12/12      [启动] │     │
+│  │ LayerZero       2024-01-15    [已启用]  0/100      [编辑] │     │
+│  │ Airdrop Batch   立即执行      [已完成]  100/100    [删除] │     │
+│  └────────────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.5.2 新建/编辑任务弹窗
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  新建任务                                                            │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ 基本信息                                                    │     │
+│  │ 任务名称: [________________________] *                      │     │
+│  │ 任务描述: [________________________]                        │     │
+│  ├────────────────────────────────────────────────────────────┤     │
+│  │ 脚本选择                                                    │     │
+│  │ 选择脚本: [OKX Daily Claim          v] *                    │     │
+│  ├────────────────────────────────────────────────────────────┤     │
+│  │ 钱包选择                                                    │     │
+│  │ 选择方式: (○) 全部钱包  ( ) 指定分组  ( ) 指定钱包         │     │
+│  │                                                            │     │
+│  │ 钱包列表:                                                  │     │
+│  │ [✓] Main (0x742d...)                                       │     │
+│  │ [✓] Airdrop 1 (0x123d...)                                  │     │
+│  │ [✓] Airdrop 2 (0x456d...)                                  │     │
+│  ├────────────────────────────────────────────────────────────┤     │
+│  │ 环境配置                                                    │     │
+│  │ 分配策略: (○) 随机使用所有环境  ( ) 顺序使用  ( ) 指定环境 │     │
+│  │                                                            │     │
+│  │ 说明: 执行时将随机从所有环境配置中选择一个使用             │     │
+│  ├────────────────────────────────────────────────────────────┤     │
+│  │ 执行计划                                                    │     │
+│  │ 执行方式: (○) 立即执行  ( ) 定时执行(Cron)                 │     │
+│  │                                                            │     │
+│  │ Cron 表达式: [0 9 * * *            ]                       │     │
+│  │ 示例: 0 9 * * * (每天9点), 0 */6 * * * (每6小时)           │     │
+│  ├────────────────────────────────────────────────────────────┤     │
+│  │ 高级选项                                                    │     │
+│  │ 超时时间: [300    ] 秒   重试次数: [3    ]                 │     │
+│  │ 并发数:   [1      ]                                      │     │
+│  │ [✓] 执行失败时通知                                        │     │
+│  ├────────────────────────────────────────────────────────────┤     │
+│  │ [取消]  [保存为草稿]  [保存并启用]                         │     │
+│  └────────────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.6 任务监控页面
+
+#### 3.6.1 布局结构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
 │  任务监控                                                            │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │ 总任务: 12  运行中: 2  成功: 156  失败: 3                  │     │
-│  └────────────────────────────────────────────────────────────┘     │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐               │
+│  │ 总执行   │ │ 成功     │ │ 失败     │ │ 成功率   │               │
+│  │ 156      │ │ 150      │ │ 6        │ │ 96%      │               │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘               │
 │                                                                      │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │ 任务列表                                    [刷新] [批量操作]│     │
-│  │ ┌────────────────────────────────────────────────────────┐│     │
-│  │ │ 名称              状态     下次执行    执行次数  操作  ││     │
-│  │ ├────────────────────────────────────────────────────────┤│     │
-│  │ │ OKX Daily Claim   运行中   --          45/45     [详情]││     │
-│  │ │ Uniswap Swap      已暂停   14:30:00    12/12     [启动]││     │
-│  │ │ LayerZero Bridge  已启用   2024-01-15  0/∞       [停止]││     │
-│  │ │ Airdrop Batch     已完成   --          100/100   [重置]││     │
-│  │ └────────────────────────────────────────────────────────┘│     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │ 执行详情 - OKX Daily Claim                                  │     │
-│  │ [所有钱包 v]  总进度: 45/45 (100%)  ████████████████████   │     │
-│  │                                                              │     │
-│  │ ┌────────────────────────────────────────────────────────┐  │     │
-│  │ │ 0x742d...f44e  [✓] 成功  耗时: 12.5s  交易: 0xabc...  │  │     │
-│  │ │ 0x123d...abc   [✓] 成功  耗时: 11.8s  交易: 0xdef...  │  │     │
-│  │ │ 0x456d...def   [✓] 成功  耗时: 13.2s  交易: 0xghi...  │  │     │
-│  │ │ 0x789d...jkl   [✓] 成功  耗时: 10.5s  交易: 0xmno...  │  │     │
-│  │ │ 0x321d...pqr   [运行中] ...                           │  │     │
-│  │ │ 0x654d...stu   [等待中] 等待执行...                   │  │     │
-│  │ └────────────────────────────────────────────────────────┘  │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │ 实时日志                                                    │     │
-│  │ [清空]                                                       │     │
-│  │ [14:25:32] [INFO] 任务开始执行: OKX Daily Claim           │     │
-│  │ [14:25:33] [INFO] 初始化浏览器环境...                     │     │
-│  │ [14:25:34] [INFO] 注入 MetaMask 扩展 v10.33.1             │     │
-│  │ [14:25:35] [INFO] 加载脚本: OKX Daily Claim v1.2          │     │
-│  │ [14:25:36] [INFO] 开始执行钱包: 0x742d...f44e             │     │
-│  │ [14:25:38] [SUCCESS] 0x742d...f44e 执行成功               │     │
-│  │ [14:25:39] [INFO] 开始执行钱包: 0x123d...abc              │     │
-│  │ [14:25:41] [SUCCESS] 0x123d...abc 执行成功               │     │
-│  │ ...                                                         │     │
-│  └────────────────────────────────────────────────────────────┘     │
+│  ┌──────────────────────────────┐  ┌──────────────────────────────┐ │
+│  │ 执行历史                      │  │ 执行详情                     │ │
+│  │ [搜索...] [刷新] [清空]      │  │                              │ │
+│  │                              │  │ 任务: OKX Daily Claim        │ │
+│  │ 钱包        脚本      时间   │  │ 钱包: Main (0x742d...)       │ │
+│  │ Main        OKX       14:25  │  │ 环境: Profile-003            │ │
+│  │ Airdrop 1   OKX       14:26  │  │ 状态: [✓] 成功               │ │
+│  │ Airdrop 2   OKX       14:27  │  │ 耗时: 12.5s                  │ │
+│  │ ...                          │  │ 交易: 0xabc...               │ │
+│  │                              │  │                              │ │
+│  │                              │  │ 执行日志:                    │ │
+│  │                              │  │ [14:25:32] 开始执行          │ │
+│  │                              │  │ [14:25:33] 连接钱包          │ │
+│  │                              │  │ [14:25:35] 签到成功          │ │
+│  │                              │  │                              │ │
+│  └──────────────────────────────┘  └──────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -351,12 +556,10 @@ CREATE TABLE browser_profiles (
 /**
  * 连接 MetaMask 钱包
  * @param {Object} options - 连接选项
- * @param {string} options.expectedChainId - 期望的网络ID (如 '0x1' for Ethereum Mainnet)
+ * @param {string} options.expectedChainId - 期望的网络ID (如 '0x1')
  * @returns {Promise<string>} 连接后的钱包地址
  */
-async function connectMetaMask(options = {}) {
-    // 实现逻辑
-}
+async function connectMetaMask(options = {}) {}
 
 /**
  * 连接 OKX Wallet
@@ -364,26 +567,20 @@ async function connectMetaMask(options = {}) {
  * @param {string} options.chainId - 链ID
  * @returns {Promise<string>} 连接后的钱包地址
  */
-async function connectOKXWallet(options = {}) {
-    // 实现逻辑
-}
+async function connectOKXWallet(options = {}) {}
 
 /**
  * 切换钱包网络
  * @param {string} chainId - 目标网络ID (十六进制字符串)
  * @returns {Promise<boolean>} 是否切换成功
  */
-async function switchNetwork(chainId) {
-    // 实现逻辑
-}
+async function switchNetwork(chainId) {}
 
 /**
  * 获取当前连接的钱包地址
  * @returns {Promise<string>} 当前地址
  */
-async function getCurrentAddress() {
-    // 实现逻辑
-}
+async function getCurrentAddress() {}
 ```
 
 #### 4.1.2 签名类
@@ -395,9 +592,7 @@ async function getCurrentAddress() {
  * @param {Object} options - 选项
  * @returns {Promise<string>} 签名结果 (hex格式)
  */
-async function signMessage(message, options = {}) {
-    // 实现逻辑
-}
+async function signMessage(message, options = {}) {}
 
 /**
  * 签名交易
@@ -407,9 +602,7 @@ async function signMessage(message, options = {}) {
  * @param {string} tx.data - 可选数据
  * @returns {Promise<string>} 签名后的交易
  */
-async function signTransaction(tx) {
-    // 实现逻辑
-}
+async function signTransaction(tx) {}
 
 /**
  * 签名类型数据 (EIP-712)
@@ -418,9 +611,7 @@ async function signTransaction(tx) {
  * @param {Object} value - 要签名的值
  * @returns {Promise<string>} 签名结果
  */
-async function signTypedData(domain, types, value) {
-    // 实现逻辑
-}
+async function signTypedData(domain, types, value) {}
 ```
 
 #### 4.1.3 交易类
@@ -433,9 +624,7 @@ async function signTypedData(domain, types, value) {
  * @param {Object} options - 选项
  * @returns {Promise<Object>} 交易结果 {hash, status}
  */
-async function sendNativeTransfer(to, amount, options = {}) {
-    // 实现逻辑
-}
+async function sendNativeTransfer(to, amount, options = {}) {}
 
 /**
  * ERC-20 Token 授权
@@ -444,9 +633,7 @@ async function sendNativeTransfer(to, amount, options = {}) {
  * @param {string} amount - 授权数量 (可读格式，如 '1000 USDC')
  * @returns {Promise<Object>} 交易结果
  */
-async function approveToken(tokenAddress, spender, amount) {
-    // 实现逻辑
-}
+async function approveToken(tokenAddress, spender, amount) {}
 
 /**
  * ERC-20 Token 转账
@@ -455,9 +642,7 @@ async function approveToken(tokenAddress, spender, amount) {
  * @param {string} amount - 转账数量
  * @returns {Promise<Object>} 交易结果
  */
-async function transferToken(tokenAddress, to, amount) {
-    // 实现逻辑
-}
+async function transferToken(tokenAddress, to, amount) {}
 
 /**
  * 等待交易确认
@@ -465,9 +650,7 @@ async function transferToken(tokenAddress, to, amount) {
  * @param {number} confirmations - 确认数 (默认1)
  * @returns {Promise<Object>} 交易收据
  */
-async function waitForTransaction(txHash, confirmations = 1) {
-    // 实现逻辑
-}
+async function waitForTransaction(txHash, confirmations = 1) {}
 ```
 
 #### 4.1.4 浏览器操作类
@@ -479,9 +662,7 @@ async function waitForTransaction(txHash, confirmations = 1) {
  * @param {number} timeout - 超时时间 (毫秒)
  * @returns {Promise<Element>} 元素
  */
-async function waitForSelector(selector, timeout = 30000) {
-    // 实现逻辑
-}
+async function waitForSelector(selector, timeout = 30000) {}
 
 /**
  * 等待元素消失
@@ -489,19 +670,7 @@ async function waitForSelector(selector, timeout = 30000) {
  * @param {number} timeout - 超时时间 (毫秒)
  * @returns {Promise<boolean>} 是否成功消失
  */
-async function waitForSelectorHidden(selector, timeout = 30000) {
-    // 实现逻辑
-}
-
-/**
- * 等待页面加载
- * @param {string} url - 期望的URL
- * @param {number} timeout - 超时时间
- * @returns {Promise<boolean>}
- */
-async function waitForPageLoad(url, timeout = 60000) {
-    // 实现逻辑
-}
+async function waitForSelectorHidden(selector, timeout = 30000) {}
 
 /**
  * 点击元素
@@ -509,9 +678,7 @@ async function waitForPageLoad(url, timeout = 60000) {
  * @param {Object} options - 选项
  * @returns {Promise<void>}
  */
-async function clickElement(selector, options = {}) {
-    // 实现逻辑
-}
+async function clickElement(selector, options = {}) {}
 
 /**
  * 输入文本
@@ -520,28 +687,14 @@ async function clickElement(selector, options = {}) {
  * @param {Object} options - 选项
  * @returns {Promise<void>}
  */
-async function inputText(selector, text, options = {}) {
-    // 实现逻辑
-}
+async function inputText(selector, text, options = {}) {}
 
 /**
  * 获取元素文本
  * @param {string} selector - CSS选择器
  * @returns {Promise<string>} 元素文本
  */
-async function getElementText(selector) {
-    // 实现逻辑
-}
-
-/**
- * 执行任意 JavaScript
- * @param {string|Function} fn - JavaScript代码或函数
- * @param {...any} args - 参数
- * @returns {Promise<any>} 执行结果
- */
-async function executeScript(fn, ...args) {
-    // 实现逻辑
-}
+async function getElementText(selector) {}
 ```
 
 #### 4.1.5 工具类
@@ -553,848 +706,156 @@ async function executeScript(fn, ...args) {
  * @param {number} maxMs - 最大延迟 (毫秒)
  * @returns {Promise<void>}
  */
-async function randomDelay(minMs = 1000, maxMs = 3000) {
-    // 实现逻辑
-}
+async function randomDelay(minMs = 1000, maxMs = 3000) {}
 
 /**
- * 随机点击 (带鼠标移动)
+ * 模拟人类点击 (带随机偏移)
  * @param {string} selector - CSS选择器
  * @param {Object} options - 选项
  * @returns {Promise<void>}
  */
-async function humanLikeClick(selector, options = {}) {
-    // 实现逻辑
-}
+async function humanLikeClick(selector, options = {}) {}
 
 /**
- * 获取当前钱包余额
+ * 获取钱包余额
  * @param {string} tokenAddress - Token地址 (空则为主币)
- * @returns {Promise<string>} 余额 (可读格式)
+ * @returns {Promise<string>} 余额
  */
-async function getBalance(tokenAddress = null) {
-    // 实现逻辑
-}
-
-/**
- * 获取Gas价格
- * @returns {Promise<Object>} {slow, standard, fast}
- */
-async function getGasPrices() {
-    // 实现逻辑
-}
+async function getBalance(tokenAddress = null) {}
 
 /**
  * 日志输出
  * @param {string} level - 日志级别 (info, warn, error, success)
  * @param {string} message - 消息
  */
-function log(level, message) {
-    // 实现逻辑
-}
+function log(level, message) {}
 ```
 
 ### 4.2 脚本示例
 
-#### 4.2.1 OKX 每日签到示例
-
 ```javascript
 // OKX Daily Claim Script
-// 依赖API: connectOKXWallet, clickElement, waitForSelector, randomDelay, log
-
-async function run(page, wallet, { connectOKXWallet, clickElement, waitForSelector, randomDelay, log }) {
-    log('info', '开始执行 OKX Daily Claim');
-
+async function run({ page, wallet, api }) {
+    api.log('info', '开始执行 OKX Daily Claim');
+    
     // 1. 打开OKX官网
     await page.goto('https://www.okx.com');
-    await waitForSelector('body');
-    await randomDelay(2000, 4000);
-
+    await api.waitForSelector('body');
+    await api.randomDelay(2000, 4000);
+    
     // 2. 连接钱包
-    log('info', '连接 OKX Wallet...');
-    await connectOKXWallet({ chainId: '0x1' });
-    await randomDelay(1000, 2000);
-
+    api.log('info', '连接 OKX Wallet...');
+    await api.connectOKXWallet({ chainId: '0x1' });
+    await api.randomDelay(1000, 2000);
+    
     // 3. 导航到签到页面
-    log('info', '导航到 Rewards 页面...');
+    api.log('info', '导航到 Rewards 页面...');
     await page.goto('https://www.okx.com/rewards');
-    await waitForSelector('button.claim-button', 10000);
-    await randomDelay(1000, 2000);
-
+    await api.waitForSelector('button.claim-button', 10000);
+    
     // 4. 点击签到
-    log('info', '执行签到操作...');
-    const claimButton = await page.$('button.claim-button');
-    if (claimButton) {
-        await claimButton.click();
-        await randomDelay(3000, 5000);
-        log('success', '签到完成');
-    } else {
-        log('warn', '未找到签到按钮，可能今日已签到');
-    }
-
-    return { success: true };
-}
-```
-
-#### 4.2.2 Uniswap Swap 示例
-
-```javascript
-// Uniswap V3 Swap Script
-// 依赖API: connectMetaMask, switchNetwork, approveToken, transferToken, waitForSelector, log
-
-async function run(page, wallet, { connectMetaMask, switchNetwork, approveToken, waitForSelector, log }) {
-    const ETH_AMOUNT = '0.1';
-    const USDC_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
-    const UNISWAP_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
-
-    log('info', '开始执行 Uniswap Swap');
-
-    // 1. 连接钱包
-    await connectMetaMask({ expectedChainId: '0x1' });
-    await switchNetwork('0x1');
-
-    // 2. 打开Uniswap
-    await page.goto('https://app.uniswap.org');
-    await waitForSelector('body');
-    await randomDelay(2000, 3000);
-
-    // 3. 选择Token
-    // ... Token选择逻辑
-
-    // 4. 输入金额
-    // ... 输入金额逻辑
-
-    // 5. 确认交易
-    log('info', '确认交易...');
-    await clickElement('button[data-testid="swap-button"]');
-    await randomDelay(1000, 2000);
-
-    // 6. 等待MetaMask确认
-    log('info', '等待钱包签名...');
-    await waitForSelector('div.swap-review', 30000);
-
+    api.log('info', '执行签到操作...');
+    await api.clickElement('button.claim-button');
+    await api.randomDelay(3000, 5000);
+    
+    api.log('success', '签到完成');
     return { success: true };
 }
 ```
 
 ---
 
-## 5. 脚本预处理器设计
+## 5. 环境随机分配策略
 
-### 5.1 预处理流程
+### 5.1 分配策略实现
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Script Preprocessor                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│   原始脚本                                                                 │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │ async function run(page, wallet, api) {                         │   │
-│   │   await api.connectMetaMask();                                  │   │
-│   │   await api.signMessage('Hello');                               │   │
-│   │   await page.goto('https://example.com');                       │   │
-│   │   await api.clickElement('.submit-btn');                        │   │
-│   │ }                                                               │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                 │                                        │
-│                                 ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │ Step 1: 解析依赖API                                             │   │
-│   │   - 扫描脚本中的 api.XXX 调用                                   │   │
-│   │   - 提取所需的API列表: [connectMetaMask, signMessage,           │   │
-│   │     clickElement]                                               │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                 │                                        │
-│                                 ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │ Step 2: 生成API实现代码                                         │   │
-│   │   - 根据依赖列表生成对应的实现代码                              │   │
-│   │   - 包含DOM操作、钱包交互、Web3调用等                           │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                 │                                        │
-│                                 ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │ Step 3: 注入模板代码                                            │   │
-│   │   - 添加Playwright初始化代码                                    │   │
-│   │   - 添加防检测代码                                              │   │
-│   │   - 添加钱包注入代码                                            │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                 │                                        │
-│                                 ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │ Step 4: 代码验证                                                │   │
-│   │   - 语法检查                                                    │   │
-│   │   - 依赖完整性检查                                              │   │
-│   │   - 安全检查 (禁止的危险操作)                                   │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                 │                                        │
-│                                 ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │ Step 5: 输出完整脚本                                           │   │
-│   │   - 生成可直接执行的JavaScript代码                              │   │
-│   │   - 保存到临时文件                                              │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+```typescript
+// 环境分配策略类型
+type ProfileStrategy = 'random' | 'sequential' | 'specific';
 
-### 5.2 预处理器核心代码
-
-```javascript
-// src-tauri/src/automation/script_preprocessor.rs
-
-use regex::Regex;
-use serde_json::Value;
-use std::collections::HashSet;
-
-pub struct ScriptPreprocessor {
-    // API定义
-    api_definitions: HashMap<String, ApiDefinition>,
-}
-
-struct ApiDefinition {
-    name: String,
-    params: Vec<String>,
-    return_type: String,
-    implementation: String,
-}
-
-impl ScriptPreprocessor {
-    /// 预处理脚本
-    pub fn preprocess(&self, source: &str, required_apis: &[String]) -> Result<String, String> {
-        // 1. 解析依赖
-        let dependencies = self.parse_dependencies(source)?;
-
-        // 2. 验证依赖
-        self.validate_dependencies(&dependencies)?;
-
-        // 3. 生成API对象
-        let api_code = self.generate_api_code(&dependencies)?;
-
-        // 4. 注入模板
-        let full_script = self.inject_template(source, &api_code)?;
-
-        // 5. 语法验证
-        self.validate_syntax(&full_script)?;
-
-        Ok(full_script)
-    }
-
-    /// 解析脚本中的API依赖
-    fn parse_dependencies(&self, source: &str) -> Result<HashSet<String>, String> {
-        let re = Regex::new(r"api\.(\w+)").unwrap();
-        let mut deps = HashSet::new();
-
-        for cap in re.captures_iter(source) {
-            if let Some(method_name) = cap.get(1) {
-                deps.insert(method_name.as_str().to_string());
+// 环境分配函数
+function assignProfile(
+    strategy: ProfileStrategy,
+    profiles: BrowserProfile[],
+    index: number,
+    specificProfileId?: number
+): BrowserProfile {
+    switch (strategy) {
+        case 'random':
+            // 随机从所有环境中选择一个
+            return profiles[Math.floor(Math.random() * profiles.length)];
+        
+        case 'sequential':
+            // 按顺序循环使用
+            return profiles[index % profiles.length];
+        
+        case 'specific':
+            // 使用指定的环境
+            const profile = profiles.find(p => p.id === specificProfileId);
+            if (!profile) {
+                throw new Error(`指定的环境配置不存在: ${specificProfileId}`);
             }
-        }
-
-        Ok(deps)
-    }
-
-    /// 生成API实现代码
-    fn generate_api_code(&self, deps: &HashSet<String>) -> Result<String, String> {
-        let mut implementations = Vec::new();
-
-        for dep in deps {
-            if let Some(api_def) = self.api_definitions.get(dep) {
-                implementations.push(api_def.implementation.clone());
-            }
-        }
-
-        Ok(implementations.join("\n\n"))
-    }
-
-    /// 注入完整模板
-    fn inject_template(&self, user_code: &str, api_code: &str) -> Result<String, String> {
-        format!(r#"
-/**
- * Auto-generated Automation Script
- * Generated at: {}
- */
-
-const API = {{}};
-
-// Inject API implementations
-(async function() {{
-    {api_code}
-}})();
-
-// User Script
-{user_code}
-        "#, chrono::Utc::now().to_rfc3339(), api_code = api_code, user_code = user_code)
-            .parse()
-            .map_err(|e| e.to_string())
-    }
-
-    /// 验证依赖是否都已知
-    fn validate_dependencies(&self, deps: &HashSet<String>) -> Result<(), String> {
-        let unknown: Vec<_> = deps.iter()
-            .filter(|d| !self.api_definitions.contains_key(*d))
-            .collect();
-
-        if !unknown.is_empty() {
-            return Err(format!("Unknown API methods: {}", unknown.join(", ")));
-        }
-
-        Ok(())
-    }
-
-    /// 验证JavaScript语法
-    fn validate_syntax(&self, code: &str) -> Result<(), String> {
-        // 使用 quickjs 或其他JS引擎验证语法
-        // 或者使用 swc 解析
-        Ok(())
+            return profile;
+        
+        default:
+            return profiles[0];
     }
 }
-```
 
-### 5.3 API实现生成器
-
-```javascript
-// API实现模板 - 实际会转换为Playwright可执行代码
-
-const API_METHODS = {
-    // MetaMask连接
-    connectMetaMask: `
-async function connectMetaMask(options = {}) {
-    const { expectedChainId } = options;
-
-    // 点击 MetaMask 图标或连接按钮
-    const connectBtn = await page.$('button:has-text("Connect Wallet")');
-    if (connectBtn) {
-        await connectBtn.click();
-        await page.waitForTimeout(1000);
-
-        // 选择 MetaMask
-        const metamaskBtn = await page.$('text=MetaMask');
-        if (metamaskBtn) {
-            await metamaskBtn.click();
-            await page.waitForTimeout(2000);
-        }
-    }
-
-    // 处理弹窗
-    // 点击"签名"或"连接"按钮
-    const signBtn = await page.$('button:has-text("Sign")');
-    if (signBtn) {
-        await signBtn.click();
-    }
-
-    // 等待连接成功
-    await page.waitForTimeout(3000);
-
-    // 获取连接后的地址
-    const address = await page.evaluate(() => {
-        // 尝试从页面获取地址
-        const els = document.querySelectorAll('[data-testid="account-button"]');
-        if (els.length > 0) {
-            return els[0].textContent.trim();
-        }
-        return '';
+// 批量执行时的环境分配示例
+async function executeBatch(
+    wallets: Wallet[],
+    profiles: BrowserProfile[],
+    strategy: ProfileStrategy
+) {
+    const assignments = wallets.map((wallet, index) => ({
+        wallet,
+        profile: assignProfile(strategy, profiles, index)
+    }));
+    
+    // 输出分配结果
+    assignments.forEach(({ wallet, profile }) => {
+        console.log(`钱包 ${wallet.name} -> 环境 ${profile.name}`);
     });
-
-    return address;
-}`,
-
-    // OKX Wallet连接
-    connectOKXWallet: `
-async function connectOKXWallet(options = {}) {
-    const { chainId } = options;
-
-    // 点击连接钱包按钮
-    const connectBtn = await page.$('button:has-text("Connect Wallet")');
-    if (connectBtn) {
-        await connectBtn.click();
-        await page.waitForTimeout(1000);
-    }
-
-    // 选择 OKX Wallet
-    const okxBtn = await page.$('text=OKX Wallet');
-    if (okxBtn) {
-        await okxBtn.click();
-        await page.waitForTimeout(2000);
-    }
-
-    // 等待连接
-    await page.waitForTimeout(3000);
-
-    return await page.evaluate(() => {
-        // 获取地址逻辑
-        return '';
-    });
-}`,
-
-    // 点击元素
-    clickElement: `
-async function clickElement(selector, options = {}) {
-    const element = await page.$(selector);
-    if (element) {
-        await element.click();
-        await page.waitForTimeout(1000);
-    } else {
-        throw new Error(\`Element not found: \${selector}\`);
-    }
-}`,
-
-    // 等待选择器
-    waitForSelector: `
-async function waitForSelector(selector, timeout = 30000) {
-    return await page.waitForSelector(selector, { timeout, state: 'visible' });
-}`,
-
-    // 随机延迟
-    randomDelay: `
-async function randomDelay(minMs = 1000, maxMs = 3000) {
-    const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
-    await page.waitForTimeout(delay);
-}`,
-
-    // 日志
-    log: `
-function log(level, message) {
-    const timestamp = new Date().toISOString();
-    console.log(\`[\${timestamp}] [\${level.toUpperCase()}] \${message}\`);
-}`,
-};
-```
-
----
-
-## 6. 后端任务调度设计
-
-### 6.1 任务调度器架构
-
-```rust
-// src-tauri/src/automation/mod.rs
-
-use tokio::sync::mpsc;
-use std::sync::Arc;
-use chrono::{DateTime, Utc};
-use cron::Schedule;
-
-pub struct TaskScheduler {
-    // 任务仓库
-    task_repo: Arc<TaskRepository>,
-    // 执行器
-    executor: Arc<TaskExecutor>,
-    // 调度器
-    cron_scheduler: Arc<CronScheduler>,
-    // 任务状态
-    state: Arc<RwLock<SchedulerState>>,
-}
-
-struct SchedulerState {
-    running_tasks: HashMap<u64, RunningTask>,
-    last_check: DateTime<Utc>,
-}
-
-struct RunningTask {
-    task_id: u64,
-    status: TaskStatus,
-    started_at: DateTime<Utc>,
-    wallet_count: usize,
-    completed_count: usize,
-    failed_count: usize,
-    tx: mpsc::Sender<TaskEvent>,
-}
-
-impl TaskScheduler {
-    /// 启动调度器
-    pub async fn start(&self) -> Result<(), String> {
-        // 启动cron调度循环
-        self.start_cron_loop().await?;
-
-        // 启动任务执行循环
-        self.start_execution_loop().await?;
-
-        Ok(())
-    }
-
-    /// 添加任务到执行队列
-    pub async fn schedule_task(&self, task: Task) -> Result<(), String> {
-        // 解析调度配置
-        let schedule = self.parse_schedule(&task.schedule_config)?;
-
-        // 计算下次执行时间
-        let next_run = schedule.after(&Utc::now()).next();
-
-        // 保存任务
-        self.task_repo.save(&task, next_run).await?;
-
-        Ok(())
-    }
-
-    /// 手动触发任务执行
-    pub async fn trigger_task(&self, task_id: u64) -> Result<(), String> {
-        let task = self.task_repo.get(task_id).await?
-            .ok_or_else(|| "Task not found".to_string())?;
-
-        // 立即执行
-        self.execute_task(task).await?;
-
-        Ok(())
-    }
-
-    /// 停止任务
-    pub async fn stop_task(&self, task_id: u64) -> Result<(), String> {
-        // 发送停止信号
-        if let Some(running) = self.state.write().await.running_tasks.get(&task_id) {
-            running.tx.send(TaskEvent::Stop).await?;
-        }
-
-        Ok(())
-    }
-}
-```
-
-### 6.2 任务执行器
-
-```rust
-// src-tauri/src/automation/executor.rs
-
-pub struct TaskExecutor {
-    // Playwright Bridge
-    playwright_bridge: Arc<PlaywrightBridge>,
-    // 浏览器实例池
-    browser_pool: BrowserPool,
-    // 数据库
-    db: Arc<Database>,
-}
-
-impl TaskExecutor {
-    /// 执行任务
-    pub async fn execute(&self, task: &Task) -> Result<TaskResult, String> {
-        let wallets = self.get_wallets(&task.wallet_group_id).await?;
-        let script = self.get_script(&task.script_id).await?;
-
-        // 预处理脚本
-        let compiled_script = self.preprocessor.preprocess(
-            &script.content,
-            &script.required_apis
-        )?;
-
-        let total_wallets = wallets.len();
-        let mut results = Vec::new();
-        let mut success_count = 0;
-        let mut failed_count = 0;
-
-        // 并发执行
-        let (tx, mut rx) = mpsc::channel(100);
-        let semaphore = Arc::new(Semaphore::new(task.concurrency));
-
-        for wallet in wallets {
-            let permit = semaphore.acquire().await;
-            let tx = tx.clone();
-            let compiled_script = compiled_script.clone();
-
-            tokio::spawn(async move {
-                let result = Self::execute_for_wallet(
-                    &wallet,
-                    &compiled_script,
-                    &task.browser_profile,
-                ).await;
-
-                permit.forget();
-                tx.send((wallet.address.clone(), result)).await.ok();
-            });
-        }
-
-        // 收集结果
-        for _ in 0..total_wallets {
-            if let Some((address, result)) = rx.recv().await {
-                results.push((address.clone(), result.clone()));
-
-                match result {
-                    Ok(_) => success_count += 1,
-                    Err(_) => failed_count += 1,
-                }
-
-                // 更新进度
-                self.update_progress(task.id, success_count, failed_count).await;
-            }
-        }
-
-        Ok(TaskResult {
-            total: total_wallets,
-            success: success_count,
-            failed: failed_count,
-            results,
-        })
-    }
-
-    /// 为单个钱包执行脚本
-    async fn execute_for_wallet(
-        &self,
-        wallet: &Wallet,
-        script: &str,
-        profile: &BrowserProfile,
-    ) -> Result<WalletResult, String> {
-        // 获取浏览器实例
-        let browser = self.browser_pool.get(profile).await?;
-
-        // 创建浏览器上下文
-        let context = browser.new_context(&profile).await?;
-
-        // 注入钱包
-        self.inject_wallet(&context, wallet).await?;
-
-        // 执行脚本
-        let result = self.playwright_bridge.execute_script(
-            &context,
-            script,
-            wallet,
-        ).await?;
-
-        // 保存执行记录
-        self.save_execution_log(wallet, &result).await?;
-
-        Ok(result)
-    }
+    
+    return assignments;
 }
 ```
 
 ---
 
-## 7. Playwright Bridge 设计
+## 6. 实施计划
 
-### 7.1 架构
+### Phase 1: 数据层改造 (1周)
+- [ ] 创建 SQLite 数据库表结构
+- [ ] 实现数据库访问层 (Tauri Command)
+- [ ] 数据迁移工具 (localStorage -> SQLite)
+- [ ] 更新前端 Service 层
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Playwright Bridge (Node.js)                       │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  Main Process (Tauri/Rust)                                           │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │  Command Handler                                           │     │
-│  │  - execute_script                                          │     │
-│  │  - create_browser_context                                  │     │
-│  │  - inject_wallet_extension                                 │     │
-│  │  - get_browser_screenshot                                  │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│           │                                                        │
-│           │ IPC (stdin/stdout JSON)                                │
-           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  Child Process (Node.js)                                             │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │  Message Dispatcher                                         │     │
-│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   │     │
-│  │  │ ScriptExec │ │ ContextMgr │ │ ExtensionInjector   │   │     │
-│  │  └─────────────┘ └─────────────┘ └─────────────────────┘   │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │  Browser Manager                                           │     │
-│  │  - Browser launch/close                                    │     │
-│  │  - Context management                                      │     │
-│  │  - Page management                                         │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │  Anti-Detection Module                                     │     │
-│  │  - Canvas fingerprint spoofing                             │     │
-│  │  - WebGL rendering spoofing                                │     │
-│  │  - Navigator property override                             │     │
-│  │  - AudioContext noise injection                            │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │  Wallet Injection Module                                   │     │
-│  │  - MetaMask extension injection                            │     │
-│  │  - OKX Wallet extension injection                          │     │
-│  │  - Wallet connection management                            │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+### Phase 2: 钱包管理增强 (3天)
+- [ ] 添加私钥字段 (UI + 加密存储)
+- [ ] 扩展 Excel 导入模板（支持私钥列）
+- [ ] 私钥安全显示（掩码 + 复制）
 
-### 7.2 核心实现
+### Phase 3: 环境配置增强 (3天)
+- [ ] 扩展指纹选项 UI（WebGL、Audio、时区等）
+- [ ] 实现指纹注入脚本
+- [ ] 环境配置持久化到数据库
 
-```javascript
-// playwright-bridge/src/index.js
+### Phase 4: 任务调度系统 (1周)
+- [ ] 后端 Cron 调度器
+- [ ] 任务执行队列
+- [ ] 环境随机分配逻辑
+- [ ] 执行结果持久化
 
-const { chromium } = require('playwright');
-const fs = require('fs-extra');
-const path = require('path');
-
-class PlaywrightBridge {
-    constructor() {
-        this.browser = null;
-        this.context = null;
-        this.antiDetection = new AntiDetectionModule();
-        this.walletInjector = new WalletInjectorModule();
-    }
-
-    async initialize() {
-        // 加载扩展
-        await this.walletInjector.loadExtensions();
-
-        // 启动浏览器
-        this.browser = await chromium.launch({
-            headless: false,
-            args: [
-                '--disable-blink-features=AutomationControlled',
-                '--no-sandbox',
-                '--disable-infobars',
-                '--disable-dev-shm-usage',
-                // 扩展加载参数
-                `--disable-extensions-except=${this.walletInjector.extensionPath}`,
-                `--load-extension=${this.walletInjector.extensionPath}`,
-            ]
-        });
-    }
-
-    async createContext(profile) {
-        // 应用防检测
-        const contextOptions = this.antiDetection.createContextOptions(profile);
-
-        this.context = await this.browser.newContext(contextOptions);
-
-        // 注入初始化脚本
-        await this.context.addInitScript(this.antiDetection.getInitScript());
-
-        return { contextId: 'default' };
-    }
-
-    async executeScript(contextId, scriptContent, walletData) {
-        const page = await this.context.newPage();
-
-        // 注入钱包数据到页面
-        await page.evaluate((wallet) => {
-            window.WALLET_DATA = wallet;
-        }, walletData);
-
-        // 编译脚本 (将API方法注入)
-        const compiledScript = this.compileScript(scriptContent);
-
-        // 执行
-        try {
-            const result = await page.evaluate(async (script) => {
-                // 动态执行编译后的脚本
-                const fn = new Function('page', 'wallet', 'api', script);
-                return await fn(page, window.WALLET_DATA, window.API);
-            }, compiledScript);
-
-            return { success: true, data: result };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-
-    compileScript(source) {
-        // 解析API调用
-        const apiCalls = this.parseApiCalls(source);
-
-        // 生成API实现
-        const apiImpl = this.generateApiImplementation(apiCalls);
-
-        // 组合
-        return `
-            const API = ${JSON.stringify(apiImpl)};
-            ${source}
-        `;
-    }
-}
-
-// 防检测模块
-class AntiDetectionModule {
-    createContextOptions(profile) {
-        return {
-            userAgent: profile.userAgent,
-            viewport: {
-                width: profile.viewportWidth,
-                height: profile.viewportHeight
-            },
-            deviceScaleFactor: profile.deviceScaleFactor,
-            locale: profile.locale,
-            timezoneId: profile.timezoneId,
-            permissions: ['geolocation', 'notifications'],
-            ...this.getProxyOptions(profile)
-        };
-    }
-
-    getInitScript() {
-        return `
-            // Navigator.webdriver
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined,
-                configurable: true
-            });
-
-            // Navigator plugins
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5],
-                configurable: true
-            });
-
-            // Navigator languages
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en'],
-                configurable: true
-            });
-
-            // Canvas fingerprint spoofing
-            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function(type) {
-                const res = originalToDataURL.apply(this, arguments);
-                // 添加轻微噪声
-                return res;
-            };
-
-            // WebGL
-            const getParameter = WebGLRenderingContext.prototype.getParameter;
-            WebGLRenderingContext.prototype.getParameter = function(param) {
-                // 返回虚拟参数
-                if (param === 37445) return 'Google Inc. (NVIDIA)';
-                if (param === 37446) return 'ANGLE (NVIDIA GeForce GTX 1080)';
-                return getParameter.apply(this, arguments);
-            };
-        `;
-    }
-}
-
-// 钱包注入模块
-class WalletInjectorModule {
-    constructor() {
-        this.extensionPath = path.join(__dirname, '../extensions');
-    }
-
-    async loadExtensions() {
-        // 从本地或远程加载MetaMask和OKX Wallet扩展
-        await this.ensureExtension('metamask');
-        await this.ensureExtension('okxwallet');
-    }
-
-    async ensureExtension(name) {
-        const extPath = path.join(this.extensionPath, name);
-        if (!await fs.pathExists(extPath)) {
-            // 下载或解压扩展
-            await this.downloadExtension(name, extPath);
-        }
-    }
-
-    async injectWalletExtension(context, walletType) {
-        // 将钱包扩展注入到上下文
-        // 对于MetaMask，需要设置初始状态
-        const extPath = path.join(this.extensionPath, walletType);
-
-        // 配置钱包初始状态
-        await context.addInitScript(`
-            window.EXTENSION_PATH = '${extPath}';
-            window.WALLET_TYPE = '${walletType}';
-        `);
-    }
-}
-```
+### Phase 5: 执行引擎 (1周)
+- [ ] Playwright 真实执行
+- [ ] 指纹注入集成
+- [ ] 日志和错误处理
 
 ---
 
-## 8. 文件结构
+## 7. 文件结构
 
 ```
 src/
@@ -1402,87 +863,38 @@ src/
 │   └── airdrop/
 │       ├── pages/
 │       │   ├── BrowserAutomation.vue      # 主页面
-│       │   ├── TaskManager.vue            # 任务管理页面 (新建/编辑)
-│       │   └── TaskMonitor.vue            # 任务监控页面
+│       │   └── Airdrop.vue                # 空投页面
 │       ├── components/
-│       │   ├── WalletSelector.vue         # 钱包选择器
-│       │   ├── ScriptSelector.vue         # 脚本选择器
-│       │   ├── ScheduleConfig.vue         # 调度配置
-│       │   ├── BrowserConfig.vue          # 浏览器环境配置
-│       │   ├── TaskProgress.vue           # 任务进度面板
-│       │   ├── ExecutionLogs.vue          # 执行日志
-│       │   └── ApiHelper.vue              # API帮助文档
-│       └── store/
-│           └── automation.ts              # Pinia状态管理
+│       │   ├── WalletManager.vue          # 钱包管理
+│       │   ├── BrowserFarm.vue            # 环境配置
+│       │   ├── ScriptEditor.vue           # 脚本编辑
+│       │   ├── ExecutionPanel.vue         # 执行面板
+│       │   ├── TaskManager.vue            # 任务管理
+│       │   ├── TaskMonitor.vue            # 任务监控
+│       │   └── ApiHelper.vue              # API帮助
+│       └── services/
+│           └── playwrightService.ts       # 服务层
 │
 src-tauri/src/
 ├── automation/
 │   ├── mod.rs                            # 模块入口
 │   ├── scheduler.rs                      # 任务调度器
 │   ├── executor.rs                       # 任务执行器
-│   ├── preprocessor.rs                   # 脚本预处理器
 │   ├── models.rs                         # 数据模型
 │   └── commands.rs                       # Tauri命令
 │
-playwright-bridge/
-├── src/
-│   ├── index.js                          # Bridge主入口
-│   ├── browser-manager.js                # 浏览器管理
-│   ├── anti-detection.js                 # 防检测模块
-│   ├── wallet-injector.js                # 钱包注入模块
-│   └── api-runtime.js                    # API运行时
-├── extensions/
-│   ├── metamask/                         # MetaMask扩展
-│   └── okxwallet/                        # OKX Wallet扩展
-└── package.json
-│
 docs/
-├── BROWSER_AUTOMATION_DESIGN.md          # 本设计文档
-└── SCRIPT_API_REFERENCE.md               # API参考文档
+└── BROWSER_AUTOMATION_DESIGN.md          # 本设计文档
 ```
 
 ---
 
-## 9. 实施计划
-
-### Phase 1: 基础框架 (1周)
-- [ ] 数据库表结构创建
-- [ ] 后端任务调度器基础实现
-- [ ] 任务CRUD API
-- [ ] 基础UI框架
-
-### Phase 2: 脚本系统 (1周)
-- [ ] 脚本预处理器实现
-- [ ] 自定义API定义和生成
-- [ ] 脚本编辑器增强
-- [ ] 脚本版本管理
-
-### Phase 3: 浏览器集成 (1周)
-- [ ] Playwright Bridge完善
-- [ ] 浏览器环境配置
-- [ ] 防检测模块
-- [ ] 钱包扩展注入
-
-### Phase 4: 任务执行 (1周)
-- [ ] 任务执行器实现
-- [ ] 并发控制
-- [ ] 进度追踪
-- [ ] 日志系统
-
-### Phase 5: 监控和通知 (3天)
-- [ ] 实时监控面板
-- [ ] 执行状态追踪
-- [ ] 通知集成
-- [ ] 错误处理和重试
-
----
-
-## 10. 风险和注意事项
+## 8. 风险和注意事项
 
 1. **安全性**
+   - 私钥必须加密存储
    - 脚本执行环境需要沙箱化
    - 敏感操作需要二次确认
-   - 防止恶意脚本执行
 
 2. **反检测**
    - 指纹保护需要持续更新
@@ -1498,3 +910,293 @@ docs/
    - 不同版本的MetaMask/OKX
    - 不同网站的变化
    - 网络条件变化
+
+---
+
+## 9. 现有实现分析与改进建议
+
+### 9.1 当前实现状态
+
+通过源码分析，当前各模块实现状态如下：
+
+| 模块 | 实现状态 | 完成度 | 说明 |
+|------|----------|--------|------|
+| 钱包管理 | 基本完成 | 70% | 缺少私钥字段、数据库持久化 |
+| 环境配置 | 基本完成 | 60% | 指纹选项不完整、使用localStorage |
+| 脚本编辑 | 基本完成 | 80% | 功能基本完整 |
+| 执行面板 | 基本完成 | 70% | 模拟执行，非真实Playwright |
+| 任务管理 | 基本完成 | 50% | 缺少真实Cron调度、环境分配 |
+| 任务监控 | 基本完成 | 75% | 基本功能完整 |
+
+### 9.2 功能差距分析
+
+#### 9.2.1 钱包管理模块差距
+
+**当前实现:**
+- 仅存储 address、label、group、proxy
+- 使用 localStorage 存储
+- 支持 Excel 导入导出
+
+**与设计文档差距:**
+- ❌ 缺少 `name` 字段（钱包名称与备注应分开）
+- ❌ 缺少 `private_key` 字段（关键功能缺失）
+- ❌ 缺少 `chain_type` 字段
+- ❌ 未使用 SQLite 数据库持久化
+- ❌ 私钥加密存储未实现
+
+**改进建议:**
+```javascript
+// 当前钱包数据结构
+interface Wallet {
+  id: number;
+  address: string;
+  label: string;      // 当前用作名称
+  group: string;
+  proxy: string;
+}
+
+// 应改为（与设计文档一致）
+interface AirdropWallet {
+  id: number;
+  name: string;           // 钱包名称
+  address: string;        // 钱包地址
+  private_key: string;    // 加密存储的私钥
+  label: string;          // 备注
+  group_name: string;     // 分组
+  proxy: string;          // 代理
+  chain_type: 'evm' | 'solana';  // 链类型
+}
+```
+
+#### 9.2.2 环境配置模块差距
+
+**当前实现:**
+- 存储 userAgent、viewport、proxy、canvasSpoof
+- 使用 localStorage 存储
+- 支持批量生成
+
+**与设计文档差距:**
+- ❌ 指纹保护选项不完整（当前仅 canvasSpoof 可配置）
+- ❌ 缺少 WebGL、Audio、时区、地理位置、字体、WebRTC 配置
+- ❌ 缺少代理认证配置（proxy_username, proxy_password）
+- ❌ 缺少 locale、timezone_id、device_scale_factor
+- ❌ 缺少 custom_headers、extensions 配置
+- ❌ 未使用 SQLite 数据库持久化
+
+**改进建议:**
+```javascript
+// 当前配置结构
+interface BrowserProfile {
+  id: number;
+  name: string;
+  userAgent: string;
+  viewport: string;
+  proxy: string;
+  canvasSpoof: boolean;
+}
+
+// 应扩展为（UI已有部分但未绑定数据）
+interface BrowserProfile {
+  id: number;
+  name: string;
+  description?: string;
+  
+  // 浏览器基础配置
+  user_agent: string;
+  viewport_width: number;
+  viewport_height: number;
+  device_scale_factor: number;
+  locale: string;
+  timezone_id: string;
+  
+  // 代理配置
+  proxy_type: 'direct' | 'http' | 'socks5';
+  proxy_host?: string;
+  proxy_port?: number;
+  proxy_username?: string;
+  proxy_password?: string;
+  
+  // 指纹保护配置
+  canvas_spoof: boolean;
+  webgl_spoof: boolean;
+  audio_spoof: boolean;
+  timezone_spoof: boolean;
+  geolocation_spoof: boolean;
+  font_spoof: boolean;
+  webrtc_spoof: boolean;
+  navigator_override: boolean;
+  webdriver_override: boolean;
+  
+  // 高级配置
+  custom_headers?: Record<string, string>;
+  headless: boolean;
+  extensions?: string[];  // ["metamask", "okxwallet"]
+}
+```
+
+**UI 改进:**
+当前 BrowserFarm.vue 编辑器中的 WebGL、Audio Context 开关是静态的 `default-checked`，需要绑定到实际数据模型。
+
+#### 9.2.3 任务管理模块差距
+
+**当前实现:**
+- 简单的任务 CRUD
+- 使用 localStorage 存储
+- 无真实 Cron 调度
+
+**与设计文档差距:**
+- ❌ 无后端 Cron 调度器实现
+- ❌ 缺少环境分配策略（random/sequential/specific）
+- ❌ 缺少 wallet_ids 数组配置（当前只有简单选择）
+- ❌ 缺少执行参数（concurrency、timeout_seconds、retry_times）
+- ❌ 缺少任务状态跟踪（next_run_time、total_runs 等）
+- ❌ 脚本和钱包选择是硬编码的静态选项
+
+**改进建议:**
+```javascript
+// 当前任务结构
+interface Task {
+  id: number;
+  name: string;
+  schedule: string;
+  script: string;      // 简单字符串
+  wallets: string[];   // 简单数组
+  enabled: boolean;
+}
+
+// 应改为
+interface AutomationTask {
+  id: number;
+  name: string;
+  description?: string;
+  
+  // 执行配置
+  script_id: number;              // 关联脚本ID
+  wallet_ids: number[];           // 关联钱包ID数组
+  
+  // 环境分配策略
+  profile_strategy: 'random' | 'sequential' | 'specific';
+  specific_profile_id?: number;
+  
+  // 调度配置
+  schedule_type: 'once' | 'interval' | 'cron';
+  schedule_config: {
+    cron?: string;        // "0 9 * * *"
+    interval?: number;    // 秒
+    run_at?: string;      // ISO 时间字符串
+  };
+  
+  // 执行参数
+  concurrency: number;
+  timeout_seconds: number;
+  retry_times: number;
+  retry_interval_seconds: number;
+  
+  // 状态
+  status: 'draft' | 'enabled' | 'paused' | 'running';
+  last_run_time?: string;
+  next_run_time?: string;
+  total_runs: number;
+  success_runs: number;
+  failed_runs: number;
+}
+```
+
+#### 9.2.4 执行引擎差距
+
+**当前实现:**
+- 完全是模拟执行（simulateExecution）
+- 未真正调用 Playwright
+
+**与设计文档差距:**
+- ❌ 无真实 Playwright 集成
+- ❌ 无钱包扩展注入（MetaMask/OKX）
+- ❌ 无指纹注入脚本
+- ❌ 无 Node.js Bridge 实现
+
+**改进建议:**
+需要实现 `src-tauri/src/wallets_tool/playwright/mod.rs` 和对应的 Node.js 桥接层。
+
+### 9.3 后端实现差距
+
+**当前状态:**
+- `src-tauri/src/wallets_tool/airdrop/mod.rs` 为空文件
+- 无数据库表定义
+- 无 Tauri Command 实现
+
+**需要实现:**
+1. SQLite 数据库表创建
+2. 数据访问层（CRUD 操作）
+3. 任务调度器（Cron）
+4. Playwright Bridge
+5. 私钥加密存储
+
+### 9.4 优先级改进计划
+
+#### Phase 1: 数据层迁移（高优先级）
+1. 创建 SQLite 表结构（airdrop_wallets, browser_profiles, automation_tasks 等）
+2. 实现 Tauri Command 进行数据库操作
+3. 前端 Service 层改为调用 Tauri API
+4. 数据迁移工具（localStorage -> SQLite）
+
+#### Phase 2: 钱包管理增强（高优先级）
+1. 添加 name、private_key、chain_type 字段
+2. 实现私钥加密存储（使用系统 security 模块）
+3. 更新 Excel 导入模板支持私钥列
+4. 私钥安全显示 UI（掩码 + 复制）
+
+#### Phase 3: 环境配置完善（中优先级）
+1. 扩展 BrowserProfile 数据模型
+2. 绑定 UI 中所有指纹保护开关到数据
+3. 添加代理认证、高级配置 UI
+4. 实现批量生成时的完整随机配置
+
+#### Phase 4: 任务管理增强（中优先级）
+1. 实现任务模型扩展
+2. 脚本/钱包动态选择（从数据库加载）
+3. 环境分配策略 UI 和逻辑
+4. 执行参数配置 UI
+
+#### Phase 5: 后端调度器（高优先级）
+1. Rust 端 Cron 解析器
+2. 任务队列管理
+3. 定时执行触发
+4. 执行状态持久化
+
+#### Phase 6: Playwright 集成（高优先级）
+1. Node.js Playwright 脚本执行器
+2. Rust -> Node.js 桥接
+3. 钱包扩展注入
+4. 指纹保护脚本注入
+
+### 9.5 代码修改清单
+
+#### 前端需修改文件:
+```
+src/features/airdrop/
+├── components/
+│   ├── WalletManager.vue      # 添加私钥字段、数据库调用
+│   ├── BrowserFarm.vue        # 完善指纹配置绑定、数据库调用
+│   ├── TaskManager.vue        # 扩展任务配置、动态选择、数据库调用
+│   ├── ExecutionPanel.vue     # 集成真实执行器
+│   └── TaskMonitor.vue        # 优化（已基本完成）
+└── services/
+    └── playwrightService.ts   # 改为 Tauri API 调用
+```
+
+#### 后端需创建文件:
+```
+src-tauri/src/
+├── wallets_tool/
+│   ├── airdrop/
+│   │   ├── mod.rs             # 模块入口
+│   │   ├── models.rs          # 数据模型
+│   │   ├── commands.rs        # Tauri Commands
+│   │   ├── scheduler.rs       # 任务调度器
+│   │   └── executor.rs        # 执行引擎
+│   └── playwright/
+│       ├── mod.rs             # Playwright 桥接
+│       └── scripts/           # 注入脚本
+└── database/
+    └── airdrop_tables.sql     # 表结构定义
+```

@@ -1,42 +1,35 @@
 <script setup>
 import { ref, onMounted, nextTick } from 'vue';
-import { Message } from '@arco-design/web-vue';
+import { Message, Modal } from '@arco-design/web-vue';
 import { 
   IconPlus, 
   IconPublic, 
   IconRight, 
   IconSettings, 
   IconEdit,
-  IconRobot 
+  IconRobot,
+  IconDelete,
+  IconImport,
+  IconDownload
 } from '@arco-design/web-vue/es/icon';
+import { profileService } from '../services/browserAutomationService';
+import { open, save } from '@tauri-apps/plugin-dialog';
+import { readFile, writeFile } from '@tauri-apps/plugin-fs';
 
-const STORAGE_KEY = 'browser_profiles';
+const profiles = ref([]);
+const loading = ref(false);
 
-const loadProfiles = () => {
+const loadProfiles = async () => {
+  loading.value = true;
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error('Failed to load profiles:', e);
-  }
-  return [
-    { id: 1, name: 'Default Profile', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', viewport: '1920x1080', proxy: 'Direct', canvasSpoof: true },
-    { id: 2, name: 'Mobile Profile', userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1', viewport: '390x844', proxy: 'Type: HTTP', canvasSpoof: true },
-  ];
-};
-
-const saveProfiles = () => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles.value));
-  } catch (e) {
-    console.error('Failed to save profiles:', e);
-    Message.error('保存失败');
+    profiles.value = await profileService.getProfiles();
+  } catch (error) {
+    console.error('Failed to load profiles:', error);
+    Message.error('加载环境配置失败: ' + error);
+  } finally {
+    loading.value = false;
   }
 };
-
-const profiles = ref(loadProfiles());
 
 const activeProfile = ref(null);
 const isEditing = ref(false);
@@ -58,7 +51,7 @@ const startEditName = async (profile, event) => {
   }
 };
 
-const saveEditName = () => {
+const saveEditName = async () => {
   const trimmedName = editNameValue.value.trim();
   if (!trimmedName) {
     editingProfileId.value = null;
@@ -66,9 +59,16 @@ const saveEditName = () => {
   }
   const profile = profiles.value.find(p => p.id === editingProfileId.value);
   if (profile) {
-    profile.name = trimmedName;
-    saveProfiles();
-    Message.success('名称已更新');
+    try {
+      await profileService.updateProfile({
+        id: profile.id,
+        name: trimmedName
+      });
+      profile.name = trimmedName;
+      Message.success('名称已更新');
+    } catch (error) {
+      Message.error('更新名称失败: ' + error);
+    }
   }
   editingProfileId.value = null;
 };
@@ -87,6 +87,189 @@ const handleNameKeydown = (event) => {
   }
 };
 
+const handleBatchGenerate = async () => {
+  try {
+    const newProfiles = await profileService.batchGenerate({
+      count: batchCount.value,
+      enable_all_spoofs: true
+    });
+    
+    profiles.value.push(...newProfiles);
+    Message.success(`成功生成 ${batchCount.value} 个配置`);
+    showBatchModal.value = false;
+  } catch (error) {
+    Message.error('批量生成失败: ' + error);
+  }
+};
+
+const handleNewProfile = async () => {
+  try {
+    const newProfile = await profileService.createProfile({
+      name: `New Profile ${profiles.value.length + 1}`,
+      user_agent: USER_AGENTS[0],
+      viewport_width: 1920,
+      viewport_height: 1080,
+      proxy_type: 'direct',
+      canvas_spoof: true,
+      webgl_spoof: true,
+      audio_spoof: true,
+      timezone_spoof: true,
+      geolocation_spoof: true,
+      font_spoof: true,
+      webrtc_spoof: true,
+      navigator_override: true,
+      webdriver_override: true
+    });
+    
+    profiles.value.push(newProfile);
+    handleEdit(newProfile);
+    Message.success('新配置已创建');
+  } catch (error) {
+    Message.error('创建配置失败: ' + error);
+  }
+};
+
+const handleEdit = (profile) => {
+  if (editingProfileId.value !== null) {
+    editingProfileId.value = null;
+  }
+  activeProfile.value = { ...profile };
+  isEditing.value = true;
+};
+
+const handleSave = async () => {
+  if (activeProfile.value) {
+    try {
+      const updated = await profileService.updateProfile(activeProfile.value);
+      const index = profiles.value.findIndex(p => p.id === updated.id);
+      if (index !== -1) {
+        profiles.value[index] = updated;
+      }
+      isEditing.value = false;
+      Message.success('配置已保存');
+    } catch (error) {
+      Message.error('保存失败: ' + error);
+    }
+  }
+};
+
+const handleDelete = () => {
+  if (activeProfile.value) {
+    Modal.warning({
+      title: '确认删除',
+      content: `确定要删除配置 "${activeProfile.value.name}" 吗？`,
+      onOk: async () => {
+        try {
+          await profileService.deleteProfile(activeProfile.value.id);
+          const index = profiles.value.findIndex(p => p.id === activeProfile.value.id);
+          if (index !== -1) {
+            profiles.value.splice(index, 1);
+          }
+          Message.success('配置已删除');
+          isEditing.value = false;
+          activeProfile.value = null;
+        } catch (error) {
+          Message.error('删除失败: ' + error);
+        }
+      }
+    });
+  }
+};
+
+const handleCancel = () => {
+  isEditing.value = false;
+  activeProfile.value = null;
+};
+
+// 导出配置
+const handleExport = async () => {
+  if (profiles.value.length === 0) {
+    Message.warning('没有可导出的配置');
+    return;
+  }
+  
+  try {
+    const savePath = await save({
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      defaultPath: `browser_profiles_${new Date().toISOString().slice(0, 10)}.json`
+    });
+    
+    if (savePath) {
+      const content = new TextEncoder().encode(JSON.stringify(profiles.value, null, 2));
+      await writeFile(savePath, content);
+      Message.success('配置导出成功');
+    }
+  } catch (error) {
+    console.error('Export error:', error);
+    Message.error('导出失败');
+  }
+};
+
+// 导入配置
+const handleImport = async () => {
+  try {
+    const selected = await open({
+      multiple: false,
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+    
+    if (!selected) return;
+    
+    const content = await readFile(selected);
+    const decoder = new TextDecoder();
+    const imported = JSON.parse(decoder.decode(content));
+    
+    if (Array.isArray(imported) && imported.length > 0) {
+      let successCount = 0;
+      for (const p of imported) {
+        try {
+          await profileService.createProfile({
+            name: p.name + ' (导入)',
+            description: p.description,
+            user_agent: p.user_agent,
+            viewport_width: p.viewport_width,
+            viewport_height: p.viewport_height,
+            device_scale_factor: p.device_scale_factor,
+            locale: p.locale,
+            timezone_id: p.timezone_id,
+            proxy_type: p.proxy_type,
+            proxy_host: p.proxy_host,
+            proxy_port: p.proxy_port,
+            proxy_username: p.proxy_username,
+            proxy_password: p.proxy_password,
+            canvas_spoof: p.canvas_spoof,
+            webgl_spoof: p.webgl_spoof,
+            audio_spoof: p.audio_spoof,
+            timezone_spoof: p.timezone_spoof,
+            geolocation_spoof: p.geolocation_spoof,
+            font_spoof: p.font_spoof,
+            webrtc_spoof: p.webrtc_spoof,
+            navigator_override: p.navigator_override,
+            webdriver_override: p.webdriver_override,
+            custom_headers: p.custom_headers,
+            headless: p.headless,
+            extensions: p.extensions
+          });
+          successCount++;
+        } catch (e) {
+          console.error('Failed to import profile:', e);
+        }
+      }
+      
+      await loadProfiles();
+      Message.success(`成功导入 ${successCount} 个配置`);
+    } else {
+      Message.warning('文件格式不正确');
+    }
+  } catch (error) {
+    console.error('Import error:', error);
+    Message.error('导入失败: ' + error.message);
+  }
+};
+
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -96,66 +279,15 @@ const USER_AGENTS = [
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15"
 ];
 
-const VIEWPORTS = ["1920x1080", "1366x768", "1440x900", "1536x864", "2560x1440", "1280x720"];
+const PROXY_TYPES = [
+  { label: 'Direct', value: 'direct' },
+  { label: 'HTTP', value: 'http' },
+  { label: 'SOCKS5', value: 'socks5' }
+];
 
-const handleBatchGenerate = () => {
-  const newProfiles = [];
-  const startId = profiles.value.length > 0 ? Math.max(...profiles.value.map(p => p.id)) + 1 : 1;
-  
-  for (let i = 0; i < batchCount.value; i++) {
-    const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-    const vp = VIEWPORTS[Math.floor(Math.random() * VIEWPORTS.length)];
-    
-    newProfiles.push({
-      id: startId + i,
-      name: `Auto-Profile-${String(startId + i).padStart(3, '0')}`,
-      userAgent: ua,
-      viewport: vp,
-      proxy: 'Direct',
-      canvasSpoof: true,
-    });
-  }
-  
-  profiles.value.push(...newProfiles);
-  saveProfiles();
-  Message.success(`成功生成 ${batchCount.value} 个配置`);
-  showBatchModal.value = false;
-};
-
-const handleEdit = (profile) => {
-  activeProfile.value = { ...profile };
-  isEditing.value = true;
-};
-
-const handleSave = () => {
-  if (activeProfile.value) {
-    const index = profiles.value.findIndex(p => p.id === activeProfile.value.id);
-    if (index !== -1) {
-      profiles.value[index] = { ...activeProfile.value };
-    }
-    saveProfiles();
-    isEditing.value = false;
-    Message.success('配置已保存');
-  }
-};
-
-const handleDelete = () => {
-  if (activeProfile.value) {
-    const index = profiles.value.findIndex(p => p.id === activeProfile.value.id);
-    if (index !== -1) {
-      profiles.value.splice(index, 1);
-      saveProfiles();
-      Message.success('配置已删除');
-    }
-    isEditing.value = false;
-    activeProfile.value = null;
-  }
-};
-
-const handleCancel = () => {
-  isEditing.value = false;
-  activeProfile.value = null;
-};
+onMounted(() => {
+  loadProfiles();
+});
 </script>
 
 <template>
@@ -168,14 +300,22 @@ const handleCancel = () => {
              <template #icon><icon-robot /></template>
              批量生成
           </a-button>
-          <a-button style="margin-left: 10px;" type="primary" size="small" @click="Message.info('新建功能开发中')">
+          <a-button type="outline" size="small" @click="handleImport">
+             <template #icon><icon-import /></template>
+             导入
+          </a-button>
+          <a-button type="outline" size="small" @click="handleExport">
+             <template #icon><icon-download /></template>
+             导出
+          </a-button>
+          <a-button type="primary" size="small" @click="handleNewProfile">
             <template #icon><icon-plus /></template>
             新建
           </a-button>
         </a-space>
       </div>
       
-      <div class="list-content">
+      <div class="list-content" v-loading="loading">
         <div 
           v-for="profile in profiles" 
           :key="profile.id"
@@ -202,9 +342,12 @@ const handleCancel = () => {
                 {{ profile.name }}
               </div>
             </template>
-            <div class="profile-desc">{{ profile.viewport }} | {{ profile.proxy }}</div>
+            <div class="profile-desc">{{ profile.viewport_width }}x{{ profile.viewport_height }} | {{ profile.proxy_type }}</div>
           </div>
           <icon-right class="arrow" />
+        </div>
+        <div v-if="profiles.length === 0" class="empty-profiles">
+          暂无配置，点击"新建"或"批量生成"创建
         </div>
       </div>
     </div>
@@ -225,43 +368,155 @@ const handleCancel = () => {
             <a-input v-model="activeProfile.name" />
           </a-form-item>
           
+          <a-form-item label="描述">
+            <a-textarea v-model="activeProfile.description" :auto-size="{ minRows: 2, maxRows: 4 }" placeholder="配置描述..." />
+          </a-form-item>
+
           <a-form-item label="User Agent">
-            <a-textarea v-model="activeProfile.userAgent" :auto-size="{ minRows: 2, maxRows: 4 }" />
+            <a-textarea v-model="activeProfile.user_agent" :auto-size="{ minRows: 2, maxRows: 4 }" />
           </a-form-item>
 
           <a-row :gutter="16">
+            <a-col :span="8">
+              <a-form-item label="视口宽度">
+                <a-input-number v-model="activeProfile.viewport_width" :min="320" :max="3840" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="视口高度">
+                <a-input-number v-model="activeProfile.viewport_height" :min="240" :max="2160" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="设备缩放">
+                <a-input-number v-model="activeProfile.device_scale_factor" :min="0.5" :max="3" :step="0.1" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item label="分辨率 (Viewport)">
-                <a-input v-model="activeProfile.viewport" />
+              <a-form-item label="语言">
+                <a-input v-model="activeProfile.locale" placeholder="en-US" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item label="代理模式">
-                <a-select v-model="activeProfile.proxy">
-                   <a-option>Direct</a-option>
-                   <a-option>Type: HTTP</a-option>
-                   <a-option>Type: SOCKS5</a-option>
+              <a-form-item label="时区">
+                <a-input v-model="activeProfile.timezone_id" placeholder="America/New_York" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-divider orientation="left">代理配置</a-divider>
+          
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="代理类型">
+                <a-select v-model="activeProfile.proxy_type">
+                  <a-option v-for="type in PROXY_TYPES" :key="type.value" :value="type.value">{{ type.label }}</a-option>
                 </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="代理主机">
+                <a-input v-model="activeProfile.proxy_host" placeholder="proxy.example.com" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          
+          <a-row :gutter="16">
+            <a-col :span="8">
+              <a-form-item label="代理端口">
+                <a-input-number v-model="activeProfile.proxy_port" :min="1" :max="65535" placeholder="8080" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="代理用户名">
+                <a-input v-model="activeProfile.proxy_username" placeholder="可选" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="代理密码">
+                <a-input-password v-model="activeProfile.proxy_password" placeholder="可选" />
               </a-form-item>
             </a-col>
           </a-row>
 
           <a-divider orientation="left">指纹保护 (Anti-Detect)</a-divider>
           
-          <a-space style="display: flex;" direction="vertical" size="large">
-            <a-space>
-               <a-switch v-model="activeProfile.canvasSpoof" />
-               <span style="margin-left: 5px;">Canvas 指纹混淆</span>
-            </a-space>
-             <a-space style="margin-left: 20px;">
-               <a-switch default-checked />
-               <span style="margin-left: 5px;">WebGL 渲染伪装</span>
-            </a-space>
-             <a-space style="margin-left: 20px;"> 
-               <a-switch default-checked />
-               <span style="margin-left: 5px;">Audio Context 噪音</span>
-            </a-space>
-          </a-space>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="8">
+              <a-space>
+                <a-switch v-model="activeProfile.canvas_spoof" />
+                <span>Canvas 指纹混淆</span>
+              </a-space>
+            </a-col>
+            <a-col :span="8">
+              <a-space>
+                <a-switch v-model="activeProfile.webgl_spoof" />
+                <span>WebGL 渲染伪装</span>
+              </a-space>
+            </a-col>
+            <a-col :span="8">
+              <a-space>
+                <a-switch v-model="activeProfile.audio_spoof" />
+                <span>Audio Context 噪音</span>
+              </a-space>
+            </a-col>
+            <a-col :span="8">
+              <a-space>
+                <a-switch v-model="activeProfile.timezone_spoof" />
+                <span>时区伪装</span>
+              </a-space>
+            </a-col>
+            <a-col :span="8">
+              <a-space>
+                <a-switch v-model="activeProfile.geolocation_spoof" />
+                <span>地理位置伪装</span>
+              </a-space>
+            </a-col>
+            <a-col :span="8">
+              <a-space>
+                <a-switch v-model="activeProfile.font_spoof" />
+                <span>字体伪装</span>
+              </a-space>
+            </a-col>
+            <a-col :span="8">
+              <a-space>
+                <a-switch v-model="activeProfile.webrtc_spoof" />
+                <span>WebRTC 防泄漏</span>
+              </a-space>
+            </a-col>
+            <a-col :span="8">
+              <a-space>
+                <a-switch v-model="activeProfile.navigator_override" />
+                <span>Navigator 覆盖</span>
+              </a-space>
+            </a-col>
+            <a-col :span="8">
+              <a-space>
+                <a-switch v-model="activeProfile.webdriver_override" />
+                <span>WebDriver 覆盖</span>
+              </a-space>
+            </a-col>
+          </a-row>
+
+          <a-divider orientation="left">高级选项</a-divider>
+          
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-space>
+                <a-switch v-model="activeProfile.headless" />
+                <span>无头模式</span>
+              </a-space>
+            </a-col>
+            <a-col :span="12">
+              <a-space>
+                <a-switch v-model="activeProfile.is_default" />
+                <span>设为默认</span>
+              </a-space>
+            </a-col>
+          </a-row>
         </a-form>
       </div>
     </div>
@@ -281,7 +536,8 @@ const handleCancel = () => {
           <ul>
             <li>User Agent (Chrome/Firefox/Safari)</li>
             <li>分辨率 (1920x1080 等常用分辨率)</li>
-            <li>指纹保护 (默认开启)</li>
+            <li>语言和时区</li>
+            <li>所有指纹保护选项（默认开启）</li>
           </ul>
         </div>
       </a-form>
@@ -405,6 +661,13 @@ const handleCancel = () => {
   font-size: 12px;
 }
 
+.empty-profiles {
+  text-align: center;
+  padding: 30px 20px;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
 .profile-editor {
   flex: 1;
   background: var(--color-bg-2);
@@ -413,6 +676,7 @@ const handleCancel = () => {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
+  overflow: hidden;
 }
 
 .editor-header {
@@ -432,6 +696,7 @@ const handleCancel = () => {
 .editor-form {
   flex: 1;
   overflow-y: auto;
+  padding-right: 10px;
 }
 
 .empty-state {

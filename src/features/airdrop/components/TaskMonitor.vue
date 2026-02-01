@@ -1,5 +1,6 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { Message, Modal } from '@arco-design/web-vue';
 import {
   IconPlayArrow,
   IconStop,
@@ -10,141 +11,161 @@ import {
   IconLoading,
   IconSchedule,
   IconFile,
-  IconSettings
+  IconSettings,
+  IconHistory,
+  IconEye
 } from '@arco-design/web-vue/es/icon';
+import { executionService, scriptService, profileService, walletService } from '../services/browserAutomationService';
 
-// 任务监控状态
-const isRunning = ref(false);
-const currentTask = ref(null);
-const progress = ref(0);
-const elapsedTime = ref(0);
-const logs = ref([]);
-const executionResults = ref([]);
-let timer = null;
+// 执行记录
+const executionHistory = ref([]);
+const selectedRecord = ref(null);
+const activeTab = ref('history');
+const searchQuery = ref('');
+const loading = ref(false);
+const autoRefresh = ref(true);
+let refreshTimer = null;
 
-// 模拟执行数据
-const mockWalletResults = [
-  { id: 1, address: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e', label: 'Main Wallet', status: 'success', duration: '12.5s', txHash: '0xabc123...' },
-  { id: 2, address: '0x1234567890abcdef1234567890abcdef12345678', label: 'Airdrop 1', status: 'success', duration: '11.8s', txHash: '0xdef456...' },
-  { id: 3, address: '0xabcdef1234567890abcdef1234567890abcdef12', label: 'Airdrop 2', status: 'failed', duration: '8.2s', error: 'Transaction reverted' },
-  { id: 4, address: '0x567890abcdef1234567890abcdef1234567890ab', label: 'Swap Wallet', status: 'running', duration: '-', txHash: '' },
-  { id: 5, address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', label: 'Airdrop 3', status: 'pending', duration: '-', txHash: '' },
-];
-
-const stats = computed(() => ({
-  total: executionResults.value.length,
-  success: executionResults.value.filter(r => r.status === 'success').length,
-  failed: executionResults.value.filter(r => r.status === 'failed').length,
-  running: executionResults.value.filter(r => r.status === 'running').length,
-  pending: executionResults.value.filter(r => r.status === 'pending').length
-}));
-
-// 日志颜色映射
-const getLogColor = (type) => {
-  const colors = {
-    info: 'var(--color-text-2)',
-    success: 'rgb(var(--success-6))',
-    warning: 'rgb(var(--warning-6))',
-    error: 'rgb(var(--danger-6))'
+// 统计数据
+const stats = computed(() => {
+  const history = executionHistory.value;
+  const total = history.length;
+  const success = history.filter(r => r.status === 'completed').length;
+  const failed = history.filter(r => r.status === 'failed').length;
+  const running = history.filter(r => r.status === 'running').length;
+  const cancelled = history.filter(r => r.status === 'cancelled').length;
+  
+  return {
+    total,
+    success,
+    failed,
+    running,
+    cancelled,
+    successRate: total > 0 ? Math.round((success / total) * 100) : 0
   };
-  return colors[type] || colors.info;
+});
+
+// 过滤后的历史记录
+const filteredHistory = computed(() => {
+  let records = executionHistory.value.slice().reverse();
+  if (!searchQuery.value) return records;
+  
+  const query = searchQuery.value.toLowerCase();
+  return records.filter(r => 
+    r.wallet_name?.toLowerCase().includes(query) ||
+    r.wallet_address?.toLowerCase().includes(query) ||
+    r.script_name?.toLowerCase().includes(query) ||
+    r.profile_name?.toLowerCase().includes(query)
+  );
+});
+
+// 加载执行记录
+const loadHistory = async () => {
+  loading.value = true;
+  try {
+    executionHistory.value = await executionService.getExecutions();
+  } catch (error) {
+    Message.error('加载执行记录失败: ' + error.message);
+  } finally {
+    loading.value = false;
+  }
 };
 
-// 添加日志
-const addLog = (type, message) => {
-  const time = new Date().toLocaleTimeString();
-  logs.value.unshift({ time, type, message });
+// 查看详情
+const viewDetails = async (record) => {
+  try {
+    const detail = await executionService.getExecution(record.id);
+    selectedRecord.value = detail;
+  } catch (error) {
+    Message.error('加载详情失败: ' + error.message);
+  }
+};
+
+// 清空历史
+const clearHistory = async () => {
+  if (executionHistory.value.length === 0) {
+    Message.info('执行记录为空');
+    return;
+  }
+  
+  Modal.warning({
+    title: '确认清空',
+    content: `确定要清空所有 ${executionHistory.value.length} 条执行记录吗？`,
+    okText: '确认清空',
+    okButtonProps: { status: 'danger' },
+    onOk: async () => {
+      try {
+        for (const record of executionHistory.value) {
+          await executionService.deleteExecution(record.id);
+        }
+        executionHistory.value = [];
+        selectedRecord.value = null;
+        Message.success('执行记录已清空');
+      } catch (error) {
+        Message.error('清空失败: ' + error.message);
+      }
+    }
+  });
+};
+
+// 删除单条记录
+const deleteRecord = async (record, event) => {
+  event.stopPropagation();
+  Modal.warning({
+    title: '确认删除',
+    content: '确定要删除这条记录吗？',
+    onOk: async () => {
+      try {
+        await executionService.deleteExecution(record.id);
+        executionHistory.value = executionHistory.value.filter(r => r.id !== record.id);
+        if (selectedRecord.value?.id === record.id) {
+          selectedRecord.value = null;
+        }
+        Message.success('记录已删除');
+      } catch (error) {
+        Message.error('删除失败: ' + error.message);
+      }
+    }
+  });
+};
+
+// 刷新
+const refreshHistory = async () => {
+  await loadHistory();
+  Message.success('已刷新');
+};
+
+// 自动刷新
+const startAutoRefresh = () => {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => {
+    if (autoRefresh.value && !loading.value) {
+      loadHistory();
+    }
+  }, 5000);
+};
+
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
 };
 
 // 格式化时间
-const formatTime = (seconds) => {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+const formatTime = (timestamp) => {
+  if (!timestamp) return '-';
+  return new Date(timestamp).toLocaleString('zh-CN');
 };
 
-// 选择要监控的任务
-const selectTask = (task) => {
-  currentTask.value = task;
-  logs.value = [];
-  executionResults.value = [];
-  progress.value = 0;
-  elapsedTime.value = 0;
-};
-
-// 启动执行
-const handleStart = () => {
-  if (!currentTask.value) {
-    return;
-  }
-
-  isRunning.value = true;
-  addLog('info', `开始执行任务: ${currentTask.value.name}`);
-  addLog('info', `初始化浏览器环境...`);
-
-  // 模拟执行
-  executionResults.value = mockWalletResults.map(w => ({ ...w }));
-  timer = setInterval(() => {
-    elapsedTime.value++;
-
-    // 模拟进度更新
-    const pendingCount = executionResults.value.filter(r => r.status === 'pending').length;
-    const runningCount = executionResults.value.filter(r => r.status === 'running').length;
-
-    if (pendingCount > 0 && runningCount < 3) {
-      const nextPending = executionResults.value.find(r => r.status === 'pending');
-      if (nextPending) {
-        nextPending.status = 'running';
-        addLog('info', `开始执行钱包: ${nextPending.address.slice(0, 8)}...${nextPending.address.slice(-4)}`);
-      }
-    }
-
-    // 模拟完成
-    executionResults.value.forEach(r => {
-      if (r.status === 'running' && Math.random() > 0.7) {
-        r.status = Math.random() > 0.2 ? 'success' : 'failed';
-        r.duration = `${(Math.random() * 10 + 5).toFixed(1)}s`;
-        if (r.status === 'success') {
-          r.txHash = '0x' + Math.random().toString(16).slice(2, 10) + '...';
-          addLog('success', `钱包 ${r.address.slice(0, 8)}...${r.address.slice(-4)} 执行成功`);
-        } else {
-          r.error = 'Transaction reverted';
-          addLog('error', `钱包 ${r.address.slice(0, 8)}...${r.address.slice(-4)} 执行失败: ${r.error}`);
-        }
-      }
-    });
-
-    // 更新进度
-    const completed = executionResults.value.filter(r => r.status === 'success' || r.status === 'failed').length;
-    progress.value = Math.round((completed / executionResults.value.length) * 100);
-
-    // 检查是否全部完成
-    if (completed === executionResults.value.length) {
-      clearInterval(timer);
-      isRunning.value = false;
-      addLog('success', `任务执行完成 - 成功: ${stats.value.success}, 失败: ${stats.value.failed}`);
-    }
-  }, 1500);
-};
-
-// 停止执行
-const handleStop = () => {
-  clearInterval(timer);
-  isRunning.value = false;
-  addLog('warning', '任务已手动停止');
-};
-
-// 清空日志
-const clearLogs = () => {
-  logs.value = [];
-};
-
-// 清空结果
-const clearResults = () => {
-  executionResults.value = [];
-  progress.value = 0;
-  elapsedTime.value = 0;
-  logs.value = [];
+// 格式化时长
+const formatDuration = (ms) => {
+  if (!ms) return '-';
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const mins = Math.floor(ms / 60000);
+  const secs = ((ms % 60000) / 1000).toFixed(0);
+  return `${mins}分${secs}秒`;
 };
 
 // 格式化地址
@@ -153,172 +174,257 @@ const formatAddress = (address) => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 };
 
+// 获取状态颜色
+const getStatusColor = (status) => {
+  const colors = {
+    pending: 'var(--color-text-4)',
+    running: 'rgb(var(--primary-6))',
+    completed: 'rgb(var(--success-6))',
+    failed: 'rgb(var(--danger-6))',
+    cancelled: 'rgb(var(--warning-6))',
+  };
+  return colors[status] || colors.pending;
+};
+
+const getStatusText = (status) => {
+  const texts = {
+    pending: '等待中',
+    running: '执行中',
+    completed: '成功',
+    failed: '失败',
+    cancelled: '已取消',
+  };
+  return texts[status] || status;
+};
+
+// 获取日志颜色
+const getLogColor = (log) => {
+  if (log.includes('成功') || log.includes('success')) return 'rgb(var(--success-6))';
+  if (log.includes('失败') || log.includes('error') || log.includes('Error')) return 'rgb(var(--danger-6))';
+  if (log.includes('警告') || log.includes('warn')) return 'rgb(var(--warning-6))';
+  return 'var(--color-text-2)';
+};
+
+onMounted(() => {
+  loadHistory();
+  startAutoRefresh();
+});
+
 onUnmounted(() => {
-  if (timer) {
-    clearInterval(timer);
-  }
+  stopAutoRefresh();
 });
 </script>
 
 <template>
   <div class="task-monitor">
-    <!-- 任务选择 -->
-    <div class="task-selector">
-      <div class="selector-header">
-        <span class="header-title">选择监控任务</span>
-        <a-button type="text" size="mini" @click="selectTask({ name: 'OKX Daily Claim', id: 1 })">
-          <template #icon><icon-refresh /></template>
-        </a-button>
-      </div>
-      <div class="task-dropdown">
-        <div
-          v-for="task in [{ name: 'OKX Daily Claim', id: 1, status: 'enabled' }, { name: 'Weekly Swap', id: 2, status: 'paused' }]"
-          :key="task.id"
-          class="task-option"
-          :class="{ active: currentTask && currentTask.id === task.id }"
-          @click="selectTask(task)"
-        >
-          <div class="task-info">
-            <span class="task-name">{{ task.name }}</span>
-            <a-tag :color="task.status === 'enabled' ? 'green' : 'orange'" size="mini">
-              {{ task.status === 'enabled' ? '运行中' : '已暂停' }}
-            </a-tag>
-          </div>
+    <!-- 统计概览 -->
+    <div class="stats-overview">
+      <div class="stat-card">
+        <div class="stat-icon">
+          <icon-history />
+        </div>
+        <div class="stat-content">
+          <div class="stat-value">{{ stats.total }}</div>
+          <div class="stat-label">总执行次数</div>
         </div>
       </div>
-    </div>
-
-    <!-- 监控面板 -->
-    <div class="monitor-panel" v-if="currentTask">
-      <!-- 状态概览 -->
-      <div class="status-overview">
-        <div class="stat-card">
-          <div class="stat-icon">
-            <icon-schedule />
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ formatTime(elapsedTime) }}</div>
-            <div class="stat-label">执行时间</div>
-          </div>
+      <div class="stat-card success">
+        <div class="stat-icon">
+          <icon-check-circle />
         </div>
-        <div class="stat-card">
-          <div class="stat-icon total">
-            <icon-file />
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ stats.total }}</div>
-            <div class="stat-label">总任务</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon success">
-            <icon-check-circle />
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ stats.success }}</div>
-            <div class="stat-label">成功</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon error">
-            <icon-close-circle />
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ stats.failed }}</div>
-            <div class="stat-label">失败</div>
-          </div>
+        <div class="stat-content">
+          <div class="stat-value">{{ stats.success }}</div>
+          <div class="stat-label">成功</div>
         </div>
       </div>
-
-      <!-- 控制栏 -->
-      <div class="control-bar">
-        <div class="task-info">
-          <span class="task-title">{{ currentTask.name }}</span>
-          <span class="task-progress">{{ progress }}%</span>
+      <div class="stat-card error">
+        <div class="stat-icon">
+          <icon-close-circle />
         </div>
-        <div class="control-actions">
-          <a-button type="primary" status="success" @click="handleStart" :disabled="isRunning">
-            <template #icon><icon-play-arrow /></template>
-            开始执行
-          </a-button>
-          <a-button type="primary" status="danger" @click="handleStop" :disabled="!isRunning">
-            <template #icon><icon-stop /></template>
-            停止
-          </a-button>
+        <div class="stat-content">
+          <div class="stat-value">{{ stats.failed }}</div>
+          <div class="stat-label">失败</div>
         </div>
       </div>
-
-      <!-- 进度条 -->
-      <div class="progress-section">
-        <a-progress :percent="progress" :show-text="false" :status="progress === 100 ? 'success' : 'active'" />
-      </div>
-
-      <!-- 分割视图 -->
-      <div class="split-view">
-        <!-- 执行队列 -->
-        <div class="queue-panel">
-          <div class="panel-header">
-            <span>执行队列</span>
-            <a-space>
-              <span class="queue-count">{{ stats.running }} 运行中 / {{ stats.pending }} 等待</span>
-            </a-space>
-          </div>
-          <div class="queue-list">
-            <div
-              v-for="result in executionResults"
-              :key="result.id"
-              class="queue-item"
-              :class="result.status"
-            >
-              <div class="item-status">
-                <icon-loading v-if="result.status === 'running'" spin />
-                <icon-schedule v-else-if="result.status === 'pending'" />
-                <icon-check-circle v-else-if="result.status === 'success'" />
-                <icon-close-circle v-else-if="result.status === 'failed'" />
-              </div>
-              <div class="item-info">
-                <div class="item-address">{{ formatAddress(result.address) }}</div>
-                <div class="item-label">{{ result.label }}</div>
-              </div>
-              <div class="item-meta">
-                <div class="item-duration">{{ result.duration }}</div>
-                <div class="item-tx" v-if="result.txHash">{{ result.txHash }}</div>
-                <div class="item-error" v-if="result.error">{{ result.error }}</div>
-              </div>
-            </div>
-            <div v-if="executionResults.length === 0" class="empty-queue">
-              <icon-file style="font-size: 32px; color: var(--color-text-4)" />
-              <p>暂无执行任务</p>
-            </div>
-          </div>
+      <div class="stat-card" v-if="stats.running > 0">
+        <div class="stat-icon" style="background: rgba(var(--primary-6), 0.1); color: rgb(var(--primary-6))">
+          <icon-loading spin />
         </div>
-
-        <!-- 实时日志 -->
-        <div class="log-panel">
-          <div class="panel-header">
-            <span>实时日志</span>
-            <a-space>
-              <a-button type="text" size="mini" @click="clearLogs" :disabled="logs.length === 0">清空</a-button>
-              <a-button type="text" size="mini" @click="clearResults" :disabled="executionResults.length > 0 && !isRunning">重置</a-button>
-            </a-space>
-          </div>
-          <div class="log-container">
-            <div v-for="(log, index) in logs" :key="index" class="log-line" :style="{ color: getLogColor(log.type) }">
-              <span class="log-time">[{{ log.time }}]</span>
-              <span class="log-message">{{ log.message }}</span>
-            </div>
-            <div v-if="logs.length === 0" class="empty-logs">
-              <p>暂无日志</p>
-            </div>
-          </div>
+        <div class="stat-content">
+          <div class="stat-value" style="color: rgb(var(--primary-6))">{{ stats.running }}</div>
+          <div class="stat-label">执行中</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">
+          <icon-schedule />
+        </div>
+        <div class="stat-content">
+          <div class="stat-value">{{ stats.successRate }}%</div>
+          <div class="stat-label">成功率</div>
         </div>
       </div>
     </div>
 
-    <!-- 空状态 -->
-    <div class="empty-state" v-else>
-      <icon-settings style="font-size: 48px; color: var(--color-text-4)" />
-      <p>请从左侧选择要监控的任务</p>
+    <!-- 主内容区 -->
+    <div class="monitor-content">
+      <!-- 执行记录列表 -->
+      <div class="history-panel">
+        <div class="panel-header">
+          <div class="header-left">
+            <span>执行记录</span>
+            <a-input-search
+              v-model="searchQuery"
+              placeholder="搜索钱包/脚本..."
+              size="small"
+              style="width: 180px; margin-left: 10px;"
+              allow-clear
+            />
+          </div>
+          <div class="header-actions">
+            <a-switch v-model="autoRefresh" size="small" style="margin-right: 10px">
+              <template #checked>自动刷新</template>
+              <template #unchecked>手动刷新</template>
+            </a-switch>
+            <a-button type="text" size="small" @click="refreshHistory" :loading="loading">
+              <template #icon><icon-refresh /></template>
+            </a-button>
+            <a-button type="text" size="small" status="danger" @click="clearHistory">
+              <template #icon><icon-delete /></template>
+              清空
+            </a-button>
+          </div>
+        </div>
+
+        <div class="history-list" v-loading="loading">
+          <div
+            v-for="record in filteredHistory"
+            :key="record.id"
+            class="history-item"
+            :class="{ active: selectedRecord?.id === record.id }"
+            @click="viewDetails(record)"
+          >
+            <div class="item-status" :style="{ color: getStatusColor(record.status) }">
+              <icon-check-circle v-if="record.status === 'completed'" />
+              <icon-close-circle v-else-if="record.status === 'failed'" />
+              <icon-loading v-else-if="record.status === 'running'" spin />
+              <icon-schedule v-else />
+            </div>
+            <div class="item-info">
+              <div class="item-wallet">{{ record.wallet_name || 'Unknown' }}</div>
+              <div class="item-script">{{ record.script_name || 'Unknown Script' }}</div>
+              <div class="item-time">{{ formatTime(record.started_at) }}</div>
+            </div>
+            <div class="item-meta">
+              <a-tag :color="getStatusColor(record.status)" size="small">
+                {{ getStatusText(record.status) }}
+              </a-tag>
+              <span class="item-duration">{{ formatDuration(record.duration_ms) }}</span>
+              <icon-delete class="delete-btn" @click="(e) => deleteRecord(record, e)" />
+            </div>
+          </div>
+          <div v-if="filteredHistory.length === 0" class="empty-history">
+            <icon-history style="font-size: 32px; color: var(--color-text-4)" />
+            <p>{{ searchQuery ? '未找到匹配的记录' : '暂无执行记录' }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 详情面板 -->
+      <div class="details-panel" v-if="selectedRecord">
+        <div class="panel-header">
+          <span>执行详情</span>
+          <a-button type="text" size="small" @click="selectedRecord = null">
+            关闭
+          </a-button>
+        </div>
+
+        <div class="details-content">
+          <!-- 基本信息 -->
+          <div class="detail-section">
+            <div class="section-title">基本信息</div>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <span class="label">执行ID</span>
+                <span class="value mono">{{ selectedRecord.id }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="label">钱包</span>
+                <span class="value">{{ selectedRecord.wallet_name || '-' }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="label">地址</span>
+                <span class="value mono">{{ formatAddress(selectedRecord.wallet_address) }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="label">脚本</span>
+                <span class="value">{{ selectedRecord.script_name || '-' }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="label">环境</span>
+                <span class="value">{{ selectedRecord.profile_name || '-' }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="label">状态</span>
+                <a-tag :color="getStatusColor(selectedRecord.status)" size="small">
+                  {{ getStatusText(selectedRecord.status) }}
+                </a-tag>
+              </div>
+              <div class="detail-item">
+                <span class="label">开始时间</span>
+                <span class="value">{{ formatTime(selectedRecord.started_at) }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="label">结束时间</span>
+                <span class="value">{{ formatTime(selectedRecord.completed_at) }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="label">执行时长</span>
+                <span class="value">{{ formatDuration(selectedRecord.duration_ms) }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="label">重试次数</span>
+                <span class="value">{{ selectedRecord.retry_count || 0 }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 错误信息 -->
+          <div class="detail-section" v-if="selectedRecord.error_message">
+            <div class="section-title" style="color: rgb(var(--danger-6))">错误信息</div>
+            <div class="error-message">{{ selectedRecord.error_message }}</div>
+          </div>
+
+          <!-- 执行结果 -->
+          <div class="detail-section" v-if="selectedRecord.result_data">
+            <div class="section-title">执行结果</div>
+            <pre class="result-data">{{ JSON.stringify(selectedRecord.result_data, null, 2) }}</pre>
+          </div>
+
+          <!-- 执行日志 -->
+          <div class="detail-section" v-if="selectedRecord.logs">
+            <div class="section-title">执行日志</div>
+            <div class="log-container">
+              <div
+                v-for="(log, index) in selectedRecord.logs.split('\n')"
+                :key="index"
+                class="log-line"
+                :style="{ color: getLogColor(log) }"
+              >
+                {{ log }}
+              </div>
+              <div v-if="!selectedRecord.logs" class="empty-logs">
+                暂无日志
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="empty-details" v-else>
+        <icon-eye style="font-size: 48px; color: var(--color-text-4)" />
+        <p>点击左侧记录查看详情</p>
+      </div>
     </div>
   </div>
 </template>
@@ -327,80 +433,14 @@ onUnmounted(() => {
 .task-monitor {
   height: 100%;
   display: flex;
-  gap: 20px;
-}
-
-/* 任务选择器 */
-.task-selector {
-  width: 250px;
-  background: var(--color-bg-2);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--color-border);
-  overflow: hidden;
-}
-
-.selector-header {
-  padding: 12px 15px;
-  border-bottom: 1px solid var(--color-border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-title {
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.task-dropdown {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
-}
-
-.task-option {
-  padding: 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-bottom: 8px;
-  border: 1px solid transparent;
-}
-
-.task-option:hover {
-  background: var(--color-fill-2);
-}
-
-.task-option.active {
-  background: rgba(var(--primary-6), 0.1);
-  border-color: rgb(var(--primary-6));
-}
-
-.task-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.task-name {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* 监控面板 */
-.monitor-panel {
-  flex: 1;
-  display: flex;
   flex-direction: column;
   gap: 15px;
 }
 
-/* 状态概览 */
-.status-overview {
+/* 统计概览 */
+.stats-overview {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 15px;
 }
 
@@ -412,6 +452,16 @@ onUnmounted(() => {
   background: var(--color-bg-2);
   border-radius: 8px;
   border: 1px solid var(--color-border);
+}
+
+.stat-card.success .stat-icon {
+  background: rgba(var(--success-6), 0.1);
+  color: rgb(var(--success-6));
+}
+
+.stat-card.error .stat-icon {
+  background: rgba(var(--danger-6), 0.1);
+  color: rgb(var(--danger-6));
 }
 
 .stat-icon {
@@ -426,21 +476,6 @@ onUnmounted(() => {
   color: var(--color-text-3);
 }
 
-.stat-icon.total {
-  background: rgba(var(--primary-6), 0.1);
-  color: rgb(var(--primary-6));
-}
-
-.stat-icon.success {
-  background: rgba(var(--success-6), 0.1);
-  color: rgb(var(--success-6));
-}
-
-.stat-icon.error {
-  background: rgba(var(--danger-6), 0.1);
-  color: rgb(var(--danger-6));
-}
-
 .stat-value {
   font-size: 24px;
   font-weight: 600;
@@ -452,59 +487,21 @@ onUnmounted(() => {
   color: var(--color-text-3);
 }
 
-/* 控制栏 */
-.control-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px 20px;
-  background: var(--color-bg-2);
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-}
-
-.task-info {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.task-title {
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.task-progress {
-  font-size: 24px;
-  font-weight: 600;
-  color: rgb(var(--primary-6));
-}
-
-.control-actions {
-  display: flex;
-  gap: 10px;
-}
-
-/* 进度条 */
-.progress-section {
-  padding: 0 5px;
-}
-
-/* 分割视图 */
-.split-view {
+/* 主内容区 */
+.monitor-content {
   flex: 1;
   display: flex;
-  gap: 20px;
+  gap: 15px;
   min-height: 0;
 }
 
-.queue-panel, .log-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+.history-panel {
+  width: 400px;
   background: var(--color-bg-2);
   border-radius: 8px;
   border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -517,44 +514,40 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.queue-count {
-  font-size: 12px;
-  color: var(--color-text-3);
+.header-left {
+  display: flex;
+  align-items: center;
 }
 
-.queue-list {
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.history-list {
   flex: 1;
   overflow-y: auto;
   padding: 10px;
 }
 
-.queue-item {
+.history-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 12px;
+  border-radius: 6px;
+  cursor: pointer;
   transition: all 0.2s;
+  border-bottom: 1px solid var(--color-border);
 }
 
-.queue-item:hover {
+.history-item:hover {
   background: var(--color-fill-2);
 }
 
-.queue-item.pending .item-status {
-  color: var(--color-text-4);
-}
-
-.queue-item.running .item-status {
-  color: rgb(var(--primary-6));
-}
-
-.queue-item.success .item-status {
-  color: rgb(var(--success-6));
-}
-
-.queue-item.failed .item-status {
-  color: rgb(var(--danger-6));
+.history-item.active {
+  background: rgba(var(--primary-6), 0.1);
 }
 
 .item-status {
@@ -565,50 +558,149 @@ onUnmounted(() => {
 
 .item-info {
   flex: 1;
+  min-width: 0;
 }
 
-.item-address {
-  font-family: monospace;
+.item-wallet {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-script {
+  font-size: 12px;
+  color: var(--color-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-time {
+  font-size: 11px;
+  color: var(--color-text-4);
+}
+
+.item-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.item-duration {
+  font-size: 11px;
+  color: var(--color-text-4);
+}
+
+.delete-btn {
+  cursor: pointer;
+  color: var(--color-text-4);
+  opacity: 0;
+  transition: all 0.2s;
+}
+
+.history-item:hover .delete-btn {
+  opacity: 1;
+}
+
+.delete-btn:hover {
+  color: rgb(var(--danger-6));
+}
+
+.empty-history {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--color-text-4);
+}
+
+/* 详情面板 */
+.details-panel {
+  flex: 1;
+  background: var(--color-bg-2);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.details-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+}
+
+.detail-section {
+  margin-bottom: 20px;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-2);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-item .label {
+  font-size: 11px;
+  color: var(--color-text-4);
+}
+
+.detail-item .value {
   font-size: 13px;
   color: var(--color-text-1);
 }
 
-.item-label {
-  font-size: 12px;
-  color: var(--color-text-3);
-}
-
-.item-meta {
-  text-align: right;
-}
-
-.item-duration {
-  font-size: 12px;
-  color: var(--color-text-3);
-}
-
-.item-tx {
+.detail-item .value.mono {
   font-family: monospace;
-  font-size: 11px;
-  color: rgb(var(--success-6));
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.item-error {
-  font-size: 11px;
+.error-message {
+  padding: 12px;
+  background: rgba(var(--danger-6), 0.1);
+  border: 1px solid rgba(var(--danger-6), 0.2);
+  border-radius: 6px;
   color: rgb(var(--danger-6));
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.result-data {
+  padding: 12px;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'Fira Code', monospace;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .log-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
   background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 12px;
+  max-height: 300px;
+  overflow-y: auto;
   font-family: 'Fira Code', monospace;
   font-size: 12px;
 }
@@ -618,27 +710,12 @@ onUnmounted(() => {
   line-height: 1.5;
 }
 
-.log-time {
+.empty-logs {
   color: var(--color-text-4);
-  margin-right: 8px;
+  font-style: italic;
 }
 
-.empty-queue, .empty-logs {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-4);
-  gap: 10px;
-}
-
-.empty-logs p, .empty-state p {
-  margin: 0;
-}
-
-/* 空状态 */
-.empty-state {
+.empty-details {
   flex: 1;
   display: flex;
   flex-direction: column;

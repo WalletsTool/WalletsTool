@@ -878,7 +878,12 @@ async function handleMainWindowCloseRequest() {
             <!-- 卡片内容 -->
             <div class="card-content">
               <div class="card-icon">
-                <img :src="item.picture" alt="功能图标" />
+                <img v-if="item.pageName !== 'wallet-manager'" :src="item.picture" alt="功能图标" />
+                <svg v-else class="card-svg-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/>
+                  <path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/>
+                  <path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>
+                </svg>
               </div>
 
               <div class="card-info">
@@ -1395,7 +1400,8 @@ async function handleMainWindowCloseRequest() {
   transform: scale(1.1) rotate(5deg);
 }
 
-.card-icon img {
+.card-icon img,
+.card-svg-icon {
   width: 24px;
   height: 24px;
   object-fit: contain;

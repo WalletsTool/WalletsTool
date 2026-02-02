@@ -399,6 +399,7 @@ async fn main() {
             wallets_tool::ecosystems::ethereum::proxy_commands::clear_proxy_config_for_window,
             // wallet manager commands
             wallets_tool::wallet_manager::commands::init_wallet_manager_tables,
+            wallets_tool::wallet_manager::commands::is_wallet_manager_initialized,
             wallets_tool::wallet_manager::commands::init_encrypted_db,
             wallets_tool::wallet_manager::commands::unlock_encrypted_db,
             wallets_tool::wallet_manager::commands::is_password_set,

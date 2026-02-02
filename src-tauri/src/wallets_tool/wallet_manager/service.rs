@@ -1798,6 +1798,9 @@ impl WalletManagerService {
 }
 
 #[cfg(test)]
+static TEST_DB_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+
+#[cfg(test)]
 mod wallet_manager_get_wallets_tests {
     use super::*;
     use sqlx::SqlitePool;
@@ -1805,6 +1808,10 @@ mod wallet_manager_get_wallets_tests {
 
     #[tokio::test]
     async fn get_wallets_filters_by_chain_type() {
+        let _guard = super::TEST_DB_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap();
         let pool = SqlitePool::connect(":memory:").await.unwrap();
         init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());
@@ -1852,6 +1859,10 @@ mod wallet_manager_secrets_tests {
 
     #[tokio::test]
     async fn seal_and_open_roundtrip() {
+        let _guard = super::TEST_DB_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap();
         let pool = SqlitePool::connect(":memory:").await.unwrap();
         init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool);
@@ -1864,6 +1875,10 @@ mod wallet_manager_secrets_tests {
 
     #[tokio::test]
     async fn migrate_plaintext_wallet_secrets_encrypts() {
+        let _guard = super::TEST_DB_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap();
         let pool = SqlitePool::connect(":memory:").await.unwrap();
         init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());
@@ -1891,6 +1906,10 @@ mod wallet_manager_secrets_tests {
 
     #[tokio::test]
     async fn create_wallets_returns_sealed_secrets() {
+        let _guard = super::TEST_DB_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap();
         let pool = SqlitePool::connect(":memory:").await.unwrap();
         init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());
@@ -1935,6 +1954,10 @@ mod wallet_manager_secrets_tests {
 
     #[tokio::test]
     async fn create_wallets_persists_encrypted_mnemonic_for_same_mnemonic() {
+        let _guard = super::TEST_DB_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap();
         let pool = SqlitePool::connect(":memory:").await.unwrap();
         init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());
@@ -1976,6 +1999,10 @@ mod wallet_manager_secrets_tests {
 
     #[tokio::test]
     async fn create_wallets_persists_encrypted_mnemonic_for_different_mnemonic() {
+        let _guard = super::TEST_DB_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap();
         let pool = SqlitePool::connect(":memory:").await.unwrap();
         init_test_pool(pool.clone());
         let service = WalletManagerService::new(pool.clone());

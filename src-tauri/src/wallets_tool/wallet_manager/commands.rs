@@ -1,11 +1,21 @@
 use tauri::State;
 use crate::wallets_tool::wallet_manager::service::WalletManagerService;
-use crate::database::{init_encrypted_database, unlock_encrypted_database};
+use crate::database::{init_encrypted_database, is_database_encrypted, unlock_encrypted_database};
 use super::models::*;
 
 #[tauri::command]
 pub async fn init_wallet_manager_tables(state: State<'_, WalletManagerService>) -> Result<(), String> {
     state.init_tables().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn is_wallet_manager_initialized() -> Result<bool, String> {
+    let database_path = "data/wallets_tool.db";
+    if !std::path::Path::new(database_path).exists() {
+        return Ok(false);
+    }
+    let is_encrypted = is_database_encrypted().await.map_err(|e| e.to_string())?;
+    Ok(is_encrypted)
 }
 
 /// 初始化加密数据库（首次设置密码时调用）

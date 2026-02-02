@@ -886,10 +886,10 @@ onMounted(async () => {
   showLoadingOverlay();
   try {
     await invoke('init_wallet_manager_tables');
-    const isSet = await invoke('is_password_set');
+    const isWalletManagerInitialized = await invoke('is_wallet_manager_initialized');
     hideLoadingOverlay();
     isLoading.value = false;
-    if (!isSet) {
+    if (!isWalletManagerInitialized) {
       showInitModal.value = true;
     } else {
       showUnlockModal.value = true;
@@ -902,9 +902,9 @@ onMounted(async () => {
     }
     // 延迟聚焦输入框，确保在窗口显示完成后再聚焦
     setTimeout(() => {
-      if (!isSet && initPasswordRef.value) {
+      if (!isWalletManagerInitialized && initPasswordRef.value) {
         initPasswordRef.value.focus();
-      } else if (isSet && passwordInputRef.value) {
+      } else if (isWalletManagerInitialized && passwordInputRef.value) {
         passwordInputRef.value.focus();
       }
     }, 300);
@@ -929,18 +929,30 @@ onMounted(async () => {
       // 2. 初始化传输加密
       await initTransport();
       
-      // 3. 验证应用密码
+      // 3. 验证/初始化应用密码（避免升级/异常中断导致 master_verifier 尚未写入）
       const encryptedPasswordB64 = await encryptWithWalletManagerRsa(passwordInput.value);
-      const success = await invoke('verify_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
-      if (success) {
+      const isSet = await invoke('is_password_set');
+      if (!isSet) {
+        await invoke('init_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
         sessionPassword.value = passwordInput.value;
         isUnlocked.value = true;
         showUnlockModal.value = false;
         loadGroups();
         loadWallets();
-      } else {
-        Message.error('密码错误');
+        return;
       }
+
+      const success = await invoke('verify_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
+      if (!success) {
+        Message.error('密码错误');
+        return;
+      }
+
+      sessionPassword.value = passwordInput.value;
+      isUnlocked.value = true;
+      showUnlockModal.value = false;
+      loadGroups();
+      loadWallets();
     } catch (e) {
       Message.error('解锁失败: ' + (e?.toString() || '未知错误'));
     }

@@ -1,4 +1,4 @@
-### ♻️ Refactoring | 重构
+### ✨ New Features | 新功能
 
-- **database:** 重构数据库服务以简化生命周期管理
+- **home:** 为钱包管理功能使用SVG图标
 

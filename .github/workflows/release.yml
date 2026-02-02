@@ -140,15 +140,17 @@ jobs:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
           releaseName: 'Wallets Tool ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
-            ## 🎉 新版本发布 v0.4.17
+            ## 🎉 新版本发布 v0.4.18
             
             ### 📦 安装包下载
             - **Windows**: 下载 `.exe` 文件
             
             ### 🔄 更新说明
-            ### ♻️ Refactoring | 重构
+            ### ✨ New Features | 新功能
             
-            - **database:** 重构数据库服务以简化生命周期管理
+            - **home:** 为钱包管理功能使用SVG图标
+            
+
             
 
             

@@ -1,6 +1,7 @@
 pub mod models;
 pub mod chain_service;
 pub mod rpc_service;
+pub mod migrations;
 
 /// 编译时嵌入 init.sql 内容，确保打包后也能正常恢复出厂设置
 static INIT_SQL_CONTENT: &str = include_str!("../../data/init.sql");
@@ -16,6 +17,125 @@ use std::path::Path;
 use sha2::Sha256;
 use hmac::Hmac;
 use pbkdf2::pbkdf2;
+
+async fn apply_versioned_migrations(pool: &SqlitePool) -> Result<Vec<migrations::MigrationApplied>> {
+    let chains_table_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chains'",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if chains_table_exists == 0 {
+        return Ok(Vec::new());
+    }
+
+    migrations::ensure_migrations_table(pool).await?;
+
+    let app_version = env!("CARGO_PKG_VERSION");
+    let mut applied = Vec::new();
+
+    for m in migrations::all_migrations() {
+        if migrations::is_migration_recorded(pool, m.version).await? {
+            continue;
+        }
+
+        let checksum = migrations::checksum_sql(m.sql);
+
+        let should_apply = if let Some(check_sql) = m.check_sql {
+            let count: i64 = sqlx::query_scalar(check_sql).fetch_one(pool).await?;
+            count == 0
+        } else {
+            true
+        };
+
+        let mut tx = pool.begin().await?;
+
+        if should_apply {
+            for statement in parse_sql_statements(m.sql) {
+                let stmt_trimmed = statement.trim();
+                if stmt_trimmed.is_empty() {
+                    continue;
+                }
+                sqlx::query(&statement).execute(&mut *tx).await?;
+            }
+        }
+
+        sqlx::query(
+            "INSERT INTO schema_migrations(version, name, checksum, app_version, applied) VALUES(?, ?, ?, ?, ?)",
+        )
+        .bind(m.version)
+        .bind(m.name)
+        .bind(&checksum)
+        .bind(app_version)
+        .bind(if should_apply { 1 } else { 0 })
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        applied.push(migrations::MigrationApplied {
+            version: m.version,
+            name: m.name.to_string(),
+            checksum,
+            applied: should_apply,
+        });
+    }
+
+    Ok(applied)
+}
+
+async fn apply_migrations_with_backup(
+    pool: &SqlitePool,
+    database_path: &str,
+) -> Result<Vec<migrations::MigrationApplied>> {
+    let chains_table_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chains'",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if chains_table_exists == 0 {
+        return Ok(Vec::new());
+    }
+
+    migrations::ensure_migrations_table(pool).await?;
+
+    let mut needs_backup = false;
+    for m in migrations::all_migrations() {
+        if migrations::is_migration_recorded(pool, m.version).await? {
+            continue;
+        }
+
+        let should_apply = if let Some(check_sql) = m.check_sql {
+            let count: i64 = sqlx::query_scalar(check_sql).fetch_one(pool).await?;
+            count == 0
+        } else {
+            true
+        };
+
+        if should_apply {
+            needs_backup = true;
+            break;
+        }
+    }
+
+    let backup_path = if needs_backup {
+        Some(backup_database_file(pool, database_path).await?)
+    } else {
+        None
+    };
+
+    match apply_versioned_migrations(pool).await {
+        Ok(applied) => Ok(applied),
+        Err(e) => {
+            if let Some(backup_path) = backup_path {
+                pool.close().await;
+                restore_database_file(database_path, &backup_path).await?;
+            }
+            Err(e)
+        }
+    }
+}
 
 fn database_url_to_path(database_url: &str) -> Option<String> {
     database_url
@@ -48,6 +168,50 @@ fn describe_db_file(database_path: &str) -> String {
     format!("cwd={cwd}, db_path={absolute}, size={size}, header16={header_hex}")
 }
 
+fn sqlite_quote_string(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+async fn backup_database_file(pool: &SqlitePool, database_path: &str) -> Result<String> {
+    if !Path::new(database_path).exists() {
+        return Err(anyhow::anyhow!("数据库文件不存在: {database_path}"));
+    }
+
+    let mut backup_path = format!(
+        "{}.bak.{}",
+        database_path,
+        chrono::Utc::now().timestamp()
+    );
+
+    if Path::new(&backup_path).exists() {
+        backup_path = format!(
+            "{}.bak.{}.{}",
+            database_path,
+            chrono::Utc::now().timestamp(),
+            rand::random::<u32>()
+        );
+    }
+
+    let vacuum_sql = format!("VACUUM INTO {}", sqlite_quote_string(&backup_path));
+    if sqlx::query(&vacuum_sql).execute(pool).await.is_err() {
+        std::fs::copy(database_path, &backup_path)
+            .map_err(|e| anyhow::anyhow!("备份数据库失败: {e}; src={database_path}, dst={backup_path}"))?;
+    }
+
+    Ok(backup_path)
+}
+
+async fn restore_database_file(database_path: &str, backup_path: &str) -> Result<()> {
+    if !Path::new(backup_path).exists() {
+        return Err(anyhow::anyhow!("备份文件不存在: {backup_path}"));
+    }
+
+    std::fs::copy(backup_path, database_path)
+        .map_err(|e| anyhow::anyhow!("恢复数据库失败: {e}; src={backup_path}, dst={database_path}"))?;
+    Ok(())
+}
+
+#[allow(dead_code)]
 fn is_fatal_db_error(error: &anyhow::Error) -> bool {
     let msg = error.to_string();
     msg.contains("file is not a database") || msg.contains("code: 26")
@@ -248,10 +412,30 @@ impl DatabaseManager {
         .await;
 
         if let Err(e) = schema_check {
+            let error_msg = e.to_string();
             let diag = database_url_to_path(database_url)
                 .map(|p| describe_db_file(&p))
                 .unwrap_or_else(|| format!("cwd={}", env::current_dir().map(|p| p.display().to_string()).unwrap_or_else(|_| "<unknown>".to_string())));
-            return Err(anyhow::anyhow!("数据库解密失败，密码可能错误或数据库文件异常: {e}; {diag}"));
+
+            eprintln!("数据库解密失败详细信息: {}", error_msg);
+            eprintln!("诊断信息: {}", diag);
+
+            let db_path = database_url_to_path(database_url);
+            let file_exists = db_path.as_ref().map(|p| Path::new(p).exists()).unwrap_or(false);
+            let file_size = db_path.as_ref()
+                .and_then(|p| fs::metadata(p).ok())
+                .map(|m| m.len())
+                .unwrap_or(0);
+
+            if !file_exists || file_size == 0 {
+                return Err(anyhow::anyhow!("数据库文件丢失或已损坏，请尝试恢复出厂设置"));
+            }
+
+            if error_msg.contains("database disk image is malformed") {
+                return Err(anyhow::anyhow!("数据库文件损坏，请尝试恢复出厂设置"));
+            }
+
+            return Err(anyhow::anyhow!("密码错误，请检查后重试"));
         }
 
         println!("数据库加密验证成功");
@@ -294,6 +478,7 @@ pub fn derive_salt_from_password(password: &str) -> [u8; 16] {
 }
 
 /// 执行数据库迁移
+#[allow(dead_code)]
 async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     // 首先检查 chains 表是否存在
     let chains_table_exists: i64 = sqlx::query_scalar(
@@ -575,13 +760,9 @@ pub async fn init_encrypted_database(password: &str) -> Result<()> {
         DatabaseManager::new_encrypted(&database_url, &db_password).await?
     };
     
-    // 执行自动迁移
-    if let Err(e) = run_migrations(manager.get_pool()).await {
-        if is_fatal_db_error(&e) {
-            let diag = describe_db_file(database_path);
-            return Err(anyhow::anyhow!("数据库迁移失败，数据库文件异常: {e}; {diag}"));
-        }
-        eprintln!("数据库迁移失败: {e}");
+    if let Err(e) = apply_migrations_with_backup(manager.get_pool(), database_path).await {
+        let diag = describe_db_file(database_path);
+        return Err(anyhow::anyhow!("数据库迁移失败: {e}; {diag}"));
     }
 
     // 更新全局数据库连接池（替换内存数据库占位符）
@@ -643,6 +824,12 @@ pub async fn init_encrypted_database(password: &str) -> Result<()> {
 
         println!("加密数据库初始化完成（包含基础配置数据）");
     }
+
+    let pool = get_database_pool();
+    let wallet_manager_service =
+        crate::wallets_tool::wallet_manager::service::WalletManagerService::new(pool.clone());
+    wallet_manager_service.init_tables().await?;
+    crate::wallets_tool::airdrop::db::init_airdrop_tables(&pool).await?;
     
     Ok(())
 }
@@ -677,17 +864,19 @@ pub async fn unlock_encrypted_database(password: &str) -> Result<()> {
         DatabaseManager::new(&database_url).await?
     };
     
-    // 执行自动迁移
-    if let Err(e) = run_migrations(manager.get_pool()).await {
-        if is_fatal_db_error(&e) {
-            let diag = describe_db_file(database_path);
-            return Err(anyhow::anyhow!("数据库迁移失败，数据库文件异常: {e}; {diag}"));
-        }
-        eprintln!("数据库迁移失败: {e}");
+    if let Err(e) = apply_migrations_with_backup(manager.get_pool(), database_path).await {
+        let diag = describe_db_file(database_path);
+        return Err(anyhow::anyhow!("数据库迁移失败: {e}; {diag}"));
     }
 
     // 更新全局数据库连接池（替换内存数据库占位符）
     update_global_pool(manager.get_pool().clone());
+
+    let pool = get_database_pool();
+    let wallet_manager_service =
+        crate::wallets_tool::wallet_manager::service::WalletManagerService::new(pool.clone());
+    wallet_manager_service.init_tables().await?;
+    crate::wallets_tool::airdrop::db::init_airdrop_tables(&pool).await?;
 
     Ok(())
 }
@@ -1100,5 +1289,64 @@ mod tests {
         }
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn versioned_migration_adds_ecosystem_column() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE chains (id INTEGER PRIMARY KEY AUTOINCREMENT, chain_key TEXT NOT NULL UNIQUE)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO chains(chain_key) VALUES('sol')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let applied = apply_versioned_migrations(&pool).await.unwrap();
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].version, 1);
+        assert!(applied[0].applied);
+
+        let ecosystem: String = sqlx::query_scalar("SELECT ecosystem FROM chains WHERE chain_key = 'sol'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(ecosystem, "solana");
+
+        let recorded: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM schema_migrations WHERE version = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(recorded, 1);
+
+        let second = apply_versioned_migrations(&pool).await.unwrap();
+        assert!(second.is_empty());
+    }
+
+    #[tokio::test]
+    async fn versioned_migration_records_when_already_satisfied() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE chains (id INTEGER PRIMARY KEY AUTOINCREMENT, chain_key TEXT NOT NULL UNIQUE, ecosystem TEXT NOT NULL DEFAULT 'evm')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let applied = apply_versioned_migrations(&pool).await.unwrap();
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].version, 1);
+        assert!(!applied[0].applied);
+
+        let recorded_applied: i64 = sqlx::query_scalar(
+            "SELECT applied FROM schema_migrations WHERE version = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(recorded_applied, 0);
     }
 }

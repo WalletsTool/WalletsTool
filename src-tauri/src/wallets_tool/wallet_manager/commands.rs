@@ -1,21 +1,36 @@
 use tauri::State;
 use crate::wallets_tool::wallet_manager::service::WalletManagerService;
-use crate::database::{init_encrypted_database, is_database_encrypted, unlock_encrypted_database};
+use crate::database::{init_encrypted_database, unlock_encrypted_database, get_database_pool};
 use super::models::*;
 
+/// 初始化钱包管理器的表结构（使用最新的数据库连接池）
 #[tauri::command]
-pub async fn init_wallet_manager_tables(state: State<'_, WalletManagerService>) -> Result<(), String> {
-    state.init_tables().await.map_err(|e| e.to_string())
+pub async fn init_wallet_manager_tables() -> Result<(), String> {
+    // 直接从全局获取最新的数据库连接池，避免使用可能过时的 State
+    let pool = get_database_pool();
+    let service = WalletManagerService::new(pool.clone());
+    service.init_tables().await.map_err(|e| e.to_string())
 }
 
+/// 检查钱包管理器是否已初始化（通过检查 master_verifier 是否存在）
 #[tauri::command]
 pub async fn is_wallet_manager_initialized() -> Result<bool, String> {
     let database_path = "data/wallets_tool.db";
     if !std::path::Path::new(database_path).exists() {
         return Ok(false);
     }
-    let is_encrypted = is_database_encrypted().await.map_err(|e| e.to_string())?;
-    Ok(is_encrypted)
+
+    // 检查 master_verifier 是否存在，而不是检查数据库是否加密
+    // 恢复出厂设置会清空数据，但 master_verifier 会被删除
+    let pool = get_database_pool();
+    let count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM app_config WHERE key = 'master_verifier'"
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(count > 0)
 }
 
 /// 初始化加密数据库（首次设置密码时调用）

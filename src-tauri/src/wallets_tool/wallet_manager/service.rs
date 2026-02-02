@@ -1647,7 +1647,7 @@ impl WalletManagerService {
     }
 
     fn resolve_wallet_name(&self, name: Option<&String>, count: u32, index: u32, address: &str) -> Option<String> {
-        let name_input = name.and_then(|s| s.trim().is_empty().then_some(s.trim())).filter(|s| !s.is_empty());
+        let name_input = name.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty());
         match (name_input, count) {
             (Some(prefix), 1) => Some(prefix.to_string()),
             (Some(prefix), _) => Some(format!("{}-{}", prefix, index)),

@@ -3,7 +3,7 @@ import { ref, onMounted, reactive, watch, nextTick, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Message, Notification, Modal } from '@arco-design/web-vue';
-import { IconPlus, IconDelete, IconEdit, IconDownload, IconLock, IconFolder, IconFile } from '@arco-design/web-vue/es/icon';
+import { IconPlus, IconDelete, IconEdit, IconDownload, IconLock, IconFolder, IconFile, IconInfoCircle } from '@arco-design/web-vue/es/icon';
 import { useRouter } from 'vue-router';
 import * as XLSX from 'xlsx';
 import TitleBar from '@/components/TitleBar.vue';
@@ -79,6 +79,8 @@ const passwordInputRef = ref(null);
 const initPassword = ref('');
 const initPasswordConfirm = ref('');
 const initPasswordRef = ref(null);
+const initLoading = ref(false);
+const unlockLoading = ref(false);
 const sessionPassword = ref('');
 const transportToken = ref('');
 const transportAesKey = ref(null);
@@ -872,15 +874,6 @@ const importProgress = ref(0);
 const isImporting = ref(false);
 const importResult = ref({ success: 0, failed: 0, errors: [] });
 const fileList = ref([]);
-const importColumns = ref([
-  { title: '名称', dataIndex: 'name' },
-  { title: '地址', dataIndex: 'address' },
-  { title: '链类型', dataIndex: 'chain_type' },
-  { title: '组名称', dataIndex: 'group_name' },
-  { title: '私钥', dataIndex: 'private_key', slots: { customRender: 'private_key' } },
-  { title: '助记词', dataIndex: 'mnemonic', slots: { customRender: 'mnemonic' } },
-  { title: '备注', dataIndex: 'remark' }
-]);
 
 onMounted(async () => {
   showLoadingOverlay();
@@ -908,6 +901,26 @@ onMounted(async () => {
         passwordInputRef.value.focus();
       }
     }, 300);
+
+    // 注册全局调试函数
+    window.debugWalletManager = {
+      findWalletByAddress: async (address) => {
+        const allWallets = await invoke('get_wallets', { group_id: null, chain_type: null, password: null });
+        return allWallets.filter(w => w.address.toLowerCase() === address.toLowerCase());
+      },
+      deleteWalletById: async (id) => {
+        await invoke('delete_wallet', { id });
+        console.log(`钱包 ${id} 已删除`);
+      },
+      getAllWallets: async () => {
+        return await invoke('get_wallets', { group_id: null, chain_type: null, password: null });
+      }
+    };
+    console.log('[DEBUG] 调试函数已注册到 window.debugWalletManager');
+    console.log('[DEBUG] 使用方法：');
+    console.log('[DEBUG]   - await window.debugWalletManager.findWalletByAddress("0x...")');
+    console.log('[DEBUG]   - await window.debugWalletManager.deleteWalletById(id)');
+    console.log('[DEBUG]   - await window.debugWalletManager.getAllWallets()');
   } catch (e) {
     hideLoadingOverlay();
     isLoading.value = false;
@@ -922,6 +935,8 @@ onMounted(async () => {
 });
 
   const handleUnlock = async () => {
+    if (unlockLoading.value) return;
+    unlockLoading.value = true;
     try {
       // 1. 先解锁加密数据库
       await invoke('unlock_encrypted_db', { password: passwordInput.value });
@@ -954,11 +969,28 @@ onMounted(async () => {
       loadGroups();
       loadWallets();
     } catch (e) {
-      Message.error('解锁失败: ' + (e?.toString() || '未知错误'));
+      const errorMsg = e?.toString?.() || e || '未知错误';
+      let displayMsg = '解锁失败';
+
+      if (errorMsg.includes('密码错误')) {
+        displayMsg = '密码错误，请检查后重试';
+      } else if (errorMsg.includes('损坏')) {
+        displayMsg = '数据库文件损坏，请尝试恢复出厂设置';
+      } else if (errorMsg.includes('格式不正确')) {
+        displayMsg = '数据库文件异常，请尝试恢复出厂设置';
+      } else {
+        // 其他未知错误,隐藏技术细节
+        displayMsg = '解锁失败，请检查密码后重试';
+      }
+
+      Message.error(displayMsg);
+    } finally {
+      unlockLoading.value = false;
     }
   };
 
   const handleInit = async () => {
+    if (initLoading.value) return;
     if (initPassword.value !== initPasswordConfirm.value) {
       Message.error('两次密码不一致');
       return;
@@ -967,6 +999,7 @@ onMounted(async () => {
       Message.error('密码不能为空');
       return;
     }
+    initLoading.value = true;
     try {
       // 1. 先初始化加密数据库
       await invoke('init_encrypted_db', { password: initPassword.value });
@@ -984,6 +1017,8 @@ onMounted(async () => {
       loadWallets();
     } catch (e) {
       Message.error('初始化失败: ' + (e?.toString() || '未知错误'));
+    } finally {
+      initLoading.value = false;
     }
   };
 
@@ -1496,8 +1531,66 @@ onMounted(async () => {
     }
   };
 
+// 自定义上传请求：直接读取本地文件，不走 HTTP
+const customUploadRequest = (option) => {
+  console.log('[DEBUG] customUploadRequest called, option:', option);
+  console.log('[DEBUG] option keys:', Object.keys(option));
+  
+  // Arco Design Vue 2.x 的 customRequest 参数结构
+  const file = option.file || option.fileItem?.file || option.data;
+  const onSuccess = option.onSuccess;
+  const onError = option.onError;
+  
+  console.log('[DEBUG] Extracted file:', file);
+  console.log('[DEBUG] File info:', {
+    name: file?.name,
+    size: file?.size,
+    type: file?.type
+  });
+  
+  if (!file) {
+    console.error('[ERROR] No file found in option');
+    onError?.(new Error('No file'));
+    return;
+  }
+  
+  // 模拟异步上传，直接成功
+  setTimeout(() => {
+    console.log('[DEBUG] Simulating upload success');
+    // 手动触发 onChange 回调，模拟上传成功
+    const mockInfo = {
+      file: {
+        uid: file.uid || Date.now().toString(),
+        name: file.name,
+        status: 'done',
+        originFileObj: file
+      },
+      fileList: []
+    };
+    console.log('[DEBUG] Calling handleFileUpload with mockInfo:', mockInfo);
+    handleFileUpload(mockInfo);
+    onSuccess?.();
+  }, 100);
+  
+  return {
+    abort: () => {
+      console.log('[DEBUG] Upload aborted');
+    }
+  };
+};
+
 // Batch Import Methods
 const handleFileUpload = async (info) => {
+  console.log('[DEBUG] handleFileUpload called with:', info);
+  
+  // 防御性检查：确保 info.file 存在
+  if (!info?.file) {
+    console.log('[DEBUG] info.file is undefined, returning');
+    return;
+  }
+  
+  console.log('[DEBUG] File status:', info.file.status);
+  
   if (info.file.status === 'done') {
     const file = info.file.originFileObj;
     try {
@@ -1514,6 +1607,46 @@ const handleFileUpload = async (info) => {
   } else if (info.file.status === 'error') {
     Message.error('文件上传失败');
   }
+};
+// 字段映射：支持中英文表头
+const normalizeWalletField = (key) => {
+  const fieldMap = {
+    // 中文表头 -> 英文字段名
+    '名称': 'name',
+    '名字': 'name',
+    '链类型': 'chain_type',
+    '链': 'chain_type',
+    '组名称': 'group_name',
+    '组名': 'group_name',
+    '分组': 'group_name',
+    '地址': 'address',
+    '私钥': 'private_key',
+    '助记词': 'mnemonic',
+    '备注': 'remark'
+  };
+  return fieldMap[key] || key;
+};
+
+// 判断是否为空行（所有关键字段都为空）
+const isEmptyWallet = (wallet) => {
+  return !wallet.name && 
+         !wallet.chain_type && 
+         !wallet.group_name && 
+         !wallet.private_key && 
+         !wallet.mnemonic && 
+         !wallet.address;
+};
+
+// 标准化字段名并过滤空行
+const normalizeAndFilterWallets = (rawData) => {
+  return rawData.map(item => {
+    const normalized = {};
+    for (const [key, value] of Object.entries(item)) {
+      const normalizedKey = normalizeWalletField(key);
+      normalized[normalizedKey] = value;
+    }
+    return normalized;
+  }).filter(wallet => !isEmptyWallet(wallet));
 };
 
 const parseCSVFile = (file) => {
@@ -1535,7 +1668,9 @@ const parseCSVFile = (file) => {
           wallets.push(wallet);
         }
         
-        importedWallets.value = wallets;
+        // 标准化并过滤空行
+        importedWallets.value = normalizeAndFilterWallets(wallets);
+        console.log(`[DEBUG] 解析 CSV 完成，共 ${importedWallets.value.length} 条有效数据`);
         resolve();
       } catch (e) {
         reject(e);
@@ -1556,8 +1691,10 @@ const parseExcelFile = (file) => {
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
-        
-        importedWallets.value = jsonData;
+
+        // 标准化并过滤空行
+        importedWallets.value = normalizeAndFilterWallets(jsonData);
+        console.log(`[DEBUG] 解析 Excel 完成，共 ${importedWallets.value.length} 条有效数据`);
         resolve();
       } catch (e) {
         reject(e);
@@ -1583,8 +1720,14 @@ const startBatchImport = async () => {
   const groupMap = new Map();
   existingGroups.forEach(g => groupMap.set(g.name, g.id));
   
+  console.log('[DEBUG] 开始批量导入，共', importedWallets.value.length, '条数据');
+  
   for (let i = 0; i < importedWallets.value.length; i++) {
     const wallet = importedWallets.value[i];
+    const walletAddress = (wallet.address || '').trim();
+    
+    console.log(`[DEBUG] 处理第 ${i + 1} 条数据:`, wallet);
+    
     try {
       // 验证必要字段
       if (!wallet.name || !wallet.chain_type || !wallet.group_name) {
@@ -1604,18 +1747,29 @@ const startBatchImport = async () => {
       
       if (!groupId) {
         // 自动创建分组
+        console.log(`[DEBUG] 创建分组: ${wallet.group_name} (${wallet.chain_type})`);
         const newGroupId = await invoke('create_group', {
           request: { parent_id: null, name: wallet.group_name, chain_type: wallet.chain_type }
         });
         groupId = newGroupId;
         groupMap.set(wallet.group_name, groupId);
+        console.log(`[DEBUG] 分组创建成功，ID: ${groupId}`);
       }
 
       const mnemonic = (wallet.mnemonic || '').trim();
       const privateKey = (wallet.private_key || '').trim();
-      const walletAddress = (wallet.address || '').trim();
       const sealedMnemonic = mnemonic ? await sealTransportSecret(mnemonic) : null;
       const sealedPrivateKey = privateKey ? await sealTransportSecret(privateKey) : null;
+      
+      console.log(`[DEBUG] 调用 create_wallets，参数:`, {
+        group_id: groupId,
+        name: wallet.name,
+        chain_type: wallet.chain_type,
+        mode: mnemonic ? 'mnemonic_import' : 'private_key_import',
+        has_mnemonic: !!sealedMnemonic,
+        has_private_key: !!sealedPrivateKey,
+        address: walletAddress
+      });
       
       await invoke('create_wallets', {
         request: {
@@ -1636,15 +1790,26 @@ const startBatchImport = async () => {
         address: walletAddress || null  // 传入地址用于验证（可选）
       });
       
+      console.log(`[DEBUG] 第 ${i + 1} 条数据导入成功`);
       importResult.value.success++;
     } catch (e) {
+      console.error(`[ERROR] 第 ${i + 1} 条数据导入失败:`, e);
       importResult.value.failed++;
-      importResult.value.errors.push(`第 ${i + 1} 条记录: ${e.message}`);
+      let errorMsg = e?.message || e?.toString?.() || '未知错误';
+      
+      // 处理数据库唯一约束错误 - 只在地址非空时显示友好的重复提示
+      // 否则保留原始错误信息以便调试
+      if (errorMsg.includes('UNIQUE constraint failed') && errorMsg.includes('chain_type') && errorMsg.includes('address') && walletAddress) {
+        errorMsg = `地址 ${walletAddress} 在链 ${wallet.chain_type} 上已存在`;
+      }
+      
+      importResult.value.errors.push(`第 ${i + 1} 条记录: ${errorMsg}`);
     }
     
     importProgress.value = Math.round(((i + 1) / importedWallets.value.length) * 100);
   }
   
+  console.log('[DEBUG] 批量导入完成，成功:', importResult.value.success, '失败:', importResult.value.failed);
   isImporting.value = false;
   await loadGroups();
   await loadWallets();
@@ -1839,16 +2004,26 @@ const confirmExport = async () => {
 
                 <!-- Full Wallet Actions -->
                 <template v-if="currentViewType === 'full_wallet'">
-                    <a-button type="primary" @click="showAddWalletModal = true">添加钱包</a-button>
-                    <a-button style="margin-left: 10px;" type="primary" status="success" @click="showBatchImportModal = true">批量导入</a-button>
-                    <a-button style="margin-left: 10px;" type="outline" @click="downloadTemplate">下载模板</a-button>
+                    <a-button type="primary" @click="showAddWalletModal = true">
+                        <template #icon><icon-plus /></template>
+                        添加钱包
+                    </a-button>
+                    <a-button style="margin-left: 10px;" type="primary" status="success" @click="showBatchImportModal = true">
+                        <template #icon><icon-download /></template>
+                        批量导入
+                    </a-button>
+                    <a-button style="margin-left: 10px;" type="outline" @click="downloadTemplate">
+                        <template #icon><icon-download /></template>
+                        下载模板
+                    </a-button>
                     <a-button
                       style="margin-left: 10px;"
                       type="outline"
                       :disabled="selectedWalletIds.length === 0"
                       @click="handleExportWallets"
                     >
-                      导出 ({{ selectedWalletIds.length }})
+                        <template #icon><icon-download /></template>
+                        导出 ({{ selectedWalletIds.length }})
                     </a-button>
                     <a-button
                       style="margin-left: 10px;"
@@ -1857,20 +2032,25 @@ const confirmExport = async () => {
                       :disabled="selectedWalletIds.length === 0"
                       @click="handleBatchDeleteWallets"
                     >
-                      批量删除 ({{ selectedWalletIds.length }})
+                        <template #icon><icon-delete /></template>
+                        批量删除 ({{ selectedWalletIds.length }})
                     </a-button>
                 </template>
 
                 <!-- Watch Address Actions -->
                 <template v-else>
-                    <a-button type="primary" @click="showAddWalletModal = true">添加地址</a-button>
+                    <a-button type="primary" @click="showAddWalletModal = true">
+                        <template #icon><icon-plus /></template>
+                        添加地址
+                    </a-button>
                     <a-button
                       style="margin-left: 10px;"
                       type="outline"
                       :disabled="selectedWatchAddressIds.length === 0"
                       @click="handleExportWatchAddresses"
                     >
-                      导出 ({{ selectedWatchAddressIds.length }})
+                        <template #icon><icon-export /></template>
+                        导出 ({{ selectedWatchAddressIds.length }})
                     </a-button>
                     <a-button
                       style="margin-left: 10px;"
@@ -1879,7 +2059,8 @@ const confirmExport = async () => {
                       :disabled="selectedWatchAddressIds.length === 0"
                       @click="handleBatchDeleteWatchAddresses"
                     >
-                      批量删除 ({{ selectedWatchAddressIds.length }})
+                        <template #icon><icon-delete /></template>
+                        批量删除 ({{ selectedWatchAddressIds.length }})
                     </a-button>
                 </template>
 
@@ -1888,7 +2069,8 @@ const confirmExport = async () => {
                   type="outline"
                   @click="showChangePasswordModal = true"
                 >
-                  修改密码
+                    <template #icon><icon-lock /></template>
+                    修改密码
                 </a-button>
             </div>
 
@@ -2030,71 +2212,101 @@ const confirmExport = async () => {
         </div>
     </div>
 
-    <!-- Init Modal -->
-    <a-modal
-      :visible="showInitModal"
-      title="设置主密码"
-      :closable="false"
-      :mask-closable="false"
-      :esc-to-close="false"
-      :footer="false"
-      mask-animation-name="none"
-      modal-animation-name="none"
-      :mask-style="{ background: 'rgba(0, 0, 0, 0.6)' }"
-
-    >
-        <a-form layout="vertical">
-            <a-alert type="warning" style="margin-bottom: 10px;">
-                此密码用于加密存储所有私钥，请务必牢记。丢失密码将无法找回数据！
-            </a-alert>
-            <a-form-item label="主密码">
-                <a-input-password v-model="initPassword" ref="initPasswordRef" class="styled-password-input">
-                    <template #prefix>
-                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
-                    </template>
-                </a-input-password>
-            </a-form-item>
-            <a-form-item label="确认密码">
-                <a-input-password v-model="initPasswordConfirm" @keyup.enter="handleInit" class="styled-password-input">
-                    <template #prefix>
-                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
-                    </template>
-                </a-input-password>
-            </a-form-item>
-            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
-                <a-button @click="handleExit">退出</a-button>
-                <a-button type="primary" @click="handleInit">初始化</a-button>
+    <!-- Init Fullscreen Overlay -->
+    <Transition name="full-screen-fade">
+        <div v-if="showInitModal" class="init-unlock-overlay">
+            <div class="init-unlock-content">
+                <div class="init-unlock-icon">
+                    <icon-lock style="font-size: 64px; color: rgb(var(--primary-6));" />
+                </div>
+                <h1 class="init-unlock-title">设置主密码</h1>
+                <p class="init-unlock-description">
+                    此密码将用于加密存储所有私钥。请务必牢记，丢失密码将无法找回数据！
+                </p>
+                <a-form layout="vertical" class="init-unlock-form">
+                    <a-form-item label="主密码" class="init-unlock-form-item">
+                        <a-input-password
+                            v-model="initPassword"
+                            ref="initPasswordRef"
+                            class="init-unlock-input"
+                            placeholder="请输入主密码"
+                            @keyup.enter="handleInit"
+                        >
+                            <template #prefix>
+                                <icon-lock style="color: var(--color-text-3); font-size: 16px;" />
+                            </template>
+                        </a-input-password>
+                    </a-form-item>
+                    <a-form-item label="确认密码" class="init-unlock-form-item">
+                        <a-input-password
+                            v-model="initPasswordConfirm"
+                            class="init-unlock-input"
+                            placeholder="请再次输入主密码"
+                            @keyup.enter="handleInit"
+                        >
+                            <template #prefix>
+                                <icon-lock style="color: var(--color-text-3); font-size: 16px;" />
+                            </template>
+                        </a-input-password>
+                    </a-form-item>
+                </a-form>
+                <div class="init-unlock-actions">
+                    <a-button size="large" class="init-unlock-btn" @click="handleExit">退出</a-button>
+                    <a-button
+                        type="primary"
+                        size="large"
+                        class="init-unlock-btn init-unlock-btn-primary"
+                        :loading="initLoading"
+                        @click="handleInit"
+                    >
+                        初始化
+                    </a-button>
+                </div>
             </div>
-        </a-form>
-    </a-modal>
+        </div>
+    </Transition>
 
-    <!-- Unlock Modal -->
-    <a-modal
-      :visible="showUnlockModal"
-      title="解锁钱包管理"
-      :closable="false"
-      :mask-closable="false"
-      :esc-to-close="false"
-      :footer="false"
-      mask-animation-name="none"
-      modal-animation-name="none"
-      :mask-style="{ background: 'rgba(0, 0, 0, 0.6)' }"
-
-    >
-        <a-form layout="vertical">
-            <a-form-item label="主密码">
-                <a-input-password v-model="passwordInput" ref="passwordInputRef" @keyup.enter="handleUnlock" class="styled-password-input">
-                    <template #prefix>
-                        <icon-lock style="color: var(--color-text-3); font-size: 14px;" />
-                    </template>
-                </a-input-password>
-            </a-form-item>
-            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
-                <a-button @click="handleExit">退出</a-button>
-                <a-button type="primary" @click="handleUnlock">解锁</a-button>
+    <!-- Unlock Fullscreen Overlay -->
+    <Transition name="full-screen-fade">
+        <div v-if="showUnlockModal" class="init-unlock-overlay">
+            <div class="init-unlock-content">
+                <div class="init-unlock-icon">
+                    <icon-lock style="font-size: 64px; color: rgb(var(--primary-6));" />
+                </div>
+                <h1 class="init-unlock-title">解锁钱包管理</h1>
+                <p class="init-unlock-description">
+                    请输入主密码以解锁钱包管理功能
+                </p>
+                <a-form layout="vertical" class="init-unlock-form">
+                    <a-form-item class="init-unlock-form-item">
+                        <a-input-password
+                            v-model="passwordInput"
+                            ref="passwordInputRef"
+                            class="init-unlock-input"
+                            placeholder="请输入主密码"
+                            @keyup.enter="handleUnlock"
+                        >
+                            <template #prefix>
+                                <icon-lock style="color: var(--color-text-3); font-size: 16px;" />
+                            </template>
+                        </a-input-password>
+                    </a-form-item>
+                </a-form>
+                <div class="init-unlock-actions">
+                    <a-button size="large" class="init-unlock-btn" @click="handleExit">退出</a-button>
+                    <a-button
+                        type="primary"
+                        size="large"
+                        class="init-unlock-btn init-unlock-btn-primary"
+                        :loading="unlockLoading"
+                        @click="handleUnlock"
+                    >
+                        解锁
+                    </a-button>
+                </div>
             </div>
-        </a-form>
-    </a-modal>
+        </div>
+    </Transition>
 
     <!-- Change Password Modal -->
     <a-modal v-model:visible="showChangePasswordModal" title="修改主密码" :footer="false" @before-open="() => {
@@ -2518,28 +2730,47 @@ const confirmExport = async () => {
                 :multiple="false"
                 accept=".xlsx,.xls,.csv"
                 :show-upload-list="false"
+                :custom-request="customUploadRequest"
                 @change="handleFileUpload"
+                style="display: flex; flex-direction: column; align-items: center;"
             >
                 <a-button type="primary">
                     选择文件 (支持 Excel/CSV)
                 </a-button>
             </a-upload>
-            <div style="margin-top: 16px; font-size: 14px; color: #666;">
-                请确保文件包含以下列：name (名称), chain_type (链类型，值为 evm 或 solana), group_name (组名称)
-                <br>
-                可选列：private_key (私钥), mnemonic (助记词)（二选一）
+            <div class="import-hint-box">
+                <div class="import-hint-title">
+                    <icon-info-circle style="color: rgb(var(--primary-6)); font-size: 16px;" />
+                    <span>文件格式要求</span>
+                </div>
+                <div class="import-hint-content">
+                    <div class="hint-section">
+                        <div class="hint-label required">必填字段</div>
+                        <div class="hint-tags">
+                            <a-tag color="blue">name</a-tag>
+                            <span class="hint-desc">钱包名称</span>
+                            <a-tag color="blue">chain_type</a-tag>
+                            <span class="hint-desc">链类型（evm / solana）</span>
+                            <a-tag color="blue">group_name</a-tag>
+                            <span class="hint-desc">分组名称</span>
+                        </div>
+                    </div>
+                    <div class="hint-divider"></div>
+                    <div class="hint-section">
+                        <div class="hint-label optional">选填字段（二选一）</div>
+                        <div class="hint-tags">
+                            <a-tag color="green">private_key</a-tag>
+                            <span class="hint-desc">私钥</span>
+                            <span class="hint-or">或</span>
+                            <a-tag color="green">mnemonic</a-tag>
+                            <span class="hint-desc">助记词</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            
+
             <div v-if="importedWallets.length > 0" style="margin-top: 20px;">
-                <h4>预览导入数据 ({{ importedWallets.length }} 条)</h4>
-                <a-table :data="importedWallets" :columns="importColumns" :pagination="false" style="margin-top: 10px;">
-                    <template #private_key="{ record }">
-                        {{ record.private_key ? '******' : '' }}
-                    </template>
-                    <template #mnemonic="{ record }">
-                        {{ record.mnemonic ? '******' : '' }}
-                    </template>
-                </a-table>
+                <a-alert type="info" :title="`成功读取 ${importedWallets.length} 条钱包数据`" show-icon />
                 <div style="margin-top: 20px; text-align: right;">
                     <a-button @click="showBatchImportModal = false">取消</a-button>
                     <a-button type="primary" style="margin-left: 8px;" @click="startBatchImport">开始导入</a-button>
@@ -2970,6 +3201,314 @@ const confirmExport = async () => {
 
 .summary-value.success {
     color: #52c41a;
+}
+
+/* 批量导入提示框样式 */
+.import-hint-box {
+    margin-top: 16px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, var(--color-fill-2) 0%, var(--color-bg-2) 100%);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.import-hint-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text-1);
+    margin-bottom: 12px;
+}
+
+.import-hint-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.hint-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.hint-label {
+    font-size: 13px;
+    font-weight: 500;
+    padding-left: 8px;
+    border-left: 3px solid;
+}
+
+.hint-label.required {
+    color: rgb(var(--primary-6));
+    border-left-color: rgb(var(--primary-6));
+}
+
+.hint-label.optional {
+    color: #52c41a;
+    border-left-color: #52c41a;
+}
+
+.hint-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding-left: 11px;
+}
+
+.hint-desc {
+    font-size: 13px;
+    color: var(--color-text-2);
+    margin-right: 8px;
+}
+
+.hint-or {
+    font-size: 12px;
+    color: var(--color-text-3);
+    background: var(--color-fill-3);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+.hint-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-border), transparent);
+    margin: 4px 0;
+}
+
+/* 全屏密码遮罩层样式 */
+.init-unlock-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-color, #f7f8f9);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 99999;
+    padding: 40px;
+}
+
+.init-unlock-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 420px;
+    width: 100%;
+}
+
+.init-unlock-icon {
+    margin-bottom: 20px;
+    animation: icon-bounce 1.5s ease-in-out infinite;
+}
+
+@keyframes icon-bounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-8px);
+    }
+}
+
+.init-unlock-title {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-color, #333333);
+    margin: 0 0 10px 0;
+    text-align: center;
+}
+
+.init-unlock-description {
+    font-size: 14px;
+    color: var(--text-color-secondary, #86909c);
+    text-align: center;
+    margin: 0 0 28px 0;
+    line-height: 1.5;
+}
+
+.init-unlock-form {
+    width: 100%;
+    margin-bottom: 28px;
+}
+
+.init-unlock-form-item {
+    margin-bottom: 18px;
+}
+
+.init-unlock-form-item:last-child {
+    margin-bottom: 0;
+}
+
+:deep(.init-unlock-form-item .arco-form-label-item-label) {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-color, #333333);
+}
+
+.init-unlock-input {
+    height: 46px;
+    border-radius: 8px;
+    font-size: 14px;
+    border: 1px solid var(--border-color, #e5e5e5);
+    transition: all 0.25s ease;
+    background: var(--card-bg, #ffffff);
+}
+
+.init-unlock-input:hover {
+    border-color: var(--primary-color, #1890ff);
+}
+
+.init-unlock-input:focus-within {
+    border-color: var(--primary-color, #1890ff);
+    box-shadow: 0 0 0 2px rgba(var(--primary-6, 24, 144, 255), 0.1);
+}
+
+:deep(.init-unlock-input .arco-input-wrapper) {
+    padding-left: 40px;
+}
+
+:deep(.init-unlock-input input) {
+    background: transparent;
+}
+
+.init-unlock-actions {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    margin-top: 4px;
+}
+
+.init-unlock-btn {
+    flex: 1;
+    height: 46px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.25s ease;
+    border: 1px solid var(--border-color, #e5e5e5);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.init-unlock-btn:hover {
+    transform: translateY(-1px);
+    border-color: var(--primary-color, #1890ff);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.init-unlock-btn-primary {
+    background: var(--primary-color, #1890ff);
+    border-color: var(--primary-color, #1890ff);
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(24, 144, 255, 0.3);
+}
+
+.init-unlock-btn-primary:hover {
+    background: var(--primary-color, #1890ff);
+    filter: brightness(1.1);
+    box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+}
+
+/* 全屏遮罩淡入淡出动效 */
+.full-screen-fade-enter-active,
+.full-screen-fade-leave-active {
+    transition: opacity 0.3s ease;
+}
+
+.full-screen-fade-enter-from,
+.full-screen-fade-leave-to {
+    opacity: 0;
+}
+
+.full-screen-fade-enter-active .init-unlock-content {
+    animation: content-fade-in 0.4s ease-out 0.1s both;
+}
+
+.full-screen-fade-leave-active .init-unlock-content {
+    animation: content-fade-out 0.3s ease-in both;
+}
+
+@keyframes content-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes content-fade-out {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+}
+
+/* 适配深色模式 */
+@media (prefers-color-scheme: dark) {
+    .init-unlock-title {
+        color: var(--text-color, #ffffff);
+    }
+
+    .init-unlock-description {
+        color: var(--text-color-secondary, #86909c);
+    }
+
+    :deep(.init-unlock-form-item .arco-form-label-item-label) {
+        color: var(--text-color, #ffffff);
+    }
+
+    .init-unlock-input {
+        border-color: var(--border-color, #3a3a4e);
+        background: var(--card-bg, rgb(35, 35, 36));
+    }
+
+    .init-unlock-input:hover {
+        border-color: var(--primary-color, #3370ff);
+    }
+
+    .init-unlock-input:focus-within {
+        border-color: var(--primary-color, #3370ff);
+        box-shadow: 0 0 0 2px rgba(51, 112, 255, 0.2);
+    }
+
+    :deep(.init-unlock-input input) {
+        color: var(--text-color, #ffffff);
+    }
+
+    :deep(.init-unlock-input input::placeholder) {
+        color: #5e5e5e;
+    }
+
+    .init-unlock-btn {
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+
+    .init-unlock-btn:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+
+    .init-unlock-btn-primary {
+        box-shadow: 0 2px 4px rgba(51, 112, 255, 0.3);
+    }
+
+    .init-unlock-btn-primary:hover {
+        box-shadow: 0 4px 12px rgba(51, 112, 255, 0.4);
+    }
 }
 
 </style>

@@ -154,6 +154,18 @@ impl WalletManagerService {
 
     /// Initialize tables if they don't exist
     pub async fn init_tables(&self) -> Result<()> {
+        // App Config table (for master_verifier, master_key, etc.)
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS app_config (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            "#
+        ).execute(&self.pool()).await?;
+
         // Wallet Groups
         sqlx::query(
             r#"
@@ -240,14 +252,36 @@ impl WalletManagerService {
         }
 
         // App Config (for password hash/salt and encrypted MDK)
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS app_config (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-            "#
-        ).execute(&self.pool()).await?;
+        // First check if table exists
+        let table_exists: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='app_config'"
+        ).fetch_one(&self.pool()).await?;
+
+        if table_exists == 0 {
+            sqlx::query(
+                "CREATE TABLE app_config (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)"
+            ).execute(&self.pool()).await?;
+        } else {
+            // Check if key column has PRIMARY KEY using pragma_table_info
+            let pk_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM pragma_table_info('app_config') WHERE name='key' AND pk=1"
+            ).fetch_one(&self.pool()).await?;
+
+            if pk_count == 0 {
+                // Migrate: recreate table with PRIMARY KEY
+                sqlx::query("ALTER TABLE app_config RENAME TO app_config_old")
+                    .execute(&self.pool()).await?;
+
+                sqlx::query("CREATE TABLE app_config (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)")
+                    .execute(&self.pool()).await?;
+
+                sqlx::query("INSERT OR IGNORE INTO app_config (key, value) SELECT key, value FROM app_config_old")
+                    .execute(&self.pool()).await?;
+
+                sqlx::query("DROP TABLE IF EXISTS app_config_old")
+                    .execute(&self.pool()).await?;
+            }
+        }
 
         Ok(())
     }
@@ -264,6 +298,8 @@ impl WalletManagerService {
 
     /// Initialize master password
     pub async fn init_password(&self, password: &str) -> Result<()> {
+        self.init_tables().await?;
+        
         if self.is_password_set().await? {
             return Err(anyhow::anyhow!("密码已设置"));
         }
@@ -1773,7 +1809,7 @@ impl WalletManagerService {
 
     async fn set_config(&self, key: &str, value: &str) -> Result<()> {
         sqlx::query(
-            "INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?"
+            "INSERT INTO app_config ([key], value) VALUES (?, ?) ON CONFLICT([key]) DO UPDATE SET value = ?"
         )
         .bind(key)
         .bind(value)

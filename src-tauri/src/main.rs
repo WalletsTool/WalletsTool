@@ -353,6 +353,16 @@ async fn main() {
             database::check_database_schema,
             database::export_database_to_init_sql,
             database::is_wallet_db_ready,
+            // dual database commands
+            database::commands::get_dual_database_status,
+            database::commands::init_public_db,
+            database::commands::init_secure_db,
+            database::commands::unlock_secure_db,
+            database::commands::lock_secure_db,
+            database::commands::is_secure_db_initialized,
+            database::commands::is_public_db_ready,
+            database::commands::is_secure_db_unlocked,
+            database::commands::is_wallet_manager_ready,
             // transfer functions
             wallets_tool::transfer::base_coin_transfer,
             wallets_tool::transfer::base_coin_transfer_fast,

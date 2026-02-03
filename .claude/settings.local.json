@@ -17,7 +17,9 @@
       "Bash(node:*)",
       "Bash(git:*)",
       "mcp__acp__Bash",
-      "Bash(yarn build)"
+      "Bash(yarn build)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(cargo build)"
     ],
     "deny": [],
     "ask": []

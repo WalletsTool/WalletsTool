@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from "vue-router";
+
 const routes = [
     // 主窗口页面
     { path: "/", name: "main", component: () => import('@/features/home/pages/Home.vue') },

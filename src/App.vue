@@ -5,6 +5,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check } from '@tauri-apps/plugin-updater'
+import { useDatabaseStore } from '@/stores/database'
+
+const databaseStore = useDatabaseStore()
 
 const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
 const STORAGE_KEYS = {
@@ -231,7 +234,19 @@ const checkUpdateOnLaunch = async (force = false) => {
   if (didFinishAnyCheck) setLastCheckNow()
 }
 
-onMounted(() => {
+const initDatabase = async () => {
+  await databaseStore.checkStatus()
+
+  if (!databaseStore.publicReady) {
+    await databaseStore.initPublicDatabase()
+  }
+
+  // 启动时不再自动提示设置安全数据库密码
+  // 仅在访问钱包管理页面时才按需提示
+}
+
+onMounted(async () => {
+  await initDatabase()
   checkUpdateOnLaunch(false)
   if (typeof window === 'undefined') return
   resizeHandler = () => {

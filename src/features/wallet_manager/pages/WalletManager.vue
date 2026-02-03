@@ -888,30 +888,32 @@ const fileList = ref([]);
 
 onMounted(async () => {
   showLoadingOverlay();
-  try {
-    await invoke('init_wallet_manager_tables');
-    const isWalletManagerInitialized = await invoke('is_wallet_manager_initialized');
-    hideLoadingOverlay();
-    isLoading.value = false;
-    if (!isWalletManagerInitialized) {
-      showInitModal.value = true;
-    } else {
-      showUnlockModal.value = true;
-    }
-    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-    if (isTauri && !pageLoadedEmitted) {
-      await nextTick();
-      pageLoadedEmitted = true;
-      getCurrentWindow().emit('page-loaded');
-    }
-    // 延迟聚焦输入框，确保在窗口显示完成后再聚焦
-    setTimeout(() => {
-      if (!isWalletManagerInitialized && initPasswordRef.value) {
-        initPasswordRef.value.focus();
-      } else if (isWalletManagerInitialized && passwordInputRef.value) {
-        passwordInputRef.value.focus();
+    try {
+      await invoke('init_wallet_manager_tables');
+      const isWalletManagerInitialized = await invoke('is_wallet_manager_initialized');
+      hideLoadingOverlay();
+      isLoading.value = false;
+      
+      if (!isWalletManagerInitialized) {
+        showInitModal.value = true;
+      } else {
+        showUnlockModal.value = true;
       }
-    }, 300);
+      
+      const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+      if (isTauri && !pageLoadedEmitted) {
+        await nextTick();
+        pageLoadedEmitted = true;
+        getCurrentWindow().emit('page-loaded');
+      }
+      
+      setTimeout(() => {
+        if (!isWalletManagerInitialized && initPasswordRef.value) {
+          initPasswordRef.value.focus();
+        } else if (isWalletManagerInitialized && passwordInputRef.value) {
+          passwordInputRef.value.focus();
+        }
+      }, 300);
 
     // 注册全局调试函数
     window.debugWalletManager = {
@@ -1007,11 +1009,12 @@ onMounted(async () => {
     }
     initLoading.value = true;
     try {
-      // 1. 先初始化加密数据库
-      await invoke('init_encrypted_db', { password: initPassword.value });
-      
-      // 2. 初始化传输加密
+      // 1. 初始化传输加密（必须先完成，因为后续操作需要RSA加密）
       await initTransport();
+      
+      // 2. 初始化安全数据库（双数据库架构）
+      const encryptedPasswordForDb = await encryptWithWalletManagerRsa(initPassword.value);
+      await invoke('init_secure_db', { encryptedPassword: encryptedPasswordForDb });
       
       // 3. 初始化应用密码
       const encryptedPasswordB64 = await encryptWithWalletManagerRsa(initPassword.value);
@@ -2990,6 +2993,36 @@ const confirmExport = async () => {
 :deep(.arco-input-password-wrapper) {
     border-radius: 8px;
     overflow: hidden;
+}
+
+/* 隐藏浏览器自带的密码显示/隐藏按钮 */
+:deep(.arco-input-password input::-webkit-credentials-auto-fill-button),
+:deep(.arco-input-password input::-ms-reveal) {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* 针对 Chrome/Edge 的密码显示按钮 */
+:deep(input[type="password"]::-webkit-contacts-auto-fill-button),
+:deep(input[type="password"]::-webkit-credentials-auto-fill-button) {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* 针对 Edge 的密码显示按钮 */
+:deep(input[type="password"]::-ms-reveal) {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* 放大密码掩码字符（黑点） */
+:deep(.arco-input-password input[type="password"]),
+:deep(.arco-input-password input[type="text"]) {
+    font-size: 20px;
+    letter-spacing: 2px;
 }
 
 /* 分组操作按钮样式 */

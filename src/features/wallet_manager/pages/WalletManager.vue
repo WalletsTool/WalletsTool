@@ -76,10 +76,12 @@ const showInitModal = ref(false);
 const showUnlockModal = ref(false);
 const passwordInput = ref('');
 const passwordInputRef = ref(null);
+const unlockPasswordError = ref(false);
 const initPassword = ref('');
 const initPasswordConfirm = ref('');
 const initPasswordRef = ref(null);
 const initLoading = ref(false);
+const initPasswordError = ref('');
 const unlockLoading = ref(false);
 const sessionPassword = ref('');
 const transportToken = ref('');
@@ -181,6 +183,15 @@ watch(showAddGroupModal, (newVal) => {
     });
   }
 });
+
+// 监听密码输入，清除错误提示
+watch(initPassword, () => {
+  initPasswordError.value = '';
+});
+watch(initPasswordConfirm, () => {
+  initPasswordError.value = '';
+});
+
 const newWallet = reactive({
   name: '',
   address: '',
@@ -951,6 +962,7 @@ onMounted(async () => {
         await invoke('init_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
         sessionPassword.value = passwordInput.value;
         isUnlocked.value = true;
+        unlockPasswordError.value = false;
         showUnlockModal.value = false;
         loadGroups();
         loadWallets();
@@ -965,25 +977,16 @@ onMounted(async () => {
 
       sessionPassword.value = passwordInput.value;
       isUnlocked.value = true;
+      unlockPasswordError.value = false;
       showUnlockModal.value = false;
       loadGroups();
       loadWallets();
     } catch (e) {
-      const errorMsg = e?.toString?.() || e || '未知错误';
-      let displayMsg = '解锁失败';
-
-      if (errorMsg.includes('密码错误')) {
-        displayMsg = '密码错误，请检查后重试';
-      } else if (errorMsg.includes('损坏')) {
-        displayMsg = '数据库文件损坏，请尝试恢复出厂设置';
-      } else if (errorMsg.includes('格式不正确')) {
-        displayMsg = '数据库文件异常，请尝试恢复出厂设置';
-      } else {
-        // 其他未知错误,隐藏技术细节
-        displayMsg = '解锁失败，请检查密码后重试';
-      }
-
-      Message.error(displayMsg);
+      unlockPasswordError.value = false;
+      setTimeout(() => {
+        unlockPasswordError.value = true;
+        passwordInputRef.value?.focus();
+      }, 10);
     } finally {
       unlockLoading.value = false;
     }
@@ -991,12 +994,15 @@ onMounted(async () => {
 
   const handleInit = async () => {
     if (initLoading.value) return;
-    if (initPassword.value !== initPasswordConfirm.value) {
-      Message.error('两次密码不一致');
+    initPasswordError.value = '';
+    if (!initPassword.value) {
+      initPasswordError.value = '密码不能为空';
+      Message.error('密码不能为空');
       return;
     }
-    if (!initPassword.value) {
-      Message.error('密码不能为空');
+    if (initPassword.value !== initPasswordConfirm.value) {
+      initPasswordError.value = '两次密码不一致';
+      Message.error('两次密码不一致');
       return;
     }
     initLoading.value = true;
@@ -1013,8 +1019,13 @@ onMounted(async () => {
       sessionPassword.value = initPassword.value;
       isUnlocked.value = true;
       showInitModal.value = false;
-      loadGroups();
-      loadWallets();
+      // 简单的初始化完成，延迟加载数据
+      setTimeout(() => {
+        loadGroups().catch(e => console.error('[handleInit] loadGroups error:', e));
+      }, 100);
+      setTimeout(() => {
+        loadWallets().catch(e => console.error('[handleInit] loadWallets error:', e));
+      }, 200);
     } catch (e) {
       Message.error('初始化失败: ' + (e?.toString() || '未知错误'));
     } finally {
@@ -1091,7 +1102,9 @@ onMounted(async () => {
   const loadGroups = async () => {
     try {
       const res = await invoke('get_groups');
+      console.log('[loadGroups] get_groups result:', res);
       const userRoots = buildTree(res);
+      console.log('[loadGroups] buildTree result:', userRoots);
       
       const systemGroups = [
         { id: 'SYSTEM_EVM', name: 'EVM 生态', children: [], isSystem: true },
@@ -1111,8 +1124,17 @@ onMounted(async () => {
       });
       
       groups.value = [...systemGroups, ...otherRoots];
+      console.log('[loadGroups] groups.value set:', groups.value);
+      
+      // 自动选中第一个分组
+      if (selectedGroupKeys.value.length === 0 && groups.value.length > 0) {
+        selectedGroupKeys.value = [groups.value[0].id];
+        console.log('[loadGroups] selectedGroupKeys set:', selectedGroupKeys.value);
+      }
     } catch (e) {
+      console.error('[loadGroups] Error:', e);
       Message.error('加载分组失败: ' + e);
+      throw e; // 重新抛出错误，让调用者知道
     }
   };
 
@@ -1123,8 +1145,10 @@ onMounted(async () => {
       selectedWalletIds.value = [];
       const seq = ++walletLoadSeq.value;
       const selectedKey = selectedGroupKeys.value[0];
+      console.log('[loadWallets] selectedKey:', selectedKey);
       
       if (!selectedKey) {
+        console.log('[loadWallets] No selected key, clearing wallets');
         wallets.value = [];
         return;
       }
@@ -1132,23 +1156,29 @@ onMounted(async () => {
       // Handle System Groups - show all wallets of that ecosystem
       if (selectedKey === 'SYSTEM_EVM' || selectedKey === 'SYSTEM_SOLANA') {
         const chainType = selectedKey === 'SYSTEM_EVM' ? 'evm' : 'solana';
+        console.log('[loadWallets] Loading system group:', chainType);
         const res = await invoke('get_wallets', { group_id: null, chain_type: chainType });
+        console.log('[loadWallets] get_wallets result:', res);
         if (seq === walletLoadSeq.value) wallets.value = res;
         return;
       }
       
       // Handle user groups - show wallets in that group
       const groupId = parseDbId(selectedKey);
+      console.log('[loadWallets] groupId:', groupId);
       if (groupId === null) {
         wallets.value = [];
         return;
       }
       const group = findGroupById(groupId);
+      console.log('[loadWallets] group:', group);
       const chainType = group?.chain_type || undefined;
       const res = await invoke('get_wallets', { group_id: groupId, chain_type: chainType });
       if (seq === walletLoadSeq.value) wallets.value = res;
     } catch (e) {
+      console.error('[loadWallets] Error:', e);
       Message.error('加载钱包失败: ' + e);
+      throw e; // 重新抛出错误
     }
   };
 
@@ -2223,14 +2253,15 @@ const confirmExport = async () => {
                 <p class="init-unlock-description">
                     此密码将用于加密存储所有私钥。请务必牢记，丢失密码将无法找回数据！
                 </p>
-                <a-form layout="vertical" class="init-unlock-form">
+                <a-form layout="vertical" class="init-unlock-form" @submit.prevent="handleInit">
                     <a-form-item label="主密码" class="init-unlock-form-item">
                         <a-input-password
                             v-model="initPassword"
                             ref="initPasswordRef"
                             class="init-unlock-input"
                             placeholder="请输入主密码"
-                            @keyup.enter="handleInit"
+                            allow-clear
+                            :status="initPasswordError ? 'error' : ''"
                         >
                             <template #prefix>
                                 <icon-lock style="color: var(--color-text-3); font-size: 16px;" />
@@ -2242,6 +2273,8 @@ const confirmExport = async () => {
                             v-model="initPasswordConfirm"
                             class="init-unlock-input"
                             placeholder="请再次输入主密码"
+                            allow-clear
+                            :status="initPasswordError ? 'error' : ''"
                             @keyup.enter="handleInit"
                         >
                             <template #prefix>
@@ -2250,6 +2283,9 @@ const confirmExport = async () => {
                         </a-input-password>
                     </a-form-item>
                 </a-form>
+                <div v-if="initPasswordError" class="init-password-error">
+                  <span>{{ initPasswordError }}</span>
+                </div>
                 <div class="init-unlock-actions">
                     <a-button size="large" class="init-unlock-btn" @click="handleExit">退出</a-button>
                     <a-button
@@ -2282,9 +2318,11 @@ const confirmExport = async () => {
                         <a-input-password
                             v-model="passwordInput"
                             ref="passwordInputRef"
-                            class="init-unlock-input"
+                            :class="['init-unlock-input', { 'input-error': unlockPasswordError, 'input-shake': unlockPasswordError }]"
+                            :status="unlockPasswordError ? 'error' : ''"
                             placeholder="请输入主密码"
                             @keyup.enter="handleUnlock"
+                            @input="unlockPasswordError = false"
                         >
                             <template #prefix>
                                 <icon-lock style="color: var(--color-text-3); font-size: 16px;" />
@@ -3331,8 +3369,18 @@ const confirmExport = async () => {
     font-size: 14px;
     color: var(--text-color-secondary, #86909c);
     text-align: center;
-    margin: 0 0 28px 0;
-    line-height: 1.5;
+    margin-bottom: 20px;
+}
+
+.init-password-error {
+    color: #f53f3f;
+    font-size: 13px;
+    display: flex;
+    margin-top: -20px;
+    margin-bottom: 16px;
+    justify-content: flex-start;
+    width: 100%;
+    padding: 0 10px;
 }
 
 .init-unlock-form {
@@ -3378,6 +3426,32 @@ const confirmExport = async () => {
 
 :deep(.init-unlock-input input) {
     background: transparent;
+}
+
+/* 输入框错误状态 - 变红 */
+.init-unlock-input.input-error {
+    border-color: #f53f3f !important;
+    box-shadow: 0 0 0 2px rgba(245, 63, 63, 0.2) !important;
+}
+
+.init-unlock-input.input-error:hover {
+    border-color: #f53f3f !important;
+}
+
+.init-unlock-input.input-error:focus-within {
+    border-color: #f53f3f !important;
+    box-shadow: 0 0 0 2px rgba(245, 63, 63, 0.3) !important;
+}
+
+/* 抖动动画 */
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+    20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.input-shake {
+    animation: shake 0.4s ease-in-out;
 }
 
 .init-unlock-actions {

@@ -23,12 +23,28 @@ const updateError = ref('')
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 720)
 let resizeHandler = null
 
+const GH_PROXY_BASE_URL = 'https://gh-proxy.org/'
+
 const updateModalWidth = computed(() => {
   const width = Math.floor(windowWidth.value * 0.92)
   return Math.min(520, Math.max(320, width))
 })
 
 const normalizeVersion = (value) => String(value || '').trim().replace(/^v/i, '')
+
+const toGhProxyUrl = (value) => {
+  const url = String(value || '').trim()
+  if (!url) return ''
+  if (url.startsWith(GH_PROXY_BASE_URL)) return url
+  if (
+    url.startsWith('https://github.com/') ||
+    url.startsWith('https://api.github.com/') ||
+    url.startsWith('https://raw.githubusercontent.com/')
+  ) {
+    return `${GH_PROXY_BASE_URL}${url}`
+  }
+  return url
+}
 
 const shouldCheckUpdate = () => {
   const lastCheckAtRaw = localStorage.getItem(STORAGE_KEYS.lastCheckAt)
@@ -63,7 +79,7 @@ const ignoreThisVersion = () => {
 const buildReleasePageUrl = (version) => {
   const normalized = normalizeVersion(version)
   if (!normalized) return ''
-  return `https://github.com/WalletsTool/WalletsTool/releases/tag/v${normalized}`
+  return toGhProxyUrl(`https://github.com/WalletsTool/WalletsTool/releases/tag/v${normalized}`)
 }
 
 const getUpdatePublishedAt = (update) => {
@@ -72,7 +88,7 @@ const getUpdatePublishedAt = (update) => {
 }
 
 const openReleasePage = async () => {
-  const url = updateInfo.value?.html_url
+  const url = toGhProxyUrl(updateInfo.value?.html_url)
   if (!url) return
 
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__

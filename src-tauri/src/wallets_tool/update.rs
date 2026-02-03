@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Runtime};
 use tauri_plugin_updater::UpdaterExt;
 
+const GH_PROXY_BASE_URL: &str = "https://gh-proxy.org/";
+
 #[derive(Debug, Deserialize)]
 struct GitHubRelease {
     tag_name: String,
@@ -40,6 +42,44 @@ pub struct UpdateDownloadProgress {
     pub progress: Option<u64>,
     pub total: Option<u64>,
     pub message: String,
+}
+
+fn to_gh_proxy_url(input: &str) -> String {
+    let url = input.trim();
+    if url.is_empty() {
+        return String::new();
+    }
+    if url.starts_with(GH_PROXY_BASE_URL) {
+        return url.to_string();
+    }
+    if url.starts_with("https://github.com/")
+        || url.starts_with("https://api.github.com/")
+        || url.starts_with("https://raw.githubusercontent.com/")
+    {
+        return format!("{GH_PROXY_BASE_URL}{url}");
+    }
+    url.to_string()
+}
+
+async fn fetch_github_release(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<GitHubRelease, String> {
+    let response = client
+        .get(url)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("请求 GitHub Release 失败: {e}"))?;
+
+    let response = response
+        .error_for_status()
+        .map_err(|e| format!("请求 GitHub Release 失败: {e}"))?;
+
+    response
+        .json()
+        .await
+        .map_err(|e| format!("解析 GitHub Release 失败: {e}"))
 }
 
 fn parse_semver_triplet(input: &str) -> Result<(u32, u32, u32), String> {
@@ -84,6 +124,7 @@ pub async fn check_github_release_update(
     let repo = repo.unwrap_or_else(|| "WalletsTool".to_string());
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
+    let proxy_url = to_gh_proxy_url(&url);
 
     let client = reqwest::Client::builder()
         .user_agent(format!("WalletsTool/{current_version}"))
@@ -91,21 +132,16 @@ pub async fn check_github_release_update(
         .build()
         .map_err(|e| format!("创建HTTP客户端失败: {e}"))?;
 
-    let response = client
-        .get(url)
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| format!("请求 GitHub Release 失败: {e}"))?;
-
-    let response = response
-        .error_for_status()
-        .map_err(|e| format!("请求 GitHub Release 失败: {e}"))?;
-
-    let release: GitHubRelease = response
-        .json()
-        .await
-        .map_err(|e| format!("解析 GitHub Release 失败: {e}"))?;
+    let mut used_proxy = false;
+    let release = match fetch_github_release(&client, &url).await {
+        Ok(release) => release,
+        Err(first_error) => {
+            used_proxy = true;
+            fetch_github_release(&client, &proxy_url)
+                .await
+                .map_err(|second_error| format!("{first_error}; 代理重试失败: {second_error}"))?
+        }
+    };
 
     if release.draft {
         return Ok(None);
@@ -118,10 +154,16 @@ pub async fn check_github_release_update(
         return Ok(None);
     }
 
+    let html_url = if used_proxy {
+        to_gh_proxy_url(&release.html_url)
+    } else {
+        release.html_url
+    };
+
     Ok(Some(GithubReleaseUpdateInfo {
         current_version,
         latest_version,
-        html_url: release.html_url,
+        html_url,
         name: release.name,
         body: release.body,
         published_at: release.published_at,

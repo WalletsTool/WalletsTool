@@ -412,30 +412,19 @@ impl DatabaseManager {
         .await;
 
         if let Err(e) = schema_check {
-            let error_msg = e.to_string();
-            let diag = database_url_to_path(database_url)
-                .map(|p| describe_db_file(&p))
-                .unwrap_or_else(|| format!("cwd={}", env::current_dir().map(|p| p.display().to_string()).unwrap_or_else(|_| "<unknown>".to_string())));
+            let err_str = e.to_string();
+            let is_password_error = err_str.contains("file is not a database")
+                || err_str.contains("code: 26")
+                || err_str.contains("not a database");
 
-            eprintln!("数据库解密失败详细信息: {}", error_msg);
-            eprintln!("诊断信息: {}", diag);
-
-            let db_path = database_url_to_path(database_url);
-            let file_exists = db_path.as_ref().map(|p| Path::new(p).exists()).unwrap_or(false);
-            let file_size = db_path.as_ref()
-                .and_then(|p| fs::metadata(p).ok())
-                .map(|m| m.len())
-                .unwrap_or(0);
-
-            if !file_exists || file_size == 0 {
-                return Err(anyhow::anyhow!("数据库文件丢失或已损坏，请尝试恢复出厂设置"));
+            if is_password_error {
+                return Err(anyhow::anyhow!("数据库密码错误，请检查密码后重试"));
+            } else {
+                let diag = database_url_to_path(database_url)
+                    .map(|p| describe_db_file(&p))
+                    .unwrap_or_else(|| format!("cwd={}", env::current_dir().map(|p| p.display().to_string()).unwrap_or_else(|_| "<unknown>".to_string())));
+                return Err(anyhow::anyhow!("数据库文件异常: {e}; {diag}"));
             }
-
-            if error_msg.contains("database disk image is malformed") {
-                return Err(anyhow::anyhow!("数据库文件损坏，请尝试恢复出厂设置"));
-            }
-
-            return Err(anyhow::anyhow!("密码错误，请检查后重试"));
         }
 
         println!("数据库加密验证成功");

@@ -56,7 +56,7 @@ jobs:
           console.log('=== Checking data files ===');
 
           const dataDir = 'src-tauri/data';
-          const requiredFiles = ['init.sql'];
+          const requiredFiles = ['public_init.sql', 'secure_init.sql'];
 
           try {
             const files = fs.readdirSync(dataDir);

@@ -140,16 +140,17 @@ jobs:
           tagName: ${{ github.ref_name || github.event.inputs.version }}
           releaseName: 'Wallets Tool ${{ github.ref_name || github.event.inputs.version }}'
           releaseBody: |
-            ## 🎉 新版本发布 v0.4.22
+            ## 🎉 新版本发布 v0.4.23
             
             ### 📦 安装包下载
             - **Windows**: 下载 `.exe` 文件
             
             ### 🔄 更新说明
-            ### ✨ New Features | 新功能
+            ### Other | 其他
             
-            - **database:** 实现双数据库架构和安全数据库加密功能
-            - 添加 Playwright E2E 测试框架及测试用例
+            - ci(workflow): 更新发布工作流中的必要数据文件列表
+            
+
             
 
             

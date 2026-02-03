@@ -1,5 +1,4 @@
-### ✨ New Features | 新功能
+### Other | 其他
 
-- **database:** 实现双数据库架构和安全数据库加密功能
-- 添加 Playwright E2E 测试框架及测试用例
+- ci(workflow): 更新发布工作流中的必要数据文件列表
 

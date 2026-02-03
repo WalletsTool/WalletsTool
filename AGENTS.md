@@ -312,7 +312,212 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 | cargo | Rust compilation and testing |
 | vite | Frontend build |
 | tauri | Desktop app packaging |
-| playwright | Browser automation testing |
+| playwright | E2E testing for frontend + backend integration |
+
+## E2E TESTING FRAMEWORK
+
+### Overview
+
+The project uses **Playwright** for end-to-end testing of frontend + Tauri backend integration. Tests verify that frontend UI correctly interacts with Rust backend commands.
+
+### Test Architecture
+
+```
+e2e/
+├── playwright.config.ts      # Playwright configuration
+├── global-setup.ts           # Pre-test setup
+├── global-teardown.ts        # Post-test cleanup
+├── tauri-helpers.ts          # Tauri-specific test utilities
+├── wallet-manager.spec.ts    # Wallet manager integration tests
+├── balance-query.spec.ts     # Balance query integration tests
+└── api-integration.spec.ts   # API contract tests
+```
+
+### Running Tests
+
+```bash
+# Install Playwright browsers (first time)
+npx playwright install chromium
+
+# Run all tests (headless - CI mode)
+npm run test:e2e
+
+# Run with browser visible (development)
+npm run test:e2e:headed
+
+# Interactive UI mode (debugging)
+npm run test:e2e:ui
+
+# Debug mode with step-through
+npm run test:e2e:debug
+
+# View HTML report
+npm run test:e2e:report
+
+# Run specific test file
+npx playwright test wallet-manager.spec.ts
+```
+
+### Core Test Utilities (`tauri-helpers.ts`)
+
+#### invokeTauriCommand
+Call Tauri backend commands from tests:
+
+```typescript
+import { invokeTauriCommand } from './tauri-helpers';
+
+// Example: Get wallet list from backend
+const wallets = await invokeTauriCommand<any[]>(page, 'get_wallets', {
+  group_id: null,
+  chain_type: null,
+  password: null,
+});
+
+// Example: Create a new group
+const newGroupId = await invokeTauriCommand<number>(page, 'create_group', {
+  name: 'Test Group',
+  parent_id: null,
+});
+```
+
+#### waitForTauriApp
+Wait for Tauri app to fully load:
+
+```typescript
+import { waitForTauriApp } from './tauri-helpers';
+
+await page.goto('/#/wallet-manager');
+await waitForTauriApp(page);  // Waits for __TAURI__ to be available
+```
+
+#### waitForLoadingComplete
+Wait for all loading indicators to disappear:
+
+```typescript
+import { waitForLoadingComplete } from './tauri-helpers';
+
+await waitForLoadingComplete(page);
+```
+
+### Writing New Tests
+
+#### Basic Test Template
+
+```typescript
+import { test, expect } from '@playwright/test';
+import {
+  waitForTauriApp,
+  invokeTauriCommand,
+  waitForLoadingComplete,
+} from './tauri-helpers';
+
+test.describe('Feature Name', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/#/your-route');
+    await waitForTauriApp(page);
+    await waitForLoadingComplete(page);
+  });
+
+  test('should call backend command and verify response', async ({ page }) => {
+    // Call backend command
+    const result = await invokeTauriCommand(page, 'your_command', { arg: 'value' });
+    
+    // Verify response
+    expect(result).toBeDefined();
+    expect(Array.isArray(result)).toBe(true);
+    
+    // Verify UI updated correctly
+    const element = page.locator('.your-selector');
+    await expect(element).toBeVisible();
+  });
+});
+```
+
+#### Testing Frontend-Backend Data Consistency
+
+```typescript
+test('frontend and backend data should match', async ({ page }) => {
+  // Get data from backend
+  const backendData = await invokeTauriCommand<any[]>(page, 'get_wallets', {});
+  
+  // Get displayed data from frontend
+  const rows = page.locator('table tbody tr');
+  const frontendCount = await rows.count();
+  
+  // Verify consistency
+  expect(frontendCount).toBe(backendData.length);
+});
+```
+
+#### Testing Error Handling
+
+```typescript
+test('should handle backend errors gracefully', async ({ page }) => {
+  try {
+    await invokeTauriCommand(page, 'invalid_command', {});
+    expect(false).toBe(true); // Should not reach here
+  } catch (error) {
+    expect(error).toBeDefined();
+    // Verify error message format
+  }
+});
+```
+
+### Available Tauri Commands for Testing
+
+#### Wallet Manager Commands
+- `get_groups` - Get all wallet groups
+- `get_wallets` - Get wallets (with optional filters)
+- `create_group` - Create a new wallet group
+- `create_wallet` - Create a new wallet
+- `delete_wallet` - Delete a wallet
+- `get_watch_addresses` - Get watch-only addresses
+- `is_wallet_manager_initialized` - Check if DB is initialized
+- `is_password_set` - Check if encryption password is set
+- `verify_password` - Verify encryption password
+
+#### Chain Configuration Commands
+- `get_chain_list` - Get all supported chains
+- `get_coin_list` - Get tokens for a chain
+- `add_chain` / `update_chain` / `delete_chain` - Chain CRUD
+- `get_rpc_providers` - Get RPC providers
+- `test_rpc_connection` - Test RPC connectivity
+- `get_chain_gas_price` - Get gas price for chain
+- `get_multiple_gas_prices` - Batch gas price query
+
+#### Transfer Commands
+- `base_coin_transfer` - Transfer native coin (ETH/SOL)
+- `token_transfer` - Transfer ERC-20/SPL tokens
+- `query_balance` - Query wallet balance
+- `check_transaction_status` - Check tx status
+
+#### Database Commands
+- `reload_database` - Hot reload database
+- `check_database_schema` - Verify schema integrity
+- `export_database_to_init_sql` - Export schema
+
+### Test Best Practices
+
+1. **Always use `waitForTauriApp`** before interacting with Tauri commands
+2. **Clean up test data** after tests (delete created groups/wallets)
+3. **Use descriptive test names** that explain what is being tested
+4. **Test both success and error cases**
+5. **Verify response format** matches expected structure
+6. **Take screenshots** on failure for debugging
+7. **Run tests in headed mode** during development for visibility
+
+### CI/CD Integration
+
+```yaml
+# GitHub Actions example
+- name: Run E2E Tests
+  run: |
+    npm install
+    npx playwright install chromium
+    npm run test:e2e
+  env:
+    CI: true
+```
 
 ## VERIFICATION
 

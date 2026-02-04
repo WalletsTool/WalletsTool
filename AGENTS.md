@@ -234,7 +234,7 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 │   │           ├── models.rs
 │   │           ├── service.rs
 │   │           └── commands.rs
-│   └── data/                 # DB file + init.sql
+│   └── data/                 # DB file + public_init.sql + secure_init.sql
 ├── docs/                     # Documentation
 ├── scripts/                  # Build/Version utilities
 └── vcpkg/                    # C++ Dependencies
@@ -297,12 +297,14 @@ async fn transfer<R: Runtime>(app: AppHandle<R>, request: TransferRequest) -> Re
 
 ## DATABASE MIGRATIONS
 
-- `src-tauri/data/init.sql` 只用于新装/重置数据库；升级旧用户数据库必须走迁移机制
+- `src-tauri/data/public_init.sql` 包含非敏感表结构和默认数据（链配置、RPC、代币等）
+- `src-tauri/data/secure_init.sql` 包含敏感数据初始化（数据库加密密钥配置）
+- 升级旧用户数据库必须走迁移机制
 - 迁移脚本目录：`src-tauri/data/migrations/`，文件命名：`V0001__short_name.sql` 递增
 - 迁移注册清单：`src-tauri/src/database/migrations.rs`（`version/name/check_sql/sql`）
 - `check_sql` 用于判断迁移是否需要执行；即使已满足也会写入 `schema_migrations`，避免重复检查
 - 自动执行时机：解锁/初始化真实加密数据库后自动执行版本化迁移，并在需要执行迁移时先生成 `*.bak.<timestamp>` 备份
-- 变更流程：更新 `init.sql`（新装结构）→ 新增迁移脚本（升级路径）→ 更新注册清单 → `cargo test`
+- 变更流程：更新 `public_init.sql` 和 `secure_init.sql` → 新增迁移脚本（升级路径）→ 更新注册清单 → `cargo test`
 
 ## TOOLS AVAILABLE
 
@@ -494,7 +496,7 @@ test('should handle backend errors gracefully', async ({ page }) => {
 #### Database Commands
 - `reload_database` - Hot reload database
 - `check_database_schema` - Verify schema integrity
-- `export_database_to_init_sql` - Export schema
+- `export_database_to_public_init_sql` - Export schema
 
 ### Test Best Practices
 

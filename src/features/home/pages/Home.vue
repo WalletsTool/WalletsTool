@@ -438,7 +438,7 @@ async function exportDatabaseToInitSql() {
     const resultText = typeof result === 'string' ? result : JSON.stringify(result)
 
     Notification.success({
-      title: '数据库导出完成',
+      title: '导出 public.db 成功',
       content: resultText
     , position: 'topLeft' })
 
@@ -1018,12 +1018,10 @@ async function handleMainWindowCloseRequest() {
             <a-button size="small" type="outline" @click="refreshPageData" class="action-btn">
               刷新页面
             </a-button>
-            <!-- 导出数据库功能暂时隐藏
             <a-button size="small" type="outline" @click="exportDatabaseToInitSql" :loading="databaseLoading"
               class="action-btn">
               导出数据库
             </a-button>
-            -->
           </div>
         </div>
       </div>

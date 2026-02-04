@@ -288,8 +288,7 @@ impl SimpleBalanceQueryService {
         
         // 首先尝试从数据库获取代币的 decimals 配置
         let decimals = {
-            let pool = get_database_pool();
-            let chain_service = ChainService::new(&pool);
+            let chain_service = ChainService::new();
             match chain_service.get_token_decimals_by_contract(chain, contract_address).await {
                 Ok(Some(db_decimals)) => {
                     println!("[DEBUG] 从数据库获取到代币decimals - 链: {chain}, 合约: {contract_address}, decimals: {db_decimals}");

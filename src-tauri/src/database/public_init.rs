@@ -1,6 +1,5 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
-use std::path::Path;
 
 use super::dual_database::{DualDatabaseManager, PUBLIC_DB_PATH};
 use super::encryption::create_unencrypted_pool;
@@ -9,19 +8,26 @@ static PUBLIC_INIT_SQL: &str = include_str!("../../data/public_init.sql");
 
 pub async fn init_public_database() -> Result<()> {
     std::fs::create_dir_all("data")?;
-    
-    let db_exists = Path::new(PUBLIC_DB_PATH).exists();
-    
+
     let pool = create_unencrypted_pool(PUBLIC_DB_PATH).await?;
-    
-    if !db_exists {
-        execute_init_sql(&pool, PUBLIC_INIT_SQL).await?;
-        load_default_chain_data(&pool).await?;
-    }
-    
+
+    // 执行 public_init.sql 创建表结构并插入初始数据
+    execute_init_sql(&pool, PUBLIC_INIT_SQL).await?;
+
+    // 保留向后兼容性调用（现在 public_init.sql 已包含所有数据）
+    insert_default_chain_data(&pool).await?;
+
     DualDatabaseManager::init_public_pool(pool);
     DualDatabaseManager::init_secure_pool_placeholder();
-    
+
+    Ok(())
+}
+
+/// 插入默认链和 RPC 数据
+/// 注意：现在完全由 public_init.sql 提供，此函数保留为空以保持向后兼容
+async fn insert_default_chain_data(_pool: &SqlitePool) -> Result<()> {
+    // public_init.sql 已包含所有默认链和 RPC 数据
+    // 此函数保留为空，避免重复插入导致的数据不一致
     Ok(())
 }
 
@@ -106,81 +112,6 @@ fn parse_sql_statements(sql: &str) -> Vec<String> {
     }
     
     statements
-}
-
-async fn load_default_chain_data(pool: &SqlitePool) -> Result<()> {
-    let chains_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM chains")
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
-    
-    if chains_count > 0 {
-        return Ok(());
-    }
-    
-    let default_chains = vec![
-        ("eth", "Ethereum", 1, "ETH", "ETH", 18, "evm"),
-        ("bsc", "BSC", 56, "BNB", "BNB", 18, "evm"),
-        ("base", "BASE", 8453, "ETH", "ETH", 18, "evm"),
-        ("arb", "Arbitrum One", 42161, "ETH", "ETH", 18, "evm"),
-        ("optimism", "Optimism", 10, "ETH", "ETH", 18, "evm"),
-        ("polygon", "Polygon", 137, "POL", "POL", 18, "evm"),
-        ("linea", "Linea", 59144, "ETH", "ETH", 18, "evm"),
-        ("sol", "Solana", 101, "SOL", "Solana", 9, "solana"),
-        ("soldev", "Solana-dev", 103, "SOL", "Solana", 9, "solana"),
-    ];
-    
-    for (key, name, chain_id, symbol, currency_name, decimals, ecosystem) in default_chains {
-        sqlx::query(
-            "INSERT OR IGNORE INTO chains (chain_key, chain_name, chain_id, native_currency_symbol, native_currency_name, native_currency_decimals, ecosystem) VALUES (?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(key)
-        .bind(name)
-        .bind(chain_id)
-        .bind(symbol)
-        .bind(currency_name)
-        .bind(decimals)
-        .bind(ecosystem)
-        .execute(pool)
-        .await?;
-    }
-    
-    let default_rpcs = vec![
-        ("eth", "https://eth.llamarpc.com"),
-        ("eth", "https://rpc.ankr.com/eth"),
-        ("bsc", "https://bsc-dataseed.binance.org"),
-        ("bsc", "https://bsc-dataseed1.defibit.io"),
-        ("base", "https://mainnet.base.org"),
-        ("base", "https://1rpc.io/base"),
-        ("arb", "https://arb1.arbitrum.io/rpc"),
-        ("arb", "https://1rpc.io/arb"),
-        ("optimism", "https://mainnet.optimism.io"),
-        ("polygon", "https://polygon-rpc.com"),
-        ("linea", "https://rpc.linea.build"),
-        ("sol", "https://api.mainnet-beta.solana.com"),
-        ("soldev", "https://api.devnet.solana.com"),
-    ];
-    
-    for (chain_key, rpc_url) in default_rpcs {
-        let chain_id: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM chains WHERE chain_key = ?"
-        )
-        .bind(chain_key)
-        .fetch_optional(pool)
-        .await?;
-        
-        if let Some(id) = chain_id {
-            sqlx::query(
-                "INSERT OR IGNORE INTO rpc_providers (chain_id, rpc_url) VALUES (?, ?)"
-            )
-            .bind(id)
-            .bind(rpc_url)
-            .execute(pool)
-            .await?;
-        }
-    }
-    
-    Ok(())
 }
 
 #[cfg(test)]

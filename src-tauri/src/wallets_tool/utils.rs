@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use tauri::{command, Manager};
 use crate::database::chain_service::ChainService;
+use crate::database::get_database_pool;
 use base64::{Engine as _, engine::general_purpose};
 use tauri::State;
 use sqlx;
@@ -42,6 +43,7 @@ pub async fn save_chain_icon(
     
     if let Some(chain) = chain {
         // 链已存在，更新图标数据
+        let pool = get_database_pool();
         sqlx::query(
             "UPDATE chains SET pic_data = ?, pic_url = ?, updated_at = ? WHERE id = ?"
         )
@@ -49,7 +51,7 @@ pub async fn save_chain_icon(
         .bind(&file_name)
         .bind(chrono::Utc::now())
         .bind(chain.id)
-        .execute(chain_service.get_pool())
+        .execute(&pool)
         .await
         .map_err(|e| format!("更新图标数据失败: {e}"))?;
         

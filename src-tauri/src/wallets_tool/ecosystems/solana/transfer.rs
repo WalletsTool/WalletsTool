@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::wallets_tool::security::SecureMemory;
 use crate::database::chain_service::ChainService;
+use crate::database::get_database_pool;
 #[allow(deprecated)]
 use solana_sdk::{
     signature::{Keypair, Signer},
@@ -53,7 +54,7 @@ pub async fn sol_transfer(
     chain_service: tauri::State<'_, ChainService>,
 ) -> Result<TransferResult, String> {
     let chain = config.chain.as_deref().unwrap_or("sol");
-    let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {
+    let client = match get_rpc_client(chain, Some(&get_database_pool())).await {
         Ok(c) => c,
         Err(e) => return Ok(TransferResult { success: false, tx_hash: None, error: Some(format!("RPC连接失败: {e}")) }),
     };
@@ -133,7 +134,7 @@ pub async fn sol_token_transfer(
     chain_service: tauri::State<'_, ChainService>,
 ) -> Result<TransferResult, String> {
     let chain = config.chain.as_deref().unwrap_or("sol");
-    let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {
+    let client = match get_rpc_client(chain, Some(&get_database_pool())).await {
         Ok(c) => c,
         Err(e) => return Ok(TransferResult { success: false, tx_hash: None, error: Some(format!("RPC连接失败: {e}")) }),
     };
@@ -253,7 +254,7 @@ pub async fn sol_check_recent_transfers(
     _amount: Option<String>,
     chain_service: tauri::State<'_, ChainService>,
 ) -> Result<CheckResult, String> {
-    let client = match get_rpc_client(&chain, Some(chain_service.get_pool())).await {
+    let client = match get_rpc_client(&chain, Some(&get_database_pool())).await {
         Ok(c) => c,
         Err(e) => return Err(format!("RPC连接失败: {e}")),
     };
@@ -299,7 +300,7 @@ pub async fn sol_check_transactions_status_batch(
         return Ok(vec![]);
     }
 
-    let client = match get_rpc_client(&chain, Some(chain_service.get_pool())).await {
+    let client = match get_rpc_client(&chain, Some(&get_database_pool())).await {
         Ok(c) => c,
         Err(e) => return Err(format!("RPC连接失败: {e}")),
     };
@@ -399,7 +400,7 @@ pub async fn sol_query_balances_with_updates(
     chain_service: tauri::State<'_, ChainService>,
 ) -> Result<serde_json::Value, String> {
     let chain = params.chain.as_deref().unwrap_or("sol");
-    let client = match get_rpc_client(chain, Some(chain_service.get_pool())).await {
+    let client = match get_rpc_client(chain, Some(&get_database_pool())).await {
         Ok(c) => c,
         Err(e) => return Err(format!("无法连接到 Solana RPC: {e}")),
     };

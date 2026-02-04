@@ -140,21 +140,19 @@ async fn main() {
     // 启动安全保护
     wallets_tool::security::enable_protection();
 
-    // 初始化数据库
-    if let Err(err) = database::init_database().await {
-        eprintln!("数据库初始化失败: {err:?}");
+    // 初始化公开数据库（链配置、RPC节点等）
+    if let Err(err) = database::init_public_database().await {
+        eprintln!("公开数据库初始化失败: {err:?}");
         return;
     }
-    
-    // 创建数据库服务
-    // Force rebuild: ecosystem field added
-    let db_manager = database::get_database_manager();
-    let sqlite_pool = db_manager.get_pool();
+
+    // 使用公开数据库连接池
+    let sqlite_pool = database::DualDatabaseManager::public_pool();
     println!("Initializing WalletManagerService...");
     let wallet_manager_service =
         wallets_tool::wallet_manager::service::WalletManagerService::new(sqlite_pool.clone());
     
-    let chain_service = database::chain_service::ChainService::new(&sqlite_pool);
+    let chain_service = database::chain_service::ChainService::new();
 
     let updater_pubkey = option_env!("WALLETSTOOL_UPDATER_PUBKEY").unwrap_or("").trim();
     let updater_plugin = if updater_pubkey.is_empty() {

@@ -742,53 +742,76 @@ pub async fn check_database_schema() -> Result<serde_json::Value, String> {
     Ok(schema_info)
 }
 
-/// 导出数据库数据到 public_init.sql 文件
+/// 导出 public.db 数据库数据到 public_init.sql 文件
 #[tauri::command]
 pub async fn export_database_to_init_sql() -> Result<String, String> {
     let config = load_database_config();
     let enable_debug = config.enable_debug_log.unwrap_or(false);
-    let pool = get_database_pool();
-    
+
     if enable_debug {
-        println!("开始导出数据库数据到 public_init.sql...");
+        println!("开始导出 public.db 数据到 public_init.sql...");
     }
-    
+
+    // 使用公开数据库连接池
+    let pool = DualDatabaseManager::public_pool();
+
     let mut sql_content = String::new();
-    
-    sql_content.push_str("-- Wallet Manager 数据库初始化脚本\n");
-    sql_content.push_str("-- 此文件由系统自动生成，包含当前数据库的所有数据\n\n");
-    
+
+    // 生成带时间戳的文件头注释
+    let now = chrono::Utc::now();
+    let timestamp = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+
+    sql_content.push_str("-- Wallet Manager 公开数据库初始化脚本\n");
+    sql_content.push_str(&format!("-- 生成时间: {timestamp}\n"));
+    sql_content.push_str("-- 此文件由系统自动生成，包含当前 public.db 的所有公开数据\n\n");
+
+    // 只导出公开数据库的表（排除敏感数据表）
+    let skip_tables = vec![
+        "app_config",
+        "wallet_groups",
+        "wallets",
+    ];
+
     let all_tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
     )
     .fetch_all(&pool)
     .await
     .map_err(|e| format!("获取表名失败: {e}"))?;
-    
-    let mut tables = Vec::new();
-    let table_order = vec!["chains", "rpc_providers", "tokens"];
-    
-    for table_name in &table_order {
-        if all_tables.contains(&table_name.to_string()) {
-            tables.push(table_name.to_string());
-        }
-    }
-    
-    for table in &all_tables {
-        if !tables.contains(table) {
-            tables.push(table.clone());
-        }
-    }
-    
+
+    // 过滤掉敏感数据表
+    let tables: Vec<String> = all_tables
+        .iter()
+        .filter(|t| !skip_tables.contains(&t.as_str()))
+        .cloned()
+        .collect();
+
     if enable_debug {
-        println!("表创建顺序: {tables:?}");
+        println!("将导出的表: {tables:?}");
     }
-    
+
+    // 导出表顺序：chains -> rpc_providers -> tokens -> 其他
+    let mut ordered_tables = Vec::new();
+    let priority_order = vec!["chains", "rpc_providers", "tokens"];
+
+    for table_name in &priority_order {
+        if tables.contains(&table_name.to_string()) {
+            ordered_tables.push(table_name.to_string());
+        }
+    }
+
     for table in &tables {
+        if !ordered_tables.contains(table) {
+            ordered_tables.push(table.clone());
+        }
+    }
+
+    for table in &ordered_tables {
         if enable_debug {
             println!("正在导出表: {table}");
         }
-        
+
+        // 获取表创建SQL
         let create_sql: String = sqlx::query_scalar(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?"
         )
@@ -796,17 +819,19 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
         .fetch_one(&pool)
         .await
         .map_err(|e| format!("获取表 {table} 结构失败: {e}"))?;
-        
+
         sql_content.push_str(&format!("-- 创建{table}表\n"));
         sql_content.push_str(&create_sql);
         sql_content.push_str(";\n\n");
-        
+
+        // 获取表数据
         let rows = sqlx::query(&format!("SELECT * FROM {table}"))
             .fetch_all(&pool)
             .await
             .map_err(|e| format!("获取表 {table} 数据失败: {e}"))?;
-        
+
         if !rows.is_empty() {
+            // 获取列名
             let columns: Vec<String> = sqlx::query_scalar(
                 "SELECT name FROM pragma_table_info(?) ORDER BY cid"
             )
@@ -814,9 +839,9 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
             .fetch_all(&pool)
             .await
             .map_err(|e| format!("获取表 {table} 列名失败: {e}"))?;
-            
+
             sql_content.push_str(&format!("-- 插入{table}表数据\n"));
-            
+
             for row in rows {
                 let mut values = Vec::new();
                 for (i, _column) in columns.iter().enumerate() {
@@ -831,7 +856,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
                     } else {
                         None
                     };
-                    
+
                     match value {
                         Some(v) => {
                             let escaped = v.replace("'", "''");
@@ -840,7 +865,7 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
                         None => values.push("NULL".to_string()),
                     }
                 }
-                
+
                 let insert_sql = format!(
                     "INSERT OR IGNORE INTO {} ({}) VALUES ({});\n",
                     table,
@@ -852,14 +877,15 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
             sql_content.push('\n');
         }
     }
-    
+
+    // 导出索引
     let indexes: Vec<String> = sqlx::query_scalar(
         "SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%'"
     )
     .fetch_all(&pool)
     .await
     .map_err(|e| format!("获取索引失败: {e}"))?;
-    
+
     if !indexes.is_empty() {
         sql_content.push_str("-- 创建索引\n");
         for index_sql in indexes {
@@ -867,17 +893,35 @@ pub async fn export_database_to_init_sql() -> Result<String, String> {
             sql_content.push_str(";\n");
         }
     }
-    
-    let init_sql_path = config.init_sql_path.unwrap_or_else(|| "data/public_init.sql".to_string());
-    std::fs::write(&init_sql_path, &sql_content)
+
+    let init_sql_path = "data/public_init.sql";
+
+    // 备份原文件（带日期时间戳）
+    if std::path::Path::new(init_sql_path).exists() {
+        let bak_path = format!(
+            "data/public_init_{}.bak",
+            now.format("%Y%m%d_%H%M%S")
+        );
+        std::fs::rename(init_sql_path, &bak_path)
+            .map_err(|e| format!("备份原文件到 {bak_path} 失败: {e}"))?;
+        if enable_debug {
+            println!("已备份原文件到: {bak_path}");
+        }
+    }
+
+    // 写入新文件
+    std::fs::write(init_sql_path, &sql_content)
         .map_err(|e| format!("写入 public_init.sql 文件失败: {e}"))?;
-    
+
     if enable_debug {
         println!("数据库导出完成，文件大小: {} 字节", sql_content.len());
     }
-    
-    Ok(format!("数据库数据已成功导出到 {}，共 {} 个表，文件大小: {} 字节", 
-        init_sql_path, tables.len(), sql_content.len()))
+
+    Ok(format!(
+        "public.db 数据已成功导出到 public_init.sql，共 {} 个表，文件大小: {} 字节",
+        ordered_tables.len(),
+        sql_content.len()
+    ))
 }
 
 /// 检查钱包数据库是否已就绪（用户已设置主密码）

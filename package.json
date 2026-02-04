@@ -24,7 +24,7 @@
     "database": {
       "forceInit": false,
       "enableDebugLog": false,
-      "initSqlPath": "data/init.sql"
+      "initSqlPath": "data/public_init.sql"
     }
   },
   "dependencies": {

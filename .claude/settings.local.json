@@ -19,7 +19,11 @@
       "mcp__acp__Bash",
       "Bash(yarn build)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(cargo build)"
+      "Bash(cargo build)",
+      "Bash(cmd:*)",
+      "Bash(powershell:*)",
+      "Bash(python:*)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []

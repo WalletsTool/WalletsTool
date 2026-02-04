@@ -1,4 +1,4 @@
-### Other | 其他
+### 📝 Documentation | 文档
 
-- ci(workflow): 更新发布工作流中的必要数据文件列表
+- **database:** 添加初始化与恢复出厂设置文档
 

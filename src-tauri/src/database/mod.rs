@@ -33,6 +33,7 @@ pub use secure_init::{
 #[allow(unused_imports)]
 pub use commands::*;
 
+#[allow(dead_code)]
 static PUBLIC_INIT_SQL_CONTENT: &str = include_str!("../../data/public_init.sql");
 
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions, Row};
@@ -85,6 +86,7 @@ fn is_fatal_db_error(error: &anyhow::Error) -> bool {
 }
 
 /// 智能解析SQL语句，正确处理多行语句
+#[allow(dead_code)]
 fn parse_sql_statements(sql: &str) -> Vec<String> {
     let mut statements = Vec::new();
     let mut current_statement = String::new();
@@ -235,6 +237,7 @@ pub struct DatabaseManager {
 
 impl DatabaseManager {
     /// 创建新的数据库管理器实例
+    #[allow(dead_code)]
     pub async fn new(database_url: &str) -> Result<Self> {
         let options = SqliteConnectOptions::from_str(database_url)?
             .create_if_missing(true);
@@ -377,6 +380,7 @@ pub async fn unlock_encrypted_database(password: &str) -> Result<()> {
 /// 初始化数据库（兼容旧接口，实际使用公开数据库）
 /// 
 /// 注意：新代码应该直接使用 init_public_database()
+#[allow(dead_code)]
 pub async fn init_database() -> Result<()> {
     let config = load_database_config();
     let enable_debug = config.enable_debug_log.unwrap_or(false);
@@ -567,6 +571,7 @@ static DATABASE_POOL: OnceLock<RwLock<SqlitePool>> = OnceLock::new();
 // Removed DB_PASSWORD
 
 /// 初始化全局数据库连接池
+#[allow(dead_code)]
 fn init_global_pool(pool: SqlitePool) {
     if DATABASE_POOL.get().is_none() {
         let _ = DATABASE_POOL.set(RwLock::new(pool));
@@ -598,18 +603,22 @@ pub fn get_database_pool() -> SqlitePool {
 }
 
 /// 动态数据库管理器引用
+#[allow(dead_code)]
 pub struct DatabaseManagerRef;
 
 impl DatabaseManagerRef {
+    #[allow(dead_code)]
     pub fn get_pool(&self) -> SqlitePool {
         get_database_pool()
     }
 }
 
 /// 全局数据库管理器引用
+#[allow(dead_code)]
 static DATABASE_MANAGER_REF: DatabaseManagerRef = DatabaseManagerRef;
 
 /// 获取全局数据库管理器
+#[allow(dead_code)]
 pub fn get_database_manager() -> &'static DatabaseManagerRef {
     &DATABASE_MANAGER_REF
 }
@@ -630,6 +639,7 @@ pub fn database_exists() -> bool {
 // Removed obsolete functions
 
 /// 将 public_init.sql 内容加载到当前数据库连接池
+#[allow(dead_code)]
 async fn load_init_sql_to_pool(enable_debug: bool) -> Result<()> {
     let pool = get_database_pool();
     let init_sql = PUBLIC_INIT_SQL_CONTENT;

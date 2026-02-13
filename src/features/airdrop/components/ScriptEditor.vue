@@ -18,6 +18,8 @@ import {
 } from '@arco-design/web-vue/es/icon';
 import ApiHelper from './ApiHelper.vue';
 import { scriptService, executionService } from '../services/browserAutomationService';
+import { handleApiError, getErrorMessage } from '../utils/ErrorHandling';
+import { Logger } from '../utils/LoggingSystem';
 
 const scripts = ref([]);
 
@@ -34,29 +36,8 @@ const editingScriptId = ref(null);
 const editNameInput = ref(null);
 const editNameValue = ref('');
 
-const getErrorMessage = (error) => {
-  if (!error) return '未知错误';
-  if (typeof error === 'string') return error;
-  if (error instanceof Error) return error.message || '未知错误';
-  if (typeof error === 'object' && typeof error.message === 'string') return error.message;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-};
-
-// 加载脚本
-const loadScripts = async () => {
-  loading.value = true;
-  try {
-    scripts.value = await scriptService.getScripts();
-  } catch (error) {
-    Message.error('加载脚本失败: ' + getErrorMessage(error));
-  } finally {
-    loading.value = false;
-  }
-};
+// 初始化日志系统
+const logger = new Logger('ScriptEditor');
 
 const startEditName = async (script, event) => {
   event?.stopPropagation();
@@ -80,8 +61,10 @@ const saveEditName = async () => {
       await scriptService.updateScript({ id: script.id, name: trimmedName });
       script.name = trimmedName;
       Message.success('名称已更新');
+      logger.info(`脚本名称更新: ${trimmedName}`);
     } catch (error) {
-      Message.error('更新失败: ' + getErrorMessage(error));
+      const errorMessage = handleApiError(error, '更新脚本名称');
+      Message.error(errorMessage);
     }
   }
   editingScriptId.value = null;
@@ -104,6 +87,7 @@ const handleNameKeydown = (event) => {
 const handleSelectScript = (script) => {
   activeScript.value = script;
   scriptContent.value = script.content;
+  logger.info(`选择脚本: ${script.name}`);
 };
 
 const handleSave = async () => {
@@ -119,8 +103,10 @@ const handleSave = async () => {
     });
     activeScript.value.content = scriptContent.value;
     Message.success('脚本已保存');
+    logger.info(`脚本保存成功: ${activeScript.value.name}`);
   } catch (error) {
-    Message.error('保存失败: ' + getErrorMessage(error));
+    const errorMessage = handleApiError(error, '保存脚本');
+    Message.error(errorMessage);
   }
 };
 
@@ -140,8 +126,10 @@ const handleRun = async () => {
     await executionService.startExecution(execution.id);
     
     Message.success('脚本已添加到执行队列，请切换到"执行面板"查看');
+    logger.info(`脚本执行启动: ${activeScript.value.name}`);
   } catch (error) {
-    Message.error('启动执行失败: ' + getErrorMessage(error));
+    const errorMessage = handleApiError(error, '启动脚本执行');
+    Message.error(errorMessage);
   }
 };
 
@@ -183,8 +171,10 @@ async function run({ page, wallet, api }) {
     handleSelectScript(newScript);
     isNewModalVisible.value = false;
     Message.success('创建成功');
+    logger.info(`新脚本创建: ${newScriptName.value.trim()}`);
   } catch (error) {
-    Message.error('创建失败: ' + getErrorMessage(error));
+    const errorMessage = handleApiError(error, '创建新脚本');
+    Message.error(errorMessage);
   }
 };
 
@@ -203,8 +193,10 @@ const handleDeleteScript = async (e, scriptId) => {
           scriptContent.value = '';
         }
         Message.success('删除成功');
+        logger.info(`脚本删除成功: ${script?.name || scriptId}`);
       } catch (error) {
-        Message.error('删除失败: ' + getErrorMessage(error));
+        const errorMessage = handleApiError(error, '删除脚本');
+        Message.error(errorMessage);
       }
     }
   });
@@ -224,9 +216,11 @@ const handleImportScript = async () => {
       scripts.value.push(newScript);
       handleSelectScript(newScript);
       Message.success('导入成功');
+      logger.info(`脚本导入成功: ${imported.name}`);
     }
   } catch (error) {
-    Message.error('导入失败: ' + getErrorMessage(error));
+    const errorMessage = handleApiError(error, '导入脚本');
+    Message.error(errorMessage);
   }
 };
 
@@ -239,8 +233,10 @@ const handleExportScript = async () => {
   try {
     await scriptService.exportScript(activeScript.value);
     Message.success('导出成功');
+    logger.info(`脚本导出成功: ${activeScript.value.name}`);
   } catch (error) {
-    Message.error('导出失败: ' + getErrorMessage(error));
+    const errorMessage = handleApiError(error, '导出脚本');
+    Message.error(errorMessage);
   }
 };
 
@@ -254,8 +250,10 @@ const handleCopyScript = async () => {
     setTimeout(() => {
       copiedCode.value = false;
     }, 2000);
+    logger.info('脚本内容复制到剪贴板');
   } catch (e) {
     Message.error('复制失败');
+    logger.error('复制脚本内容失败', e);
   }
 };
 
@@ -263,15 +261,18 @@ const handleInsertCode = (code) => {
   if (activeScript.value) {
     scriptContent.value += '\n' + code;
     Message.success('代码已插入');
+    logger.info('API代码插入成功');
   }
 };
 
 const toggleApiHelper = () => {
   showApiHelper.value = !showApiHelper.value;
+  logger.info(`API帮助面板 ${showApiHelper.value ? '显示' : '隐藏'}`);
 };
 
 const toggleFullscreen = () => {
   isFullscreen.value = !isFullscreen.value;
+  logger.info(`全屏模式 ${isFullscreen.value ? '开启' : '关闭'}`);
 };
 
 // 键盘快捷键
@@ -286,6 +287,20 @@ onMounted(() => {
   loadScripts();
   window.addEventListener('keydown', handleKeydown);
 });
+
+// 加载脚本
+const loadScripts = async () => {
+  loading.value = true;
+  try {
+    scripts.value = await scriptService.getScripts();
+    logger.info(`加载脚本列表成功，共 ${scripts.value.length} 个脚本`);
+  } catch (error) {
+    const errorMessage = handleApiError(error, '加载脚本列表');
+    Message.error(errorMessage);
+  } finally {
+    loading.value = false;
+  }
+};
 </script>
 
 <template>

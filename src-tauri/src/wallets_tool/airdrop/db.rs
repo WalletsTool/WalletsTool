@@ -319,6 +319,33 @@ pub async fn init_airdrop_tables(pool: &SqlitePool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    // 浏览器插件表
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS browser_extensions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            path TEXT NOT NULL,
+            version TEXT,
+            author TEXT,
+            enabled BOOLEAN NOT NULL DEFAULT 1,
+            is_builtin BOOLEAN NOT NULL DEFAULT 0,
+            tags TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_browser_extensions_enabled ON browser_extensions(enabled)"
+    )
+    .execute(pool)
+    .await?;
+
     // 插入默认脚本
     insert_default_scripts(pool).await?;
 

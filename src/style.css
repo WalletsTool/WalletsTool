@@ -93,7 +93,7 @@
 /* 应用主题变量 */
 :root {
     color: var(--text-color, #ffffff);
-    background: var(--bg-gradient, rgb(42, 42, 43));
+    background: transparent;
 }
 
 /* 强制覆盖 Arco 框架的字体设置 */
@@ -123,6 +123,7 @@ html,
 
 #app {
     padding: 0;
+    background: transparent;
 }
 
 /* 全局样式 */
@@ -280,4 +281,45 @@ body > div[class*="notification"] {
 
 :root[data-theme="dark"] .p-virtualscroller::-webkit-scrollbar-thumb:hover {
   background: #5a5a5a !important;
+}
+
+/* ============================================
+   全局明亮主题样式
+   通过 body.light-theme 类自动应用
+   ============================================ */
+
+body.light-theme {
+  background: transparent !important;
+}
+
+body.light-theme #app {
+  background: transparent !important;
+}
+
+/* 通用卡片/面板样式 */
+body.light-theme .card-bg,
+body.light-theme .panel-bg {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* 通用按钮悬停样式 */
+body.light-theme .btn-hover:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+/* 通用关闭按钮悬停样式 */
+body.light-theme .close-btn:hover {
+  background: rgba(255, 100, 100, 0.15) !important;
+  color: #e74c3c !important;
+}
+
+/* 通用标题文字 */
+body.light-theme .title-text {
+  color: #2c3e50 !important;
+}
+
+/* 通用次要文字 */
+body.light-theme .secondary-text {
+  color: rgba(0, 0, 0, 0.6) !important;
 }

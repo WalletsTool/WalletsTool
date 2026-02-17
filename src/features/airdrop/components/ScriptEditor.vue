@@ -14,10 +14,12 @@ import {
   IconImport,
   IconDownload,
   IconCopy,
-  IconCheck
+  IconCheck,
+  IconRecord
 } from '@arco-design/web-vue/es/icon';
 import ApiHelper from './ApiHelper.vue';
-import { scriptService, executionService } from '../services/browserAutomationService';
+import ScriptRecorder from './ScriptRecorder.vue';
+import { scriptService, executionSessionService } from '../services/browserAutomationService';
 
 const scripts = ref([]);
 
@@ -33,6 +35,9 @@ const loading = ref(false);
 const editingScriptId = ref(null);
 const editNameInput = ref(null);
 const editNameValue = ref('');
+
+// 右侧工具面板标签: 'api' | 'recorder' | null
+const activeToolTab = ref(null);
 
 const getErrorMessage = (error) => {
   if (!error) return '未知错误';
@@ -127,22 +132,7 @@ const handleSave = async () => {
 const handleRun = async () => {
   if (!activeScript.value) return;
   
-  try {
-    // 创建临时执行任务
-    const execution = await executionService.createExecution({
-      script_id: activeScript.value.id,
-      wallet_ids: [],
-      profile_ids: [],
-      parallel_mode: false
-    });
-    
-    // 启动执行
-    await executionService.startExecution(execution.id);
-    
-    Message.success('脚本已添加到执行队列，请切换到"执行面板"查看');
-  } catch (error) {
-    Message.error('启动执行失败: ' + getErrorMessage(error));
-  }
+  Message.info('请切换到"执行面板"选择钱包后执行脚本');
 };
 
 const handleNewScript = () => {
@@ -266,12 +256,17 @@ const handleInsertCode = (code) => {
   }
 };
 
-const toggleApiHelper = () => {
-  showApiHelper.value = !showApiHelper.value;
-};
-
 const toggleFullscreen = () => {
   isFullscreen.value = !isFullscreen.value;
+};
+
+// 切换右侧工具面板标签
+const setToolTab = (tab) => {
+  if (activeToolTab.value === tab) {
+    activeToolTab.value = null; // 再次点击关闭
+  } else {
+    activeToolTab.value = tab;
+  }
 };
 
 // 键盘快捷键
@@ -339,7 +334,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="editor-main" v-if="activeScript" :style="{ width: isFullscreen ? '100%' : (showApiHelper ? 'calc(50% - 10px)' : 'calc(100% - 20px)') }">
+    <div class="editor-main" v-if="activeScript" :style="{ width: isFullscreen ? '100%' : (activeToolTab ? 'calc(100% - 270px - 400px)' : 'calc(100% - 270px)'), flex: activeToolTab ? 'none' : 1 }">
       <div class="editor-area">
         <div class="editor-toolbar">
           <div class="file-info">
@@ -348,8 +343,13 @@ onMounted(() => {
           </div>
           <div class="actions">
             <a-tooltip content="API 参考文档">
-              <a-button type="text" size="small" @click="toggleApiHelper" :status="showApiHelper ? 'primary' : 'normal'" v-if="!isFullscreen">
+              <a-button type="text" size="small" @click="setToolTab('api')" :status="activeToolTab === 'api' ? 'primary' : 'normal'" v-if="!isFullscreen">
                 <template #icon><icon-book /></template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip content="脚本录制">
+              <a-button type="text" size="small" @click="setToolTab('recorder')" :status="activeToolTab === 'recorder' ? 'warning' : 'normal'" v-if="!isFullscreen">
+                <template #icon><icon-record /></template>
               </a-button>
             </a-tooltip>
             <a-tooltip content="全屏编辑">
@@ -395,8 +395,9 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="api-helper-panel" v-if="showApiHelper && !isFullscreen && activeScript">
-      <ApiHelper @insert-code="handleInsertCode" />
+    <div class="tool-panel" v-if="activeToolTab && !isFullscreen && activeScript">
+      <ApiHelper v-if="activeToolTab === 'api'" @insert-code="handleInsertCode" />
+      <ScriptRecorder v-if="activeToolTab === 'recorder'" @insert-code="handleInsertCode" @close="activeToolTab = null" />
     </div>
 
     <div class="empty-state" v-if="!activeScript">
@@ -623,12 +624,13 @@ onMounted(() => {
   color: var(--color-text-4);
 }
 
-.api-helper-panel {
+.tool-panel {
   width: 400px;
   flex-shrink: 0;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--color-border);
+  background: var(--color-bg-2);
 }
 
 .empty-state {

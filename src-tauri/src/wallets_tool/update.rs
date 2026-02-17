@@ -177,15 +177,25 @@ pub async fn check_update<R: Runtime>(
     app: AppHandle<R>,
     current_version: String,
 ) -> Result<UpdateCheckResult, String> {
+    println!("[check_update] 开始检查更新, current_version: {}", current_version);
+    
     let updater = app
         .updater()
-        .map_err(|e| format!("获取更新器失败: {e}"))?;
+        .map_err(|e| {
+            let err_msg = format!("获取更新器失败: {e}");
+            println!("[check_update] 错误: {}", err_msg);
+            err_msg
+        })?;
+
+    println!("[check_update] 获取到 updater, 开始检查...");
 
     match updater.check().await {
         Ok(Some(update)) => {
             let latest_version = update.version.clone();
             let release_notes = update.body.clone();
             let download_url = update.download_url.to_string();
+            
+            println!("[check_update] 发现新版本: {} -> {}", current_version, latest_version);
             
             Ok(UpdateCheckResult {
                 has_update: true,
@@ -196,15 +206,22 @@ pub async fn check_update<R: Runtime>(
                 published_at: update.date.map(|d| d.to_string()),
             })
         }
-        Ok(None) => Ok(UpdateCheckResult {
-            has_update: false,
-            latest_version: current_version.clone(),
-            current_version,
-            release_notes: None,
-            download_url: None,
-            published_at: None,
-        }),
-        Err(e) => Err(format!("检查更新失败: {e}")),
+        Ok(None) => {
+            println!("[check_update] 当前已是最新版本: {}", current_version);
+            Ok(UpdateCheckResult {
+                has_update: false,
+                latest_version: current_version.clone(),
+                current_version,
+                release_notes: None,
+                download_url: None,
+                published_at: None,
+            })
+        }
+        Err(e) => {
+            let err_msg = format!("检查更新失败: {e}");
+            println!("[check_update] 检查失败: {}", err_msg);
+            Err(err_msg)
+        }
     }
 }
 

@@ -383,8 +383,8 @@ export const taskService = {
     return await invoke('create_automation_task', { request });
   },
 
-  async updateTask(request: UpdateTaskRequest): Promise<AutomationTask> {
-    return await invoke('update_automation_task', { request });
+  async updateTask(id: number, request: Partial<CreateTaskRequest>): Promise<AutomationTask> {
+    return await invoke('update_automation_task', { request: { id, ...request } });
   },
 
   async deleteTask(id: number): Promise<void> {
@@ -393,6 +393,14 @@ export const taskService = {
 
   async toggleStatus(id: number): Promise<AutomationTask> {
     return await invoke('toggle_task_status', { id });
+  },
+
+  async toggleTask(id: number, enabled: boolean): Promise<AutomationTask> {
+    return await invoke('toggle_task_status', { id, enabled });
+  },
+
+  async runTaskNow(id: number): Promise<void> {
+    return await invoke('run_task_now', { taskId: id });
   },
 };
 
@@ -406,5 +414,95 @@ export const executionService = {
 
   async getStats(taskId?: number): Promise<TaskExecutionStats> {
     return await invoke('get_task_execution_stats', { taskId });
+  },
+
+  async getExecution(id: number): Promise<TaskExecution> {
+    const results = await invoke<TaskExecution[]>('get_task_executions', { taskId: null, limit: null });
+    return results.find(e => e.id === id) || null;
+  },
+
+  async deleteExecution(id: number): Promise<void> {
+    return await invoke('delete_task_execution', { id });
+  },
+};
+
+// ==================== 执行会话类型 ====================
+
+export interface CreateExecutionRequest {
+  script_id: number;
+  wallet_ids: number[];
+  profile_ids?: number[];
+  parallel_mode?: boolean;
+  max_parallel?: number;
+}
+
+export interface ExecutionSession {
+  id: number;
+  script_id: number;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+  success_count: number;
+  failed_count: number;
+  results: ExecutionResult[];
+  logs: ExecutionLog[];
+}
+
+export interface ExecutionResult {
+  id: number;
+  wallet_id: number;
+  wallet_name: string;
+  wallet_address: string;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+  error_message: string | null;
+  logs: string | null;
+}
+
+export interface ExecutionLog {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+/**
+ * 执行会话服务
+ */
+export const executionSessionService = {
+  /**
+   * 创建执行会话
+   */
+  async createExecution(request: CreateExecutionRequest): Promise<ExecutionSession> {
+    return await invoke('create_execution', { request });
+  },
+
+  /**
+   * 启动执行
+   */
+  async startExecution(executionId: number): Promise<void> {
+    return await invoke('start_execution', { executionId });
+  },
+
+  /**
+   * 取消执行
+   */
+  async cancelExecution(executionId: number): Promise<void> {
+    return await invoke('cancel_execution', { executionId });
+  },
+
+  /**
+   * 获取执行状态
+   */
+  async getExecution(executionIds: number[]): Promise<ExecutionSession> {
+    return await invoke('get_execution', { executionIds });
+  },
+
+  /**
+   * 模拟执行（用于测试）
+   */
+  async simulateExecution(executionId: number): Promise<void> {
+    return await invoke('simulate_execution', { executionId });
   },
 };

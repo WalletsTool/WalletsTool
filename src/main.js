@@ -46,6 +46,7 @@ import {
 import '@arco-design/web-vue/dist/arco.css';
 import "./style.css";
 import {createPinia} from 'pinia'
+import { useThemeStore } from './stores'
 
 // 预加载关键资源
 const preloadResources = () => {
@@ -93,6 +94,12 @@ window.addEventListener('unhandledrejection', (event) => {
 const pinia = createPinia()
 const app = createApp(App)
 
+app.use(pinia)
+app.use(router)
+
+const themeStore = useThemeStore()
+themeStore.initTheme()
+
 // 添加Vue错误处理
 app.config.errorHandler = (err, vm, info) => {
   console.error('Vue错误处理器:', {
@@ -139,9 +146,6 @@ app.use(ListItem)
 
 app.use(PrimeVue);
 app.component('VirtualScroller', VirtualScroller)
-
-app.use(router)
-app.use(pinia)
 
 // 执行预加载和优化
 preloadResources();

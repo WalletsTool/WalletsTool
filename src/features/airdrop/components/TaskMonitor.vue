@@ -30,10 +30,10 @@ let refreshTimer = null;
 const stats = computed(() => {
   const history = executionHistory.value;
   const total = history.length;
-  const success = history.filter(r => r.status === 'completed').length;
+  const success = history.filter(r => r.status === 'success' || r.status === 'completed').length;
   const failed = history.filter(r => r.status === 'failed').length;
   const running = history.filter(r => r.status === 'running').length;
-  const cancelled = history.filter(r => r.status === 'cancelled').length;
+  const cancelled = history.filter(r => r.status === 'stopped' || r.status === 'cancelled').length;
   
   return {
     total,
@@ -179,8 +179,10 @@ const getStatusColor = (status) => {
   const colors = {
     pending: 'var(--color-text-4)',
     running: 'rgb(var(--primary-6))',
+    success: 'rgb(var(--success-6))',
     completed: 'rgb(var(--success-6))',
     failed: 'rgb(var(--danger-6))',
+    stopped: 'rgb(var(--warning-6))',
     cancelled: 'rgb(var(--warning-6))',
   };
   return colors[status] || colors.pending;
@@ -190,8 +192,10 @@ const getStatusText = (status) => {
   const texts = {
     pending: '等待中',
     running: '执行中',
+    success: '成功',
     completed: '成功',
     failed: '失败',
+    stopped: '已停止',
     cancelled: '已取消',
   };
   return texts[status] || status;
@@ -271,27 +275,25 @@ onUnmounted(() => {
       <!-- 执行记录列表 -->
       <div class="history-panel">
         <div class="panel-header">
-          <div class="header-left">
-            <span>执行记录</span>
+          <div class="header-title">执行记录</div>
+          <div class="header-actions">
             <a-input-search
               v-model="searchQuery"
               placeholder="搜索钱包/脚本..."
               size="small"
-              style="width: 180px; margin-left: 10px;"
+              class="search-input"
               allow-clear
             />
-          </div>
-          <div class="header-actions">
-            <a-switch v-model="autoRefresh" size="small" style="margin-right: 10px">
-              <template #checked>自动刷新</template>
-              <template #unchecked>手动刷新</template>
-            </a-switch>
-            <a-button type="text" size="small" @click="refreshHistory" :loading="loading">
+            <div class="action-divider"></div>
+            <div class="auto-refresh-switch" :class="{ active: autoRefresh }">
+              <a-switch v-model="autoRefresh" size="small" />
+              <span class="switch-label">{{ autoRefresh ? '自动' : '手动' }}</span>
+            </div>
+            <a-button type="text" size="small" @click="refreshHistory" :loading="loading" title="刷新">
               <template #icon><icon-refresh /></template>
             </a-button>
-            <a-button type="text" size="small" status="danger" @click="clearHistory">
+            <a-button type="text" size="small" status="danger" @click="clearHistory" title="清空记录">
               <template #icon><icon-delete /></template>
-              清空
             </a-button>
           </div>
         </div>
@@ -305,7 +307,7 @@ onUnmounted(() => {
             @click="viewDetails(record)"
           >
             <div class="item-status" :style="{ color: getStatusColor(record.status) }">
-              <icon-check-circle v-if="record.status === 'completed'" />
+              <icon-check-circle v-if="record.status === 'success' || record.status === 'completed'" />
               <icon-close-circle v-else-if="record.status === 'failed'" />
               <icon-loading v-else-if="record.status === 'running'" spin />
               <icon-schedule v-else />
@@ -511,18 +513,69 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-weight: 500;
+  gap: 12px;
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
+.header-title {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--color-text-1);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .header-actions {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.search-input {
+  width: 140px;
+  transition: width 0.2s;
+}
+
+.search-input:focus-within {
+  width: 160px;
+}
+
+.action-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  margin: 0 4px;
+}
+
+.auto-refresh-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--color-fill-2);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.auto-refresh-switch:hover {
+  background: var(--color-fill-3);
+}
+
+.auto-refresh-switch.active {
+  background: rgba(var(--primary-6), 0.15);
+}
+
+.auto-refresh-switch.active .switch-label {
+  color: rgb(var(--primary-6));
+}
+
+.switch-label {
+  font-size: 12px;
+  color: var(--color-text-3);
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .history-list {
@@ -728,6 +781,3 @@ onUnmounted(() => {
   gap: 15px;
 }
 </style>
-;
-  justify-content: center;
-  color: var(--color-text-4);

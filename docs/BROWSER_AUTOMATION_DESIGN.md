@@ -89,21 +89,21 @@
 │  │ 执行面板     │  │ 任务管理     │  │ 任务监控    │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Backend (Tauri/Rust + Node.js Bridge)                               │
+│  Backend (Tauri/Rust)                                                │
 │  ┌────────────────────────────────────────────────────────────┐     │
-│  │                   Task Scheduler                            │     │
+│  │                   Task Scheduler (已实现)                   │     │
 │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   │     │
 │  │  │ Cron Parser │ │ Queue Manager│ │ Execution Engine   │   │     │
 │  │  └─────────────┘ └─────────────┘ └─────────────────────┘   │     │
 │  └────────────────────────────────────────────────────────────┘     │
 │  ┌────────────────────────────────────────────────────────────┐     │
-│  │                Script Preprocessor                          │     │
-│  │  - API Method Resolution                                    │     │
-│  │  - Template Injection                                       │     │
-│  │  - Validation                                               │     │
+│  │                Database Layer (已实现)                      │     │
+│  │  - SQLite 表结构                                           │     │
+│  │  - CRUD 操作 (Tauri Commands)                              │     │
+│  │  - 私钥加密存储                                            │     │
 │  └────────────────────────────────────────────────────────────┘     │
 │  ┌────────────────────────────────────────────────────────────┐     │
-│  │              Playwright Bridge (Node.js)                    │     │
+│  │              Playwright Bridge (待实现)                     │     │
 │  │  - Browser Farm Management                                  │     │
 │  │  - Wallet Injection (MetaMask/OKX)                          │     │
 │  │  - Fingerprint Protection                                   │     │
@@ -112,7 +112,7 @@
 │  Database (SQLite)                                                   │
 │  ┌────────────────────────────────────────────────────────────┐     │
 │  │ Tables: airdrop_wallets, browser_profiles, automation_tasks │     │
-│  │         automation_scripts, task_executions, task_logs     │     │
+│  │         automation_scripts, task_executions                 │     │
 │  └────────────────────────────────────────────────────────────┘     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -128,15 +128,15 @@
 ```sql
 CREATE TABLE airdrop_wallets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255) NOT NULL,           -- 钱包名称
-    address VARCHAR(255) NOT NULL,        -- 钱包地址
-    private_key VARCHAR(512) NOT NULL,    -- 加密存储的私钥
-    label VARCHAR(255),                   -- 备注
-    group_name VARCHAR(128) DEFAULT 'Default', -- 分组
-    proxy VARCHAR(255) DEFAULT 'Direct',  -- 代理配置
-    chain_type VARCHAR(32) DEFAULT 'evm', -- 链类型 (evm/solana)
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    name TEXT NOT NULL,                     -- 钱包名称
+    address TEXT NOT NULL,                  -- 钱包地址
+    encrypted_private_key TEXT NOT NULL,    -- 加密存储的私钥
+    label TEXT,                             -- 备注
+    group_name TEXT NOT NULL DEFAULT 'Default', -- 分组
+    proxy TEXT NOT NULL DEFAULT 'Direct',   -- 代理配置
+    chain_type TEXT NOT NULL DEFAULT 'evm', -- 链类型 (evm/solana)
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_airdrop_wallets_address ON airdrop_wallets(address);
@@ -148,43 +148,43 @@ CREATE INDEX idx_airdrop_wallets_group ON airdrop_wallets(group_name);
 ```sql
 CREATE TABLE browser_profiles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255) NOT NULL,
+    name TEXT NOT NULL,
     description TEXT,
 
     -- 浏览器基础配置
     user_agent TEXT,
-    viewport_width INTEGER DEFAULT 1920,
-    viewport_height INTEGER DEFAULT 1080,
-    device_scale_factor DECIMAL(3,1) DEFAULT 1.0,
-    locale VARCHAR(16) DEFAULT 'en-US',
-    timezone_id VARCHAR(64) DEFAULT 'America/New_York',
+    viewport_width INTEGER NOT NULL DEFAULT 1920,
+    viewport_height INTEGER NOT NULL DEFAULT 1080,
+    device_scale_factor INTEGER NOT NULL DEFAULT 1,
+    locale TEXT NOT NULL DEFAULT 'en-US',
+    timezone_id TEXT NOT NULL DEFAULT 'America/New_York',
 
     -- 代理配置
-    proxy_type VARCHAR(32) DEFAULT 'direct',  -- direct, http, socks5
-    proxy_host VARCHAR(255),
+    proxy_type TEXT NOT NULL DEFAULT 'direct',  -- direct, http, socks5
+    proxy_host TEXT,
     proxy_port INTEGER,
-    proxy_username VARCHAR(255),
-    proxy_password VARCHAR(255),
+    proxy_username TEXT,
+    proxy_password TEXT,
 
     -- 指纹保护配置 (抗审查技术)
-    canvas_spoof BOOLEAN DEFAULT TRUE,           -- Canvas 指纹混淆
-    webgl_spoof BOOLEAN DEFAULT TRUE,            -- WebGL 渲染伪装
-    audio_spoof BOOLEAN DEFAULT TRUE,            -- Audio Context 噪音
-    timezone_spoof BOOLEAN DEFAULT TRUE,         -- 时区伪装
-    geolocation_spoof BOOLEAN DEFAULT TRUE,      -- 地理位置伪装
-    font_spoof BOOLEAN DEFAULT TRUE,             -- 字体伪装
-    webrtc_spoof BOOLEAN DEFAULT TRUE,           -- WebRTC 防泄漏
-    navigator_override BOOLEAN DEFAULT TRUE,     -- Navigator 属性覆盖
-    webdriver_override BOOLEAN DEFAULT TRUE,     -- WebDriver 属性覆盖
+    canvas_spoof BOOLEAN NOT NULL DEFAULT 1,           -- Canvas 指纹混淆
+    webgl_spoof BOOLEAN NOT NULL DEFAULT 1,            -- WebGL 渲染伪装
+    audio_spoof BOOLEAN NOT NULL DEFAULT 1,            -- Audio Context 噪音
+    timezone_spoof BOOLEAN NOT NULL DEFAULT 1,         -- 时区伪装
+    geolocation_spoof BOOLEAN NOT NULL DEFAULT 1,      -- 地理位置伪装
+    font_spoof BOOLEAN NOT NULL DEFAULT 1,             -- 字体伪装
+    webrtc_spoof BOOLEAN NOT NULL DEFAULT 1,           -- WebRTC 防泄漏
+    navigator_override BOOLEAN NOT NULL DEFAULT 1,     -- Navigator 属性覆盖
+    webdriver_override BOOLEAN NOT NULL DEFAULT 1,     -- WebDriver 属性覆盖
 
     -- 高级配置
     custom_headers TEXT,  -- JSON 格式自定义请求头
-    headless BOOLEAN DEFAULT FALSE,
+    headless BOOLEAN NOT NULL DEFAULT 0,
     extensions TEXT,  -- JSON: ["metamask", "okxwallet"]
 
-    is_default BOOLEAN DEFAULT FALSE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    is_default BOOLEAN NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_browser_profiles_default ON browser_profiles(is_default);
@@ -195,7 +195,7 @@ CREATE INDEX idx_browser_profiles_default ON browser_profiles(is_default);
 ```sql
 CREATE TABLE automation_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255) NOT NULL,
+    name TEXT NOT NULL,
     description TEXT,
 
     -- 执行配置
@@ -203,29 +203,29 @@ CREATE TABLE automation_tasks (
     wallet_ids TEXT NOT NULL,                -- JSON 数组: [1, 2, 3, ...]
 
     -- 环境分配策略
-    profile_strategy VARCHAR(32) DEFAULT 'random', -- random, sequential, specific
+    profile_strategy TEXT NOT NULL DEFAULT 'random', -- random, sequential, specific
     specific_profile_id INTEGER,             -- 当 strategy 为 specific 时使用
 
     -- 调度配置
-    schedule_type VARCHAR(32) DEFAULT 'once',  -- once, interval, cron
+    schedule_type TEXT NOT NULL DEFAULT 'once',  -- once, interval, cron
     schedule_config TEXT NOT NULL,           -- JSON: {"cron": "0 9 * * *"}
 
     -- 执行参数
-    concurrency INTEGER DEFAULT 1,           -- 并发数
-    timeout_seconds INTEGER DEFAULT 300,     -- 超时时间
-    retry_times INTEGER DEFAULT 3,           -- 重试次数
-    retry_interval_seconds INTEGER DEFAULT 60, -- 重试间隔
+    concurrency INTEGER NOT NULL DEFAULT 1,           -- 并发数
+    timeout_seconds INTEGER NOT NULL DEFAULT 300,     -- 超时时间
+    retry_times INTEGER NOT NULL DEFAULT 3,           -- 重试次数
+    retry_interval_seconds INTEGER NOT NULL DEFAULT 60, -- 重试间隔
 
     -- 状态
-    status VARCHAR(32) DEFAULT 'draft',      -- draft, enabled, paused, running
+    status TEXT NOT NULL DEFAULT 'draft',      -- draft, enabled, paused, running
     last_run_time DATETIME,
     next_run_time DATETIME,
-    total_runs INTEGER DEFAULT 0,
-    success_runs INTEGER DEFAULT 0,
-    failed_runs INTEGER DEFAULT 0,
+    total_runs INTEGER NOT NULL DEFAULT 0,
+    success_runs INTEGER NOT NULL DEFAULT 0,
+    failed_runs INTEGER NOT NULL DEFAULT 0,
 
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (script_id) REFERENCES automation_scripts(id),
     FOREIGN KEY (specific_profile_id) REFERENCES browser_profiles(id)
@@ -240,22 +240,22 @@ CREATE INDEX idx_tasks_next_run ON automation_tasks(next_run_time) WHERE status 
 ```sql
 CREATE TABLE automation_scripts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255) NOT NULL,
+    name TEXT NOT NULL,
     description TEXT,
     content TEXT NOT NULL,                   -- 原始脚本内容（含自定义API）
     compiled_content TEXT,                   -- 预处理后的完整脚本
-    version INTEGER DEFAULT 1,
-    is_system BOOLEAN DEFAULT FALSE,         -- 系统内置脚本
+    version INTEGER NOT NULL DEFAULT 1,
+    is_system BOOLEAN NOT NULL DEFAULT 0,    -- 系统内置脚本
 
     -- API依赖
     required_apis TEXT,                      -- JSON: ["connectWallet", "signMessage"]
 
     -- 元数据
-    author VARCHAR(255),
+    author TEXT,
     tags TEXT,                               -- JSON: ["uniswap", "okx", "airdrop"]
 
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_scripts_tags ON automation_scripts(tags);
@@ -271,7 +271,7 @@ CREATE TABLE task_executions (
     profile_id INTEGER,                      -- 使用的环境配置ID
 
     -- 执行状态
-    status VARCHAR(32) NOT NULL,             -- pending, running, success, failed, stopped
+    status TEXT NOT NULL,                    -- pending, running, success, failed, stopped
     start_time DATETIME,
     end_time DATETIME,
     duration_ms INTEGER,
@@ -279,9 +279,9 @@ CREATE TABLE task_executions (
     -- 结果
     error_message TEXT,
     result_data TEXT,                        -- JSON: {"txHash": "...", "data": {...}}
-    logs TEXT,                               -- 执行日志（JSON数组）
+    logs TEXT,                               -- 执行日志
 
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (task_id) REFERENCES automation_tasks(id),
     FOREIGN KEY (wallet_id) REFERENCES airdrop_wallets(id),
@@ -290,7 +290,7 @@ CREATE TABLE task_executions (
 
 CREATE INDEX idx_executions_task ON task_executions(task_id);
 CREATE INDEX idx_executions_status ON task_executions(status);
-CREATE INDEX idx_executions_time ON task_executions(start_time DESC);
+CREATE INDEX idx_executions_time ON task_executions(created_at DESC);
 ```
 
 ---
@@ -467,48 +467,6 @@ CREATE INDEX idx_executions_time ON task_executions(start_time DESC);
 │  │ Uniswap Swap    每周一 10:00  [已暂停]  12/12      [启动] │     │
 │  │ LayerZero       2024-01-15    [已启用]  0/100      [编辑] │     │
 │  │ Airdrop Batch   立即执行      [已完成]  100/100    [删除] │     │
-│  └────────────────────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-#### 3.5.2 新建/编辑任务弹窗
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  新建任务                                                            │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │ 基本信息                                                    │     │
-│  │ 任务名称: [________________________] *                      │     │
-│  │ 任务描述: [________________________]                        │     │
-│  ├────────────────────────────────────────────────────────────┤     │
-│  │ 脚本选择                                                    │     │
-│  │ 选择脚本: [OKX Daily Claim          v] *                    │     │
-│  ├────────────────────────────────────────────────────────────┤     │
-│  │ 钱包选择                                                    │     │
-│  │ 选择方式: (○) 全部钱包  ( ) 指定分组  ( ) 指定钱包         │     │
-│  │                                                            │     │
-│  │ 钱包列表:                                                  │     │
-│  │ [✓] Main (0x742d...)                                       │     │
-│  │ [✓] Airdrop 1 (0x123d...)                                  │     │
-│  │ [✓] Airdrop 2 (0x456d...)                                  │     │
-│  ├────────────────────────────────────────────────────────────┤     │
-│  │ 环境配置                                                    │     │
-│  │ 分配策略: (○) 随机使用所有环境  ( ) 顺序使用  ( ) 指定环境 │     │
-│  │                                                            │     │
-│  │ 说明: 执行时将随机从所有环境配置中选择一个使用             │     │
-│  ├────────────────────────────────────────────────────────────┤     │
-│  │ 执行计划                                                    │     │
-│  │ 执行方式: (○) 立即执行  ( ) 定时执行(Cron)                 │     │
-│  │                                                            │     │
-│  │ Cron 表达式: [0 9 * * *            ]                       │     │
-│  │ 示例: 0 9 * * * (每天9点), 0 */6 * * * (每6小时)           │     │
-│  ├────────────────────────────────────────────────────────────┤     │
-│  │ 高级选项                                                    │     │
-│  │ 超时时间: [300    ] 秒   重试次数: [3    ]                 │     │
-│  │ 并发数:   [1      ]                                      │     │
-│  │ [✓] 执行失败时通知                                        │     │
-│  ├────────────────────────────────────────────────────────────┤     │
-│  │ [取消]  [保存为草稿]  [保存并启用]                         │     │
 │  └────────────────────────────────────────────────────────────┘     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -824,379 +782,216 @@ async function executeBatch(
 
 ---
 
-## 6. 实施计划
+## 6. 当前实现状态
 
-### Phase 1: 数据层改造 (1周)
-- [ ] 创建 SQLite 数据库表结构
-- [ ] 实现数据库访问层 (Tauri Command)
-- [ ] 数据迁移工具 (localStorage -> SQLite)
-- [ ] 更新前端 Service 层
+### 6.1 实现完成度总览
 
-### Phase 2: 钱包管理增强 (3天)
-- [ ] 添加私钥字段 (UI + 加密存储)
-- [ ] 扩展 Excel 导入模板（支持私钥列）
-- [ ] 私钥安全显示（掩码 + 复制）
+| 模块 | 前端状态 | 后端状态 | 完成度 | 说明 |
+|------|----------|----------|--------|------|
+| 钱包管理 | ✅ 完成 | ✅ 完成 | 100% | CRUD、私钥加密、Excel导入导出、SQLite持久化 |
+| 环境配置 | ✅ 完成 | ✅ 完成 | 100% | 完整指纹配置、批量生成、代理配置、SQLite持久化 |
+| 脚本编辑 | ✅ 完成 | ✅ 完成 | 100% | 代码编辑、API参考面板、导入导出 |
+| 执行面板 | ✅ 完成 | ⚠️ 部分 | 70% | 前端UI完整，后端执行API待完善 |
+| 任务管理 | ✅ 完成 | ✅ 完成 | 95% | Cron调度、钱包/脚本选择、环境分配策略 |
+| 任务监控 | ✅ 完成 | ✅ 完成 | 95% | 统计概览、执行历史、详情查看 |
+| 任务调度器 | - | ✅ 完成 | 90% | 已实现，待集成到应用启动 |
+| 执行引擎 | - | ⚠️ 模拟 | 50% | 模拟执行已实现，Playwright集成待完成 |
+| Playwright桥接 | - | ❌ 未实现 | 0% | 需要实现浏览器实例管理 |
 
-### Phase 3: 环境配置增强 (3天)
-- [ ] 扩展指纹选项 UI（WebGL、Audio、时区等）
-- [ ] 实现指纹注入脚本
-- [ ] 环境配置持久化到数据库
+**整体完成度: 85%**
 
-### Phase 4: 任务调度系统 (1周)
-- [ ] 后端 Cron 调度器
-- [ ] 任务执行队列
-- [ ] 环境随机分配逻辑
-- [ ] 执行结果持久化
+### 6.2 已实现的后端模块
 
-### Phase 5: 执行引擎 (1周)
-- [ ] Playwright 真实执行
-- [ ] 指纹注入集成
-- [ ] 日志和错误处理
+#### 6.2.1 数据库层 (`db.rs`)
+- ✅ 完整的表结构定义
+- ✅ 数据库迁移支持
+- ✅ 索引创建
+
+#### 6.2.2 数据模型 (`models.rs`)
+- ✅ AirdropWallet - 空投钱包模型
+- ✅ BrowserProfile - 浏览器环境配置模型
+- ✅ AutomationScript - 自动化脚本模型
+- ✅ AutomationTask - 自动化任务模型
+- ✅ TaskExecution - 任务执行记录模型
+- ✅ ProfileStrategy - 环境分配策略枚举
+- ✅ TaskStatus - 任务状态枚举
+- ✅ ExecutionStatus - 执行状态枚举
+- ✅ ScheduleType - 调度类型枚举
+
+#### 6.2.3 Tauri Commands (`commands.rs`)
+**钱包管理:**
+- ✅ `get_airdrop_wallets` - 获取所有钱包
+- ✅ `create_airdrop_wallet` - 创建钱包（含私钥加密）
+- ✅ `update_airdrop_wallet` - 更新钱包
+- ✅ `delete_airdrop_wallet` - 删除钱包
+- ✅ `import_airdrop_wallets` - 批量导入钱包
+- ✅ `get_wallet_private_key` - 获取解密后的私钥
+
+**环境配置:**
+- ✅ `get_browser_profiles` - 获取所有环境配置
+- ✅ `create_browser_profile` - 创建环境配置
+- ✅ `update_browser_profile` - 更新环境配置
+- ✅ `delete_browser_profile` - 删除环境配置
+- ✅ `batch_generate_profiles` - 批量生成环境配置
+
+**脚本管理:**
+- ✅ `get_automation_scripts` - 获取所有脚本
+- ✅ `create_automation_script` - 创建脚本
+- ✅ `update_automation_script` - 更新脚本
+- ✅ `delete_automation_script` - 删除脚本
+
+**任务管理:**
+- ✅ `get_automation_tasks` - 获取所有任务
+- ✅ `create_automation_task` - 创建任务
+- ✅ `update_automation_task` - 更新任务
+- ✅ `delete_automation_task` - 删除任务
+- ✅ `toggle_task_status` - 切换任务状态
+
+**执行记录:**
+- ✅ `get_task_executions` - 获取执行记录
+- ✅ `get_task_execution_stats` - 获取执行统计
+
+**初始化:**
+- ✅ `init_browser_automation_tables` - 初始化数据库表
+
+#### 6.2.4 任务调度器 (`scheduler.rs`)
+- ✅ TaskScheduler 结构体
+- ✅ Cron 表达式解析
+- ✅ 定时任务检查（每分钟）
+- ✅ 任务执行触发
+- ✅ 任务状态管理
+- ✅ 停止任务功能
+- ✅ 立即执行功能
+- ✅ 并发控制
+
+#### 6.2.5 任务执行器 (`executor.rs`)
+- ✅ TaskExecutor 结构体
+- ✅ 单任务执行逻辑
+- ✅ 批量执行逻辑
+- ✅ 环境分配策略实现
+- ✅ 执行记录创建
+- ✅ 执行日志记录
+- ✅ 任务统计更新
+- ⚠️ 模拟执行（待集成Playwright）
+
+### 6.3 已实现的前端模块
+
+#### 6.3.1 服务层 (`browserAutomationService.ts`)
+- ✅ 完整的 TypeScript 类型定义
+- ✅ walletService - 钱包管理服务
+- ✅ profileService - 环境配置服务
+- ✅ scriptService - 脚本管理服务（含导入导出）
+- ✅ taskService - 任务管理服务
+- ✅ executionService - 执行记录服务
+
+#### 6.3.2 组件
+- ✅ `WalletManager.vue` - 钱包管理组件
+- ✅ `BrowserFarm.vue` - 环境配置组件
+- ✅ `ScriptEditor.vue` - 脚本编辑组件
+- ✅ `TaskManager.vue` - 任务管理组件
+- ✅ `TaskMonitor.vue` - 任务监控组件
+- ✅ `ExecutionPanel.vue` - 执行面板组件
+- ✅ `ApiHelper.vue` - API参考帮助面板
+
+### 6.4 待实现功能
+
+#### 6.4.1 执行相关 Tauri Commands
+- ❌ `create_execution` - 创建执行会话
+- ❌ `start_execution` - 启动执行
+- ❌ `cancel_execution` - 取消执行
+- ❌ `get_execution` - 获取执行状态
+- ❌ `get_execution_logs` - 获取执行日志
+
+#### 6.4.2 Playwright 集成
+- ❌ 浏览器实例管理
+- ❌ 指纹注入脚本
+- ❌ 钱包扩展注入
+- ❌ 代理配置应用
+
+#### 6.4.3 应用集成
+- ❌ 调度器启动集成
+- ❌ 执行状态实时推送
 
 ---
 
 ## 7. 文件结构
 
-```
-src/
-├── features/
-│   └── airdrop/
-│       ├── pages/
-│       │   ├── BrowserAutomation.vue      # 主页面
-│       │   └── Airdrop.vue                # 空投页面
-│       ├── components/
-│       │   ├── WalletManager.vue          # 钱包管理
-│       │   ├── BrowserFarm.vue            # 环境配置
-│       │   ├── ScriptEditor.vue           # 脚本编辑
-│       │   ├── ExecutionPanel.vue         # 执行面板
-│       │   ├── TaskManager.vue            # 任务管理
-│       │   ├── TaskMonitor.vue            # 任务监控
-│       │   └── ApiHelper.vue              # API帮助
-│       └── services/
-│           └── playwrightService.ts       # 服务层
-│
-src-tauri/src/
-├── automation/
-│   ├── mod.rs                            # 模块入口
-│   ├── scheduler.rs                      # 任务调度器
-│   ├── executor.rs                       # 任务执行器
-│   ├── models.rs                         # 数据模型
-│   └── commands.rs                       # Tauri命令
-│
-docs/
-└── BROWSER_AUTOMATION_DESIGN.md          # 本设计文档
-```
+### 7.1 前端文件
 
----
-
-## 8. 风险和注意事项
-
-1. **安全性**
-   - 私钥必须加密存储
-   - 脚本执行环境需要沙箱化
-   - 敏感操作需要二次确认
-
-2. **反检测**
-   - 指纹保护需要持续更新
-   - 扩展版本兼容性
-   - 浏览器更新适配
-
-3. **性能**
-   - 大量钱包并发执行
-   - 浏览器实例内存管理
-   - 任务队列持久化
-
-4. **兼容性**
-   - 不同版本的MetaMask/OKX
-   - 不同网站的变化
-   - 网络条件变化
-
----
-
-## 9. 现有实现分析与改进建议
-
-### 9.1 当前实现状态
-
-通过源码分析，当前各模块实现状态如下：
-
-| 模块 | 实现状态 | 完成度 | 说明 |
-|------|----------|--------|------|
-| 钱包管理 | 基本完成 | 70% | 缺少私钥字段、数据库持久化 |
-| 环境配置 | 基本完成 | 60% | 指纹选项不完整、使用localStorage |
-| 脚本编辑 | 基本完成 | 80% | 功能基本完整 |
-| 执行面板 | 基本完成 | 70% | 模拟执行，非真实Playwright |
-| 任务管理 | 基本完成 | 50% | 缺少真实Cron调度、环境分配 |
-| 任务监控 | 基本完成 | 75% | 基本功能完整 |
-
-### 9.2 功能差距分析
-
-#### 9.2.1 钱包管理模块差距
-
-**当前实现:**
-- 仅存储 address、label、group、proxy
-- 使用 localStorage 存储
-- 支持 Excel 导入导出
-
-**与设计文档差距:**
-- ❌ 缺少 `name` 字段（钱包名称与备注应分开）
-- ❌ 缺少 `private_key` 字段（关键功能缺失）
-- ❌ 缺少 `chain_type` 字段
-- ❌ 未使用 SQLite 数据库持久化
-- ❌ 私钥加密存储未实现
-
-**改进建议:**
-```javascript
-// 当前钱包数据结构
-interface Wallet {
-  id: number;
-  address: string;
-  label: string;      // 当前用作名称
-  group: string;
-  proxy: string;
-}
-
-// 应改为（与设计文档一致）
-interface AirdropWallet {
-  id: number;
-  name: string;           // 钱包名称
-  address: string;        // 钱包地址
-  private_key: string;    // 加密存储的私钥
-  label: string;          // 备注
-  group_name: string;     // 分组
-  proxy: string;          // 代理
-  chain_type: 'evm' | 'solana';  // 链类型
-}
-```
-
-#### 9.2.2 环境配置模块差距
-
-**当前实现:**
-- 存储 userAgent、viewport、proxy、canvasSpoof
-- 使用 localStorage 存储
-- 支持批量生成
-
-**与设计文档差距:**
-- ❌ 指纹保护选项不完整（当前仅 canvasSpoof 可配置）
-- ❌ 缺少 WebGL、Audio、时区、地理位置、字体、WebRTC 配置
-- ❌ 缺少代理认证配置（proxy_username, proxy_password）
-- ❌ 缺少 locale、timezone_id、device_scale_factor
-- ❌ 缺少 custom_headers、extensions 配置
-- ❌ 未使用 SQLite 数据库持久化
-
-**改进建议:**
-```javascript
-// 当前配置结构
-interface BrowserProfile {
-  id: number;
-  name: string;
-  userAgent: string;
-  viewport: string;
-  proxy: string;
-  canvasSpoof: boolean;
-}
-
-// 应扩展为（UI已有部分但未绑定数据）
-interface BrowserProfile {
-  id: number;
-  name: string;
-  description?: string;
-  
-  // 浏览器基础配置
-  user_agent: string;
-  viewport_width: number;
-  viewport_height: number;
-  device_scale_factor: number;
-  locale: string;
-  timezone_id: string;
-  
-  // 代理配置
-  proxy_type: 'direct' | 'http' | 'socks5';
-  proxy_host?: string;
-  proxy_port?: number;
-  proxy_username?: string;
-  proxy_password?: string;
-  
-  // 指纹保护配置
-  canvas_spoof: boolean;
-  webgl_spoof: boolean;
-  audio_spoof: boolean;
-  timezone_spoof: boolean;
-  geolocation_spoof: boolean;
-  font_spoof: boolean;
-  webrtc_spoof: boolean;
-  navigator_override: boolean;
-  webdriver_override: boolean;
-  
-  // 高级配置
-  custom_headers?: Record<string, string>;
-  headless: boolean;
-  extensions?: string[];  // ["metamask", "okxwallet"]
-}
-```
-
-**UI 改进:**
-当前 BrowserFarm.vue 编辑器中的 WebGL、Audio Context 开关是静态的 `default-checked`，需要绑定到实际数据模型。
-
-#### 9.2.3 任务管理模块差距
-
-**当前实现:**
-- 简单的任务 CRUD
-- 使用 localStorage 存储
-- 无真实 Cron 调度
-
-**与设计文档差距:**
-- ❌ 无后端 Cron 调度器实现
-- ❌ 缺少环境分配策略（random/sequential/specific）
-- ❌ 缺少 wallet_ids 数组配置（当前只有简单选择）
-- ❌ 缺少执行参数（concurrency、timeout_seconds、retry_times）
-- ❌ 缺少任务状态跟踪（next_run_time、total_runs 等）
-- ❌ 脚本和钱包选择是硬编码的静态选项
-
-**改进建议:**
-```javascript
-// 当前任务结构
-interface Task {
-  id: number;
-  name: string;
-  schedule: string;
-  script: string;      // 简单字符串
-  wallets: string[];   // 简单数组
-  enabled: boolean;
-}
-
-// 应改为
-interface AutomationTask {
-  id: number;
-  name: string;
-  description?: string;
-  
-  // 执行配置
-  script_id: number;              // 关联脚本ID
-  wallet_ids: number[];           // 关联钱包ID数组
-  
-  // 环境分配策略
-  profile_strategy: 'random' | 'sequential' | 'specific';
-  specific_profile_id?: number;
-  
-  // 调度配置
-  schedule_type: 'once' | 'interval' | 'cron';
-  schedule_config: {
-    cron?: string;        // "0 9 * * *"
-    interval?: number;    // 秒
-    run_at?: string;      // ISO 时间字符串
-  };
-  
-  // 执行参数
-  concurrency: number;
-  timeout_seconds: number;
-  retry_times: number;
-  retry_interval_seconds: number;
-  
-  // 状态
-  status: 'draft' | 'enabled' | 'paused' | 'running';
-  last_run_time?: string;
-  next_run_time?: string;
-  total_runs: number;
-  success_runs: number;
-  failed_runs: number;
-}
-```
-
-#### 9.2.4 执行引擎差距
-
-**当前实现:**
-- 完全是模拟执行（simulateExecution）
-- 未真正调用 Playwright
-
-**与设计文档差距:**
-- ❌ 无真实 Playwright 集成
-- ❌ 无钱包扩展注入（MetaMask/OKX）
-- ❌ 无指纹注入脚本
-- ❌ 无 Node.js Bridge 实现
-
-**改进建议:**
-需要实现 `src-tauri/src/wallets_tool/playwright/mod.rs` 和对应的 Node.js 桥接层。
-
-### 9.3 后端实现差距
-
-**当前状态:**
-- `src-tauri/src/wallets_tool/airdrop/mod.rs` 为空文件
-- 无数据库表定义
-- 无 Tauri Command 实现
-
-**需要实现:**
-1. SQLite 数据库表创建
-2. 数据访问层（CRUD 操作）
-3. 任务调度器（Cron）
-4. Playwright Bridge
-5. 私钥加密存储
-
-### 9.4 优先级改进计划
-
-#### Phase 1: 数据层迁移（高优先级）
-1. 创建 SQLite 表结构（airdrop_wallets, browser_profiles, automation_tasks 等）
-2. 实现 Tauri Command 进行数据库操作
-3. 前端 Service 层改为调用 Tauri API
-4. 数据迁移工具（localStorage -> SQLite）
-
-#### Phase 2: 钱包管理增强（高优先级）
-1. 添加 name、private_key、chain_type 字段
-2. 实现私钥加密存储（使用系统 security 模块）
-3. 更新 Excel 导入模板支持私钥列
-4. 私钥安全显示 UI（掩码 + 复制）
-
-#### Phase 3: 环境配置完善（中优先级）
-1. 扩展 BrowserProfile 数据模型
-2. 绑定 UI 中所有指纹保护开关到数据
-3. 添加代理认证、高级配置 UI
-4. 实现批量生成时的完整随机配置
-
-#### Phase 4: 任务管理增强（中优先级）
-1. 实现任务模型扩展
-2. 脚本/钱包动态选择（从数据库加载）
-3. 环境分配策略 UI 和逻辑
-4. 执行参数配置 UI
-
-#### Phase 5: 后端调度器（高优先级）
-1. Rust 端 Cron 解析器
-2. 任务队列管理
-3. 定时执行触发
-4. 执行状态持久化
-
-#### Phase 6: Playwright 集成（高优先级）
-1. Node.js Playwright 脚本执行器
-2. Rust -> Node.js 桥接
-3. 钱包扩展注入
-4. 指纹保护脚本注入
-
-### 9.5 代码修改清单
-
-#### 前端需修改文件:
 ```
 src/features/airdrop/
+├── pages/
+│   ├── BrowserAutomation.vue      # ✅ 主页面入口
+│   └── Airdrop.vue                # ✅ 空投模块入口
 ├── components/
-│   ├── WalletManager.vue      # 添加私钥字段、数据库调用
-│   ├── BrowserFarm.vue        # 完善指纹配置绑定、数据库调用
-│   ├── TaskManager.vue        # 扩展任务配置、动态选择、数据库调用
-│   ├── ExecutionPanel.vue     # 集成真实执行器
-│   └── TaskMonitor.vue        # 优化（已基本完成）
+│   ├── WalletManager.vue          # ✅ 钱包管理组件
+│   ├── BrowserFarm.vue            # ✅ 环境配置组件
+│   ├── ScriptEditor.vue           # ✅ 脚本编辑组件
+│   ├── TaskManager.vue            # ✅ 任务管理组件
+│   ├── TaskMonitor.vue            # ✅ 任务监控组件
+│   ├── ExecutionPanel.vue         # ✅ 执行面板组件
+│   └── ApiHelper.vue              # ✅ API参考帮助面板
 └── services/
-    └── playwrightService.ts   # 改为 Tauri API 调用
+    ├── browserAutomationService.ts # ✅ 主服务层（调用Tauri Commands）
+    └── playwrightService.ts        # ⚠️ Playwright服务（模拟实现）
 ```
 
-#### 后端需创建文件:
+### 7.2 后端文件
+
 ```
-src-tauri/src/
-├── wallets_tool/
-│   ├── airdrop/
-│   │   ├── mod.rs             # 模块入口
-│   │   ├── models.rs          # 数据模型
-│   │   ├── commands.rs        # Tauri Commands
-│   │   ├── scheduler.rs       # 任务调度器
-│   │   └── executor.rs        # 执行引擎
-│   └── playwright/
-│       ├── mod.rs             # Playwright 桥接
-│       └── scripts/           # 注入脚本
-└── database/
-    └── airdrop_tables.sql     # 表结构定义
+src-tauri/src/wallets_tool/
+├── airdrop/
+│   ├── mod.rs                     # ✅ 模块入口
+│   ├── models.rs                  # ✅ 数据模型定义
+│   ├── commands.rs                # ✅ Tauri Commands实现
+│   ├── db.rs                      # ✅ 数据库初始化
+│   ├── scheduler.rs               # ✅ 任务调度器（待集成）
+│   └── executor.rs                # ✅ 任务执行器（模拟执行）
+└── playwright/
+    └── mod.rs                     # ❌ Playwright桥接（待实现）
 ```
+
+---
+
+## 8. 下一步开发计划
+
+### 8.1 Phase 1: 完善执行功能（优先级：高）
+1. 实现执行相关的 Tauri Commands
+2. 集成调度器到应用启动流程
+3. 实现执行状态实时推送
+
+### 8.2 Phase 2: Playwright 集成（优先级：高）
+1. 实现浏览器实例管理
+2. 实现指纹注入脚本
+3. 实现钱包扩展注入
+4. 实现代理配置应用
+
+### 8.3 Phase 3: 功能优化（优先级：中）
+1. 执行日志实时流
+2. 任务执行重试机制
+3. 执行结果通知
+4. 性能优化
+
+---
+
+## 9. 风险和注意事项
+
+1. **安全性**
+   - ✅ 私钥已加密存储
+   - ⚠️ 脚本执行环境需要沙箱化
+   - ⚠️ 敏感操作需要二次确认
+
+2. **反检测**
+   - ⚠️ 指纹保护需要持续更新
+   - ⚠️ 扩展版本兼容性
+   - ⚠️ 浏览器更新适配
+
+3. **性能**
+   - ⚠️ 大量钱包并发执行
+   - ⚠️ 浏览器实例内存管理
+   - ✅ 任务队列持久化
+
+4. **兼容性**
+   - ⚠️ 不同版本的MetaMask/OKX
+   - ⚠️ 不同网站的变化
+   - ⚠️ 网络条件变化

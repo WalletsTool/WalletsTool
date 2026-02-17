@@ -18,8 +18,7 @@ import {
   scriptService,
   profileService,
   walletService,
-  executionService,
-  taskService
+  executionSessionService
 } from '../services/browserAutomationService';
 
 // 配置
@@ -49,7 +48,7 @@ const elapsedTime = ref(0);
 const logs = ref([]);
 const activeTab = ref('queue');
 let timer = null;
-let currentExecutionId = null;
+let currentExecutionIds = ref([]);
 
 // 计算属性
 const canStart = computed(() => {
@@ -62,8 +61,8 @@ const canStart = computed(() => {
 
 const stats = computed(() => {
   const total = selectedWallets.value.length;
-  const completed = executions.value.filter(e => e.status === 'completed' || e.status === 'failed').length;
-  const success = executions.value.filter(e => e.status === 'completed').length;
+  const completed = executions.value.filter(e => e.status === 'success' || e.status === 'failed').length;
+  const success = executions.value.filter(e => e.status === 'success').length;
   const failed = executions.value.filter(e => e.status === 'failed').length;
   const running = executions.value.filter(e => e.status === 'running').length;
   const pending = total - completed - running;
@@ -136,17 +135,9 @@ const handleStart = async () => {
   if (profileStrategy.value === 'specific' && selectedProfile.value) {
     profileIds = [selectedProfile.value];
   } else if (profileStrategy.value === 'random') {
-    // 随机分配环境
-    profileIds = selectedWalletList.map(() => {
-      const randomProfile = profiles.value[Math.floor(Math.random() * profiles.value.length)];
-      return randomProfile?.id;
-    }).filter(Boolean);
+    profileIds = profiles.value.map(p => p.id);
   } else if (profileStrategy.value === 'sequential') {
-    // 顺序分配环境
-    profileIds = selectedWalletList.map((_, index) => {
-      const profile = profiles.value[index % profiles.value.length];
-      return profile?.id;
-    }).filter(Boolean);
+    profileIds = profiles.value.map(p => p.id);
   }
 
   logs.value = [];
@@ -154,18 +145,21 @@ const handleStart = async () => {
   elapsedTime.value = 0;
   isRunning.value = true;
   executions.value = [];
+  currentExecutionIds.value = [];
 
   try {
-    // 创建执行任务
-    const execution = await executionService.createExecution({
+    // 创建执行会话
+    const session = await executionSessionService.createExecution({
       script_id: script.id,
       wallet_ids: selectedWallets.value,
-      profile_ids: profileIds,
+      profile_ids: profileIds.length > 0 ? profileIds : undefined,
       parallel_mode: config.concurrentLimit > 1,
       max_parallel: config.concurrentLimit
     });
     
-    currentExecutionId = execution.id;
+    // 保存执行ID列表
+    currentExecutionIds.value = session.results.map(r => r.id);
+    executions.value = session.results;
     
     // 启动计时器
     timer = setInterval(() => {
@@ -173,10 +167,18 @@ const handleStart = async () => {
       updateProgress();
     }, 1000);
 
-    addLog('开始执行批量任务...');
+    addLog(`创建执行会话，共 ${session.total_tasks} 个任务`);
     
-    // 启动执行
-    await executionService.startExecution(execution.id);
+    // 启动所有执行任务（模拟执行）
+    for (const result of session.results) {
+      await executionSessionService.startExecution(result.id);
+      // 启动模拟执行（后台运行）
+      executionSessionService.simulateExecution(result.id).catch(e => {
+        console.error('模拟执行失败:', e);
+      });
+    }
+    
+    addLog('所有任务已启动');
     
     // 开始轮询执行状态
     pollExecutionStatus();
@@ -191,42 +193,28 @@ const handleStart = async () => {
 
 // 轮询执行状态
 const pollExecutionStatus = async () => {
-  if (!currentExecutionId || !isRunning.value) return;
+  if (currentExecutionIds.value.length === 0 || !isRunning.value) return;
   
   try {
-    const execution = await executionService.getExecution(currentExecutionId);
-    executions.value = execution.results || [];
+    const session = await executionSessionService.getExecution(currentExecutionIds.value);
+    executions.value = session.results || [];
     
     // 更新进度
-    const completed = executions.value.filter(e => 
-      e.status === 'completed' || e.status === 'failed'
-    ).length;
-    const total = selectedWallets.value.length;
-    progress.value = total > 0 ? Math.round((completed / total) * 100) : 0;
-    
-    // 添加日志
-    if (execution.logs) {
-      execution.logs.forEach(log => {
-        if (!logs.value.find(l => l.message === log.message && l.time === new Date(log.timestamp).toLocaleTimeString())) {
-          addLog(log.message, log.level);
-        }
-      });
-    }
+    progress.value = session.total_tasks > 0 
+      ? Math.round((session.completed_tasks / session.total_tasks) * 100) 
+      : 0;
     
     // 检查是否完成
-    if (execution.status === 'completed' || execution.status === 'failed' || execution.status === 'cancelled') {
+    if (session.status === 'completed') {
       isRunning.value = false;
       clearInterval(timer);
       
-      const success = executions.value.filter(e => e.status === 'completed').length;
-      const failed = executions.value.filter(e => e.status === 'failed').length;
-      
-      if (failed === 0) {
-        Message.success(`执行完成！成功: ${success}`);
-        addLog(`执行完成！成功: ${success}`, 'success');
+      if (session.failed_count === 0) {
+        Message.success(`执行完成！成功: ${session.success_count}`);
+        addLog(`执行完成！成功: ${session.success_count}`, 'success');
       } else {
-        Message.warning(`执行完成！成功: ${success}, 失败: ${failed}`);
-        addLog(`执行完成！成功: ${success}, 失败: ${failed}`, 'warning');
+        Message.warning(`执行完成！成功: ${session.success_count}, 失败: ${session.failed_count}`);
+        addLog(`执行完成！成功: ${session.success_count}, 失败: ${session.failed_count}`, 'warning');
       }
       return;
     }
@@ -247,16 +235,18 @@ const updateProgress = () => {
     return;
   }
   const completed = executions.value.filter(e => 
-    e.status === 'completed' || e.status === 'failed'
+    e.status === 'success' || e.status === 'failed'
   ).length;
   progress.value = Math.round((completed / total) * 100);
 };
 
 // 停止执行
 const handleStop = async () => {
-  if (currentExecutionId) {
+  if (currentExecutionIds.value.length > 0) {
     try {
-      await executionService.cancelExecution(currentExecutionId);
+      for (const id of currentExecutionIds.value) {
+        await executionSessionService.cancelExecution(id);
+      }
       addLog('任务已手动停止');
       Message.info('任务已停止');
     } catch (error) {
@@ -282,7 +272,7 @@ const resetTasks = () => {
       logs.value = [];
       progress.value = 0;
       elapsedTime.value = 0;
-      currentExecutionId = null;
+      currentExecutionIds.value = [];
       Message.success('已重置');
     },
   });
@@ -302,9 +292,9 @@ const getStatusColor = (status) => {
   const colors = {
     pending: 'var(--color-text-4)',
     running: 'rgb(var(--primary-6))',
-    completed: 'rgb(var(--success-6))',
+    success: 'rgb(var(--success-6))',
     failed: 'rgb(var(--danger-6))',
-    cancelled: 'rgb(var(--warning-6))',
+    stopped: 'rgb(var(--warning-6))',
   };
   return colors[status] || colors.pending;
 };
@@ -313,9 +303,9 @@ const getStatusText = (status) => {
   const texts = {
     pending: '等待中',
     running: '执行中',
-    completed: '成功',
+    success: '成功',
     failed: '失败',
-    cancelled: '已取消',
+    stopped: '已停止',
   };
   return texts[status] || status;
 };
@@ -436,26 +426,28 @@ onUnmounted(() => {
 
       <div class="panel-section">
         <div class="section-title">执行配置</div>
-        <a-space direction="vertical" style="width: 100%">
-          <a-space>
+        <div class="config-options">
+          <div class="config-switch-item">
             <a-switch v-model="config.headless" size="small" />
-            <span>无头模式 (后台运行)</span>
-          </a-space>
-          <a-space>
+            <span class="switch-label">无头模式</span>
+          </div>
+          <div class="config-switch-item">
             <a-switch v-model="config.enableProxy" size="small" />
-            <span>使用代理</span>
-          </a-space>
-          <a-space>
+            <span class="switch-label">使用代理</span>
+          </div>
+          <div class="config-switch-item full-width">
             <a-switch v-model="config.enableFingerprint" size="small" />
-            <span>指纹保护</span>
-          </a-space>
-          <a-form-item label="并发数" style="margin: 0">
-            <a-input-number v-model="config.concurrentLimit" :min="1" :max="5" size="small" style="width: 80px" />
-          </a-form-item>
-          <a-form-item label="重试次数" style="margin: 0">
-            <a-input-number v-model="config.retryCount" :min="0" :max="5" size="small" style="width: 80px" />
-          </a-form-item>
-        </a-space>
+            <span class="switch-label">指纹保护</span>
+          </div>
+          <div class="config-input-item">
+            <span class="input-label">并发数</span>
+            <a-input-number v-model="config.concurrentLimit" :min="1" :max="5" size="small" style="width: 60px" />
+          </div>
+          <div class="config-input-item">
+            <span class="input-label">重试次数</span>
+            <a-input-number v-model="config.retryCount" :min="0" :max="5" size="small" style="width: 60px" />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -671,6 +663,41 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
+/* 执行配置选项网格布局 */
+.config-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.config-switch-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-switch-item.full-width {
+  grid-column: span 2;
+}
+
+.switch-label {
+  font-size: 13px;
+  color: var(--color-text-2);
+  white-space: nowrap;
+}
+
+.config-input-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.input-label {
+  font-size: 13px;
+  color: var(--color-text-2);
+}
+
 /* 执行主面板 */
 .execution-main {
   flex: 1;
@@ -877,8 +904,3 @@ onUnmounted(() => {
   color: var(--color-text-4);
 }
 </style>
-;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-

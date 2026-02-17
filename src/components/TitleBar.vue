@@ -331,8 +331,6 @@ async function closeWindow() {
 }
 
 onMounted(async () => {
-  themeStore.initTheme()
-  
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
   if (isTauri) {
     try {

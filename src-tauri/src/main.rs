@@ -8,6 +8,8 @@ mod plugins;
 mod database;
 
 use tauri::{WindowEvent, Manager, AppHandle, Runtime, Emitter, tray::TrayIconBuilder, menu::{MenuBuilder, MenuItemBuilder}};
+use wallets_tool::airdrop::scheduler::TaskScheduler;
+use std::sync::Arc;
 
 
 // Tauri 命令：关闭所有子窗口
@@ -63,6 +65,80 @@ async fn show_main_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
         // 这样可以确保窗口弹出到最上层而不会一直保持在最上层
         window.set_always_on_top(true).map_err(|e| e.to_string())?;
         window.set_always_on_top(false).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// Tauri 命令：根据dock items数量自动设置主窗口大小
+#[tauri::command]
+async fn set_main_window_size_for_dock<R: Runtime>(app: AppHandle<R>, item_count: u32) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        // 计算dock宽度
+        // 每个项目：图标48px + padding 4px*2 = 56px
+        let item_width = 56u32;
+        // gap间距：6px
+        let gap = 6u32;
+        // 分隔线区域：约13px (1px + margin 6px*2)
+        let divider_width = 13u32;
+        // 左右padding：16px * 2
+        let padding = 32u32;
+        // 额外边距：防止文字截断
+        let extra_margin = 30u32;
+        // 两个分隔线（设置前和退出前）
+        let divider_count = 2u32;
+        
+        // 计算总宽度：items + gaps + dividers + padding + margin
+        // gaps数量 = item_count - 1 (8个items之间有7个gaps)
+        let gaps_count = if item_count > 0 { item_count - 1 } else { 0 };
+        let total_width = (item_count * item_width) 
+            + (gaps_count * gap) 
+            + (divider_count * divider_width) 
+            + padding 
+            + extra_margin;
+        
+        // 高度固定为dock高度 + 边距
+        // 上下padding 12px*2 + 图标48px + label约16px + 额外边距
+        let total_height = 100u32;
+        
+        println!("[set_main_window_size_for_dock] item_count={}, total_width={}, total_height={}", item_count, total_width, total_height);
+        
+        window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+            width: total_width as f64,
+            height: total_height as f64,
+        })).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// Tauri 命令：设置主窗口透明度
+#[tauri::command]
+async fn set_main_window_opacity<R: Runtime>(_app: AppHandle<R>, _opacity: f64) -> Result<(), String> {
+    // TODO: Tauri v2 中透明度 API 发生了变化，需要重新实现
+    // if let Some(window) = app.get_webview_window("main") {
+    //     let clamped_opacity = opacity.clamp(0.1, 1.0);
+    //     window.set_opacity(clamped_opacity).map_err(|e| e.to_string())?;
+    // }
+    Ok(())
+}
+
+// Tauri 命令：获取主窗口当前透明度
+#[tauri::command]
+async fn get_main_window_opacity<R: Runtime>(_app: AppHandle<R>) -> Result<f64, String> {
+    // TODO: Tauri v2 中透明度 API 发生了变化，需要重新实现
+    // if let Some(window) = app.get_webview_window("main") {
+    //     match window.opacity() {
+    //         Ok(opacity) => return Ok(opacity),
+    //         Err(_) => return Ok(1.0),
+    //     }
+    // }
+    Ok(1.0)
+}
+
+// Tauri 命令：设置主窗口始终置顶
+#[tauri::command]
+async fn set_main_window_always_on_top<R: Runtime>(app: AppHandle<R>, always_on_top: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.set_always_on_top(always_on_top).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -153,7 +229,11 @@ async fn main() {
         wallets_tool::wallet_manager::service::WalletManagerService::new(sqlite_pool.clone());
     
     let chain_service = database::chain_service::ChainService::new();
-
+    
+    // Initialize task scheduler for browser automation
+    let task_scheduler = Arc::new(TaskScheduler::new(sqlite_pool.clone()));
+    let scheduler_for_setup = task_scheduler.clone();
+    
     let updater_pubkey = option_env!("WALLETSTOOL_UPDATER_PUBKEY").unwrap_or("").trim();
     let updater_plugin = if updater_pubkey.is_empty() {
         tauri_plugin_updater::Builder::new().build()
@@ -171,8 +251,23 @@ async fn main() {
         .manage(sqlite_pool)
         .manage(wallet_manager_service)
         .manage(chain_service)
-        .setup(|app| {
+        .manage(task_scheduler)
+        .setup(move |app| {
+            // Start the task scheduler
+            let scheduler = scheduler_for_setup;
+            tauri::async_runtime::spawn(async move {
+                scheduler.start().await;
+            });
+
             // 主窗口直接显示
+
+            // 移除主窗口的阴影效果（Windows系统默认会为无框窗口添加阴影）
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(e) = window.set_shadow(false) {
+                    eprintln!("移除主窗口阴影失败: {e}");
+                }
+            }
 
             // 构建托盘菜单
             let show_main = MenuItemBuilder::new("显示主窗口").id("show_main").build(app)?;
@@ -345,6 +440,10 @@ async fn main() {
             get_all_child_windows,
             force_close_main_window,
             show_main_window,
+            set_main_window_size_for_dock,
+            set_main_window_opacity,
+            get_main_window_opacity,
+            set_main_window_always_on_top,
             open_function_window,
             // database hot reload functions
             database::reload_database,
@@ -457,7 +556,23 @@ async fn main() {
             wallets_tool::airdrop::commands::delete_automation_task,
             wallets_tool::airdrop::commands::toggle_task_status,
             wallets_tool::airdrop::commands::get_task_executions,
+            wallets_tool::airdrop::commands::delete_task_execution,
             wallets_tool::airdrop::commands::get_task_execution_stats,
+            wallets_tool::airdrop::commands::run_task_now,
+            // execution commands
+            wallets_tool::airdrop::commands::create_execution,
+            wallets_tool::airdrop::commands::start_execution,
+            wallets_tool::airdrop::commands::cancel_execution,
+            wallets_tool::airdrop::commands::get_execution,
+            wallets_tool::airdrop::commands::simulate_execution,
+            // browser extension commands
+            wallets_tool::airdrop::commands::get_browser_extensions,
+            wallets_tool::airdrop::commands::create_browser_extension,
+            wallets_tool::airdrop::commands::update_browser_extension,
+            wallets_tool::airdrop::commands::delete_browser_extension,
+            wallets_tool::airdrop::commands::toggle_browser_extension,
+            wallets_tool::airdrop::commands::scan_extension_folder,
+            wallets_tool::airdrop::commands::import_extension_from_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -484,3 +484,61 @@ pub struct TaskStats {
     pub last_run_time: Option<DateTime<Utc>>,
     pub next_run_time: Option<DateTime<Utc>>,
 }
+
+/// 浏览器插件模型
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct BrowserExtension {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub path: String,
+    pub version: Option<String>,
+    pub author: Option<String>,
+    pub enabled: bool,
+    pub is_builtin: bool,
+    pub tags: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// 创建浏览器插件请求
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateBrowserExtensionRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub path: String,
+    pub version: Option<String>,
+    pub author: Option<String>,
+    pub enabled: Option<bool>,
+    pub tags: Option<Vec<String>>,
+}
+
+/// 更新浏览器插件请求
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateBrowserExtensionRequest {
+    pub id: i64,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub path: Option<String>,
+    pub version: Option<String>,
+    pub author: Option<String>,
+    pub enabled: Option<bool>,
+    pub tags: Option<Vec<String>>,
+}
+
+/// 插件文件夹扫描结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtensionFolder {
+    pub name: String,
+    pub path: String,
+    pub has_manifest: bool,
+    pub manifest_info: Option<ManifestInfo>,
+}
+
+/// manifest.json 信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManifestInfo {
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub description: Option<String>,
+}

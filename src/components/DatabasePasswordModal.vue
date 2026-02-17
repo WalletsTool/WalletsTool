@@ -22,11 +22,15 @@ const password = ref('')
 const confirmPassword = ref('')
 const loading = ref(false)
 const error = ref('')
+const passwordError = ref(false)
+const passwordShake = ref(false)
 const passwordInputRef = ref(null)
 
 watch(() => props.visible, (visible) => {
   if (visible) {
     error.value = ''
+    passwordError.value = false
+    passwordShake.value = false
     password.value = ''
     confirmPassword.value = ''
     nextTick(() => {
@@ -40,17 +44,20 @@ const isSetupMode = () => props.mode === 'setup'
 const validatePassword = () => {
   if (!password.value) {
     error.value = '请输入密码'
+    triggerPasswordError()
     return false
   }
 
   if (isSetupMode()) {
     if (password.value.length < 8) {
       error.value = '密码长度至少为8位'
+      triggerPasswordError()
       return false
     }
 
     if (password.value !== confirmPassword.value) {
       error.value = '两次输入的密码不一致'
+      triggerPasswordError()
       return false
     }
   }
@@ -79,10 +86,26 @@ const handleSubmit = async () => {
     emit('update:visible', false)
   } catch (err) {
     error.value = err.message || '操作失败'
-    Message.error(error.value)
+    triggerPasswordError()
   } finally {
     loading.value = false
   }
+}
+
+// 触发密码错误动画
+const triggerPasswordError = () => {
+  // 先重置状态，确保可以重新触发动画
+  passwordShake.value = false
+  passwordError.value = true
+  // 使用 nextTick 确保 DOM 更新后再添加抖动类
+  nextTick(() => {
+    passwordShake.value = true
+    passwordInputRef.value?.focus()
+    // 动画结束后自动清除抖动状态
+    setTimeout(() => {
+      passwordShake.value = false
+    }, 400)
+  })
 }
 
 const handleCancel = () => {
@@ -91,6 +114,7 @@ const handleCancel = () => {
 
 const handlePasswordInput = () => {
   error.value = ''
+  passwordError.value = false
 }
 </script>
 
@@ -121,12 +145,14 @@ const handlePasswordInput = () => {
       </div>
 
       <a-form :model="{ password }" layout="vertical">
-        <a-form-item label="主密码">
+        <a-form-item label="主密码" :class="{ 'has-error': passwordError }">
           <a-input-password
             ref="passwordInputRef"
             v-model="password"
             :placeholder="mode === 'setup' ? '请输入主密码（至少8位）' : '请输入主密码'"
             :disabled="loading"
+            :class="['password-input', { 'input-error': passwordError, 'input-shake': passwordShake }]"
+            :status="passwordError ? 'error' : ''"
             @input="handlePasswordInput"
           />
         </a-form-item>
@@ -136,6 +162,8 @@ const handlePasswordInput = () => {
             v-model="confirmPassword"
             placeholder="请再次输入主密码"
             :disabled="loading"
+            :class="['password-input', { 'input-error': passwordError }]"
+            :status="passwordError ? 'error' : ''"
             @input="handlePasswordInput"
           />
         </a-form-item>
@@ -195,5 +223,37 @@ const handlePasswordInput = () => {
   border-radius: 4px;
   color: rgb(var(--danger-6));
   font-size: 13px;
+}
+
+/* 密码输入框样式 */
+.password-input {
+  border-radius: 6px;
+  transition: all 0.25s ease;
+}
+
+/* 输入框错误状态 - 变红 */
+.password-input.input-error {
+  border-color: rgb(var(--danger-6)) !important;
+  box-shadow: 0 0 0 2px rgba(var(--danger-6), 0.2) !important;
+}
+
+.password-input.input-error:hover {
+  border-color: rgb(var(--danger-6)) !important;
+}
+
+.password-input.input-error:focus-within {
+  border-color: rgb(var(--danger-6)) !important;
+  box-shadow: 0 0 0 2px rgba(var(--danger-6), 0.3) !important;
+}
+
+/* 抖动动画 */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.input-shake {
+  animation: shake 0.4s ease-in-out;
 }
 </style>

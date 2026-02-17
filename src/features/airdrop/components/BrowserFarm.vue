@@ -9,8 +9,8 @@ import {
   IconEdit,
   IconRobot,
   IconDelete,
-  IconImport,
-  IconDownload
+  IconArrowDown,
+  IconArrowUp
 } from '@arco-design/web-vue/es/icon';
 import { profileService, initBrowserAutomationTables } from '../services/browserAutomationService';
 import { open, save } from '@tauri-apps/plugin-dialog';
@@ -299,24 +299,27 @@ onMounted(async () => {
   <div class="browser-farm">
     <div class="profile-list">
       <div class="list-header">
-        <h3>环境配置列表</h3>
-        <div class="header-actions">
-          <a-button type="outline" size="small" @click="showBatchModal = true">
-             <template #icon><icon-robot /></template>
-             批量生成
-          </a-button>
-           <a-button type="primary" size="small" @click="handleNewProfile">
+        <h3 class="header-title">环境配置列表</h3>
+        <p class="header-subtitle">{{ profiles.length }} 个配置</p>
+        <div class="header-actions-row">
+          <a-button type="primary" size="small" @click="handleNewProfile" long>
             <template #icon><icon-plus /></template>
-            新建
+            新建配置
           </a-button>
-          <a-button type="outline" size="small" @click="handleImport">
-             <template #icon><icon-import /></template>
-             导入
+        </div>
+        <div class="header-actions-row secondary">
+          <a-button type="outline" size="small" @click="showBatchModal = true">
+            <template #icon><icon-robot /></template>
+            批量生成
           </a-button>
-          <a-button type="outline" size="small" @click="handleExport">
-             <template #icon><icon-download /></template>
-             导出
-          </a-button>
+          <div class="action-group">
+            <a-button type="text" size="small" @click="handleImport" title="导入">
+              <template #icon><icon-arrow-down /></template>
+            </a-button>
+            <a-button type="text" size="small" @click="handleExport" title="导出">
+              <template #icon><icon-arrow-up /></template>
+            </a-button>
+          </div>
         </div>
       </div>
       
@@ -448,80 +451,58 @@ onMounted(async () => {
           </a-row>
 
           <a-divider orientation="left">指纹保护 (Anti-Detect)</a-divider>
-          
-          <a-row :gutter="[16, 16]">
-            <a-col :span="8">
-              <a-space>
-                <a-switch v-model="activeProfile.canvas_spoof" />
-                <span>Canvas 指纹混淆</span>
-              </a-space>
-            </a-col>
-            <a-col :span="8">
-              <a-space>
-                <a-switch v-model="activeProfile.webgl_spoof" />
-                <span>WebGL 渲染伪装</span>
-              </a-space>
-            </a-col>
-            <a-col :span="8">
-              <a-space>
-                <a-switch v-model="activeProfile.audio_spoof" />
-                <span>Audio Context 噪音</span>
-              </a-space>
-            </a-col>
-            <a-col :span="8">
-              <a-space>
-                <a-switch v-model="activeProfile.timezone_spoof" />
-                <span>时区伪装</span>
-              </a-space>
-            </a-col>
-            <a-col :span="8">
-              <a-space>
-                <a-switch v-model="activeProfile.geolocation_spoof" />
-                <span>地理位置伪装</span>
-              </a-space>
-            </a-col>
-            <a-col :span="8">
-              <a-space>
-                <a-switch v-model="activeProfile.font_spoof" />
-                <span>字体伪装</span>
-              </a-space>
-            </a-col>
-            <a-col :span="8">
-              <a-space>
-                <a-switch v-model="activeProfile.webrtc_spoof" />
-                <span>WebRTC 防泄漏</span>
-              </a-space>
-            </a-col>
-            <a-col :span="8">
-              <a-space>
-                <a-switch v-model="activeProfile.navigator_override" />
-                <span>Navigator 覆盖</span>
-              </a-space>
-            </a-col>
-            <a-col :span="8">
-              <a-space>
-                <a-switch v-model="activeProfile.webdriver_override" />
-                <span>WebDriver 覆盖</span>
-              </a-space>
-            </a-col>
-          </a-row>
+
+          <div class="fingerprint-switches">
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.canvas_spoof" />
+              <span>Canvas 指纹混淆</span>
+            </div>
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.webgl_spoof" />
+              <span>WebGL 渲染伪装</span>
+            </div>
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.audio_spoof" />
+              <span>Audio Context 噪音</span>
+            </div>
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.timezone_spoof" />
+              <span>时区伪装</span>
+            </div>
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.geolocation_spoof" />
+              <span>地理位置伪装</span>
+            </div>
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.font_spoof" />
+              <span>字体伪装</span>
+            </div>
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.webrtc_spoof" />
+              <span>WebRTC 防泄漏</span>
+            </div>
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.navigator_override" />
+              <span>Navigator 覆盖</span>
+            </div>
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.webdriver_override" />
+              <span>WebDriver 覆盖</span>
+            </div>
+          </div>
 
           <a-divider orientation="left">高级选项</a-divider>
-          
-          <a-row :gutter="16">
-            <a-col :span="12">
-              <a-space>
-                <a-switch v-model="activeProfile.headless" />
-                <span>无头模式</span>
-              </a-space>
-            </a-col>
-            <a-col :span="12">
-              <a-space>
-                <a-switch v-model="activeProfile.is_default" />
-                <span>设为默认</span>
-              </a-space>
-            </a-col>
-          </a-row>
+
+          <div class="advanced-options">
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.headless" />
+              <span>无头模式</span>
+            </div>
+            <div class="switch-item">
+              <a-switch v-model="activeProfile.is_default" />
+              <span>设为默认</span>
+            </div>
+          </div>
         </a-form>
       </div>
     </div>
@@ -558,7 +539,7 @@ onMounted(async () => {
 }
 
 .profile-list {
-  width: 350px;
+  width: 280px;
   background: var(--color-bg-2);
   border-radius: 8px;
   display: flex;
@@ -570,34 +551,80 @@ onMounted(async () => {
   padding: 15px;
   border-bottom: 1px solid var(--color-border);
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.list-header h3 {
+.header-title {
   margin: 0;
   font-size: 14px;
-  color: var(--color-text-2);
-  white-space: nowrap;
-  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--color-text-1);
 }
 
-.header-actions {
+.header-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.header-actions-row {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
-  justify-content: flex-end;
 }
 
-.header-actions .arco-btn {
-  flex-shrink: 0;
+.header-actions-row.secondary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+  margin-top: 4px;
+}
+
+.action-group {
+  display: flex;
+  gap: 4px;
+}
+
+.action-group .arco-btn {
+  padding: 0 6px;
+  color: var(--color-text-3);
+}
+
+.action-group .arco-btn:hover {
+  color: rgb(var(--primary-6));
+  background: var(--color-fill-2);
 }
 
 .list-content {
   flex: 1;
   overflow-y: auto;
   padding: 10px;
+}
+
+/* 自定义滚动条样式 */
+.list-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.list-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.list-content::-webkit-scrollbar-thumb {
+  background: var(--color-text-4);
+  border-radius: 3px;
+}
+
+.list-content::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-3);
+}
+
+/* Firefox 滚动条 */
+.list-content {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-text-4) transparent;
 }
 
 .profile-item {
@@ -718,6 +745,30 @@ onMounted(async () => {
   padding-right: 10px;
 }
 
+/* 编辑表单自定义滚动条 */
+.editor-form::-webkit-scrollbar {
+  width: 6px;
+}
+
+.editor-form::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.editor-form::-webkit-scrollbar-thumb {
+  background: var(--color-text-4);
+  border-radius: 3px;
+}
+
+.editor-form::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-3);
+}
+
+/* Firefox 滚动条 */
+.editor-form {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-text-4) transparent;
+}
+
 .empty-state {
   flex: 1;
   display: flex;
@@ -728,5 +779,40 @@ onMounted(async () => {
   background: var(--color-bg-2);
   border-radius: 8px;
   border: 2px dashed var(--color-border);
+}
+
+/* 指纹保护开关布局 */
+.fingerprint-switches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.switch-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--color-fill-2);
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.switch-item:hover {
+  background: var(--color-fill-3);
+}
+
+.switch-item span {
+  font-size: 13px;
+  color: var(--color-text-2);
+  white-space: nowrap;
+}
+
+/* 高级选项布局 */
+.advanced-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
 }
 </style>

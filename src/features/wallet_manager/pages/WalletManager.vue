@@ -77,6 +77,7 @@ const showUnlockModal = ref(false);
 const passwordInput = ref('');
 const passwordInputRef = ref(null);
 const unlockPasswordError = ref(false);
+const unlockPasswordShake = ref(false);
 const initPassword = ref('');
 const initPasswordConfirm = ref('');
 const initPasswordRef = ref(null);
@@ -963,7 +964,6 @@ onMounted(async () => {
       if (!isSet) {
         await invoke('init_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
         sessionPassword.value = passwordInput.value;
-        isUnlocked.value = true;
         unlockPasswordError.value = false;
         showUnlockModal.value = false;
         loadGroups();
@@ -973,7 +973,7 @@ onMounted(async () => {
 
       const success = await invoke('verify_password', { request: { password: null, encrypted_password_b64: encryptedPasswordB64 } });
       if (!success) {
-        Message.error('密码错误');
+        triggerPasswordError();
         return;
       }
 
@@ -984,14 +984,26 @@ onMounted(async () => {
       loadGroups();
       loadWallets();
     } catch (e) {
-      unlockPasswordError.value = false;
-      setTimeout(() => {
-        unlockPasswordError.value = true;
-        passwordInputRef.value?.focus();
-      }, 10);
+      triggerPasswordError();
     } finally {
       unlockLoading.value = false;
     }
+  };
+
+  // 触发密码错误动画
+  const triggerPasswordError = () => {
+    // 先重置状态，确保可以重新触发动画
+    unlockPasswordShake.value = false;
+    unlockPasswordError.value = true;
+    // 使用 nextTick 确保 DOM 更新后再添加抖动类
+    nextTick(() => {
+      unlockPasswordShake.value = true;
+      passwordInputRef.value?.focus();
+      // 动画结束后自动清除抖动状态
+      setTimeout(() => {
+        unlockPasswordShake.value = false;
+      }, 400);
+    });
   };
 
   const handleInit = async () => {
@@ -2321,7 +2333,7 @@ const confirmExport = async () => {
                         <a-input-password
                             v-model="passwordInput"
                             ref="passwordInputRef"
-                            :class="['init-unlock-input', { 'input-error': unlockPasswordError, 'input-shake': unlockPasswordError }]"
+                            :class="['init-unlock-input', { 'input-error': unlockPasswordError, 'input-shake': unlockPasswordShake }]"
                             :status="unlockPasswordError ? 'error' : ''"
                             placeholder="请输入主密码"
                             @keyup.enter="handleUnlock"

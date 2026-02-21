@@ -69,43 +69,82 @@ async fn show_main_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
-// Tauri 命令：根据dock items数量自动设置主窗口大小
+// Tauri 命令：根据dock items数量自动设置主窗口大小和位置
 #[tauri::command]
 async fn set_main_window_size_for_dock<R: Runtime>(app: AppHandle<R>, item_count: u32) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
-        // 计算dock宽度
-        // 每个项目：图标48px + padding 4px*2 = 56px
+        // 计算dock宽度 - 基于前端实际样式
+        // dock-icon: 48px, dock-item padding: 4px, 所以每个item占用: 48 + 4*2 = 56px
         let item_width = 56u32;
-        // gap间距：6px
+        // dock item之间的gap: 6px (dock-items-scroll的gap和dock的gap都是6px)
         let gap = 6u32;
-        // 分隔线区域：约13px (1px + margin 6px*2)
+        // 分隔线: 1px宽 + margin 0 6px = 13px实际占用
         let divider_width = 13u32;
-        // 左右padding：16px * 2
+        // dock左右padding: 16px * 2 = 32px
         let padding = 32u32;
-        // 额外边距：防止文字截断
-        let extra_margin = 30u32;
+        // 滚动区域和固定区域之间的gap: 6px
+        let section_gap = 6u32;
+        // 额外边距：防止文字截断、角标溢出和边框
+        let extra_margin = 20u32;
         // 两个分隔线（设置前和退出前）
         let divider_count = 2u32;
-        
-        // 计算总宽度：items + gaps + dividers + padding + margin
-        // gaps数量 = item_count - 1 (8个items之间有7个gaps)
+        // 最大宽度限制
+        let max_width = 1360u32;
+
+        // 计算总宽度
+        // items总宽度 = item_count * item_width
+        // gaps数量 = item_count - 1 (items之间的gaps)
         let gaps_count = if item_count > 0 { item_count - 1 } else { 0 };
-        let total_width = (item_count * item_width) 
-            + (gaps_count * gap) 
-            + (divider_count * divider_width) 
-            + padding 
-            + extra_margin;
+        // 固定区域有2个item(设置和退出) + 2个divider
+        let fixed_items_width = 2 * item_width;
+        let fixed_dividers_width = divider_count * divider_width;
         
+        let calculated_width = (item_count * item_width)                    // 左侧items
+            + (gaps_count * gap)                                            // items之间的gaps
+            + section_gap                                                   // 滚动区域和固定区域之间的gap
+            + fixed_dividers_width                                          // 两个分隔线
+            + fixed_items_width                                             // 设置和退出按钮
+            + padding                                                       // 左右padding
+            + extra_margin;                                                 // 额外边距
+
+        // 应用最大宽度限制
+        let total_width = calculated_width.min(max_width);
+
         // 高度固定为dock高度 + 边距
-        // 上下padding 12px*2 + 图标48px + label约16px + 额外边距
-        let total_height = 100u32;
-        
-        println!("[set_main_window_size_for_dock] item_count={}, total_width={}, total_height={}", item_count, total_width, total_height);
-        
+        // 上padding 16px + 下padding 12px + 图标48px + label约20px + 角标溢出空间8px
+        let total_height = 110u32;
+
+        println!("[set_main_window_size_for_dock] item_count={}, left_items={}, gaps={}, section_gap={}, fixed_items={}, dividers={}, padding={}, extra={}, calculated_width={}, final_width={}",
+            item_count, item_count * item_width, gaps_count * gap, section_gap, fixed_items_width, fixed_dividers_width, padding, extra_margin, calculated_width, total_width);
+
+        // 设置窗口大小
         window.set_size(tauri::Size::Logical(tauri::LogicalSize {
             width: total_width as f64,
             height: total_height as f64,
         })).map_err(|e| e.to_string())?;
+
+        // 设置窗口位置到屏幕底部任务栏上方
+        // 获取主显示器信息
+        if let Ok(Some(monitor)) = window.primary_monitor() {
+            let monitor_size = monitor.size();
+            let monitor_position = monitor.position();
+
+            // 计算窗口位置：水平居中，垂直位于屏幕底部上方
+            let window_x = monitor_position.x as f64 + (monitor_size.width as f64 - total_width as f64) / 2.0;
+            // 距离屏幕底部60px（留出任务栏空间，避免重叠）
+            let taskbar_offset = 60u32;
+            let window_y = monitor_position.y as f64 + monitor_size.height as f64 - total_height as f64 - taskbar_offset as f64;
+
+            println!("[set_main_window_position] monitor_size={}x{}, position=({}, {}), window_position=({}, {})",
+                monitor_size.width, monitor_size.height,
+                monitor_position.x, monitor_position.y,
+                window_x, window_y);
+
+            window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
+                x: window_x,
+                y: window_y,
+            })).map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -260,6 +299,66 @@ async fn main() {
             });
 
             // 主窗口直接显示
+            // 在后端直接设置主窗口初始大小和位置，避免等待前端加载
+            // dock items 数量：6个功能按钮 + 2个固定按钮(设置和退出) = 8个
+            let dock_item_count = 8u32;
+            
+            if let Some(window) = app.get_webview_window("main") {
+                // 计算dock宽度 - 与 set_main_window_size_for_dock 函数保持一致
+                let item_width = 56u32;
+                let gap = 6u32;
+                let divider_width = 13u32;
+                let padding = 32u32;
+                let section_gap = 6u32;
+                let extra_margin = 20u32;
+                let divider_count = 2u32;
+                let max_width = 1360u32;
+
+                let gaps_count = if dock_item_count > 0 { dock_item_count - 1 } else { 0 };
+                let fixed_items_width = 2 * item_width;
+                let fixed_dividers_width = divider_count * divider_width;
+                
+                let calculated_width = (dock_item_count * item_width)
+                    + (gaps_count * gap)
+                    + section_gap
+                    + fixed_dividers_width
+                    + fixed_items_width
+                    + padding
+                    + extra_margin;
+
+                let total_width = calculated_width.min(max_width);
+                let total_height = 110u32;
+
+                println!("[setup] Setting initial window size: {}x{}", total_width, total_height);
+
+                // 设置窗口大小
+                if let Err(e) = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                    width: total_width as f64,
+                    height: total_height as f64,
+                })) {
+                    eprintln!("设置主窗口初始大小失败: {e}");
+                }
+
+                // 设置窗口位置到屏幕底部
+                if let Ok(Some(monitor)) = window.primary_monitor() {
+                    let monitor_size = monitor.size();
+                    let monitor_position = monitor.position();
+
+                    let window_x = monitor_position.x as f64 + (monitor_size.width as f64 - total_width as f64) / 2.0;
+                    // 距离屏幕底部60px（留出任务栏空间，避免重叠）
+                    let taskbar_offset = 60u32;
+                    let window_y = monitor_position.y as f64 + monitor_size.height as f64 - total_height as f64 - taskbar_offset as f64;
+
+                    println!("[setup] Setting initial window position: ({}, {})", window_x, window_y);
+
+                    if let Err(e) = window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
+                        x: window_x,
+                        y: window_y,
+                    })) {
+                        eprintln!("设置主窗口初始位置失败: {e}");
+                    }
+                }
+            }
 
             // 移除主窗口的阴影效果（Windows系统默认会为无框窗口添加阴影）
             #[cfg(target_os = "windows")]

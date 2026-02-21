@@ -967,21 +967,17 @@ async function handleMainWindowCloseRequest() {
                 <circle cx="16" cy="12" r="1" fill="currentColor"/>
               </svg>
               <svg v-else-if="item.icon === 'transfer'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M7 17L3 13l4-4"/>
-                <path d="M3 13h11a4 4 0 0 0 0-8H11"/>
-                <path d="M17 7l4 4-4 4"/>
-                <path d="M21 11H10a4 4 0 0 0 0 8h3"/>
+                <circle cx="7" cy="7" r="3"/>
+                <circle cx="17" cy="17" r="3"/>
+                <path d="M9.5 8.5L14.5 15.5"/>
+                <path d="M14.5 8.5L9.5 15.5"/>
               </svg>
               <svg v-else-if="item.icon === 'balance'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2v4"/>
-                <path d="M12 18v4"/>
-                <path d="M4.93 4.93l2.83 2.83"/>
-                <path d="M16.24 16.24l2.83 2.83"/>
-                <path d="M2 12h4"/>
-                <path d="M18 12h4"/>
-                <path d="M4.93 19.07l2.83-2.83"/>
-                <path d="M16.24 7.76l2.83-2.83"/>
-                <circle cx="12" cy="12" r="4"/>
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M12 6v12"/>
+                <path d="M8 9h8"/>
+                <path d="M8 12h8"/>
+                <path d="M8 15h8"/>
               </svg>
               <svg v-else-if="item.icon === 'rocket'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>

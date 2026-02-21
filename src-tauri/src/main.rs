@@ -76,46 +76,38 @@ async fn set_main_window_size_for_dock<R: Runtime>(app: AppHandle<R>, item_count
         // 计算dock宽度 - 基于前端实际样式
         // dock-icon: 48px, dock-item padding: 4px, 所以每个item占用: 48 + 4*2 = 56px
         let item_width = 56u32;
-        // dock item之间的gap: 6px (dock-items-scroll的gap和dock的gap都是6px)
+        // dock item之间的gap: 6px (dock的gap属性)
         let gap = 6u32;
         // 分隔线: 1px宽 + margin 0 6px = 13px实际占用
         let divider_width = 13u32;
         // dock左右padding: 16px * 2 = 32px
         let padding = 32u32;
-        // 滚动区域和固定区域之间的gap: 6px
-        let section_gap = 6u32;
-        // 额外边距：防止文字截断、角标溢出和边框
-        let extra_margin = 20u32;
-        // 两个分隔线（设置前和退出前）
+        // 分隔线数量
         let divider_count = 2u32;
         // 最大宽度限制
         let max_width = 1360u32;
 
-        // 计算总宽度
-        // items总宽度 = item_count * item_width
-        // gaps数量 = item_count - 1 (items之间的gaps)
-        let gaps_count = if item_count > 0 { item_count - 1 } else { 0 };
-        // 固定区域有2个item(设置和退出) + 2个divider
-        let fixed_items_width = 2 * item_width;
-        let fixed_dividers_width = divider_count * divider_width;
+        // dock子元素: item_count个功能items + 2个固定items(设置和退出) + 2个dividers
+        let total_items = item_count + 2;
+        // gap数量 = 子元素总数 - 1
+        let total_children = total_items + divider_count;
+        let gaps_count = if total_children > 1 { total_children - 1 } else { 0 };
         
-        let calculated_width = (item_count * item_width)                    // 左侧items
-            + (gaps_count * gap)                                            // items之间的gaps
-            + section_gap                                                   // 滚动区域和固定区域之间的gap
-            + fixed_dividers_width                                          // 两个分隔线
-            + fixed_items_width                                             // 设置和退出按钮
-            + padding                                                       // 左右padding
-            + extra_margin;                                                 // 额外边距
+        // 计算总宽度
+        let calculated_width = (total_items * item_width)              // 所有items
+            + (gaps_count * gap)                                        // 所有gaps
+            + (divider_count * divider_width)                           // 分隔线
+            + padding;                                                  // 左右padding
 
         // 应用最大宽度限制
         let total_width = calculated_width.min(max_width);
 
         // 高度固定为dock高度 + 边距
-        // 上padding 16px + 下padding 12px + 图标48px + label约20px + 角标溢出空间8px
-        let total_height = 110u32;
+        // 上padding 12px + 下padding 12px + 图标48px + label约20px + 角标溢出空间
+        let total_height = 100u32;
 
-        println!("[set_main_window_size_for_dock] item_count={}, left_items={}, gaps={}, section_gap={}, fixed_items={}, dividers={}, padding={}, extra={}, calculated_width={}, final_width={}",
-            item_count, item_count * item_width, gaps_count * gap, section_gap, fixed_items_width, fixed_dividers_width, padding, extra_margin, calculated_width, total_width);
+        println!("[set_main_window_size_for_dock] item_count={}, total_items={}, gaps={}, dividers={}, calculated_width={}, final_width={}",
+            item_count, total_items, gaps_count, divider_count, calculated_width, total_width);
 
         // 设置窗口大小
         window.set_size(tauri::Size::Logical(tauri::LogicalSize {
@@ -300,8 +292,8 @@ async fn main() {
 
             // 主窗口直接显示
             // 在后端直接设置主窗口初始大小和位置，避免等待前端加载
-            // dock items 数量：6个功能按钮 + 2个固定按钮(设置和退出) = 8个
-            let dock_item_count = 8u32;
+            // dock items 数量：6个功能按钮
+            let dock_item_count = 6u32;
             
             if let Some(window) = app.get_webview_window("main") {
                 // 计算dock宽度 - 与 set_main_window_size_for_dock 函数保持一致
@@ -309,25 +301,21 @@ async fn main() {
                 let gap = 6u32;
                 let divider_width = 13u32;
                 let padding = 32u32;
-                let section_gap = 6u32;
-                let extra_margin = 20u32;
                 let divider_count = 2u32;
                 let max_width = 1360u32;
 
-                let gaps_count = if dock_item_count > 0 { dock_item_count - 1 } else { 0 };
-                let fixed_items_width = 2 * item_width;
-                let fixed_dividers_width = divider_count * divider_width;
+                // dock子元素: dock_item_count个功能items + 2个固定items(设置和退出) + 2个dividers
+                let total_items = dock_item_count + 2;
+                let total_children = total_items + divider_count;
+                let gaps_count = if total_children > 1 { total_children - 1 } else { 0 };
                 
-                let calculated_width = (dock_item_count * item_width)
+                let calculated_width = (total_items * item_width)
                     + (gaps_count * gap)
-                    + section_gap
-                    + fixed_dividers_width
-                    + fixed_items_width
-                    + padding
-                    + extra_margin;
+                    + (divider_count * divider_width)
+                    + padding;
 
                 let total_width = calculated_width.min(max_width);
-                let total_height = 110u32;
+                let total_height = 100u32;
 
                 println!("[setup] Setting initial window size: {}x{}", total_width, total_height);
 

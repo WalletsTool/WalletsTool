@@ -111,8 +111,8 @@ onMounted(async () => {
   try {
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
     if (isTauri) {
-      // dock items数量 + 1个设置按钮 + 1个关闭按钮
-      const itemCount = dockItems.length + 2
+      // 只传递功能items数量，后端会自动加上设置和退出按钮
+      const itemCount = dockItems.length
       await invoke('set_main_window_size_for_dock', { itemCount })
     }
   } catch (error) {
@@ -354,6 +354,27 @@ function goPage(pageName) {
     // 浏览器环境：跳转到入口页
     router.push(`/entry?target=${pageName}`)
     return
+  }
+
+  // 钱包管理页面单例模式：如果已存在窗口，则将其置顶显示
+  if (pageName === 'wallet-manager') {
+    const existingWindows = windowListObj.value['wallet-manager']
+    if (existingWindows && existingWindows.size > 0) {
+      // 获取第一个已存在的窗口
+      const firstEntry = existingWindows.entries().next().value
+      if (firstEntry) {
+        const [existingLabel, existingWebview] = firstEntry
+        // 将已存在的窗口置顶显示
+        existingWebview.setFocus().catch(err => {
+          console.error('Failed to focus wallet-manager window:', err)
+        })
+        existingWebview.show().catch(err => {
+          console.error('Failed to show wallet-manager window:', err)
+        })
+        console.log('[Home] wallet-manager window already exists, bringing to front:', existingLabel)
+        return
+      }
+    }
   }
 
   try {
@@ -790,6 +811,19 @@ async function openSettings() {
         position: 'topLeft'
       })
       return
+    }
+
+    // 检查设置窗口是否已存在，如果存在则聚焦显示
+    try {
+      const existingWindow = await WebviewWindow.getByLabel('settings')
+      if (existingWindow) {
+        console.log('[Settings] 窗口已存在，聚焦显示')
+        await existingWindow.setFocus()
+        await existingWindow.show()
+        return
+      }
+    } catch (e) {
+      console.log('[Settings] 检查已存在窗口时出错（可忽略）:', e)
     }
 
     // 创建设置窗口
@@ -1289,19 +1323,21 @@ async function handleMainWindowCloseRequest() {
 }
 
 .light-theme .dock-divider {
-  background: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .light-theme .dock-label {
-  color: rgba(0, 0, 0, 0.55);
+  color: rgba(0, 0, 0, 0.75);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
 }
 
 .light-theme .dock-item:hover .dock-label {
-  color: rgba(0, 0, 0, 0.85);
+  color: rgba(0, 0, 0, 0.95);
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.8);
 }
 
 .light-theme .dock-item.disabled .dock-label {
-  color: rgba(0, 0, 0, 0.3);
+  color: rgba(0, 0, 0, 0.45);
 }
 
 /* 确认弹窗样式 - Dock风格 */

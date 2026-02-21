@@ -2057,6 +2057,7 @@ async function handleBeforeClose() {
   overflow: hidden; /* Prevent scrollbar during transitions */
   padding: 50px 10px 50px 10px; /* 为顶部TitleBar和底部StatusBar留出空间 */
   min-width: 1000px;
+  background: var(--bg-color, rgb(42, 42, 43));
 }
 
 .container::-webkit-scrollbar {

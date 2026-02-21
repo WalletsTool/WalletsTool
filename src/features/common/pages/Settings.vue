@@ -123,9 +123,14 @@ async function fetchCurrentOpacity() {
     opacityLoading.value = true
     const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
     if (isTauri) {
-      const opacity = await invoke('get_main_window_opacity')
-      windowOpacity.value = opacity
-      saveOpacitySetting(opacity)
+      const savedOpacity = localStorage.getItem('mainWindowOpacity')
+      if (savedOpacity) {
+        windowOpacity.value = parseFloat(savedOpacity)
+      } else {
+        const opacity = await invoke('get_main_window_opacity')
+        windowOpacity.value = opacity
+        saveOpacitySetting(opacity)
+      }
     }
   } catch (error) {
     console.error('获取窗口透明度失败:', error)
@@ -231,6 +236,7 @@ async function reloadDatabase() {
     content: '此操作将重置数据库到初始状态，所有自定义配置将丢失。确定要继续吗？',
     okText: '确定',
     cancelText: '取消',
+    width: 380,
     okButtonProps: { status: 'danger' },
     onOk: async () => {
       try {
@@ -605,8 +611,8 @@ async function downloadAndInstallUpdate() {
 .settings-container {
   width: 100%;
   height: 100vh;
-  background: #1a1b1e;
-  color: #fff;
+  background: var(--bg-color, #1a1b1e);
+  color: var(--text-color, #fff);
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

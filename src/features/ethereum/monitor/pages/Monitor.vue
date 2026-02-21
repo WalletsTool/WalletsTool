@@ -406,7 +406,7 @@ const statistics = computed(() => {
 </template>
 
 <style scoped>
-.container { padding: 10px; height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden; }
+.container { padding: 10px; height: calc(100vh - 30px); display: flex; flex-direction: column; overflow: hidden; background: var(--bg-color, rgb(42, 42, 43)); }
 .toolBar { margin-top: 45px; }
 .mainTable { margin-top: 10px; height: 100%; display: flex; flex-direction: column; }
 </style>

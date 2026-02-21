@@ -1990,7 +1990,7 @@ function handleClickOutside(event) {
 
 
 <style scoped>
-.container { height: 100vh; display: flex; flex-direction: column; overflow: visible; padding: 50px 10px 50px 10px; min-width: 1240px; }
+.container { height: 100vh; display: flex; flex-direction: column; overflow: visible; padding: 50px 10px 50px 10px; min-width: 1240px; background: var(--bg-color, rgb(42, 42, 43)); }
 .container::-webkit-scrollbar { display: none; }
 .container { -ms-overflow-style: none; scrollbar-width: none; }
 :deep(.arco-dropdown-option-content) { display: flex; align-items: center; }

@@ -179,16 +179,20 @@ pub async fn check_update<R: Runtime>(
 ) -> Result<UpdateCheckResult, String> {
     println!("[check_update] 开始检查更新, current_version: {}", current_version);
     
+    println!("[check_update] 尝试获取 updater...");
+    
     let updater = app
         .updater()
         .map_err(|e| {
             let err_msg = format!("获取更新器失败: {e}");
-            println!("[check_update] 错误: {}", err_msg);
+            println!("[check_update] 获取更新器错误: {}", err_msg);
             err_msg
         })?;
 
-    println!("[check_update] 获取到 updater, 开始检查...");
+    println!("[check_update] 获取到 updater, 准备检查更新...");
 
+    println!("[check_update] 调用 updater.check() 进行网络请求...");
+    
     match updater.check().await {
         Ok(Some(update)) => {
             let latest_version = update.version.clone();
@@ -219,7 +223,7 @@ pub async fn check_update<R: Runtime>(
         }
         Err(e) => {
             let err_msg = format!("检查更新失败: {e}");
-            println!("[check_update] 检查失败: {}", err_msg);
+            println!("[check_update] 网络请求失败: {}", err_msg);
             Err(err_msg)
         }
     }

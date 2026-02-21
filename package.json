@@ -63,6 +63,7 @@
     "sharp": "^0.34.5",
     "terser": "^5.44.1",
     "vite": "^7.3.1",
-    "vite-plugin-vue-setup-extend": "^0.4.0"
+    "vite-plugin-vue-setup-extend": "^0.4.0",
+    "vue-tsc": "^3.2.5"
   }
 }

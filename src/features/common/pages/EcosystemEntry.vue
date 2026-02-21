@@ -143,8 +143,8 @@ const closeWindow = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #1a1b1e; /* Fallback */
-  color: #fff;
+  background: var(--bg-color, #1a1b1e);
+  color: var(--text-color, #fff);
   overflow: hidden;
 }
 

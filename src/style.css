@@ -284,6 +284,47 @@ body > div[class*="notification"] {
 }
 
 /* ============================================
+   TransferStatusBar 选择器列表滚动条样式
+   ============================================ */
+
+/* 明亮主题 */
+.selector-list {
+  scrollbar-width: thin;
+  scrollbar-color: #c9cdd4 transparent;
+}
+
+.selector-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.selector-list::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.selector-list::-webkit-scrollbar-thumb {
+  background: #c9cdd4;
+  border-radius: 3px;
+}
+
+.selector-list::-webkit-scrollbar-thumb:hover {
+  background: #a9aeb8;
+}
+
+/* 暗黑主题 */
+:root[data-theme="dark"] .selector-list {
+  scrollbar-color: #4a4a4a transparent;
+}
+
+:root[data-theme="dark"] .selector-list::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+}
+
+:root[data-theme="dark"] .selector-list::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+}
+
+/* ============================================
    全局明亮主题样式
    通过 body.light-theme 类自动应用
    ============================================ */

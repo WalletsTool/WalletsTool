@@ -11,7 +11,8 @@ import {
   IconFolder,
   IconSchedule,
   IconPushpin,
-  IconApps
+  IconApps,
+  IconMinus
 } from '@arco-design/web-vue/es/icon';
 
 const themeStore = useThemeStore();
@@ -86,6 +87,12 @@ const closeWindow = async () => {
   }
 };
 
+const minimizeWindow = async () => {
+  if (appWindow) {
+    await appWindow.minimize();
+  }
+};
+
 </script>
 
 <template>
@@ -109,6 +116,9 @@ const closeWindow = async () => {
           </div>
 
           <div class="sidebar-footer-collapsed">
+            <div class="nav-item-collapsed minimize-btn" @click="minimizeWindow" title="最小化">
+              <IconMinus class="nav-icon-collapsed" />
+            </div>
             <div class="nav-item-collapsed close-btn" @click="closeWindow" title="关闭窗口">
               <IconPoweroff class="nav-icon-collapsed" />
             </div>
@@ -142,6 +152,10 @@ const closeWindow = async () => {
           </div>
 
           <div class="sidebar-footer-expanded">
+            <div class="nav-item-expanded minimize-btn" @click="minimizeWindow">
+              <IconMinus class="nav-icon-expanded" />
+              <span class="nav-label-expanded">最小化</span>
+            </div>
             <div class="nav-item-expanded close-btn" @click="closeWindow">
               <IconPoweroff class="nav-icon-expanded" />
               <span class="nav-label-expanded">退出</span>
@@ -363,6 +377,11 @@ const closeWindow = async () => {
   background: rgba(var(--danger-6), 0.1);
 }
 
+.minimize-btn:hover {
+  color: rgb(var(--primary-6));
+  background: rgba(var(--primary-6), 0.1);
+}
+
 /* Main Content */
 .main-content {
   flex: 1;
@@ -449,6 +468,11 @@ const closeWindow = async () => {
 .light-theme .close-btn:hover {
   background: rgba(255, 100, 100, 0.15);
   color: #e74c3c;
+}
+
+.light-theme .minimize-btn:hover {
+  background: rgba(88, 108, 199, 0.1);
+  color: #586cc7;
 }
 
 .light-theme .main-content {
